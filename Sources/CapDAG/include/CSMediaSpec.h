@@ -397,6 +397,38 @@ BOOL CSMediaUrnIsNumeric(NSString *mediaUrn);
 BOOL CSMediaUrnIsBool(NSString *mediaUrn);
 
 /**
+ * Check if a media URN represents a single file path (has file-path marker AND scalar).
+ * This is a pure syntax check - no resolution required.
+ * @param mediaUrn The media URN to check (must be non-empty)
+ * @return YES if the media URN has the 'file-path' marker tag AND no 'list' marker
+ */
+BOOL CSMediaUrnIsFilePath(NSString *mediaUrn);
+
+/**
+ * Check if a media URN represents a file path array (has file-path marker AND list).
+ * This is a pure syntax check - no resolution required.
+ * @param mediaUrn The media URN to check (must be non-empty)
+ * @return YES if the media URN has the 'file-path' marker tag AND 'list' marker
+ */
+BOOL CSMediaUrnIsFilePathArray(NSString *mediaUrn);
+
+/**
+ * Check if a media URN represents any file path (scalar or array).
+ * This is a pure syntax check - no resolution required.
+ * @param mediaUrn The media URN to check (must be non-empty)
+ * @return YES if the media URN has the 'file-path' marker tag
+ */
+BOOL CSMediaUrnIsAnyFilePath(NSString *mediaUrn);
+
+/**
+ * Check if a media URN represents a model specification (has model-spec marker).
+ * This is a pure syntax check - no resolution required.
+ * @param mediaUrn The media URN to check (must be non-empty)
+ * @return YES if the media URN has the 'model-spec' marker tag
+ */
+BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn);
+
+/**
  * Helper functions for working with MediaSpec in CapUrn
  */
 @interface CSMediaSpec (CapUrn)

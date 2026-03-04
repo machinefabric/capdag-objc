@@ -235,6 +235,28 @@ BOOL CSMediaUrnIsBool(NSString *mediaUrn) {
     return CSMediaUrnHasTag(mediaUrn, @"bool");
 }
 
+/// Public function to check if a media URN represents a single file path.
+/// Must have file-path marker AND NOT have list marker.
+BOOL CSMediaUrnIsFilePath(NSString *mediaUrn) {
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path") && !CSMediaUrnHasMarkerTag(mediaUrn, @"list");
+}
+
+/// Public function to check if a media URN represents a file path array.
+/// Must have file-path marker AND list marker.
+BOOL CSMediaUrnIsFilePathArray(NSString *mediaUrn) {
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path") && CSMediaUrnHasMarkerTag(mediaUrn, @"list");
+}
+
+/// Public function to check if a media URN represents any file path (scalar or array).
+BOOL CSMediaUrnIsAnyFilePath(NSString *mediaUrn) {
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path");
+}
+
+/// Public function to check if a media URN represents a model specification.
+BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"model-spec");
+}
+
 @implementation CSMediaSpec
 
 + (instancetype)withContentType:(NSString *)contentType
