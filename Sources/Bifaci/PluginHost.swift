@@ -161,6 +161,9 @@ private class ManagedPlugin {
     var helloFailed: Bool
     var readerThread: Thread?
     var pendingHeartbeats: [MessageId: Date]
+    /// Last death error message (includes stderr if available). Used for ERR frames
+    /// sent when attempting to write to a dead plugin.
+    var lastDeathMessage: String?
 
     init(path: String, knownCaps: [String]) {
         self.path = path
@@ -171,6 +174,7 @@ private class ManagedPlugin {
         self.running = false
         self.helloFailed = false
         self.pendingHeartbeats = [:]
+        self.lastDeathMessage = nil
     }
 
     static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedPlugin {
@@ -550,7 +554,8 @@ public final class PluginHost: @unchecked Sendable {
 
             if !plugin.writeFrame(frame) {
                 // Plugin is dead — send ERR with XID and clean up
-                var err = Frame.err(id: frame.id, code: "PLUGIN_DIED", message: "Plugin exited while processing request")
+                let deathMsg = plugin.lastDeathMessage ?? "Plugin exited while processing request"
+                var err = Frame.err(id: frame.id, code: "PLUGIN_DIED", message: deathMsg)
                 err.routingId = xid
                 sendToRelay(err)
                 stateLock.lock()
@@ -591,7 +596,8 @@ public final class PluginHost: @unchecked Sendable {
                 outgoingRids.removeValue(forKey: frame.id)
                 incomingRxids.removeValue(forKey: key)
                 stateLock.unlock()
-                var err = Frame.err(id: frame.id, code: "PLUGIN_DIED", message: "Plugin exited while processing request")
+                let deathMsg = plugin.lastDeathMessage ?? "Plugin exited while processing request"
+                var err = Frame.err(id: frame.id, code: "PLUGIN_DIED", message: deathMsg)
                 err.routingId = xid
                 err.seq = nextSeq
                 sendToRelay(err)
@@ -697,11 +703,43 @@ public final class PluginHost: @unchecked Sendable {
         plugin.running = false
         plugin.writer = nil
 
+        // Capture stderr content BEFORE closing handles - this contains crash info
+        var stderrContent = ""
+        if let stderrHandle = plugin.stderrHandle {
+            // Read available stderr data (non-blocking)
+            let stderrData = stderrHandle.availableData
+            if !stderrData.isEmpty {
+                if let text = String(data: stderrData, encoding: .utf8) {
+                    // Truncate to reasonable size for error message
+                    let maxLen = 2000
+                    if text.count > maxLen {
+                        stderrContent = String(text.prefix(maxLen)) + "... [truncated]"
+                    } else {
+                        stderrContent = text
+                    }
+                }
+            }
+            try? stderrHandle.close()
+            plugin.stderrHandle = nil
+        }
+
         // Close stdin to ensure plugin process exits
         if let stdinHandle = plugin.stdinHandle {
             try? stdinHandle.close()
             plugin.stdinHandle = nil
         }
+
+        // Build error message with stderr content if available
+        let pluginPath = plugin.path
+        let errorMessage: String
+        if stderrContent.isEmpty {
+            errorMessage = "Plugin \(pluginPath) exited unexpectedly (no stderr output)"
+        } else {
+            errorMessage = "Plugin \(pluginPath) exited unexpectedly. stderr:\n\(stderrContent)"
+        }
+
+        // Store for late-arriving frames that try to write to the dead plugin
+        plugin.lastDeathMessage = errorMessage
 
         // Send ERR for pending PEER requests (outgoingRids only).
         // These are requests the plugin initiated — the relay is waiting for
@@ -747,12 +785,12 @@ public final class PluginHost: @unchecked Sendable {
 
         // Send ERR frames outside the lock — with correct seq from max-seen tracking
         for entry in failedOutgoing {
-            var err = Frame.err(id: entry.rid, code: "PLUGIN_DIED", message: "Plugin exited while processing request")
+            var err = Frame.err(id: entry.rid, code: "PLUGIN_DIED", message: errorMessage)
             err.seq = entry.nextSeq
             sendToRelay(err)
         }
         for entry in failedIncoming {
-            var err = Frame.err(id: entry.rid, code: "PLUGIN_DIED", message: "Plugin exited while processing request")
+            var err = Frame.err(id: entry.rid, code: "PLUGIN_DIED", message: errorMessage)
             err.routingId = entry.xid
             err.seq = entry.nextSeq
             sendToRelay(err)
