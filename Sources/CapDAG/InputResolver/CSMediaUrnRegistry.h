@@ -14,7 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Registry for mapping file extensions to media URNs
 ///
 /// This registry provides extension-to-URN mapping based on the bundled
-/// media spec definitions (from capdag-dot-com/standard/media/*.toml).
+/// media spec definitions (from capgraph/src/media/*.toml).
 ///
 /// The registry is used by the InputResolver to determine the base URN
 /// for a file, which adapters can then refine with content inspection.
