@@ -106,8 +106,9 @@ public final class InputStream: Sequence, @unchecked Sendable {
         _mediaUrn
     }
 
-    /// Collect all chunks into a single byte vector.
+    /// Collect all chunks into a single byte vector (scalar path).
     /// Extracts inner bytes from .byteString/.utf8String and concatenates.
+    /// Use this for scalar (non-list) streams.
     public func collectBytes() throws -> Data {
         var result = Data()
         for itemResult in self {
@@ -122,6 +123,24 @@ public final class InputStream: Sequence, @unchecked Sendable {
                 let encoded = Data(item.encode())
                 result.append(encoded)
             }
+        }
+        return result
+    }
+
+    /// Collect all chunks as a raw CBOR sequence (list path).
+    ///
+    /// Each chunk's CBOR-encoded payload is appended as-is — the result is an
+    /// RFC 8742 CBOR sequence where each self-delimiting CBOR value is one list
+    /// item. Use `splitCborSequence()` to iterate the items.
+    ///
+    /// Use this for list-tagged streams (where `CSMediaUrnIsList(mediaUrn)` is true).
+    public func collectCborSequence() throws -> Data {
+        var result = Data()
+        for itemResult in self {
+            let item = try itemResult.get()
+            // Re-encode the CBOR value — this preserves the self-delimiting structure
+            let encoded = Data(item.encode())
+            result.append(encoded)
         }
         return result
     }

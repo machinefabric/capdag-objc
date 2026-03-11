@@ -121,13 +121,18 @@ public final class ResponseWriter: @unchecked Sendable {
 
 /// Accumulate all input streams from a frame channel into CapArgumentValues.
 ///
-/// Reads frames until END. CBOR-decodes chunk payloads to extract raw bytes.
+/// Reads frames until END. Behavior depends on the stream's media URN:
+///
+/// - **Scalar** (no `list` tag): CBOR-decodes chunk payloads to extract inner
+///   Bytes/Text content and concatenates into a flat output buffer.
+/// - **List** (has `list` tag): Stores raw CBOR chunk payloads as-is. The
+///   concatenated payloads form an RFC 8742 CBOR sequence where each
+///   self-delimiting CBOR value is one list item.
+///
 /// For handlers that don't need streaming — they accumulate all input, process,
 /// then emit a response.
-///
-/// Returns nil on CBOR decode failure (protocol violation).
 public func accumulateInput(inputStream: AsyncStream<Frame>) async throws -> [CapArgumentValue] {
-    var streams: [(streamId: String, mediaUrn: String, data: Data)] = []
+    var streams: [(streamId: String, mediaUrn: String, data: Data, isList: Bool)] = []
     var active: [String: Int] = [:]
 
     for await frame in inputStream {
@@ -135,29 +140,36 @@ public func accumulateInput(inputStream: AsyncStream<Frame>) async throws -> [Ca
         case .streamStart:
             let sid = frame.streamId ?? ""
             let mediaUrn = frame.mediaUrn ?? ""
+            let isList = CSMediaUrnIsList(mediaUrn)
             let idx = streams.count
-            streams.append((sid, mediaUrn, Data()))
+            streams.append((sid, mediaUrn, Data(), isList))
             active[sid] = idx
 
         case .chunk:
             let sid = frame.streamId ?? ""
             if let idx = active[sid], let payload = frame.payload {
-                // CBOR-decode chunk payload to extract raw bytes
-                guard let cbor = try? CBOR.decode([UInt8](payload)) else {
-                    throw NSError(domain: "accumulateInput", code: 1, userInfo: [
-                        NSLocalizedDescriptionKey: "chunk payload is not valid CBOR (stream=\(sid), \(payload.count) bytes)"
-                    ])
-                }
+                if streams[idx].isList {
+                    // List output: raw CBOR chunk payloads form an RFC 8742 CBOR
+                    // sequence. Store as-is — consumers use splitCborSequence().
+                    streams[idx].data.append(payload)
+                } else {
+                    // Scalar output: CBOR-decode chunk payload to extract raw bytes
+                    guard let cbor = try? CBOR.decode([UInt8](payload)) else {
+                        throw NSError(domain: "accumulateInput", code: 1, userInfo: [
+                            NSLocalizedDescriptionKey: "chunk payload is not valid CBOR (stream=\(sid), \(payload.count) bytes)"
+                        ])
+                    }
 
-                switch cbor {
-                case .byteString(let bytes):
-                    streams[idx].data.append(contentsOf: bytes)
-                case .utf8String(let str):
-                    streams[idx].data.append(contentsOf: str.data(using: String.Encoding.utf8) ?? Data())
-                default:
-                    throw NSError(domain: "accumulateInput", code: 2, userInfo: [
-                        NSLocalizedDescriptionKey: "unexpected CBOR type in chunk payload: \(cbor)"
-                    ])
+                    switch cbor {
+                    case .byteString(let bytes):
+                        streams[idx].data.append(contentsOf: bytes)
+                    case .utf8String(let str):
+                        streams[idx].data.append(contentsOf: str.data(using: String.Encoding.utf8) ?? Data())
+                    default:
+                        throw NSError(domain: "accumulateInput", code: 2, userInfo: [
+                            NSLocalizedDescriptionKey: "unexpected CBOR type in scalar chunk payload: \(cbor)"
+                        ])
+                    }
                 }
             }
 
