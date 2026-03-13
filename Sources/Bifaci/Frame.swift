@@ -295,6 +295,17 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
+    /// Create a LOG frame with progress (0.0–1.0) and a human-readable status message.
+    public static func progress(id: MessageId, progress: Float, message: String) -> Frame {
+        var frame = Frame(frameType: .log, id: id)
+        frame.meta = [
+            "level": .utf8String("progress"),
+            "message": .utf8String(message),
+            "progress": .float(progress)
+        ]
+        return frame
+    }
+
     /// Create an ERR frame
     public static func err(id: MessageId, code: String, message: String) -> Frame {
         var frame = Frame(frameType: .err, id: id)
@@ -397,6 +408,17 @@ public struct Frame: @unchecked Sendable {
             return nil
         }
         return s
+    }
+
+    /// Get progress value (0.0–1.0) if this is a LOG frame with level="progress"
+    public var logProgress: Float? {
+        guard frameType == .log,
+              let meta = meta,
+              case .utf8String(let level) = meta["level"],
+              level == "progress",
+              case .float(let f) = meta["progress"]
+        else { return nil }
+        return f
     }
 
     /// Extract manifest from RELAY_NOTIFY metadata

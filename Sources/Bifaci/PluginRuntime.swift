@@ -434,6 +434,13 @@ public final class OutputStream: @unchecked Sendable {
         try? sender.send(frame)
     }
 
+    /// Emit a progress update (0.0–1.0) with a human-readable status message.
+    public func progress(_ progress: Float, message: String) {
+        var frame = Frame.progress(id: requestId, progress: progress, message: message)
+        frame.routingId = routingId
+        try? sender.send(frame)
+    }
+
     /// Close the output stream (sends STREAM_END). Idempotent.
     /// If stream was never started, sends STREAM_START first.
     public func close() throws {
