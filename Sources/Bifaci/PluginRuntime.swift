@@ -2345,7 +2345,16 @@ public final class PluginRuntime: @unchecked Sendable {
     /// Run in CBOR mode - binary protocol over stdin/stdout.
     private func runCborMode() throws {
         let stdinHandle = FileHandle.standardInput
-        let stdoutHandle = FileHandle.standardOutput
+
+        // Duplicate stdout so CBOR frame I/O is immune to anything that
+        // closes the original FD 1 (e.g. Metal shader compilation in MLX).
+        // The duplicated FD points to the same pipe but lives at a different
+        // descriptor number, so close(STDOUT_FILENO) won't affect it.
+        let safeFd = dup(STDOUT_FILENO)
+        guard safeFd >= 0 else {
+            throw PluginRuntimeError.ioError("dup(STDOUT_FILENO) failed: \(String(cString: strerror(errno)))")
+        }
+        let stdoutHandle = FileHandle(fileDescriptor: safeFd, closeOnDealloc: true)
 
         let frameReader = FrameReader(handle: stdinHandle, limits: limits)
         let frameWriter = FrameWriter(handle: stdoutHandle, limits: limits)
