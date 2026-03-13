@@ -851,19 +851,12 @@ public final class PluginHost: @unchecked Sendable {
             incomingRxids.removeValue(forKey: entry.key)
         }
 
-        // Determine whether to send ERR frames.
-        // Ordered shutdown: we asked for this — never send ERR.
-        // Unordered with pending outgoing: genuine crash — send ERR.
-        // Unordered, idle: natural exit — no ERR needed.
-        //
-        // NOTE: Only outgoingRids represent genuinely pending work.
-        // incomingRxids are intentionally leaked after request completion
-        // (for out-of-order frame handling) and do NOT mean work is pending.
-        let hasGenuinePendingWork = !wasOrdered && !failedOutgoing.isEmpty
+        // Unordered death is always an error — a plugin should only exit when
+        // orderedShutdown was set. Send PLUGIN_DIED for ALL pending work.
         let pluginPath = plugin.path
 
         let errorMessage: String?
-        if hasGenuinePendingWork {
+        if !wasOrdered {
             if stderrContent.isEmpty {
                 errorMessage = "Plugin \(pluginPath) exited unexpectedly (no stderr output)"
             } else {
@@ -885,10 +878,16 @@ public final class PluginHost: @unchecked Sendable {
         rebuildCapabilities()
         stateLock.unlock()
 
-        // Send ERR frames only for genuinely pending work.
+        // Send ERR frames for all pending work on unordered death.
         if let msg = errorMessage {
             for entry in failedOutgoing {
                 var err = Frame.err(id: entry.rid, code: "PLUGIN_DIED", message: msg)
+                err.seq = entry.nextSeq
+                sendToRelay(err)
+            }
+            for entry in failedIncoming {
+                var err = Frame.err(id: entry.rid, code: "PLUGIN_DIED", message: msg)
+                err.routingId = entry.xid
                 err.seq = entry.nextSeq
                 sendToRelay(err)
             }
