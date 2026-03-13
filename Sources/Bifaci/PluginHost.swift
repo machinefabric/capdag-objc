@@ -801,12 +801,52 @@ public final class PluginHost: @unchecked Sendable {
         let wasOrdered = plugin.orderedShutdown
         plugin.orderedShutdown = false  // Reset for potential respawn
 
-        // Capture stderr content BEFORE closing handles
+        // Check process status and kill if still running.
+        // The reader thread got EOF on stdout, but the process may still be alive
+        // (e.g. if a library closed stdout). We must kill before reading stderr,
+        // because readToEnd blocks until the pipe's write end closes.
+        var exitInfo = ""
+        if let p = plugin.pid {
+            var status: Int32 = 0
+            var wpid = waitpid(p, &status, WNOHANG)
+            if wpid == 0 {
+                // Process still running — stdout closed but process alive.
+                // Kill it so we can collect stderr.
+                kill(p, SIGTERM)
+                Thread.sleep(forTimeInterval: 0.1)
+                wpid = waitpid(p, &status, WNOHANG)
+                if wpid == 0 {
+                    kill(p, SIGKILL)
+                    wpid = waitpid(p, &status, 0)  // blocking wait
+                }
+                exitInfo = "stdout closed while process still running"
+            }
+            if wpid > 0 {
+                if (status & 0x7F) != 0 {
+                    let sig = status & 0x7F
+                    let info = "killed by signal \(sig)"
+                    exitInfo = exitInfo.isEmpty ? info : "\(exitInfo), \(info)"
+                } else {
+                    let code = (status >> 8) & 0xFF
+                    let info = "exit code \(code)"
+                    exitInfo = exitInfo.isEmpty ? info : "\(exitInfo), \(info)"
+                }
+            } else if wpid < 0 {
+                exitInfo = "waitpid failed (errno=\(errno))"
+            }
+            plugin.pid = nil
+        }
+
+        // Now that the process is dead, read stderr — readToEnd will get
+        // EOF immediately since the write end is closed.
         var stderrContent = ""
         if let stderrHandle = plugin.stderrHandle {
-            let stderrData = stderrHandle.availableData
-            if !stderrData.isEmpty {
-                if let text = String(data: stderrData, encoding: .utf8) {
+            var allData = Data()
+            if let data = try? stderrHandle.readToEnd(), !data.isEmpty {
+                allData = data
+            }
+            if !allData.isEmpty {
+                if let text = String(data: allData, encoding: .utf8) {
                     let maxLen = 2000
                     if text.count > maxLen {
                         stderrContent = String(text.prefix(maxLen)) + "... [truncated]"
@@ -857,10 +897,11 @@ public final class PluginHost: @unchecked Sendable {
 
         let errorMessage: String?
         if !wasOrdered {
+            let exitSuffix = exitInfo.isEmpty ? "" : " (\(exitInfo))"
             if stderrContent.isEmpty {
-                errorMessage = "Plugin \(pluginPath) exited unexpectedly (no stderr output)"
+                errorMessage = "Plugin \(pluginPath) exited unexpectedly\(exitSuffix). stderr:"
             } else {
-                errorMessage = "Plugin \(pluginPath) exited unexpectedly. stderr:\n\(stderrContent)"
+                errorMessage = "Plugin \(pluginPath) exited unexpectedly\(exitSuffix). stderr:\n\(stderrContent)"
             }
             plugin.lastDeathMessage = errorMessage
         } else {
