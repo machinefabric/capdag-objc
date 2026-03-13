@@ -10,6 +10,7 @@
 /// All other frames pass through transparently in both directions.
 
 import Foundation
+import os
 #if canImport(PotentCBOR)
 import PotentCBOR
 #endif
@@ -26,6 +27,8 @@ public enum RelayError: Error, Sendable {
 /// a socket (master/engine side) and local streams (PluginHostRuntime side).
 @available(macOS 10.15.4, iOS 13.4, *)
 public final class RelaySlave: @unchecked Sendable {
+    private static let log = OSLog(subsystem: "com.machinefabric.bifaci", category: "RelaySlave")
+
     /// Read from PluginHostRuntime
     private let localReader: FrameReader
     /// Write to PluginHostRuntime
@@ -129,9 +132,13 @@ public final class RelaySlave: @unchecked Sendable {
                             let key = FlowKey.fromFrame(readyFrame)
                             reorderBuffer.cleanupFlow(key)
                         }
+                        if readyFrame.frameType != .log {
+                            os_log(.info, log: RelaySlave.log, "[t1 socket→local] %{public}@ id=%{public}@ xid=%{public}@", String(describing: readyFrame.frameType), String(describing: readyFrame.id), String(describing: readyFrame.routingId))
+                        }
                         try localWriter.write(readyFrame)
                     }
                 } catch {
+                    os_log(.error, log: RelaySlave.log, "[t1 socket→local] error: %{public}@", String(describing: error))
                     errorLock.lock()
                     if firstError == nil { firstError = error }
                     errorLock.unlock()
@@ -173,9 +180,13 @@ public final class RelaySlave: @unchecked Sendable {
                             let key = FlowKey.fromFrame(readyFrame)
                             reorderBuffer.cleanupFlow(key)
                         }
+                        if readyFrame.frameType != .log {
+                            os_log(.info, log: RelaySlave.log, "[t2 local→socket] %{public}@ id=%{public}@ xid=%{public}@", String(describing: readyFrame.frameType), String(describing: readyFrame.id), String(describing: readyFrame.routingId))
+                        }
                         try socketWriter.write(readyFrame)
                     }
                 } catch {
+                    os_log(.error, log: RelaySlave.log, "[t2 local→socket] error: %{public}@", String(describing: error))
                     errorLock.lock()
                     if firstError == nil { firstError = error }
                     errorLock.unlock()

@@ -31,6 +31,7 @@
 //  - Everything else: forwarded to relay (pass-through)
 
 import Foundation
+import os
 @preconcurrency import SwiftCBOR
 import CapDAG
 
@@ -243,6 +244,8 @@ private class ManagedPlugin {
 public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Properties
+
+    private static let log = OSLog(subsystem: "com.machinefabric.bifaci", category: "PluginHost")
 
     /// Managed plugin binaries.
     private var plugins: [ManagedPlugin] = []
@@ -588,6 +591,9 @@ public final class PluginHost: @unchecked Sendable {
     /// Routes incoming REQs to plugins by cap URN, continuation frames by (XID, RID).
     /// NEVER cleans up incomingRxids on terminal frames — intentionally leaked until plugin death.
     private func handleRelayFrame(_ frame: Frame) {
+        if frame.frameType != .log {
+            os_log(.info, log: Self.log, "[handleRelayFrame] %{public}@ id=%{public}@ xid=%{public}@", String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
+        }
         switch frame.frameType {
         case .req:
             // REQ from relay MUST have XID
@@ -633,6 +639,7 @@ public final class PluginHost: @unchecked Sendable {
             let plugin = plugins[pluginIdx]
             stateLock.unlock()
 
+            os_log(.info, log: Self.log, "[handleRelayFrame] REQ dispatched to plugin %d cap=%{public}@ xid=%{public}@ rid=%{public}@", pluginIdx, String(describing: frame.cap), String(describing: xid), String(describing: frame.id))
             if !plugin.writeFrame(frame) {
                 // Plugin is dead — send ERR with XID and clean up
                 let deathMsg = plugin.lastDeathMessage ?? "Plugin exited while processing request"
@@ -722,6 +729,9 @@ public final class PluginHost: @unchecked Sendable {
     /// All other frames are forwarded to relay as-is — no routing decisions needed
     /// (there's only one relay destination).
     private func handlePluginFrame(pluginIdx: Int, frame: Frame) {
+        if frame.frameType != .log {
+            os_log(.info, log: Self.log, "[handlePluginFrame] plugin=%d %{public}@ id=%{public}@ xid=%{public}@", pluginIdx, String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
+        }
         switch frame.frameType {
         case .hello:
             // HELLO should be consumed during handshake, never during run
@@ -950,9 +960,15 @@ public final class PluginHost: @unchecked Sendable {
     /// Write a frame to the relay (toward engine). Thread-safe.
     /// Frames arrive with seq already assigned by PluginRuntime — no modification needed.
     private func sendToRelay(_ frame: Frame) {
+        if frame.frameType != .log {
+            os_log(.info, log: Self.log, "[sendToRelay] %{public}@ id=%{public}@ xid=%{public}@", String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
+        }
         outboundLock.lock()
         defer { outboundLock.unlock() }
-        guard let w = outboundWriter else { return }
+        guard let w = outboundWriter else {
+            os_log(.error, log: Self.log, "[sendToRelay] outboundWriter is nil — frame dropped: %{public}@ id=%{public}@", String(describing: frame.frameType), String(describing: frame.id))
+            return
+        }
         try? w.write(frame)
     }
 
