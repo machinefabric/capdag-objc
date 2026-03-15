@@ -69,8 +69,19 @@ FOUNDATION_EXPORT NSString * const CSMediaJson;         // media:json;record;tex
 FOUNDATION_EXPORT NSString * const CSMediaJsonSchema;   // media:json;json-schema;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaYaml;         // media:record;textable;yaml
 // Semantic input types
-FOUNDATION_EXPORT NSString * const CSMediaModelSpec;    // media:model-spec;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelSpec;    // media:model-spec;textable (generic, modelcartridge)
 FOUNDATION_EXPORT NSString * const CSMediaModelRepo;    // media:model-repo;record;textable
+// Backend+use-case specific model-spec variants
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufVision;         // media:model-spec;gguf;textable;vision
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufLlm;            // media:model-spec;gguf;textable;llm
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufEmbeddings;     // media:model-spec;gguf;textable;embeddings
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecMlxVision;          // media:model-spec;mlx;textable;vision
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecMlxLlm;             // media:model-spec;mlx;textable;llm
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecMlxEmbeddings;      // media:model-spec;mlx;textable;embeddings
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleVision;       // media:model-spec;candle;textable;vision
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleEmbeddings;   // media:model-spec;candle;textable;embeddings
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleImageEmbeddings; // media:model-spec;candle;image-embeddings;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleTranscription; // media:model-spec;candle;textable;transcription
 // File path types
 FOUNDATION_EXPORT NSString * const CSMediaFilePath;     // media:file-path;textable
 FOUNDATION_EXPORT NSString * const CSMediaFilePathArray; // media:file-path;list;textable

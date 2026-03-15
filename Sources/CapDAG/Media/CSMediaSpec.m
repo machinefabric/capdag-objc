@@ -51,6 +51,17 @@ NSString * const CSMediaYaml = @"media:record;textable;yaml";
 // Semantic input types
 NSString * const CSMediaModelSpec = @"media:model-spec;textable";
 NSString * const CSMediaModelRepo = @"media:model-repo;record;textable";
+// Backend+use-case specific model-spec variants
+NSString * const CSMediaModelSpecGgufVision = @"media:model-spec;gguf;textable;vision";
+NSString * const CSMediaModelSpecGgufLlm = @"media:model-spec;gguf;textable;llm";
+NSString * const CSMediaModelSpecGgufEmbeddings = @"media:model-spec;gguf;textable;embeddings";
+NSString * const CSMediaModelSpecMlxVision = @"media:model-spec;mlx;textable;vision";
+NSString * const CSMediaModelSpecMlxLlm = @"media:model-spec;mlx;textable;llm";
+NSString * const CSMediaModelSpecMlxEmbeddings = @"media:model-spec;mlx;textable;embeddings";
+NSString * const CSMediaModelSpecCandleVision = @"media:model-spec;candle;textable;vision";
+NSString * const CSMediaModelSpecCandleEmbeddings = @"media:model-spec;candle;textable;embeddings";
+NSString * const CSMediaModelSpecCandleImageEmbeddings = @"media:model-spec;candle;image-embeddings;textable";
+NSString * const CSMediaModelSpecCandleTranscription = @"media:model-spec;candle;textable;transcription";
 // File path types
 NSString * const CSMediaFilePath = @"media:file-path;textable";
 NSString * const CSMediaFilePathArray = @"media:file-path;list;textable";
