@@ -309,7 +309,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *disbind = makeTestCap(@"media:pdf", @"media:page;textable;list", @"disbind", @"Disbind PDF");
-    CSCap *choose = makeTestCap(@"media:textable", @"media:decision;bool;textable", @"choose", @"Make Choice");
+    CSCap *choose = makeTestCap(@"media:textable", @"media:decision;bool;textable", @"choose", @"Make a Decision");
 
     [graph syncFromCaps:@[disbind, choose]];
 
