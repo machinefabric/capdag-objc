@@ -9,7 +9,7 @@
 #import "CSCollectionInput.h"
 #import "CSArgumentBinding.h"
 
-/// Media URN for a collection input structure (capchain internal)
+/// Media URN for a collection input structure (machine internal)
 static NSString * const COLLECTION_MEDIA_URN = @"media:collection;record;textable";
 
 // MARK: - CollectionFile

@@ -46,7 +46,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // MARK: - CapInputCollection
 
-/// A collection as structured input for capchain processing.
+/// A collection as structured input for machine processing.
 /// Represents a folder hierarchy with files and nested subfolders.
 /// Mirrors Rust: pub struct CapInputCollection
 @interface CSCapInputCollection : NSObject
