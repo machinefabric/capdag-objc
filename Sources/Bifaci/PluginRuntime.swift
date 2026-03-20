@@ -158,6 +158,79 @@ public final class InputStream: Sequence, @unchecked Sendable {
     }
 }
 
+/// A single item from a peer response — either decoded data or a LOG frame.
+///
+/// `PeerResponse.recv()` yields these interleaved in arrival order. Handlers
+/// match on each variant to decide how to react (e.g., forward progress, accumulate data).
+public enum PeerResponseItem {
+    /// A decoded CBOR data chunk from the peer response.
+    case data(Result<CBOR, StreamError>)
+    /// A LOG frame from the peer (progress, status messages, etc.).
+    case log(Frame)
+}
+
+/// Response from a peer call — yields both data items and LOG frames from a single collection.
+///
+/// The handler drains this with `recv()` and reacts to each `PeerResponseItem` as it arrives.
+/// For callers that don't care about LOG frames, `collectBytes()` and `collectValue()`
+/// silently discard them and return only data.
+public final class PeerResponse: @unchecked Sendable {
+    private let _mediaUrn: String
+    private let items: UnsafeTransfer<AnyIterator<PeerResponseItem>>
+
+    init(mediaUrn: String, items: AnyIterator<PeerResponseItem>) {
+        self._mediaUrn = mediaUrn
+        self.items = UnsafeTransfer(items)
+    }
+
+    /// Media URN of this stream (from STREAM_START).
+    public var mediaUrn: String {
+        _mediaUrn
+    }
+
+    /// Receive the next item (data or LOG) from the peer response.
+    /// Returns nil when the stream ends.
+    public func recv() -> PeerResponseItem? {
+        items.value.next()
+    }
+
+    /// Collect all data chunks into a single byte vector, discarding LOG frames.
+    public func collectBytes() throws -> Data {
+        var result = Data()
+        while let item = recv() {
+            switch item {
+            case .data(let dataResult):
+                let value = try dataResult.get()
+                switch value {
+                case .byteString(let bytes):
+                    result.append(contentsOf: bytes)
+                case .utf8String(let str):
+                    result.append(str.data(using: .utf8) ?? Data())
+                default:
+                    let encoded = Data(value.encode())
+                    result.append(encoded)
+                }
+            case .log:
+                break // Discard LOG frames
+            }
+        }
+        return result
+    }
+
+    /// Collect a single CBOR data value (expects exactly one data chunk), discarding LOG frames.
+    public func collectValue() throws -> CBOR {
+        while let item = recv() {
+            switch item {
+            case .data(let dataResult):
+                return try dataResult.get()
+            case .log:
+                break // Discard LOG frames
+            }
+        }
+        throw StreamError.closed
+    }
+}
+
 /// The bundle of all input arg streams for one request.
 /// Yields InputStream objects as STREAM_START frames arrive from the wire.
 /// Returns nil after END frame (all args delivered).
@@ -502,16 +575,13 @@ public final class PeerCall: @unchecked Sendable {
         )
     }
 
-    /// Finish sending args and get the response stream.
+    /// Finish sending args and get the peer response.
     /// Sends END for the peer request, spawns Demux on response channel.
     ///
-    /// Peer LOG frames (including progress) are mapped to the caller's progress range
-    /// and forwarded via the caller's emitter. `base` is the progress value at the start
-    /// of this peer call, `weight` is the fraction of overall progress this call represents.
-    /// For example, if this peer call is 5%–25% of the handler's work: base=0.05, weight=0.20.
-    ///
-    /// A peer reporting progress=0.50 will cause emitter.progress(0.05 + 0.50 * 0.20 = 0.15).
-    public func finish(emitter: OutputStream, base: Float, weight: Float) throws -> InputStream {
+    /// Returns a `PeerResponse` that yields `PeerResponseItem.data` and
+    /// `PeerResponseItem.log` interleaved in arrival order. The handler
+    /// decides how to react to each (e.g., forward progress, accumulate data).
+    public func finish() throws -> PeerResponse {
         // Send END frame for the peer request
         fputs("[PeerCall] finish: sending END for peer_rid=\(requestId)\n", stderr)
         let endFrame = Frame.end(id: requestId, finalPayload: nil)
@@ -526,12 +596,11 @@ public final class PeerCall: @unchecked Sendable {
         responseRx = nil
         lock.unlock()
 
-        // Demux with LOG frame forwarding — maps peer progress to caller's range
+        // Demux into PeerResponse — LOG frames delivered alongside data
         fputs("[PeerCall] finish: awaiting peer response for peer_rid=\(requestId)\n", stderr)
-        let logForwarder = PeerLogForwarder(emitter: emitter, base: base, weight: weight)
-        let inputStream = try demuxSingleStream(responseRx: rx, maxChunk: maxChunk, logHandler: logForwarder.handle)
+        let peerResponse = try demuxSingleStream(responseRx: rx, maxChunk: maxChunk)
         fputs("[PeerCall] finish: peer response received for peer_rid=\(requestId)\n", stderr)
-        return inputStream
+        return peerResponse
     }
 }
 
@@ -610,34 +679,13 @@ public final class BlockingQueue<T>: @unchecked Sendable {
     }
 }
 
-/// Maps peer LOG frames to the caller's progress range and forwards them.
-private struct PeerLogForwarder {
-    let emitter: OutputStream
-    let base: Float
-    let weight: Float
-
-    func handle(_ frame: Frame) {
-        if let peerProgress = frame.logProgress {
-            // Map peer's [0.0, 1.0] to caller's [base, base+weight]
-            let mapped = mapProgress(peerProgress, base: base, weight: weight)
-            let msg = frame.logMessage ?? ""
-            emitter.progress(mapped, message: msg)
-        } else if let msg = frame.logMessage {
-            // Forward non-progress LOG frames from peer as regular logs
-            let level = frame.logLevel ?? "info"
-            emitter.log(level: level, message: msg)
-        }
-    }
-}
-
 /// Demux a single response stream from frame channel.
-/// Used by PeerCall.finish() to convert response frames into InputStream.
+/// Used by PeerCall.finish() to convert response frames into PeerResponse.
 ///
-/// LOG frames are forwarded to `logHandler` if provided. This enables peer progress
-/// mapping — the handler maps peer progress values into the caller's progress range.
-private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, logHandler: ((Frame) -> Void)? = nil) throws -> InputStream {
-    // Create a channel for decoded CBOR values
-    var chunks: [Result<CBOR, StreamError>] = []
+/// LOG frames are delivered as PeerResponseItem.log alongside data items.
+private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) throws -> PeerResponse {
+    // Collect all items (data + LOG) in arrival order
+    var items: [PeerResponseItem] = []
     var mediaUrn = "media:" // Default, updated by STREAM_START
 
     // Drain the response channel and decode CHUNKs
@@ -651,33 +699,33 @@ private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, lo
         case .chunk:
             // Decode CBOR payload
             guard let payload = frame.payload else {
-                chunks.append(.failure(.protocolError("CHUNK frame missing payload")))
+                items.append(.data(.failure(.protocolError("CHUNK frame missing payload"))))
                 break
             }
 
             // Verify checksum (MANDATORY in protocol v2)
             guard let expectedChecksum = frame.checksum else {
-                chunks.append(.failure(.protocolError("CHUNK frame missing required checksum field")))
+                items.append(.data(.failure(.protocolError("CHUNK frame missing required checksum field"))))
                 continue
             }
             let actualChecksum = Frame.computeChecksum(payload)
             if actualChecksum != expectedChecksum {
-                chunks.append(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")))
+                items.append(.data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)"))))
                 continue
             }
 
             do {
                 guard let value = try CBOR.decode([UInt8](payload)) else {
-                    chunks.append(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
+                    items.append(.data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil"))))
                     continue
                 }
-                chunks.append(.success(value))
+                items.append(.data(.success(value)))
             } catch {
-                chunks.append(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+                items.append(.data(.failure(.decode("Failed to decode CBOR chunk: \(error)"))))
             }
 
         case .log:
-            logHandler?(frame)
+            items.append(.log(frame))
 
         case .streamEnd:
             // Stream ended normally
@@ -690,26 +738,26 @@ private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, lo
         case .err:
             let code = frame.errorCode ?? "UNKNOWN"
             let message = frame.errorMessage ?? "Unknown error"
-            chunks.append(.failure(.remoteError(code: code, message: message)))
+            items.append(.data(.failure(.remoteError(code: code, message: message))))
             break
 
         default:
             // Unexpected frame type
-            chunks.append(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")))
+            items.append(.data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)"))))
             break
         }
     }
 
-    // Create iterator from collected chunks
+    // Create iterator from collected items
     var index = 0
-    let iterator = AnyIterator<Result<CBOR, StreamError>> {
-        guard index < chunks.count else { return nil }
-        let item = chunks[index]
+    let iterator = AnyIterator<PeerResponseItem> {
+        guard index < items.count else { return nil }
+        let item = items[index]
         index += 1
         return item
     }
 
-    return InputStream(mediaUrn: mediaUrn, rx: iterator)
+    return PeerResponse(mediaUrn: mediaUrn, items: iterator)
 }
 
 /// Demux multiple input streams from frame iterator into InputPackage.
@@ -869,28 +917,28 @@ public struct CapArgumentValue: Sendable {
 ///
 /// The `call` method starts a peer invocation and returns a `PeerCall`.
 /// The handler creates arg streams with `call.arg()`, writes data, then
-/// calls `call.finish()` to get the single response `InputStream`.
+/// calls `call.finish()` to get a `PeerResponse` with data + LOG frames.
 public protocol PeerInvoker: Sendable {
     /// Start a peer call. Sends REQ, registers response channel.
     func call(capUrn: String) throws -> PeerCall
 
     /// Convenience: open call, write each arg's bytes, finish, return response.
     ///
-    /// `emitter` is the caller's output stream for forwarding peer LOG/progress frames.
-    /// `base` and `weight` define the progress range this peer call maps to.
-    func callWithBytes(capUrn: String, args: [(mediaUrn: String, data: Data)], emitter: OutputStream, base: Float, weight: Float) throws -> InputStream
+    /// Returns a `PeerResponse` — use `collectBytes()` / `collectValue()` to
+    /// discard LOG frames, or `recv()` to process them alongside data.
+    func callWithBytes(capUrn: String, args: [(mediaUrn: String, data: Data)]) throws -> PeerResponse
 }
 
 // Default implementation of callWithBytes
 extension PeerInvoker {
-    public func callWithBytes(capUrn: String, args: [(mediaUrn: String, data: Data)], emitter: OutputStream, base: Float, weight: Float) throws -> InputStream {
+    public func callWithBytes(capUrn: String, args: [(mediaUrn: String, data: Data)]) throws -> PeerResponse {
         let call = try self.call(capUrn: capUrn)
         for (mediaUrn, data) in args {
             let arg = call.arg(mediaUrn: mediaUrn)
             try arg.write(data)
             try arg.close()
         }
-        return try call.finish(emitter: emitter, base: base, weight: weight)
+        return try call.finish()
     }
 }
 
@@ -2655,7 +2703,7 @@ public final class PluginRuntime: @unchecked Sendable {
 
             case .log:
                 // Log frames from peer responses — forward to the pending peer request
-                // so the caller's PeerLogForwarder can map progress into the caller's range.
+                // so demuxSingleStream delivers them as PeerResponseItem.log items.
                 pendingPeerRequestsLock.lock()
                 if let pending = pendingPeerRequests[frame.id] as? PendingPeerRequest {
                     pending.continuation.yield(frame)
