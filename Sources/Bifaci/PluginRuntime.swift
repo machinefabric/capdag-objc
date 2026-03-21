@@ -175,17 +175,10 @@ public enum PeerResponseItem {
 /// For callers that don't care about LOG frames, `collectBytes()` and `collectValue()`
 /// silently discard them and return only data.
 public final class PeerResponse: @unchecked Sendable {
-    private let _mediaUrn: String
     private let items: UnsafeTransfer<AnyIterator<PeerResponseItem>>
 
-    init(mediaUrn: String, items: AnyIterator<PeerResponseItem>) {
-        self._mediaUrn = mediaUrn
+    init(items: AnyIterator<PeerResponseItem>) {
         self.items = UnsafeTransfer(items)
-    }
-
-    /// Media URN of this stream (from STREAM_START).
-    public var mediaUrn: String {
-        _mediaUrn
     }
 
     /// Receive the next item (data or LOG) from the peer response.
@@ -596,10 +589,10 @@ public final class PeerCall: @unchecked Sendable {
         responseRx = nil
         lock.unlock()
 
-        // Demux into PeerResponse — LOG frames delivered alongside data
-        fputs("[PeerCall] finish: awaiting peer response for peer_rid=\(requestId)\n", stderr)
-        let peerResponse = try demuxSingleStream(responseRx: rx, maxChunk: maxChunk)
-        fputs("[PeerCall] finish: peer response received for peer_rid=\(requestId)\n", stderr)
+        // Start demux — returns immediately so LOG frames can be consumed
+        // before data arrives (critical for keeping activity timer alive)
+        let peerResponse = demuxSingleStream(responseRx: rx, maxChunk: maxChunk)
+        fputs("[PeerCall] finish: demux started for peer_rid=\(requestId)\n", stderr)
         return peerResponse
     }
 }
@@ -683,81 +676,61 @@ public final class BlockingQueue<T>: @unchecked Sendable {
 /// Used by PeerCall.finish() to convert response frames into PeerResponse.
 ///
 /// LOG frames are delivered as PeerResponseItem.log alongside data items.
-private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) throws -> PeerResponse {
-    // Collect all items (data + LOG) in arrival order
-    var items: [PeerResponseItem] = []
-    var mediaUrn = "media:" // Default, updated by STREAM_START
-
-    // Drain the response channel and decode CHUNKs
-    for frame in responseRx {
-        switch frame.frameType {
-        case .streamStart:
-            if let urn = frame.mediaUrn {
-                mediaUrn = urn
-            }
-
-        case .chunk:
-            // Decode CBOR payload
-            guard let payload = frame.payload else {
-                items.append(.data(.failure(.protocolError("CHUNK frame missing payload"))))
-                break
-            }
-
-            // Verify checksum (MANDATORY in protocol v2)
-            guard let expectedChecksum = frame.checksum else {
-                items.append(.data(.failure(.protocolError("CHUNK frame missing required checksum field"))))
-                continue
-            }
-            let actualChecksum = Frame.computeChecksum(payload)
-            if actualChecksum != expectedChecksum {
-                items.append(.data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)"))))
-                continue
-            }
-
-            do {
-                guard let value = try CBOR.decode([UInt8](payload)) else {
-                    items.append(.data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil"))))
-                    continue
-                }
-                items.append(.data(.success(value)))
-            } catch {
-                items.append(.data(.failure(.decode("Failed to decode CBOR chunk: \(error)"))))
-            }
-
-        case .log:
-            items.append(.log(frame))
-
-        case .streamEnd:
-            // Stream ended normally
-            break
-
-        case .end:
-            // Response END — stream should have ended already
-            break
-
-        case .err:
-            let code = frame.errorCode ?? "UNKNOWN"
-            let message = frame.errorMessage ?? "Unknown error"
-            items.append(.data(.failure(.remoteError(code: code, message: message))))
-            break
-
-        default:
-            // Unexpected frame type
-            items.append(.data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)"))))
-            break
-        }
-    }
-
-    // Create iterator from collected items
-    var index = 0
+/// Wraps the raw frame iterator into a PeerResponse that yields PeerResponseItems
+/// one at a time as they arrive. Returns immediately — LOG frames are delivered
+/// in real-time, not buffered until data starts. This is critical for keeping
+/// the engine's activity timer alive during long peer calls (e.g., model downloads).
+private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) -> PeerResponse {
     let iterator = AnyIterator<PeerResponseItem> {
-        guard index < items.count else { return nil }
-        let item = items[index]
-        index += 1
-        return item
+        while let frame = responseRx.next() {
+            switch frame.frameType {
+            case .streamStart:
+                // Structural frame — skip, yield next item
+                continue
+
+            case .chunk:
+                guard let payload = frame.payload else {
+                    return .data(.failure(.protocolError("CHUNK frame missing payload")))
+                }
+
+                // Verify checksum (MANDATORY in protocol v2)
+                guard let expectedChecksum = frame.checksum else {
+                    return .data(.failure(.protocolError("CHUNK frame missing required checksum field")))
+                }
+                let actualChecksum = Frame.computeChecksum(payload)
+                if actualChecksum != expectedChecksum {
+                    return .data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")))
+                }
+
+                do {
+                    guard let value = try CBOR.decode([UInt8](payload)) else {
+                        return .data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
+                    }
+                    return .data(.success(value))
+                } catch {
+                    return .data(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+                }
+
+            case .log:
+                return .log(frame)
+
+            case .streamEnd, .end:
+                // Terminal — stream is done
+                return nil
+
+            case .err:
+                let code = frame.errorCode ?? "UNKNOWN"
+                let message = frame.errorMessage ?? "Unknown error"
+                return .data(.failure(.remoteError(code: code, message: message)))
+
+            default:
+                return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")))
+            }
+        }
+        return nil
     }
 
-    return PeerResponse(mediaUrn: mediaUrn, items: iterator)
+    return PeerResponse(items: iterator)
 }
 
 /// Demux multiple input streams from frame iterator into InputPackage.
