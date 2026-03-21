@@ -507,6 +507,32 @@ public final class OutputStream: @unchecked Sendable {
         try? sender.send(frame)
     }
 
+    /// Run an async operation while emitting keepalive progress frames every 30 seconds.
+    ///
+    /// Model loading (MLX LLM, VLM, embeddings) can take minutes for large models.
+    /// The engine's 120s activity timeout kills the task if no frames arrive.
+    /// This method spawns a background Task that re-emits the given progress value
+    /// every 30s, keeping the timeout reset. The keepalive Task is cancelled when
+    /// the operation completes.
+    public func runWithKeepalive<T>(progress progressValue: Float, message: String, operation: () async throws -> T) async throws -> T {
+        let keepalive = Task { [self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                if !Task.isCancelled {
+                    self.progress(progressValue, message: message)
+                }
+            }
+        }
+        do {
+            let result = try await operation()
+            keepalive.cancel()
+            return result
+        } catch {
+            keepalive.cancel()
+            throw error
+        }
+    }
+
     /// Close the output stream (sends STREAM_END). Idempotent.
     /// If stream was never started, sends STREAM_START first.
     public func close() throws {
