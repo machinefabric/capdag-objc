@@ -439,46 +439,59 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST544: PeerCall::finish sends END frame
     func test544_peerCallFinishSendsEnd() throws {
-        // When PeerCall.finish() is called, it should send an END frame
-        var sentFrames: [Frame] = []
-        let mockSender = MockFrameSender { frame in
-            sentFrames.append(frame)
-        }
+        let captured = CaptureFrameSender()
+        let requestId = MessageId.newUUID()
 
-        let requestId = MessageId.uint(42)
+        // Create empty response channel (closes immediately)
+        let emptyResponseRx = AnyIterator<Frame> { nil }
 
-        // Simulate PeerCall sending END
-        let endFrame = Frame.end(id: requestId)
-        try mockSender.send(endFrame)
+        let peer = PeerCall(
+            sender: captured,
+            requestId: requestId,
+            maxChunk: 256_000,
+            responseRx: emptyResponseRx
+        )
 
-        let endFrames = sentFrames.filter { $0.frameType == .end }
-        XCTAssertEqual(endFrames.count, 1)
-        XCTAssertEqual(endFrames[0].id, requestId)
+        let _ = try peer.finish()
+
+        let endFrames = captured.frames.filter { $0.frameType == .end }
+        XCTAssertEqual(endFrames.count, 1, "must send END frame")
+        XCTAssertEqual(endFrames[0].id, requestId, "END must have correct request ID")
     }
 
-    // TEST545: PeerCall::finish returns InputStream for response
-    func test545_peerCallFinishReturnsResponseStream() throws {
-        // PeerCall.finish() should return an InputStream that yields the response
-        // We test this by creating a mock response and verifying iteration
+    // TEST545: PeerCall::finish returns PeerResponse with data
+    func test545_peerCallFinishReturnsPeerResponse() throws {
+        let captured = CaptureFrameSender()
+        let reqId = MessageId.newUUID()
 
-        let responseChunks: [Result<CBOR, StreamError>] = [
-            .success(.byteString([1, 2, 3])),
-            .success(.byteString([4, 5, 6])),
-        ]
+        // Build response frames
+        var responseFrames: [Frame] = []
+        responseFrames.append(Frame.streamStart(reqId: reqId, streamId: "response-stream", mediaUrn: "media:response"))
+
+        let rawData = Data("response data".utf8)
+        let cborPayload = Data(CBOR.byteString([UInt8](rawData)).encode())
+        let checksum = Frame.computeChecksum(cborPayload)
+        responseFrames.append(Frame.chunk(reqId: reqId, streamId: "response-stream", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
+        responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "response-stream", chunkCount: 1))
 
         var idx = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
-            guard idx < responseChunks.count else { return nil }
-            let c = responseChunks[idx]
+        let responseRx = AnyIterator<Frame> {
+            guard idx < responseFrames.count else { return nil }
+            let f = responseFrames[idx]
             idx += 1
-            return c
+            return f
         }
 
-        let responseStream = Bifaci.InputStream(mediaUrn: "media:response", rx: iterator)
+        let peer = PeerCall(
+            sender: captured,
+            requestId: reqId,
+            maxChunk: 256_000,
+            responseRx: responseRx
+        )
 
-        // Collect response bytes
-        let responseBytes = try responseStream.collectBytes()
-        XCTAssertEqual([UInt8](responseBytes), [1, 2, 3, 4, 5, 6])
+        let response = try peer.finish()
+        let bytes = try response.collectBytes()
+        XCTAssertEqual(bytes, rawData)
     }
 
     // MARK: - Stream Lookup Tests (TEST678-683)
@@ -564,11 +577,241 @@ final class StreamingAPITests: XCTestCase {
         let emptyResult = findStream(streams, mediaUrn: "")
         XCTAssertNil(emptyResult)
     }
+
+    // MARK: - PeerResponse Tests (TEST839-841)
+
+    // TEST839: LOG frames arriving BEFORE StreamStart are delivered immediately
+    func test839_peerResponseDeliversLogsBeforeStreamStart() throws {
+        let reqId = MessageId.newUUID()
+
+        // Build response frames: LOG frames BEFORE StreamStart
+        var responseFrames: [Frame] = []
+        responseFrames.append(Frame.progress(id: reqId, progress: 0.1, message: "downloading file 1/10"))
+        responseFrames.append(Frame.progress(id: reqId, progress: 0.5, message: "downloading file 5/10"))
+        responseFrames.append(Frame.log(id: reqId, level: "status", message: "large file in progress"))
+
+        // Then the actual data
+        responseFrames.append(Frame.streamStart(reqId: reqId, streamId: "s1", mediaUrn: "media:binary"))
+
+        let rawData = Data("model output".utf8)
+        let cborPayload = Data(CBOR.byteString([UInt8](rawData)).encode())
+        let checksum = Frame.computeChecksum(cborPayload)
+        responseFrames.append(Frame.chunk(reqId: reqId, streamId: "s1", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
+        responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "s1", chunkCount: 1))
+
+        var idx = 0
+        let responseRx = AnyIterator<Frame> {
+            guard idx < responseFrames.count else { return nil }
+            let f = responseFrames[idx]
+            idx += 1
+            return f
+        }
+
+        // demuxSingleStream returns PeerResponse immediately — not blocking on StreamStart
+        let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
+
+        // First 3 items must be LOG frames
+        let item1 = response.recv()
+        if case .log(let f) = item1 {
+            XCTAssertEqual(f.logProgress, 0.1)
+            XCTAssertEqual(f.logMessage, "downloading file 1/10")
+        } else {
+            XCTFail("Expected LOG frame, got \(String(describing: item1))")
+        }
+
+        let item2 = response.recv()
+        if case .log(let f) = item2 {
+            XCTAssertEqual(f.logProgress, 0.5)
+            XCTAssertEqual(f.logMessage, "downloading file 5/10")
+        } else {
+            XCTFail("Expected LOG frame, got \(String(describing: item2))")
+        }
+
+        let item3 = response.recv()
+        if case .log(let f) = item3 {
+            XCTAssertEqual(f.logMessage, "large file in progress")
+        } else {
+            XCTFail("Expected LOG frame, got \(String(describing: item3))")
+        }
+
+        // Next item must be data
+        let item4 = response.recv()
+        if case .data(let result) = item4 {
+            let value = try result.get()
+            if case .byteString(let bytes) = value {
+                XCTAssertEqual(Data(bytes), rawData)
+            } else {
+                XCTFail("Expected byteString, got \(value)")
+            }
+        } else {
+            XCTFail("Expected Data, got \(String(describing: item4))")
+        }
+
+        // Stream must end
+        XCTAssertNil(response.recv(), "stream must end after STREAM_END")
+    }
+
+    // TEST840: PeerResponse.collectBytes() discards LOG frames
+    func test840_peerResponseCollectBytesDiscardsLogs() throws {
+        let reqId = MessageId.newUUID()
+
+        var responseFrames: [Frame] = []
+        responseFrames.append(Frame.streamStart(reqId: reqId, streamId: "s1", mediaUrn: "media:binary"))
+        // LOG frames interleaved with data
+        responseFrames.append(Frame.progress(id: reqId, progress: 0.25, message: "working"))
+        responseFrames.append(Frame.progress(id: reqId, progress: 0.75, message: "almost"))
+
+        let cborPayload = Data(CBOR.byteString([UInt8]("hello".utf8)).encode())
+        let checksum = Frame.computeChecksum(cborPayload)
+        responseFrames.append(Frame.chunk(reqId: reqId, streamId: "s1", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
+
+        responseFrames.append(Frame.log(id: reqId, level: "info", message: "done"))
+        responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "s1", chunkCount: 1))
+
+        var idx = 0
+        let responseRx = AnyIterator<Frame> {
+            guard idx < responseFrames.count else { return nil }
+            let f = responseFrames[idx]
+            idx += 1
+            return f
+        }
+
+        let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
+        let bytes = try response.collectBytes()
+        XCTAssertEqual(bytes, Data("hello".utf8), "collectBytes must return only data, discarding all LOG frames")
+    }
+
+    // TEST841: PeerResponse.collectValue() discards LOG frames
+    func test841_peerResponseCollectValueDiscardsLogs() throws {
+        let reqId = MessageId.newUUID()
+
+        var responseFrames: [Frame] = []
+        responseFrames.append(Frame.streamStart(reqId: reqId, streamId: "s1", mediaUrn: "media:binary"))
+        // LOG frames before data
+        responseFrames.append(Frame.progress(id: reqId, progress: 0.5, message: "half"))
+        responseFrames.append(Frame.log(id: reqId, level: "debug", message: "processing"))
+
+        // Single CHUNK with a CBOR unsigned int 42
+        let cborPayload = Data(CBOR.unsignedInt(42).encode())
+        let checksum = Frame.computeChecksum(cborPayload)
+        responseFrames.append(Frame.chunk(reqId: reqId, streamId: "s1", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
+        responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "s1", chunkCount: 1))
+
+        var idx = 0
+        let responseRx = AnyIterator<Frame> {
+            guard idx < responseFrames.count else { return nil }
+            let f = responseFrames[idx]
+            idx += 1
+            return f
+        }
+
+        let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
+        let value = try response.collectValue()
+        XCTAssertEqual(value, CBOR.unsignedInt(42), "collectValue must skip LOG frames and return first data value")
+    }
+
+    // MARK: - Keepalive Tests (TEST842-844)
+
+    // TEST842: runWithKeepalive returns closure result (fast operation, no keepalive frames)
+    func test842_runWithKeepaliveReturnsResult() async throws {
+        let captured = CaptureFrameSender()
+        let stream = Bifaci.OutputStream(
+            sender: captured,
+            streamId: "stream-1",
+            mediaUrn: "media:test",
+            requestId: MessageId.newUUID(),
+            routingId: nil,
+            maxChunk: DEFAULT_MAX_CHUNK
+        )
+
+        // Run a fast operation — no keepalive frame expected (interval is 30s)
+        let result: Int = try await stream.runWithKeepalive(progress: 0.25, message: "Loading model") {
+            42
+        }
+        XCTAssertEqual(result, 42, "Closure result must be returned")
+
+        // No keepalive frame should have been emitted (operation was instant)
+        let progressFrames = captured.frames.filter { $0.frameType == .log }
+        XCTAssertEqual(progressFrames.count, 0, "No keepalive frame for instant operation")
+    }
+
+    // TEST843: runWithKeepalive returns Ok/Err from closure
+    func test843_runWithKeepaliveReturnsResultType() async throws {
+        let captured = CaptureFrameSender()
+        let stream = Bifaci.OutputStream(
+            sender: captured,
+            streamId: "stream-1",
+            mediaUrn: "media:test",
+            requestId: MessageId.newUUID(),
+            routingId: nil,
+            maxChunk: DEFAULT_MAX_CHUNK
+        )
+
+        let result: String = try await stream.runWithKeepalive(progress: 0.5, message: "Loading") {
+            "model_loaded"
+        }
+        XCTAssertEqual(result, "model_loaded")
+    }
+
+    // TEST844: runWithKeepalive propagates error from closure
+    func test844_runWithKeepalivePropagatesError() async throws {
+        let captured = CaptureFrameSender()
+        let stream = Bifaci.OutputStream(
+            sender: captured,
+            streamId: "stream-1",
+            mediaUrn: "media:test",
+            requestId: MessageId.newUUID(),
+            routingId: nil,
+            maxChunk: DEFAULT_MAX_CHUNK
+        )
+
+        do {
+            let _: Void = try await stream.runWithKeepalive(progress: 0.25, message: "Loading") {
+                throw PluginRuntimeError.handlerError("load failed")
+            }
+            XCTFail("Should have thrown")
+        } catch let error as PluginRuntimeError {
+            if case .handlerError(let msg) = error {
+                XCTAssertEqual(msg, "load failed")
+            } else {
+                XCTFail("Expected handlerError, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - ProgressSender Tests (TEST845)
+
+    // TEST845: ProgressSender emits progress and log frames independently of OutputStream
+    func test845_progressSenderEmitsFrames() throws {
+        let captured = CaptureFrameSender()
+        let stream = Bifaci.OutputStream(
+            sender: captured,
+            streamId: "stream-1",
+            mediaUrn: "media:test",
+            requestId: MessageId.newUUID(),
+            routingId: nil,
+            maxChunk: DEFAULT_MAX_CHUNK
+        )
+
+        let ps = stream.progressSender()
+        ps.progress(0.5, message: "halfway there")
+        ps.log(level: "info", message: "loading complete")
+
+        XCTAssertEqual(captured.frames.count, 2, "ProgressSender should emit 2 frames")
+        XCTAssertEqual(captured.frames[0].frameType, .log)
+        XCTAssertEqual(captured.frames[1].frameType, .log)
+        // Verify progress frame
+        XCTAssertEqual(captured.frames[0].logProgress, 0.5)
+        XCTAssertEqual(captured.frames[0].logMessage, "halfway there")
+        // Verify log frame
+        XCTAssertEqual(captured.frames[1].logLevel, "info")
+        XCTAssertEqual(captured.frames[1].logMessage, "loading complete")
+    }
 }
 
-// MARK: - Mock FrameSender
+// MARK: - Mock FrameSenders
 
-/// Mock FrameSender for testing (private to this file)
+/// Mock FrameSender for testing (callback-based, private to this file)
 private final class MockFrameSender: FrameSender, @unchecked Sendable {
     private let onSend: (Frame) -> Void
 
@@ -578,5 +821,23 @@ private final class MockFrameSender: FrameSender, @unchecked Sendable {
 
     func send(_ frame: Frame) throws {
         onSend(frame)
+    }
+}
+
+/// Thread-safe frame-capturing sender for testing
+private final class CaptureFrameSender: FrameSender, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _frames: [Frame] = []
+
+    var frames: [Frame] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _frames
+    }
+
+    func send(_ frame: Frame) throws {
+        lock.lock()
+        _frames.append(frame)
+        lock.unlock()
     }
 }

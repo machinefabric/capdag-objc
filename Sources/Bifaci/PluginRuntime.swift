@@ -533,6 +533,18 @@ public final class OutputStream: @unchecked Sendable {
         }
     }
 
+    /// Create a detached progress/log emitter that can be used from any thread.
+    ///
+    /// The returned `ProgressSender` is `Sendable` and can be moved into background
+    /// threads or `Task` closures. It emits LOG frames independently of the
+    /// `OutputStream` — no stream start/close semantics.
+    ///
+    /// Use this when you need to emit progress from inside a blocking operation
+    /// (e.g., model loading on a background thread).
+    public func progressSender() -> ProgressSender {
+        ProgressSender(sender: sender, requestId: requestId, routingId: routingId)
+    }
+
     /// Close the output stream (sends STREAM_END). Idempotent.
     /// If stream was never started, sends STREAM_START first.
     public func close() throws {
@@ -560,6 +572,39 @@ public final class OutputStream: @unchecked Sendable {
         )
         frame.routingId = routingId
         try sender.send(frame)
+    }
+}
+
+/// Detached progress/log emitter that can be used from any thread.
+///
+/// Holds a `FrameSender` and the request routing info needed to construct
+/// LOG frames. `Sendable` by construction — safe to move into background
+/// threads or `Task` closures.
+///
+/// Use `OutputStream.progressSender()` to create one.
+public final class ProgressSender: @unchecked Sendable {
+    private let sender: any FrameSender
+    private let requestId: MessageId
+    private let routingId: MessageId?
+
+    init(sender: any FrameSender, requestId: MessageId, routingId: MessageId?) {
+        self.sender = sender
+        self.requestId = requestId
+        self.routingId = routingId
+    }
+
+    /// Emit a progress update (0.0–1.0) with a human-readable status message.
+    public func progress(_ progress: Float, message: String) {
+        var frame = Frame.progress(id: requestId, progress: progress, message: message)
+        frame.routingId = routingId
+        try? sender.send(frame)
+    }
+
+    /// Emit a log message.
+    public func log(level: String, message: String) {
+        var frame = Frame.log(id: requestId, level: level, message: message)
+        frame.routingId = routingId
+        try? sender.send(frame)
     }
 }
 
@@ -706,7 +751,7 @@ public final class BlockingQueue<T>: @unchecked Sendable {
 /// one at a time as they arrive. Returns immediately — LOG frames are delivered
 /// in real-time, not buffered until data starts. This is critical for keeping
 /// the engine's activity timer alive during long peer calls (e.g., model downloads).
-private func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) -> PeerResponse {
+internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) -> PeerResponse {
     let iterator = AnyIterator<PeerResponseItem> {
         while let frame = responseRx.next() {
             switch frame.frameType {

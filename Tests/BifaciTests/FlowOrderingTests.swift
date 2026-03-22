@@ -111,8 +111,8 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(g2.seq, 2, "remove(rid, nil) must not affect (rid, Some(xid))")
     }
 
-    // TEST445a: Same RID with different XIDs get independent seq counters
-    func test445a_seqAssignerSameRidDifferentXidsIndependent() {
+    // TEST860: Same RID with different XIDs get independent seq counters
+    func test860_seqAssignerSameRidDifferentXidsIndependent() {
         var assigner = SeqAssigner()
         let rid = MessageId.newUUID()
         let xidA = MessageId.uint(1)

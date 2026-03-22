@@ -411,15 +411,21 @@ public struct Frame: @unchecked Sendable {
         return s
     }
 
-    /// Get progress value (0.0–1.0) if this is a LOG frame with level="progress"
+    /// Get progress value (0.0–1.0) if this is a LOG frame with level="progress".
+    /// Accepts float32, float64, and half-precision floats from CBOR encoding.
     public var logProgress: Float? {
         guard frameType == .log,
               let meta = meta,
               case .utf8String(let level) = meta["level"],
               level == "progress",
-              case .float(let f) = meta["progress"]
+              let progressValue = meta["progress"]
         else { return nil }
-        return f
+        switch progressValue {
+        case .float(let f): return f
+        case .double(let d): return Float(d)
+        case .half(let h): return h
+        default: return nil
+        }
     }
 
     /// Extract manifest from RELAY_NOTIFY metadata

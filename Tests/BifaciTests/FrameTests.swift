@@ -1112,7 +1112,7 @@ final class CborFrameTests: XCTestCase {
         XCTAssertNil(decoded.mediaUrn, "StreamEnd should not have media_urn")
     }
 
-    // MARK: - Relay Frame Tests (TEST399-403, TEST399a-400a)
+    // MARK: - Relay Frame Tests (TEST399-403)
 
     // TEST399: RelayNotify discriminant roundtrips through rawValue conversion (value 10)
     func test399_relayNotifyDiscriminantRoundtrip() {
@@ -1686,6 +1686,79 @@ final class CborFrameTests: XCTestCase {
                 return
             }
             XCTAssertTrue(msg.contains("chunkCount"), "Error should mention chunkCount: \(msg)")
+        }
+    }
+
+    // MARK: - Progress Frame Roundtrip Tests (TEST846-847)
+
+    // TEST846: Progress LOG frame encode/decode roundtrip preserves progress float
+    func test846_progressFrameRoundtrip() throws {
+        let id = MessageId.newUUID()
+
+        // Test several progress values including edge cases and f64→f32 chain
+        let testValues: [(Float, String)] = [
+            (0.0, "zero"),
+            (Float(Double(0.0)), "zero via f64"),
+            (Float(Double(0.03333333)), "1/30 via f64"),
+            (Float(Double(0.06666667)), "2/30 via f64"),
+            (Float(Double(0.13333334)), "4/30 via f64"),
+            (0.25, "quarter"),
+            (0.5, "half"),
+            (0.75, "three-quarter"),
+            (1.0, "one"),
+        ]
+
+        for (progress, label) in testValues {
+            let original = Frame.progress(id: id, progress: progress, message: "test phase")
+            let encoded = try encodeFrame(original)
+            let decoded = try decodeFrame(encoded)
+
+            XCTAssertEqual(decoded.frameType, .log, "\(label): frame type must be LOG")
+            XCTAssertEqual(decoded.logLevel, "progress", "\(label): level must be 'progress'")
+            XCTAssertEqual(decoded.logMessage, "test phase", "\(label): message must be preserved")
+
+            let decodedProgress = decoded.logProgress
+            XCTAssertNotNil(decodedProgress, "\(label): logProgress must return value for progress=\(progress)")
+            if let p = decodedProgress {
+                XCTAssertTrue(
+                    abs(p - progress) < 0.001,
+                    "\(label): progress roundtrip expected \(progress), got \(p)"
+                )
+            }
+        }
+    }
+
+    // TEST847: Double roundtrip (encode→decode→modify→encode→decode) preserves progress float
+    func test847_progressDoubleRoundtrip() throws {
+        let id = MessageId.newUUID()
+
+        let progressValues: [Float] = [0.0, 0.03333333, 0.06666667, 0.13333334, 0.5, 1.0]
+
+        for progress in progressValues {
+            let original = Frame.progress(id: id, progress: progress, message: "test")
+
+            // First roundtrip
+            let bytes1 = try encodeFrame(original)
+            var decoded1 = try decodeFrame(bytes1)
+
+            // Modify seq (like SeqAssigner does in relay)
+            decoded1.seq = 42
+
+            // Second roundtrip
+            let bytes2 = try encodeFrame(decoded1)
+            let decoded2 = try decodeFrame(bytes2)
+
+            let lp = decoded2.logProgress
+            XCTAssertNotNil(
+                lp,
+                "progress=\(progress): logProgress() returned nil after double roundtrip"
+            )
+            if let p = lp {
+                XCTAssertTrue(
+                    abs(p - progress) < 0.001,
+                    "progress=\(progress): expected \(progress), got \(p) after double roundtrip"
+                )
+            }
         }
     }
 }
