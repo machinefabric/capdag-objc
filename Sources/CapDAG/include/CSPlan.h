@@ -175,7 +175,7 @@ typedef NS_ENUM(NSInteger, CSEdgeType) {
 
 // MARK: - MachinePlan
 
-/// The structured execution plan for a cap chain
+/// The structured execution plan for a machine
 /// Mirrors Rust: pub struct MachinePlan
 @interface CSMachinePlan : NSObject
 
@@ -271,7 +271,7 @@ typedef NS_ENUM(NSInteger, CSEdgeType) {
 
 // MARK: - MachineResult
 
-/// Overall result of executing a cap chain
+/// Overall result of executing a machine
 /// Mirrors Rust: pub struct MachineResult
 @interface CSMachineResult : NSObject
 

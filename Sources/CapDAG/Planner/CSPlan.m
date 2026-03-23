@@ -305,7 +305,7 @@
 }
 
 + (instancetype)linearChainPlan:(NSArray<NSString *> *)capUrns inputMedia:(NSString *)inputMedia outputMedia:(NSString *)outputMedia filePathArgNames:(NSArray<NSString *> *)filePathArgNames {
-    CSMachinePlan *plan = [self planWithName:@"Linear cap chain"];
+    CSMachinePlan *plan = [self planWithName:@"Linear machine"];
 
     if (capUrns.count == 0) {
         return plan;

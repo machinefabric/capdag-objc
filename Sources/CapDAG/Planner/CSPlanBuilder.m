@@ -328,7 +328,7 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
     }];
 }
 
-// MARK: - Get Cap Chain Info
+// MARK: - Get Machine Info
 
 - (void)getMachineInfo:(NSArray<NSString *> *)capUrns
              completion:(void (^)(NSArray<CSMachineInfo *> * _Nullable infos, NSError * _Nullable error))completion {

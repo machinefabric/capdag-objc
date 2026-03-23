@@ -65,7 +65,7 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 @property (nonatomic, assign) NSInteger pathCount;
 @end
 
-/// Information about a step in a cap chain
+/// Information about a step in a machine
 /// Mirrors Rust: StrandStep
 @interface CSStrandStep : NSObject
 /// Cap URN string (for Cap steps; nil for cardinality transitions)
@@ -90,7 +90,7 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 - (BOOL)isCap;
 @end
 
-/// Information about a cap chain path
+/// Information about a machine path
 /// Mirrors Rust: Strand
 @interface CSStrand : NSObject
 @property (nonatomic, copy) NSString *sourceSpec;

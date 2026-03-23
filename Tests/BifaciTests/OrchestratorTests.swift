@@ -246,7 +246,7 @@ final class OrchestratorTests: XCTestCase {
 
     // MARK: - Phase 2: Long Chain Tests
 
-    // TEST945: 4-cap chain: edge1 -> edge2 -> edge7 -> edge8
+    // TEST945: 4-machine: edge1 -> edge2 -> edge7 -> edge8
     func test945_fourMachine() async throws {
         let registry = TestcartridgeRegistry()
 
@@ -270,7 +270,7 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["E"], "media:node7;textable")
     }
 
-    // TEST946: 5-cap chain: edge1 -> edge2 -> edge7 -> edge8 -> edge9
+    // TEST946: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9
     func test946_fiveMachine() async throws {
         let registry = TestcartridgeRegistry()
 
@@ -296,7 +296,7 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["F"], "media:node8;textable")
     }
 
-    // TEST947: 6-cap chain: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10
+    // TEST947: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10
     func test947_sixMachine() async throws {
         let registry = TestcartridgeRegistry()
 

@@ -2,7 +2,7 @@
 //  CSCollectionInput.h
 //  CapDAG
 //
-//  Collection Input Types for Cap Chain Processing
+//  Collection Input Types for Machine Processing
 //  Mirrors Rust: src/planner/collection_input.rs
 //
 
