@@ -131,6 +131,29 @@ public enum PluginResponse: Sendable {
     }
 }
 
+// MARK: - Plugin Process Info
+
+/// Snapshot of a managed plugin process, used for external monitoring
+/// (e.g., memory pressure management).
+public struct PluginProcessInfo: Sendable {
+    /// Index of the plugin in the host's plugin list.
+    public let pluginIndex: Int
+    /// OS process ID.
+    public let pid: pid_t
+    /// Binary name (e.g. "ggufcartridge", "modelcartridge").
+    public let name: String
+    /// Whether the plugin is currently running and responsive.
+    public let running: Bool
+    /// Cap URN strings this plugin handles.
+    public let caps: [String]
+    /// Physical memory footprint in MB (self-reported by plugin via heartbeat).
+    /// This is `ri_phys_footprint` — the metric macOS jetsam uses for kill decisions.
+    /// Updated every 30s when the plugin responds to a heartbeat probe.
+    public let memoryFootprintMb: UInt64
+    /// Resident set size in MB (self-reported by plugin via heartbeat).
+    public let memoryRssMb: UInt64
+}
+
 // MARK: - Internal Types
 
 /// Events from reader threads, delivered to the main run() loop.
@@ -179,6 +202,10 @@ private class ManagedPlugin {
     /// intentional. handlePluginDeath checks this to avoid treating ordered
     /// shutdowns as unexpected crashes.
     var orderedShutdown: Bool
+    /// Physical memory footprint in MB (self-reported via heartbeat response meta).
+    var memoryFootprintMb: UInt64
+    /// Resident set size in MB (self-reported via heartbeat response meta).
+    var memoryRssMb: UInt64
 
     init(path: String, knownCaps: [String]) {
         self.path = path
@@ -191,6 +218,8 @@ private class ManagedPlugin {
         self.pendingHeartbeats = [:]
         self.lastDeathMessage = nil
         self.orderedShutdown = false
+        self.memoryFootprintMb = 0
+        self.memoryRssMb = 0
     }
 
     static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedPlugin {
@@ -752,6 +781,19 @@ public final class PluginHost: @unchecked Sendable {
             stateLock.lock()
             let plugin = plugins[pluginIdx]
             let wasOurs = plugin.pendingHeartbeats.removeValue(forKey: frame.id) != nil
+
+            if wasOurs {
+                // Response to our health probe — plugin is alive.
+                // Extract self-reported memory from heartbeat response meta.
+                if let meta = frame.meta {
+                    if case .unsignedInt(let v) = meta["footprint_mb"] {
+                        plugin.memoryFootprintMb = v
+                    }
+                    if case .unsignedInt(let v) = meta["rss_mb"] {
+                        plugin.memoryRssMb = v
+                    }
+                }
+            }
             stateLock.unlock()
 
             if !wasOurs {
@@ -1336,5 +1378,44 @@ public final class PluginHost: @unchecked Sendable {
 
         // Signal the event loop to wake up and exit
         pushEvent(.relayClosed)
+    }
+
+    // MARK: - Plugin Process Monitoring
+
+    /// Get a snapshot of all running plugin processes.
+    /// Thread-safe — can be called from any thread while `run()` is active.
+    public func runningPlugins() -> [PluginProcessInfo] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return plugins.enumerated().compactMap { (idx, plugin) in
+            guard let pid = plugin.pid, plugin.running else { return nil }
+            let name = (plugin.path as NSString).lastPathComponent
+            return PluginProcessInfo(
+                pluginIndex: idx,
+                pid: pid,
+                name: name,
+                running: plugin.running,
+                caps: plugin.caps,
+                memoryFootprintMb: plugin.memoryFootprintMb,
+                memoryRssMb: plugin.memoryRssMb
+            )
+        }
+    }
+
+    /// Kill a specific plugin process by PID.
+    /// Sets `orderedShutdown` so the death handler treats it as intentional.
+    /// Thread-safe — can be called from any thread while `run()` is active.
+    /// Returns `true` if the plugin was found and killed.
+    @discardableResult
+    public func killPlugin(pid: pid_t) -> Bool {
+        stateLock.lock()
+        guard let plugin = plugins.first(where: { $0.pid == pid && $0.running }) else {
+            stateLock.unlock()
+            return false
+        }
+        plugin.orderedShutdown = true
+        stateLock.unlock()
+        plugin.killProcess()
+        return true
     }
 }

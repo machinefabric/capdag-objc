@@ -1080,6 +1080,25 @@ final class CliFrameSender: FrameSender, @unchecked Sendable {
 }
 
 
+// MARK: - Process Memory Self-Reporting
+
+/// Get this process's own physical memory footprint and RSS in MB.
+/// Uses `proc_pid_rusage(getpid(), RUSAGE_INFO_V4)` which is always permitted,
+/// even inside a macOS sandbox (the sandbox only blocks querying OTHER processes).
+/// Returns `(footprintMb, rssMb)` or `nil` on failure.
+func getOwnMemoryMb() -> (footprintMb: UInt64, rssMb: UInt64)? {
+    var usage = rusage_info_v4()
+    let result = withUnsafeMutablePointer(to: &usage) {
+        $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+            proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0)
+        }
+    }
+    guard result == 0 else { return nil }
+    let footprintMb = UInt64(usage.ri_phys_footprint) / (1024 * 1024)
+    let rssMb = UInt64(usage.ri_resident_size) / (1024 * 1024)
+    return (footprintMb: footprintMb, rssMb: rssMb)
+}
+
 // MARK: - Payload Extraction
 
 /// Extract the effective payload from a REQ frame.
@@ -2679,8 +2698,16 @@ public final class PluginRuntime: @unchecked Sendable {
                 if isOurProbe {
                     // Response to our health probe - host is alive, no action needed
                 } else {
-                    // Host-initiated heartbeat - respond immediately (non-flow, seq stays 0)
-                    try outputSender.send(Frame.heartbeat(id: frame.id))
+                    // Host-initiated heartbeat — respond with self-reported memory.
+                    // proc_pid_rusage(getpid()) always works, even in a sandbox.
+                    var response = Frame.heartbeat(id: frame.id)
+                    if let mem = getOwnMemoryMb() {
+                        response.meta = [
+                            "footprint_mb": .unsignedInt(mem.footprintMb),
+                            "rss_mb": .unsignedInt(mem.rssMb)
+                        ]
+                    }
+                    try outputSender.send(response)
                 }
 
             case .hello:

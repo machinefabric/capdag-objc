@@ -1,0 +1,3 @@
+[submodule "mac-ui"]
+	path = mac-ui
+	url = https://github.com/machinefabric/machfab-mac.git
