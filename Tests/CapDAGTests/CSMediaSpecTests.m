@@ -15,7 +15,7 @@
     // Create a media spec definition with metadata
     NSArray<NSDictionary *> *mediaSpecs = @[
         @{
-            @"urn": @"media:custom-setting;setting",
+            @"urn": @"media:custom-setting",
             @"media_type": @"text/plain",
             @"profile_uri": @"https://example.com/schema",
             @"title": @"Custom Setting",
@@ -30,7 +30,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-setting;setting", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-setting", mediaSpecs, &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -63,7 +63,7 @@
     // Ensure metadata and validation can coexist
     NSArray<NSDictionary *> *mediaSpecs = @[
         @{
-            @"urn": @"media:bounded-number;numeric;setting",
+            @"urn": @"media:bounded-number;numeric",
             @"media_type": @"text/plain",
             @"profile_uri": @"https://example.com/schema",
             @"title": @"Bounded Number",
@@ -79,7 +79,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:bounded-number;numeric;setting", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:bounded-number;numeric", mediaSpecs, &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
