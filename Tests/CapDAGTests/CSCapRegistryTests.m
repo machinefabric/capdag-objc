@@ -73,7 +73,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 /// Test that media URNs in cap URNs are properly URL-encoded
 - (void)testURLEncodesQuotedMediaUrns {
     // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
-    NSString *urn = @"cap:in=media:listing-id;op=use_grinder;out=media:task-id";
+    NSString *urn = @"cap:in=media:listing-id;op=use_grinder;out=media:task;id";
     NSString *registryURL = buildRegistryURL(urn);
 
     // URL should contain the media URN values (colons are URL-encoded as %3A)
@@ -84,7 +84,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 /// Test the URL format is valid and can be parsed
 - (void)testURLFormatIsValid {
     // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
-    NSString *urn = @"cap:in=media:listing-id;op=use_grinder;out=media:task-id";
+    NSString *urn = @"cap:in=media:listing-id;op=use_grinder;out=media:task;id";
     NSString *registryURL = buildRegistryURL(urn);
 
     // URL should be parseable
