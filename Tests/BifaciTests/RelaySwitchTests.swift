@@ -8,9 +8,12 @@ import CapDAG
 @available(macOS 10.15.4, iOS 13.4, *)
 final class CborRelaySwitchTests: XCTestCase {
 
-    // Helper to send RelayNotify (manifest is a JSON array of capability URN strings)
+    // Helper to send RelayNotify payload with capability URNs and installed plugin identities.
     private func sendNotify(writer: FrameWriter, capabilities: [String], limits: Limits) throws {
-        let manifestBytes = try JSONSerialization.data(withJSONObject: capabilities)
+        let manifestBytes = try JSONSerialization.data(withJSONObject: [
+            "caps": capabilities,
+            "installed_plugins": []
+        ])
         let notify = Frame.relayNotify(
             manifest: manifestBytes,
             limits: limits

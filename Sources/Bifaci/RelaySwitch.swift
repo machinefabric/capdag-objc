@@ -34,6 +34,7 @@
 /// - Some(masterIdx) = peer request from another master
 
 import Foundation
+import CommonCrypto
 @preconcurrency import SwiftCBOR
 import CapDAG
 
@@ -97,6 +98,16 @@ private struct RoutingEntry {
     let destinationMasterIdx: Int
 }
 
+private struct RelayNotifyCapabilitiesPayload: Codable {
+    let caps: [String]
+    let installedPlugins: [InstalledPluginIdentity]
+
+    enum CodingKeys: String, CodingKey {
+        case caps
+        case installedPlugins = "installed_plugins"
+    }
+}
+
 /// Sentinel value for engine-initiated requests (used in origin tracking)
 private let ENGINE_SOURCE = Int.max
 
@@ -121,14 +132,16 @@ private final class MasterConnection: @unchecked Sendable {
     var manifest: Data
     var limits: Limits
     var caps: [String]
+    var installedPlugins: [InstalledPluginIdentity]
     var healthy: Bool
 
-    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], healthy: Bool) {
+    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedPlugins: [InstalledPluginIdentity], healthy: Bool) {
         self.socketWriter = socketWriter
         self.seqAssigner = seqAssigner
         self.manifest = manifest
         self.limits = limits
         self.caps = caps
+        self.installedPlugins = installedPlugins
         self.healthy = healthy
         self.reorderBuffer = ReorderBuffer(maxBufferPerFlow: limits.maxReorderBuffer)
     }
@@ -157,6 +170,7 @@ public final class RelaySwitch: @unchecked Sendable {
     private var xidCounter: UInt64 = 0
 
     private var aggregateCapabilities: Data = Data()
+    private var aggregateInstalledPlugins: [InstalledPluginIdentity] = []
     private var negotiatedLimits: Limits = Limits()
     private let lock = NSLock()
     private var frameChannel: [(masterIdx: Int, frame: Frame?, error: Error?)] = []
@@ -206,7 +220,8 @@ public final class RelaySwitch: @unchecked Sendable {
                 throw RelaySwitchError.protocolError("master \(masterIdx): RelayNotify missing manifest or limits")
             }
 
-            var caps = try Self.parseCapabilitiesFromManifest(capsPayload)
+            var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+            var caps = notifyPayload.caps
 
             // Verify identity through the relay chain.
             // This is done inline because RelaySwitch is sync and needs its own
@@ -262,7 +277,8 @@ public final class RelaySwitch: @unchecked Sendable {
                     // through RelaySlave during identity verification. Update caps.
                     if let manifest = frame.relayNotifyManifest {
                         capsPayload = manifest
-                        caps = try Self.parseCapabilitiesFromManifest(capsPayload)
+                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                        caps = notifyPayload.caps
                     }
                     if let newLimits = frame.relayNotifyLimits {
                         masterLimits = newLimits
@@ -303,6 +319,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 manifest: capsPayload,
                 limits: masterLimits,
                 caps: caps,
+                installedPlugins: notifyPayload.installedPlugins,
                 healthy: true
             )
             masters.append(masterConn)
@@ -370,10 +387,11 @@ public final class RelaySwitch: @unchecked Sendable {
                     if !isShutdown,
                        let manifest = frame.relayNotifyManifest,
                        let limits = frame.relayNotifyLimits {
-                        let caps = try Self.parseCapabilitiesFromManifest(manifest)
+                        let payload = try Self.parseRelayNotifyPayload(manifest)
                         masters[masterIdx].manifest = manifest
                         masters[masterIdx].limits = limits
-                        masters[masterIdx].caps = caps
+                        masters[masterIdx].caps = payload.caps
+                        masters[masterIdx].installedPlugins = payload.installedPlugins
                         rebuildCapTable()
                         rebuildCapabilities()
                         rebuildLimits()
@@ -462,7 +480,8 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError("new master \(masterIdx): RelayNotify missing manifest or limits")
         }
 
-        var caps = try Self.parseCapabilitiesFromManifest(capsPayload)
+        var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+        var caps = notifyPayload.caps
 
         // Verify identity
         let seqAssigner = SeqAssigner()
@@ -515,7 +534,8 @@ public final class RelaySwitch: @unchecked Sendable {
             case .relayNotify:
                 if let manifest = frame.relayNotifyManifest {
                     capsPayload = manifest
-                    caps = try Self.parseCapabilitiesFromManifest(capsPayload)
+                    notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                    caps = notifyPayload.caps
                 }
                 if let newLimits = frame.relayNotifyLimits {
                     masterLimits = newLimits
@@ -553,6 +573,7 @@ public final class RelaySwitch: @unchecked Sendable {
             manifest: capsPayload,
             limits: masterLimits,
             caps: caps,
+            installedPlugins: notifyPayload.installedPlugins,
             healthy: true
         )
         let newIdx = masters.count
@@ -944,8 +965,9 @@ public final class RelaySwitch: @unchecked Sendable {
             // Capability update from host — update our cap table
             if let manifest = frame.relayNotifyManifest,
                let newLimits = frame.relayNotifyLimits {
-                let newCaps = try Self.parseCapabilitiesFromManifest(manifest)
-                masters[sourceIdx].caps = newCaps
+                let payload = try Self.parseRelayNotifyPayload(manifest)
+                masters[sourceIdx].caps = payload.caps
+                masters[sourceIdx].installedPlugins = payload.installedPlugins
                 masters[sourceIdx].manifest = manifest
                 masters[sourceIdx].limits = newLimits
                 rebuildCapTable()
@@ -1015,13 +1037,20 @@ public final class RelaySwitch: @unchecked Sendable {
 
     private func rebuildCapabilities() {
         var allCaps = Set<String>()
+        var allInstalledPlugins = Set<InstalledPluginIdentity>()
         for master in masters {
             if master.healthy {
                 allCaps.formUnion(master.caps)
+                allInstalledPlugins.formUnion(master.installedPlugins)
             }
         }
 
         let capsArray = Array(allCaps).sorted()
+        aggregateInstalledPlugins = Array(allInstalledPlugins).sorted {
+            if $0.id != $1.id { return $0.id < $1.id }
+            if $0.version != $1.version { return $0.version < $1.version }
+            return $0.sha256 < $1.sha256
+        }
         aggregateCapabilities = (try? JSONSerialization.data(withJSONObject: capsArray)) ?? Data()
     }
 
@@ -1048,14 +1077,23 @@ public final class RelaySwitch: @unchecked Sendable {
 
     // MARK: - Helper Functions
 
-    private static func parseCapabilitiesFromManifest(_ manifest: Data) throws -> [String] {
-        guard let capsArray = try? JSONSerialization.jsonObject(with: manifest) as? [String] else {
-            throw RelaySwitchError.protocolError("Manifest must be JSON array of capability URN strings")
+    public func installedPlugins() -> [InstalledPluginIdentity] {
+        lock.lock()
+        defer { lock.unlock() }
+        return aggregateInstalledPlugins
+    }
+
+    private static func parseRelayNotifyPayload(_ manifest: Data) throws -> RelayNotifyCapabilitiesPayload {
+        let payload: RelayNotifyCapabilitiesPayload
+        do {
+            payload = try JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
+        } catch {
+            throw RelaySwitchError.protocolError("RelayNotify payload must contain caps and installed_plugins: \(error)")
         }
 
         // Verify CAP_IDENTITY is present — mandatory for every host
         let identityUrn = try? CSCapUrn.fromString(CSCapIdentity)
-        let hasIdentity = capsArray.contains { capStr in
+        let hasIdentity = payload.caps.contains { capStr in
             guard let capUrn = try? CSCapUrn.fromString(capStr),
                   let identity = identityUrn else { return false }
             return identity.conforms(to: capUrn)
@@ -1065,6 +1103,11 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError("RelayNotify missing required CAP_IDENTITY (\(CSCapIdentity))")
         }
 
-        return capsArray
+        return payload
     }
+}
+public struct InstalledPluginIdentity: Codable, Hashable, Sendable {
+    public let id: String
+    public let version: String
+    public let sha256: String
 }

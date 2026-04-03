@@ -11,6 +11,16 @@ import SwiftCBOR
 @testable import Bifaci
 @testable import CapDAG
 
+private struct RelayNotifyCapabilitiesPayload: Decodable {
+    let caps: [String]
+    let installedPlugins: [InstalledPluginIdentity]
+
+    enum CodingKeys: String, CodingKey {
+        case caps
+        case installedPlugins = "installed_plugins"
+    }
+}
+
 final class InProcessPluginHostTests: XCTestCase {
 
     // MARK: - Test Helpers
@@ -127,9 +137,10 @@ final class InProcessPluginHostTests: XCTestCase {
         let notify = try! reader.read()!
         XCTAssertEqual(notify.frameType, .relayNotify)
         let manifest = notify.relayNotifyManifest!
-        let capUrns: [String] = try! JSONDecoder().decode([String].self, from: manifest)
-        XCTAssertTrue(capUrns.count >= 2) // identity + echo cap
-        XCTAssertEqual(capUrns[0], CSCapIdentity)
+        let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
+        XCTAssertTrue(payload.caps.count >= 2) // identity + echo cap
+        XCTAssertEqual(payload.caps[0], CSCapIdentity)
+        XCTAssertEqual(payload.installedPlugins, [])
 
         // Send a REQ + STREAM_START + CHUNK (CBOR-encoded) + STREAM_END + END
         let rid = MessageId.newUUID()
@@ -284,9 +295,10 @@ final class InProcessPluginHostTests: XCTestCase {
         ])
 
         let manifest = host.buildManifest()
-        let capUrns: [String] = try! JSONDecoder().decode([String].self, from: manifest)
-        XCTAssertEqual(capUrns[0], CSCapIdentity)
-        XCTAssertTrue(capUrns.contains { $0.contains("thumbnail") })
+        let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
+        XCTAssertEqual(payload.caps[0], CSCapIdentity)
+        XCTAssertTrue(payload.caps.contains { $0.contains("thumbnail") })
+        XCTAssertEqual(payload.installedPlugins, [])
     }
 
     // MARK: - TEST658: InProcessPluginHost handles heartbeat by echoing same ID

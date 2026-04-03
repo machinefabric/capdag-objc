@@ -232,6 +232,16 @@ struct HandlerEntry {
     let handler: FrameHandler
 }
 
+private struct RelayNotifyCapabilitiesPayload: Codable {
+    let caps: [String]
+    let installedPlugins: [InstalledPluginIdentity]
+
+    enum CodingKeys: String, CodingKey {
+        case caps
+        case installedPlugins = "installed_plugins"
+    }
+}
+
 /// Cap table entry: (cap_urn_string, handler_index).
 typealias CapTable = [(String, Int)]
 
@@ -250,8 +260,8 @@ public final class InProcessPluginHost {
         self.handlers = handlers.map { HandlerEntry(name: $0.name, caps: $0.caps, handler: $0.handler) }
     }
 
-    /// Build the aggregate manifest as a JSON array of cap URN strings.
-    /// Always includes CAP_IDENTITY as the first entry.
+    /// Build the aggregate RelayNotify payload.
+    /// Always includes CAP_IDENTITY as the first cap entry.
     internal func buildManifest() -> Data {
         var capUrns: [String] = [CSCapIdentity]
         for entry in handlers {
@@ -262,7 +272,11 @@ public final class InProcessPluginHost {
                 }
             }
         }
-        return (try? JSONEncoder().encode(capUrns)) ?? Data("[]".utf8)
+        let payload = RelayNotifyCapabilitiesPayload(
+            caps: capUrns,
+            installedPlugins: []
+        )
+        return try! JSONEncoder().encode(payload)
     }
 
     /// Build the cap table for routing: flat list of (cap_urn, handler_idx).

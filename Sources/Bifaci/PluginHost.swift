@@ -31,9 +31,35 @@
 //  - Everything else: forwarded to relay (pass-through)
 
 import Foundation
+import CommonCrypto
 import os
 @preconcurrency import SwiftCBOR
 import CapDAG
+
+private func parseInstalledPluginIdentity(_ name: String) -> (id: String, version: String)? {
+    let lowercase = name.lowercased()
+    guard let dashIndex = lowercase.lastIndex(of: "-") else {
+        return nil
+    }
+    let candidate = String(lowercase[..<dashIndex])
+    let suffixStart = lowercase.index(after: dashIndex)
+    let suffix = String(lowercase[suffixStart...])
+    guard !candidate.isEmpty,
+          !suffix.isEmpty,
+          suffix.allSatisfy({ $0.isNumber || $0 == "." }),
+          suffix.contains(where: { $0.isNumber }) else {
+        return nil
+    }
+    return (candidate, suffix)
+}
+
+private func sha256Hex(for data: Data) -> String {
+    var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+    data.withUnsafeBytes { bytes in
+        _ = CC_SHA256(bytes.baseAddress, CC_LONG(data.count), &digest)
+    }
+    return digest.map { String(format: "%02x", $0) }.joined()
+}
 
 // MARK: - Activity Timeout Constants
 
@@ -233,6 +259,26 @@ private class ManagedPlugin {
         self.shutdownReason = nil
         self.memoryFootprintMb = 0
         self.memoryRssMb = 0
+    }
+
+    func installedPluginIdentity() -> InstalledPluginIdentity? {
+        let url = URL(fileURLWithPath: path)
+        let stem = url.deletingPathExtension().lastPathComponent
+        guard let parsed = parseInstalledPluginIdentity(stem) else {
+            return nil
+        }
+        let binaryURL = URL(fileURLWithPath: path)
+        let binaryData: Data
+        do {
+            binaryData = try Data(contentsOf: binaryURL)
+        } catch {
+            fatalError("Installed plugin binary must remain readable at \(path): \(error)")
+        }
+        return InstalledPluginIdentity(
+            id: parsed.id,
+            version: parsed.version,
+            sha256: sha256Hex(for: binaryData)
+        )
     }
 
     static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedPlugin {
@@ -1125,18 +1171,24 @@ public final class PluginHost: @unchecked Sendable {
             }
         }
 
-        // Serialize as JSON array of strings (not objects)
+        let installedPlugins = plugins.compactMap { $0.installedPluginIdentity() }
+
         let capsData: Data
-        if let data = try? JSONSerialization.data(withJSONObject: capUrns) {
+        if let data = try? JSONSerialization.data(withJSONObject: [
+            "caps": capUrns,
+            "installed_plugins": installedPlugins.map { [
+                "id": $0.id,
+                "version": $0.version,
+                "sha256": $0.sha256,
+            ] },
+        ]) {
             capsData = data
             _capabilities = data
         } else {
-            capsData = "[]".data(using: .utf8) ?? Data()
-            _capabilities = capsData
+            fatalError("BUG: failed to serialize RelayNotify capabilities payload")
         }
 
         // Send RelayNotify to relay if in relay mode
-        // RelayNotify contains the capability URN array (not a full manifest with version/caps keys)
         outboundLock.lock()
         if let writer = outboundWriter {
             let notify = Frame.relayNotify(manifest: capsData, limits: Limits())
