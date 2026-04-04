@@ -169,11 +169,8 @@
         // ForEach node
         [self executeForEachNode:node nodeOutputs:nodeOutputs start:start completion:completion];
     } else if (node.inputNodes) {
-        // Collect node
+        // Collect node (standalone or ForEach-paired)
         [self executeCollectNode:node nodeOutputs:nodeOutputs start:start completion:completion];
-    } else if (node.wrapItemMediaUrn) {
-        // WrapInList node - pass-through, only type annotation changes
-        [self executeWrapInListNode:node nodeOutputs:nodeOutputs start:start completion:completion];
     } else {
         // Unknown node type - fail hard
         NSError *error = [NSError errorWithDomain:CSPlannerErrorDomain
@@ -280,57 +277,57 @@
                       start:(NSDate *)start
                  completion:(void (^)(CSNodeExecutionResult * _Nullable execResult, id _Nullable output, NSError * _Nullable error))completion {
 
-    NSMutableArray *collected = [NSMutableArray array];
+    // Collect works in two contexts:
+    // 1. Standalone (outputMediaUrn set): pass-through, forward predecessor output unchanged
+    // 2. After ForEach: gather results from iteration body
 
-    for (NSString *inputId in node.inputNodes) {
-        id output = nodeOutputs[inputId];
-        if ([output isKindOfClass:[NSArray class]]) {
-            [collected addObjectsFromArray:output];
-        } else if (output) {
-            [collected addObject:output];
+    if (node.outputMediaUrn && node.inputNodes.count == 1) {
+        // Standalone Collect: pass-through — find predecessor output and forward
+        id predecessorOutput = nil;
+        for (CSMachinePlanEdge *edge in self.plan.edges) {
+            if ([edge.toNode isEqualToString:node.nodeId]) {
+                predecessorOutput = nodeOutputs[edge.fromNode];
+                break;
+            }
         }
-    }
 
-    id output = @{
-        @"collected": collected,
-        @"count": @(collected.count)
-    };
+        CSNodeExecutionResult *result = [[CSNodeExecutionResult alloc] init];
+        result.nodeId = node.nodeId;
+        result.success = YES;
+        result.binaryOutput = nil;
+        result.textOutput = predecessorOutput ? [self jsonToString:predecessorOutput] : nil;
+        result.error = nil;
+        result.durationMs = (uint64_t)([[NSDate date] timeIntervalSinceDate:start] * 1000);
 
-    CSNodeExecutionResult *result = [[CSNodeExecutionResult alloc] init];
-    result.nodeId = node.nodeId;
-    result.success = YES;
-    result.binaryOutput = nil;
-    result.textOutput = [self jsonToString:output];
-    result.error = nil;
-    result.durationMs = (uint64_t)([[NSDate date] timeIntervalSinceDate:start] * 1000);
+        completion(result, predecessorOutput, nil);
+    } else {
+        // ForEach-paired Collect: gather results from iteration body
+        NSMutableArray *collected = [NSMutableArray array];
 
-    completion(result, output, nil);
-}
-
-// MARK: - Execute WrapInList Node
-
-- (void)executeWrapInListNode:(CSMachineNode *)node
-                  nodeOutputs:(NSDictionary *)nodeOutputs
-                        start:(NSDate *)start
-                   completion:(void (^)(CSNodeExecutionResult * _Nullable execResult, id _Nullable output, NSError * _Nullable error))completion {
-    // WrapInList is a pass-through — find predecessor output and forward it unchanged
-    id predecessorOutput = nil;
-    for (CSMachinePlanEdge *edge in self.plan.edges) {
-        if ([edge.toNode isEqualToString:node.nodeId]) {
-            predecessorOutput = nodeOutputs[edge.fromNode];
-            break;
+        for (NSString *inputId in node.inputNodes) {
+            id output = nodeOutputs[inputId];
+            if ([output isKindOfClass:[NSArray class]]) {
+                [collected addObjectsFromArray:output];
+            } else if (output) {
+                [collected addObject:output];
+            }
         }
+
+        id output = @{
+            @"collected": collected,
+            @"count": @(collected.count)
+        };
+
+        CSNodeExecutionResult *result = [[CSNodeExecutionResult alloc] init];
+        result.nodeId = node.nodeId;
+        result.success = YES;
+        result.binaryOutput = nil;
+        result.textOutput = [self jsonToString:output];
+        result.error = nil;
+        result.durationMs = (uint64_t)([[NSDate date] timeIntervalSinceDate:start] * 1000);
+
+        completion(result, output, nil);
     }
-
-    CSNodeExecutionResult *result = [[CSNodeExecutionResult alloc] init];
-    result.nodeId = node.nodeId;
-    result.success = YES;
-    result.binaryOutput = nil;
-    result.textOutput = predecessorOutput ? [self jsonToString:predecessorOutput] : nil;
-    result.error = nil;
-    result.durationMs = (uint64_t)([[NSDate date] timeIntervalSinceDate:start] * 1000);
-
-    completion(result, predecessorOutput, nil);
 }
 
 // MARK: - Execute Cap Node

@@ -10,8 +10,8 @@
 //  - InputSlot nodes → source data nodes
 //  - Cap nodes → edges from input source to output target
 //  - Output nodes → mark terminal data nodes
-//  - WrapInList nodes → transparent pass-through (rewritten to predecessor)
-//  - ForEach/Collect/Merge/Split → REJECTED (caller must decompose first)
+//  - Standalone Collect nodes → transparent pass-through (rewritten to predecessor)
+//  - ForEach/Merge/Split → REJECTED (caller must decompose first)
 
 import Foundation
 @preconcurrency import CapDAG
@@ -33,7 +33,7 @@ public func planToResolvedGraph(
     _ plan: CSMachinePlan,
     registry: any CapRegistryProtocol
 ) async throws -> ResolvedGraph {
-    // Phase 1: Reject ForEach/Collect/Merge/Split — caller must decompose
+    // Phase 1: Reject ForEach/Merge/Split — caller must decompose
     let topoOrder = try plan.topologicalOrder()
 
     for capNode in topoOrder {
@@ -42,16 +42,17 @@ public func planToResolvedGraph(
                 "Plan contains ForEach node '\(capNode.nodeId)'. " +
                 "Decompose the plan using extractPrefixTo:/extractForeachBody:/extractSuffixFrom: first.")
         }
-        if capNode.isFanIn() {
+        // ForEach-paired Collect (no outputMediaUrn) should not reach here
+        if capNode.isFanIn() && capNode.outputMediaUrn == nil {
             throw ParseOrchestrationError.dotParseFailed(
-                "Plan contains Collect node '\(capNode.nodeId)'. " +
+                "Plan contains ForEach-paired Collect node '\(capNode.nodeId)'. " +
                 "Decompose the plan using extractPrefixTo:/extractForeachBody:/extractSuffixFrom: first.")
         }
     }
 
     // Phase 2: Register data nodes with their media URNs
     var nodeMedia: [String: String] = [:]    // nodeId → media URN
-    var wrapPredecessors: [String: String] = [:] // wrapNodeId → predecessorNodeId
+    var collectPredecessors: [String: String] = [:] // collectNodeId → predecessorNodeId
 
     // Build reverse adjacency for finding predecessors
     var predecessorOf: [String: String] = [:]
@@ -75,13 +76,11 @@ public func planToResolvedGraph(
             if let sourceNode = capNode.sourceNode {
                 nodeMedia[nodeId] = nodeMedia[sourceNode] ?? "media:"
             }
-        } else if capNode.isWrapInList() {
-            // WrapInList node — use list media URN, track predecessor
-            if let listUrn = capNode.wrapListMediaUrn {
-                nodeMedia[nodeId] = listUrn
-            }
+        } else if capNode.isFanIn(), let mediaUrn = capNode.outputMediaUrn {
+            // Standalone Collect node — use output media URN, track predecessor
+            nodeMedia[nodeId] = mediaUrn
             if let pred = predecessorOf[nodeId] {
-                wrapPredecessors[nodeId] = pred
+                collectPredecessors[nodeId] = pred
             }
         }
     }
@@ -102,8 +101,8 @@ public func planToResolvedGraph(
             guard capEdge.toNode == nodeId else { continue }
             var fromNode = capEdge.fromNode
 
-            // Resolve through WrapInList nodes
-            if let actualPred = wrapPredecessors[fromNode] {
+            // Resolve through standalone Collect nodes
+            if let actualPred = collectPredecessors[fromNode] {
                 fromNode = actualPred
             }
 

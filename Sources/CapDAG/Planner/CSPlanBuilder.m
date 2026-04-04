@@ -31,9 +31,7 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
         case CSStrandStepTypeForEach:
             return @"ForEach (iterate over list)";
         case CSStrandStepTypeCollect:
-            return @"Collect (gather results)";
-        case CSStrandStepTypeWrapInList:
-            return @"WrapInList (wrap scalar in list)";
+            return @"Collect (scalar to list)";
     }
 }
 

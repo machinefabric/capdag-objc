@@ -116,17 +116,6 @@
     return node;
 }
 
-+ (instancetype)wrapInListNode:(NSString *)nodeId
-                  itemMediaUrn:(NSString *)itemMediaUrn
-                  listMediaUrn:(NSString *)listMediaUrn {
-    CSMachineNode *node = [[CSMachineNode alloc] init];
-    node.nodeId = nodeId;
-    node.wrapItemMediaUrn = itemMediaUrn;
-    node.wrapListMediaUrn = listMediaUrn;
-    node.nodeDescription = @"WrapInList: wrap scalar in list-of-one";
-    return node;
-}
-
 - (BOOL)isCap {
     return self.capUrn != nil;
 }
@@ -139,8 +128,10 @@
     return self.inputNodes != nil && self.inputNodes.count > 0;
 }
 
-- (BOOL)isWrapInList {
-    return self.wrapItemMediaUrn != nil && self.wrapListMediaUrn != nil;
+/// Check if this is a standalone Collect (scalar→list, no ForEach pairing).
+/// Standalone Collect has outputMediaUrn set; ForEach-paired Collect does not.
+- (BOOL)isStandaloneCollect {
+    return self.inputNodes != nil && self.outputMediaUrn != nil;
 }
 
 @end
@@ -347,10 +338,10 @@
 
 // MARK: - Plan Decomposition
 
-- (BOOL)hasForeachOrCollect {
+- (BOOL)hasForeach {
     for (NSString *nodeId in self.nodes) {
         CSMachineNode *node = self.nodes[nodeId];
-        if ([node isFanOut] || [node isFanIn]) {
+        if ([node isFanOut]) {
             return YES;
         }
     }

@@ -2,7 +2,7 @@
 //  CSPlanDecompositionTests.m
 //  CapDAGTests
 //
-//  Tests for plan decomposition (WrapInList, extract prefix/body/suffix).
+//  Tests for plan decomposition (standalone Collect, extract prefix/body/suffix).
 //  Mirrors Rust plan.rs tests TEST934-TEST764.
 //
 
@@ -58,26 +58,26 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 
 @implementation CSPlanDecompositionTests
 
-// MARK: - WrapInList Node Tests
+// MARK: - Standalone Collect Node Tests
 
-- (void)testWrapInListNodeFactory {
-    CSMachineNode *node = [CSMachineNode wrapInListNode:@"wrap_0" itemMediaUrn:@"media:text" listMediaUrn:@"media:list;text"];
+- (void)testStandaloneCollectNode {
+    // Standalone Collect: has outputMediaUrn set, single input node
+    CSMachineNode *node = [CSMachineNode collectNode:@"collect_0" inputNodes:@[@"cap_0"]];
+    node.outputMediaUrn = @"media:list;text";
 
-    XCTAssertEqualObjects(node.nodeId, @"wrap_0");
-    XCTAssertEqualObjects(node.wrapItemMediaUrn, @"media:text");
-    XCTAssertEqualObjects(node.wrapListMediaUrn, @"media:list;text");
-    XCTAssertTrue([node isWrapInList]);
+    XCTAssertEqualObjects(node.nodeId, @"collect_0");
+    XCTAssertNotNil(node.outputMediaUrn);
+    XCTAssertTrue([node isFanIn]);
     XCTAssertFalse([node isCap]);
     XCTAssertFalse([node isFanOut]);
-    XCTAssertFalse([node isFanIn]);
 }
 
-- (void)testWrapInListIsNotWrapInListForOtherTypes {
+- (void)testCapAndForEachAreNotStandaloneCollect {
     CSMachineNode *cap = [CSMachineNode capNode:@"cap_0" capUrn:@"cap:test"];
-    XCTAssertFalse([cap isWrapInList]);
+    XCTAssertFalse([cap isFanIn]);
 
     CSMachineNode *forEach = [CSMachineNode forEachNode:@"fe" inputNode:@"in" bodyEntry:@"b1" bodyExit:@"b2"];
-    XCTAssertFalse([forEach isWrapInList]);
+    XCTAssertFalse([forEach isFanIn]);
 }
 
 // MARK: - TEST934: findFirstForeach detects ForEach
@@ -96,16 +96,16 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNil([plan findFirstForeach]);
 }
 
-// TEST936: hasForeachOrCollect
-- (void)test936HasForeachOrCollect {
+// TEST936: hasForeach
+- (void)test936HasForeach {
     CSMachinePlan *foreachPlan = buildForeachPlanWithCollect();
-    XCTAssertTrue([foreachPlan hasForeachOrCollect]);
+    XCTAssertTrue([foreachPlan hasForeach]);
 
     CSMachinePlan *linearPlan = [CSMachinePlan linearChainPlan:@[@"cap:a"]
                                                              inputMedia:@"media:pdf"
                                                             outputMedia:@"media:png"
                                                         filePathArgNames:@[@"input_a"]];
-    XCTAssertFalse([linearPlan hasForeachOrCollect]);
+    XCTAssertFalse([linearPlan hasForeach]);
 }
 
 // TEST937: extractPrefixTo extracts input_slot → cap_0 as standalone plan
@@ -159,7 +159,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNil([body validate]);
 
     // Should NOT contain ForEach or Collect
-    XCTAssertFalse([body hasForeachOrCollect]);
+    XCTAssertFalse([body hasForeach]);
 
     // Verify synthetic InputSlot has item media URN
     CSMachineNode *inputNode = [body getNode:@"foreach_0_body_input"];
@@ -186,7 +186,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNotNil([body getNode:@"body_cap_0"]);
     XCTAssertNotNil([body getNode:@"foreach_0_body_output"]);
     XCTAssertNil([body validate]);
-    XCTAssertFalse([body hasForeachOrCollect]);
+    XCTAssertFalse([body hasForeach]);
 }
 
 // TEST757: extractForeachBody fails for non-ForEach node
@@ -218,7 +218,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNil([suffix validate]);
 
     // Should not contain ForEach/Collect
-    XCTAssertFalse([suffix hasForeachOrCollect]);
+    XCTAssertFalse([suffix hasForeach]);
 }
 
 // TEST759: extractSuffixFrom fails for nonexistent node

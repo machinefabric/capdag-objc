@@ -48,10 +48,8 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
     CSStrandStepTypeCap,
     /// Fan-out: iterate over list items
     CSStrandStepTypeForEach,
-    /// Collect: gather iteration results
+    /// Collect: scalar → list (standalone or after ForEach)
     CSStrandStepTypeCollect,
-    /// Wrap single item in list
-    CSStrandStepTypeWrapInList,
 };
 
 // MARK: - Supporting Structures
@@ -72,15 +70,15 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 @property (nonatomic, copy, nullable) NSString *capUrn;
 @property (nonatomic, copy, nullable) NSString *preferredCap;
 @property (nonatomic, strong, nullable) NSDictionary *metadata;
-/// Step type (Cap, ForEach, Collect, WrapInList)
+/// Step type (Cap, ForEach, Collect)
 @property (nonatomic, assign) CSStrandStepType stepType;
 /// Input media spec for this step
 @property (nonatomic, copy, nullable) NSString *fromSpec;
 /// Output media spec for this step
 @property (nonatomic, copy, nullable) NSString *toSpec;
-/// For ForEach/Collect/WrapInList: item media URN
+/// For ForEach/Collect: item media URN
 @property (nonatomic, copy, nullable) NSString *itemMediaUrn;
-/// For ForEach/Collect/WrapInList: list media URN
+/// For ForEach/Collect: list media URN
 @property (nonatomic, copy, nullable) NSString *listMediaUrn;
 /// Specificity score (0 for cardinality transitions)
 @property (nonatomic, assign) NSUInteger specificity;

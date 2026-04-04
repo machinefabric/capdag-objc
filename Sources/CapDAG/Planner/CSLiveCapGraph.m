@@ -71,17 +71,6 @@
     return edge;
 }
 
-+ (instancetype)wrapInListEdgeFrom:(CSMediaUrn *)from to:(CSMediaUrn *)to {
-    CSLiveMachinePlanEdge *edge = [[CSLiveMachinePlanEdge alloc] init];
-    edge.fromSpec = from;
-    edge.toSpec = to;
-    edge.edgeType = CSLiveMachinePlanEdgeTypeWrapInList;
-    edge.inputCardinality = CSInputCardinalitySingle;
-    edge.outputCardinality = CSInputCardinalitySequence;
-    edge.specificity = 0;
-    return edge;
-}
-
 - (NSString *)title {
     switch (self.edgeType) {
         case CSLiveMachinePlanEdgeTypeCap:
@@ -89,9 +78,7 @@
         case CSLiveMachinePlanEdgeTypeForEach:
             return @"ForEach (iterate over list)";
         case CSLiveMachinePlanEdgeTypeCollect:
-            return @"Collect (gather results)";
-        case CSLiveMachinePlanEdgeTypeWrapInList:
-            return @"WrapInList (create single-item list)";
+            return @"Collect (scalar to list)";
     }
 }
 
@@ -292,7 +279,6 @@
                 cardinalityCompatible = (sourceIsList && ![edge.toSpec isList]);
                 break;
             case CSLiveMachinePlanEdgeTypeCollect:
-            case CSLiveMachinePlanEdgeTypeWrapInList:
                 cardinalityCompatible = (!sourceIsList && [edge.toSpec isList]);
                 break;
         }
@@ -628,11 +614,6 @@
                     step.itemMediaUrn = [edge.fromSpec toString];
                     step.listMediaUrn = [edge.toSpec toString];
                     break;
-                case CSLiveMachinePlanEdgeTypeWrapInList:
-                    step.stepType = CSStrandStepTypeWrapInList;
-                    step.itemMediaUrn = [edge.fromSpec toString];
-                    step.listMediaUrn = [edge.toSpec toString];
-                    break;
             }
 
             [currentPath addObject:step];
@@ -700,8 +681,6 @@
             return @"foreach";
         case CSStrandStepTypeCollect:
             return @"collect";
-        case CSStrandStepTypeWrapInList:
-            return @"wrapinlist";
     }
 }
 

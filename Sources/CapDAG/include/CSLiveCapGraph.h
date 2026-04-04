@@ -29,10 +29,8 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
     CSLiveMachinePlanEdgeTypeCap,
     /// Fan-out: splits a list into individual items
     CSLiveMachinePlanEdgeTypeForEach,
-    /// Collect: gathers iteration results back into a list
+    /// Collect: scalar → list (standalone or after ForEach)
     CSLiveMachinePlanEdgeTypeCollect,
-    /// Wrap: wraps a single item into a list
-    CSLiveMachinePlanEdgeTypeWrapInList,
 };
 
 // MARK: - LiveMachinePlanEdge
@@ -79,9 +77,6 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
 
 /// Create a Collect edge (item -> list)
 + (instancetype)collectEdgeFrom:(CSMediaUrn *)from to:(CSMediaUrn *)to;
-
-/// Create a WrapInList edge (scalar -> list)
-+ (instancetype)wrapInListEdgeFrom:(CSMediaUrn *)from to:(CSMediaUrn *)to;
 
 @end
 
