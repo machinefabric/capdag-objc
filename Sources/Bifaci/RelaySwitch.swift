@@ -775,12 +775,21 @@ public final class RelaySwitch: @unchecked Sendable {
     /// This ensures generic requests (e.g., identity) route to generic handlers,
     /// and specific requests route to specific handlers.
     ///
+    /// Uses `isDispatchable(provider, request)` to find all masters that can
+    /// legally handle the request.
+    ///
+    /// Among dispatchable matches, ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
+    ///
+    /// With preference (`preferredCap`): among dispatchable matches, the master
+    /// whose registered cap is equivalent to the preferred cap wins. If no
+    /// equivalent match, falls back to specificity-based ranking.
+    ///
     /// - Parameters:
     ///   - capUrn: The capability URN to find a handler for
     ///   - preferredCap: Optional capability URN for exact routing.
-    ///                   When provided, uses comparable matching (broader) and prefers
-    ///                   masters whose registered cap is equivalent to this URN.
-    ///                   When nil, uses standard accepts + closest-specificity routing.
     private func findMasterForCap(_ capUrn: String, preferredCap: String? = nil) -> Int? {
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
             return nil
@@ -791,32 +800,21 @@ public final class RelaySwitch: @unchecked Sendable {
         // Parse preferred cap URN if provided
         let preferredUrn = preferredCap.flatMap { try? CSCapUrn.fromString($0) }
 
-        // Collect ALL matching masters with their specificity scores
-        // When preferredCap is set, use comparable (broader); otherwise accepts (standard)
-        var matches: [(masterIdx: Int, specificity: Int, isPreferred: Bool)] = []
+        // Collect ALL dispatchable masters with their specificity scores
+        var matches: [(masterIdx: Int, signedDistance: Int, isPreferred: Bool)] = []
 
         for (registeredCap, masterIdx) in capTable {
             guard let registeredUrn = try? CSCapUrn.fromString(registeredCap) else {
                 continue
             }
 
-            // Determine if this is a match
-            let isMatch: Bool
-            if preferredUrn != nil {
-                // Comparable: either side accepts the other (broader match set)
-                isMatch = (requestUrn.accepts(registeredUrn) || registeredUrn.accepts(requestUrn))
-            } else {
-                // Standard: request is pattern, registered cap is instance
-                isMatch = requestUrn.accepts(registeredUrn)
-            }
-
-            if isMatch {
+            if registeredUrn.isDispatchable(requestUrn) {
                 let specificity = Int(registeredUrn.specificity())
-                // Check if this registered cap is equivalent to the preferred cap
+                let signedDistance = specificity - requestSpecificity
                 let isPreferred = preferredUrn.map { pref in
-                    pref.accepts(registeredUrn) && registeredUrn.accepts(pref)
+                    pref.isEquivalent(registeredUrn)
                 } ?? false
-                matches.append((masterIdx: masterIdx, specificity: specificity, isPreferred: isPreferred))
+                matches.append((masterIdx: masterIdx, signedDistance: signedDistance, isPreferred: isPreferred))
             }
         }
 
@@ -827,9 +825,16 @@ public final class RelaySwitch: @unchecked Sendable {
             return preferred.masterIdx
         }
 
-        // Fall back to closest-specificity (ties broken by first match)
-        let minDistance = matches.map { abs($0.specificity - requestSpecificity) }.min()!
-        return matches.first { abs($0.specificity - requestSpecificity) == minDistance }?.masterIdx
+        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
+        matches.sort { a, b in
+            let (_, distA, _) = a
+            let (_, distB, _) = b
+            if distA >= 0 && distB < 0 { return true }
+            if distA < 0 && distB >= 0 { return false }
+            return abs(distA) < abs(distB)
+        }
+
+        return matches.first?.masterIdx
     }
 
     /// Handle a frame arriving from a master (plugin → engine direction).

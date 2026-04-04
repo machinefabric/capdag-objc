@@ -588,22 +588,42 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     /// Internal: find plugin for cap (must hold stateLock).
+    ///
+    /// Uses `isDispatchable(provider, request)` to find plugins that can
+    /// legally handle the request, then ranks by specificity.
+    ///
+    /// Ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     private func findPluginForCapLocked(_ capUrn: String) -> Int? {
-        // Exact string match first (fast path)
-        for (registeredCap, idx) in capTable {
-            if registeredCap == capUrn { return idx }
-        }
-
-        // URN-level semantic matching (slow path)
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else { return nil }
-        for (registeredCap, idx) in capTable {
+
+        let requestSpecificity = Int(requestUrn.specificity())
+        var matches: [(pluginIdx: Int, signedDistance: Int)] = []
+
+        for (registeredCap, pluginIdx) in capTable {
             if let registeredUrn = try? CSCapUrn.fromString(registeredCap) {
-                // Request is pattern, registered cap is instance
-                if requestUrn.accepts(registeredUrn) { return idx }
+                if registeredUrn.isDispatchable(requestUrn) {
+                    let specificity = Int(registeredUrn.specificity())
+                    let signedDistance = specificity - requestSpecificity
+                    matches.append((pluginIdx, signedDistance))
+                }
             }
         }
 
-        return nil
+        guard !matches.isEmpty else { return nil }
+
+        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
+        matches.sort { a, b in
+            let (_, distA) = a
+            let (_, distB) = b
+            if distA >= 0 && distB < 0 { return true }
+            if distA < 0 && distB >= 0 { return false }
+            return abs(distA) < abs(distB)
+        }
+
+        return matches.first?.pluginIdx
     }
 
     // MARK: - Main Run Loop

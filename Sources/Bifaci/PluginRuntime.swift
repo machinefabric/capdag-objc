@@ -1741,42 +1741,53 @@ public final class PluginRuntime: @unchecked Sendable {
         register_op(capUrn: capUrn, factory: { AnyOp(make()) })
     }
 
-    /// Find an Op factory for a cap URN (supports exact match and pattern matching).
+    /// Find an Op factory for a cap URN.
     ///
-    /// Matching direction: request is pattern, registered cap is instance.
-    /// `request.accepts(registered_cap)` — the request must accept the registered cap,
-    /// meaning the registered cap must be able to satisfy what the request asks for.
+    /// Uses `isDispatchable(provider, request)` to find handlers that can
+    /// legally handle the request, then ranks by specificity.
     ///
-    /// Returns the factory with the closest specificity to the request (not necessarily the most specific).
+    /// Ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     func findHandler(capUrn: String) -> OpFactory? {
         handlersLock.lock()
         defer { handlersLock.unlock() }
 
-        // Parse request URN
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
             return nil
         }
 
-        let requestSpecificity = requestUrn.specificity()
-        var best: (factory: OpFactory, distance: Int)? = nil
+        let requestSpecificity = Int(requestUrn.specificity())
+        var best: (factory: OpFactory, signedDistance: Int)? = nil
 
-        // Find all matching handlers, prefer closest specificity
         for (registeredCapStr, factory) in handlers {
             guard let registeredUrn = try? CSCapUrn.fromString(registeredCapStr) else {
                 continue
             }
 
-            // Request is pattern, registered cap is instance
-            if requestUrn.accepts(registeredUrn) {
-                let specificity = registeredUrn.specificity()
-                let distance = abs(Int(specificity) - Int(requestSpecificity))
+            if registeredUrn.isDispatchable(requestUrn) {
+                let specificity = Int(registeredUrn.specificity())
+                let signedDistance = specificity - requestSpecificity
 
+                let dominated: Bool
                 if let currentBest = best {
-                    if distance < currentBest.distance {
-                        best = (factory, distance)
+                    // Current best dominates if:
+                    // - best is non-negative and candidate is negative
+                    // - OR both same sign and best has smaller abs distance
+                    if currentBest.signedDistance >= 0 && signedDistance < 0 {
+                        dominated = true
+                    } else if currentBest.signedDistance < 0 && signedDistance >= 0 {
+                        dominated = false
+                    } else {
+                        dominated = abs(currentBest.signedDistance) <= abs(signedDistance)
                     }
                 } else {
-                    best = (factory, distance)
+                    dominated = false
+                }
+
+                if !dominated {
+                    best = (factory, signedDistance)
                 }
             }
         }

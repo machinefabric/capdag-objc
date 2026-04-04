@@ -111,6 +111,31 @@ public final class ResponseWriter: @unchecked Sendable {
         send(Frame.end(id: MessageId.uint(0)))
     }
 
+    /// Send a list response: STREAM_START + one CHUNK per item + STREAM_END + END.
+    ///
+    /// Each item is CBOR-encoded and sent as a raw chunk payload (matching
+    /// `OutputStream.emitListItem` semantics). The receiver concatenates
+    /// payloads to produce an RFC 8742 CBOR sequence — one self-delimiting
+    /// CBOR value per item.
+    ///
+    /// This differs from `emitResponse`, which wraps each chunk in `Bytes()`.
+    /// `emitListResponse` is for list-typed cap outputs where the executor's
+    /// list path expects a CBOR sequence without transport wrapping.
+    public func emitListResponse(mediaUrn: String, items: [CBOR]) {
+        let streamId = "result"
+
+        send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn))
+
+        for (index, item) in items.enumerated() {
+            let cborPayload = Data(item.encode())
+            let checksum = Frame.computeChecksum(cborPayload)
+            send(Frame.chunk(reqId: MessageId.uint(0), streamId: streamId, seq: 0, payload: cborPayload, chunkIndex: UInt64(index), checksum: checksum))
+        }
+
+        send(Frame.streamEnd(reqId: MessageId.uint(0), streamId: streamId, chunkCount: UInt64(items.count)))
+        send(Frame.end(id: MessageId.uint(0)))
+    }
+
     /// Send an error response.
     public func emitError(code: String, message: String) {
         send(Frame.err(id: MessageId.uint(0), code: code, message: message))
@@ -121,18 +146,13 @@ public final class ResponseWriter: @unchecked Sendable {
 
 /// Accumulate all input streams from a frame channel into CapArgumentValues.
 ///
-/// Reads frames until END. Behavior depends on the stream's media URN:
-///
-/// - **Scalar** (no `list` tag): CBOR-decodes chunk payloads to extract inner
-///   Bytes/Text content and concatenates into a flat output buffer.
-/// - **List** (has `list` tag): Stores raw CBOR chunk payloads as-is. The
-///   concatenated payloads form an RFC 8742 CBOR sequence where each
-///   self-delimiting CBOR value is one list item.
-///
+/// Reads frames until END. CBOR-decodes chunk payloads to extract raw bytes.
 /// For handlers that don't need streaming — they accumulate all input, process,
 /// then emit a response.
+///
+/// Returns error on CBOR decode failure (protocol violation).
 public func accumulateInput(inputStream: AsyncStream<Frame>) async throws -> [CapArgumentValue] {
-    var streams: [(streamId: String, mediaUrn: String, data: Data, isList: Bool)] = []
+    var streams: [(streamId: String, mediaUrn: String, data: Data)] = []
     var active: [String: Int] = [:]
 
     for await frame in inputStream {
@@ -140,36 +160,29 @@ public func accumulateInput(inputStream: AsyncStream<Frame>) async throws -> [Ca
         case .streamStart:
             let sid = frame.streamId ?? ""
             let mediaUrn = frame.mediaUrn ?? ""
-            let isList = CSMediaUrnIsList(mediaUrn)
             let idx = streams.count
-            streams.append((sid, mediaUrn, Data(), isList))
+            streams.append((sid, mediaUrn, Data()))
             active[sid] = idx
 
         case .chunk:
             let sid = frame.streamId ?? ""
             if let idx = active[sid], let payload = frame.payload {
-                if streams[idx].isList {
-                    // List output: raw CBOR chunk payloads form an RFC 8742 CBOR
-                    // sequence. Store as-is — consumers use splitCborSequence().
-                    streams[idx].data.append(payload)
-                } else {
-                    // Scalar output: CBOR-decode chunk payload to extract raw bytes
-                    guard let cbor = try? CBOR.decode([UInt8](payload)) else {
-                        throw NSError(domain: "accumulateInput", code: 1, userInfo: [
-                            NSLocalizedDescriptionKey: "chunk payload is not valid CBOR (stream=\(sid), \(payload.count) bytes)"
-                        ])
-                    }
+                // CBOR-decode chunk payload to extract raw bytes
+                guard let cbor = try? CBOR.decode([UInt8](payload)) else {
+                    throw NSError(domain: "accumulateInput", code: 1, userInfo: [
+                        NSLocalizedDescriptionKey: "chunk payload is not valid CBOR (stream=\(sid), \(payload.count) bytes)"
+                    ])
+                }
 
-                    switch cbor {
-                    case .byteString(let bytes):
-                        streams[idx].data.append(contentsOf: bytes)
-                    case .utf8String(let str):
-                        streams[idx].data.append(contentsOf: str.data(using: String.Encoding.utf8) ?? Data())
-                    default:
-                        throw NSError(domain: "accumulateInput", code: 2, userInfo: [
-                            NSLocalizedDescriptionKey: "unexpected CBOR type in scalar chunk payload: \(cbor)"
-                        ])
-                    }
+                switch cbor {
+                case .byteString(let bytes):
+                    streams[idx].data.append(contentsOf: bytes)
+                case .utf8String(let str):
+                    streams[idx].data.append(contentsOf: str.data(using: String.Encoding.utf8) ?? Data())
+                default:
+                    throw NSError(domain: "accumulateInput", code: 2, userInfo: [
+                        NSLocalizedDescriptionKey: "unexpected CBOR type in chunk payload: \(cbor)"
+                    ])
                 }
             }
 
@@ -290,25 +303,29 @@ public final class InProcessPluginHost {
         return table
     }
 
-    /// Find the best handler for a cap URN using closest-specificity matching.
+    /// Find the best handler for a cap URN.
     ///
-    /// Mirrors `PluginHostRuntime::find_plugin_for_cap()` exactly:
-    /// - Request is pattern, registered cap is instance
-    /// - Closest specificity to request wins
-    /// - Ties broken by first match (deterministic)
+    /// Uses `isDispatchable(provider, request)` to find handlers that can
+    /// legally handle the request, then ranks by specificity.
+    ///
+    /// Ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     private static func findHandlerForCap(capTable: CapTable, capUrn: String) -> Int? {
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
             return nil
         }
 
         let requestSpecificity = Int(requestUrn.specificity())
-        var matches: [(handlerIdx: Int, specificity: Int)] = []
+        var matches: [(handlerIdx: Int, signedDistance: Int)] = []
 
         for (registeredCap, handlerIdx) in capTable {
             if let registeredUrn = try? CSCapUrn.fromString(registeredCap) {
-                if requestUrn.accepts(registeredUrn) {
+                if registeredUrn.isDispatchable(requestUrn) {
                     let specificity = Int(registeredUrn.specificity())
-                    matches.append((handlerIdx, specificity))
+                    let signedDistance = specificity - requestSpecificity
+                    matches.append((handlerIdx, signedDistance))
                 }
             }
         }
@@ -317,9 +334,18 @@ public final class InProcessPluginHost {
             return nil
         }
 
-        let minDistance = matches.map { abs($0.specificity - requestSpecificity) }.min()!
+        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
+        matches.sort { a, b in
+            let (_, distA) = a
+            let (_, distB) = b
+            // Non-negative distances before negative
+            if distA >= 0 && distB < 0 { return true }
+            if distA < 0 && distB >= 0 { return false }
+            // Same sign: prefer smaller absolute distance
+            return abs(distA) < abs(distB)
+        }
 
-        return matches.first { abs($0.specificity - requestSpecificity) == minDistance }?.handlerIdx
+        return matches.first?.handlerIdx
     }
 
     /// Run the host. Blocks until the local connection closes.
