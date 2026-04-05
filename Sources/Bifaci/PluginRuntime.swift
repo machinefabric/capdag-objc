@@ -2787,6 +2787,18 @@ public final class PluginRuntime: @unchecked Sendable {
 
                 fputs("[PluginRuntime] dequeuing request: cap='\(queued.capUrn)' rid=\(queued.requestId) remaining_queue=\(requestQueue.count)\n", stderr)
 
+                // Notify the caller that this request has been dequeued and is
+                // starting. The "dequeued" level is the counterpart to "queued":
+                // on the pipeline side, ActivityTimer unpauses and resets the
+                // timeout clock, and the stall tracker is touched.
+                var dequeuedLog = Frame.log(
+                    id: queued.requestId,
+                    level: "dequeued",
+                    message: "Request dequeued, handler starting"
+                )
+                dequeuedLog.routingId = queued.routingId
+                try? outputSender.send(dequeuedLog)
+
                 spawnHandler(
                     requestId: queued.requestId,
                     capUrn: queued.capUrn,
