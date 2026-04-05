@@ -13,6 +13,7 @@ final class TransformOp: Op, @unchecked Sendable {
         let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
         let input = try req.takeInput()
         _ = try? input.collectAllBytes()
+        try req.output().start(isSequence: false)
         try req.output().write("transformed".data(using: .utf8)!)
     }
     func metadata() -> OpMetadata { OpMetadata.builder("TransformOp").build() }

@@ -305,6 +305,13 @@ public func requireStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], media
 
 /// Writable stream handle for handler output or peer call arguments.
 /// Manages STREAM_START/CHUNK/STREAM_END framing automatically.
+///
+/// Mirrors Rust's OutputStream exactly:
+/// - `start(isSequence:)` must be called exactly once before any output.
+/// - `write()` requires `start(isSequence: false)`.
+/// - `emitListItem()` requires `start(isSequence: true)`.
+/// - `emitCbor()` requires `start(isSequence: false)`.
+/// - `close()` is idempotent. No-op if `start()` was never called.
 public final class OutputStream: @unchecked Sendable {
     private let sender: any FrameSender
     private let streamId: String
@@ -313,8 +320,9 @@ public final class OutputStream: @unchecked Sendable {
     private let routingId: MessageId?
     private let maxChunk: Int
 
-    private let streamStartedLock = NSLock()
-    private var _streamStarted = false
+    /// None = not started, Some(false) = write mode, Some(true) = sequence mode
+    private let streamModeLock = NSLock()
+    private var _streamMode: Bool? = nil
 
     private let chunkStateLock = NSLock()
     private var _chunkIndex: UInt64 = 0
@@ -344,22 +352,49 @@ public final class OutputStream: @unchecked Sendable {
         _mediaUrn
     }
 
-    private func ensureStarted() throws {
-        streamStartedLock.lock()
-        let alreadyStarted = _streamStarted
+    /// Send STREAM_START with the given mode. Must be called exactly once
+    /// before any write/emitListItem/emitCbor calls.
+    ///
+    /// - `isSequence = false` — write mode: each chunk is a complete CBOR value
+    /// - `isSequence = true`  — sequence mode: chunks are CBOR fragments (RFC 8742)
+    public func start(isSequence: Bool) throws {
+        streamModeLock.lock()
+        let alreadyStarted = _streamMode != nil
         if !alreadyStarted {
-            _streamStarted = true
+            _streamMode = isSequence
         }
-        streamStartedLock.unlock()
+        streamModeLock.unlock()
 
-        if !alreadyStarted {
-            var startFrame = Frame.streamStart(
-                reqId: requestId,
-                streamId: streamId,
-                mediaUrn: _mediaUrn
+        if alreadyStarted {
+            throw PluginRuntimeError.handlerError("stream already started")
+        }
+
+        var startFrame = Frame.streamStart(
+            reqId: requestId,
+            streamId: streamId,
+            mediaUrn: _mediaUrn,
+            isSequence: isSequence
+        )
+        startFrame.routingId = routingId
+        try sender.send(startFrame)
+    }
+
+    private func checkMode(_ isSequence: Bool) throws {
+        streamModeLock.lock()
+        let mode = _streamMode
+        streamModeLock.unlock()
+
+        guard let existing = mode else {
+            throw PluginRuntimeError.handlerError(
+                "stream not started: call start() before write/emitListItem"
             )
-            startFrame.routingId = routingId
-            try sender.send(startFrame)
+        }
+        if existing != isSequence {
+            let existingName = existing ? "sequence" : "write"
+            let calledName = isSequence ? "sequence" : "write"
+            throw PluginRuntimeError.handlerError(
+                "stream mode conflict: started as \(existingName) but called with \(calledName)"
+            )
         }
     }
 
@@ -386,9 +421,9 @@ public final class OutputStream: @unchecked Sendable {
     }
 
     /// Write raw bytes. Splits into maxChunk pieces, each wrapped as CBOR byteString.
-    /// Auto-sends STREAM_START before first chunk.
+    /// Requires `start(isSequence: false)` to have been called first.
     public func write(_ data: Data) throws {
-        try ensureStarted()
+        try checkMode(false)
         if data.isEmpty {
             return
         }
@@ -411,8 +446,9 @@ public final class OutputStream: @unchecked Sendable {
     ///
     /// Unlike `emitCbor` (which re-wraps each piece as a separate CBOR value),
     /// this sends raw CBOR bytes as frame payloads directly.
+    /// Requires `start(isSequence: true)` to have been called first.
     public func emitListItem(_ value: CBOR) throws {
-        try ensureStarted()
+        try checkMode(true)
         let cborBytes = Data(value.encode())
 
         var offset = 0
@@ -442,8 +478,10 @@ public final class OutputStream: @unchecked Sendable {
     }
 
     /// Emit a CBOR value. Handles byteString/utf8String/array/map chunking.
+    /// Uses write mode (isSequence=false) — each chunk is a complete CBOR value.
+    /// Requires `start(isSequence: false)` to have been called first.
     public func emitCbor(_ value: CBOR) throws {
-        try ensureStarted()
+        try checkMode(false)
         switch value {
         case .byteString(let bytes):
             var offset = 0
@@ -546,7 +584,8 @@ public final class OutputStream: @unchecked Sendable {
     }
 
     /// Close the output stream (sends STREAM_END). Idempotent.
-    /// If stream was never started, sends STREAM_START first.
+    /// If `start()` was never called, this is a no-op (no STREAM_START was sent,
+    /// so no STREAM_END is needed — the handler produced no output).
     public func close() throws {
         closedLock.lock()
         let alreadyClosed = _closed
@@ -559,7 +598,13 @@ public final class OutputStream: @unchecked Sendable {
             return
         }
 
-        try ensureStarted()
+        streamModeLock.lock()
+        let mode = _streamMode
+        streamModeLock.unlock()
+
+        if mode == nil {
+            return // Never started — no output produced, nothing to close
+        }
 
         chunkStateLock.lock()
         let finalChunkCount = _chunkCount
@@ -979,6 +1024,7 @@ extension PeerInvoker {
         let call = try self.call(capUrn: capUrn)
         for (mediaUrn, data) in args {
             let arg = call.arg(mediaUrn: mediaUrn)
+            try arg.start(isSequence: false)
             try arg.write(data)
             try arg.close()
         }
@@ -1257,6 +1303,7 @@ public struct IdentityOp: Op, Sendable {
     public func perform(dry: DryContext, wet: WetContext) async throws {
         let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
         let input = try req.takeInput()
+        try req.output().start(isSequence: false)
         for streamResult in input {
             let stream = try streamResult.get()
             for chunkResult in stream {

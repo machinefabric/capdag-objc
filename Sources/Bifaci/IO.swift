@@ -111,6 +111,10 @@ public func encodeFrame(_ frame: Frame) throws -> Data {
         map[.unsignedInt(FrameKey.checksum.rawValue)] = .unsignedInt(checksum)
     }
 
+    if let isSequence = frame.isSequence {
+        map[.unsignedInt(FrameKey.isSequence.rawValue)] = .boolean(isSequence)
+    }
+
     let cbor = CBOR.map(map)
     return Data(cbor.encode())
 }
@@ -244,6 +248,10 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         default:
             break
         }
+    }
+
+    if case .boolean(let b) = map[.unsignedInt(FrameKey.isSequence.rawValue)] {
+        frame.isSequence = b
     }
 
     // Protocol v2 validation: CHUNK frames MUST have chunkIndex and checksum

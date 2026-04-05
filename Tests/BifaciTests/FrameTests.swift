@@ -1096,6 +1096,26 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(decoded.mediaUrn, "media:")
     }
 
+    // TEST389b: STREAM_START with isSequence roundtrips correctly
+    func test389b_streamStartIsSequenceRoundtrip() throws {
+        let id = MessageId.newUUID()
+
+        // isSequence=false
+        let frameFalse = Frame.streamStart(reqId: id, streamId: "s1", mediaUrn: "media:text", isSequence: false)
+        let decodedFalse = try decodeFrame(try encodeFrame(frameFalse))
+        XCTAssertEqual(decodedFalse.isSequence, false, "isSequence=false must roundtrip")
+
+        // isSequence=true
+        let frameTrue = Frame.streamStart(reqId: id, streamId: "s2", mediaUrn: "media:list", isSequence: true)
+        let decodedTrue = try decodeFrame(try encodeFrame(frameTrue))
+        XCTAssertEqual(decodedTrue.isSequence, true, "isSequence=true must roundtrip")
+
+        // isSequence=nil (host/relay frames)
+        let frameNil = Frame.streamStart(reqId: id, streamId: "s3", mediaUrn: "media:")
+        let decodedNil = try decodeFrame(try encodeFrame(frameNil))
+        XCTAssertNil(decodedNil.isSequence, "isSequence=nil must roundtrip as nil")
+    }
+
     // TEST390: StreamEnd encode/decode roundtrip preserves stream_id, no media_urn
     func test390_streamEndRoundtrip() throws {
         let id = MessageId.newUUID()

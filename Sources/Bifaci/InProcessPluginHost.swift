@@ -86,7 +86,7 @@ public final class ResponseWriter: @unchecked Sendable {
     public func emitResponse(mediaUrn: String, data: Data) {
         let streamId = "result"
 
-        send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn))
+        send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn, isSequence: false))
 
         if data.isEmpty {
             // Empty data: single chunk with CBOR-encoded empty bytes
@@ -124,7 +124,7 @@ public final class ResponseWriter: @unchecked Sendable {
     public func emitListResponse(mediaUrn: String, items: [CBOR]) {
         let streamId = "result"
 
-        send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn))
+        send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn, isSequence: true))
 
         for (index, item) in items.enumerated() {
             let cborPayload = Data(item.encode())
@@ -220,7 +220,7 @@ final class IdentityHandler: FrameHandler {
             case .end:
                 // Echo back as a single stream (raw bytes, no CBOR encode)
                 let streamId = "identity"
-                output.send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: "media:"))
+                output.send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: "media:", isSequence: false))
 
                 let checksum = Frame.computeChecksum(data)
                 output.send(Frame.chunk(reqId: MessageId.uint(0), streamId: streamId, seq: 0, payload: data, chunkIndex: 0, checksum: checksum))

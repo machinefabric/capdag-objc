@@ -62,6 +62,7 @@ final class EchoAllBytesOp: Op, @unchecked Sendable {
         let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
         let input = try req.takeInput()
         let data = try input.collectAllBytes()
+        try req.output().start(isSequence: false)
         try req.output().write(data)
     }
     func metadata() -> OpMetadata { OpMetadata.builder("EchoAllBytesOp").build() }
@@ -76,6 +77,7 @@ final class WriteFixedOp: Op, @unchecked Sendable {
         let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
         let input = try req.takeInput()
         _ = try? input.collectAllBytes()
+        try req.output().start(isSequence: false)
         try req.output().write(data)
     }
     func metadata() -> OpMetadata { OpMetadata.builder("WriteFixedOp").build() }
@@ -90,6 +92,7 @@ final class EmitCborBytesOp: Op, @unchecked Sendable {
         let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
         let input = try req.takeInput()
         _ = try? input.collectAllBytes()
+        try req.output().start(isSequence: false)
         try req.output().emitCbor(CBOR.byteString(bytes))
     }
     func metadata() -> OpMetadata { OpMetadata.builder("EmitCborBytesOp").build() }
@@ -1190,6 +1193,7 @@ final class CborFilePathConversionTests: XCTestCase {
                     let input = try req.takeInput()
                     let data = try input.collectAllBytes()
                     capture.data = data
+                    try req.output().start(isSequence: false)
                     try req.output().write(Data("processed".utf8))
                 }
                 func metadata() -> OpMetadata { OpMetadata.builder("CaptureAndWriteOp").build() }
@@ -1974,6 +1978,7 @@ final class CborFilePathConversionTests: XCTestCase {
                     let input = try req.takeInput()
                     let total = try input.collectAllBytes()
                     holder.data = total
+                    try req.output().start(isSequence: false)
                     try req.output().write(total)
                 }
                 func metadata() -> OpMetadata { OpMetadata.builder("CaptureEchoOp").build() }

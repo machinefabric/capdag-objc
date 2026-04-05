@@ -285,7 +285,7 @@ final class StreamingAPITests: XCTestCase {
 
     // MARK: - OutputStream Tests (TEST539-542)
 
-    // TEST539: OutputStream sends STREAM_START on first write
+    // TEST539: OutputStream.start() sends STREAM_START with isSequence
     func test539_outputStreamSendsStreamStart() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
@@ -301,16 +301,18 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: 1000
         )
 
-        // Write data
+        // start() must be called before write
+        try output.start(isSequence: false)
         try output.write(Data([1, 2, 3]))
 
         XCTAssertGreaterThanOrEqual(sentFrames.count, 1, "Should send at least STREAM_START")
 
-        // First frame should be STREAM_START
+        // First frame should be STREAM_START with isSequence=false
         let first = sentFrames[0]
         XCTAssertEqual(first.frameType, .streamStart, "First frame must be STREAM_START")
         XCTAssertEqual(first.streamId, "test-stream")
         XCTAssertEqual(first.mediaUrn, "media:test")
+        XCTAssertEqual(first.isSequence, false, "STREAM_START must carry isSequence=false")
     }
 
     // TEST540: OutputStream::close sends STREAM_END with correct chunk_count
@@ -329,7 +331,8 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: 1000
         )
 
-        // Write 3 chunks
+        // start() then write 3 chunks
+        try output.start(isSequence: false)
         try output.write(Data([1]))
         try output.write(Data([2]))
         try output.write(Data([3]))
@@ -360,7 +363,8 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: maxChunk
         )
 
-        // Write data larger than maxChunk
+        // start() then write data larger than maxChunk
+        try output.start(isSequence: false)
         let largeData = Data(repeating: 0x42, count: 35)
         try output.write(largeData)
         try output.close()
@@ -377,8 +381,8 @@ final class StreamingAPITests: XCTestCase {
         }
     }
 
-    // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
-    func test542_outputStreamEmpty() throws {
+    // TEST542: OutputStream close without start is a no-op (no frames sent)
+    func test542_outputStreamCloseWithoutStartIsNoop() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
             sentFrames.append(frame)
@@ -393,10 +397,32 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: 1000
         )
 
-        // Close without writing anything
+        // Close without calling start() — no output produced, nothing to close
         try output.close()
 
-        // Should have STREAM_START + STREAM_END (no CHUNKs)
+        XCTAssertEqual(sentFrames.count, 0, "close() without start() must send no frames")
+    }
+
+    // TEST542b: OutputStream start + close sends STREAM_START + STREAM_END (empty stream)
+    func test542b_outputStreamStartThenCloseEmpty() throws {
+        var sentFrames: [Frame] = []
+        let mockSender = MockFrameSender { frame in
+            sentFrames.append(frame)
+        }
+
+        let output = Bifaci.OutputStream(
+            sender: mockSender,
+            streamId: "test-stream",
+            mediaUrn: "media:test",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 1000
+        )
+
+        // start() then close without writing — empty stream
+        try output.start(isSequence: false)
+        try output.close()
+
         let streamStartFrames = sentFrames.filter { $0.frameType == .streamStart }
         let chunkFrames = sentFrames.filter { $0.frameType == .chunk }
         let streamEndFrames = sentFrames.filter { $0.frameType == .streamEnd }
@@ -405,6 +431,57 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(chunkFrames.count, 0)
         XCTAssertEqual(streamEndFrames.count, 1)
         XCTAssertEqual(streamEndFrames[0].chunkCount, 0)
+    }
+
+    // TEST542c: OutputStream write without start() throws
+    func test542c_outputStreamWriteWithoutStartThrows() throws {
+        let mockSender = MockFrameSender { _ in }
+
+        let output = Bifaci.OutputStream(
+            sender: mockSender,
+            streamId: "test-stream",
+            mediaUrn: "media:test",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 1000
+        )
+
+        XCTAssertThrowsError(try output.write(Data([1, 2, 3])), "write() without start() must throw")
+    }
+
+    // TEST542d: OutputStream start() twice throws
+    func test542d_outputStreamDoubleStartThrows() throws {
+        let mockSender = MockFrameSender { _ in }
+
+        let output = Bifaci.OutputStream(
+            sender: mockSender,
+            streamId: "test-stream",
+            mediaUrn: "media:test",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 1000
+        )
+
+        try output.start(isSequence: false)
+        XCTAssertThrowsError(try output.start(isSequence: false), "start() twice must throw")
+    }
+
+    // TEST542e: OutputStream mode conflict throws (start write, call emitListItem)
+    func test542e_outputStreamModeConflictThrows() throws {
+        let mockSender = MockFrameSender { _ in }
+
+        let output = Bifaci.OutputStream(
+            sender: mockSender,
+            streamId: "test-stream",
+            mediaUrn: "media:test",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 1000
+        )
+
+        try output.start(isSequence: false)
+        XCTAssertThrowsError(try output.emitListItem(.byteString([1, 2, 3])),
+            "emitListItem on write-mode stream must throw")
     }
 
     // MARK: - PeerCall Tests (TEST543-545)
@@ -429,6 +506,7 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: 1000
         )
 
+        try output.start(isSequence: false)
         try output.write(Data([1, 2, 3]))
         try output.close()
 
