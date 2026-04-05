@@ -66,7 +66,6 @@ NSString * const CSMediaModelSpecCandleTranscription = @"media:model-spec;candle
 NSString * const CSMediaFilePath = @"media:file-path;textable";
 NSString * const CSMediaFilePathArray = @"media:file-path;list;textable";
 // Semantic input types (continued)
-NSString * const CSMediaFrontmatterText = @"media:frontmatter;textable";
 NSString * const CSMediaMlxModelPath = @"media:mlx-model-path;textable";
 // Semantic output types
 NSString * const CSMediaImageDescription = @"media:image-description;textable";

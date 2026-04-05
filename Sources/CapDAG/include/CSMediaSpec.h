@@ -86,7 +86,6 @@ FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleTranscription; // media
 FOUNDATION_EXPORT NSString * const CSMediaFilePath;     // media:file-path;textable
 FOUNDATION_EXPORT NSString * const CSMediaFilePathArray; // media:file-path;list;textable
 // Semantic input types (continued)
-FOUNDATION_EXPORT NSString * const CSMediaFrontmatterText; // media:frontmatter;textable
 FOUNDATION_EXPORT NSString * const CSMediaMlxModelPath;    // media:mlx-model-path;textable
 // Semantic output types
 FOUNDATION_EXPORT NSString * const CSMediaImageDescription;   // media:image-description;textable

@@ -2673,27 +2673,34 @@ public final class PluginRuntime: @unchecked Sendable {
         var requestQueue: [QueuedRequest] = []
         var runningHandlerCount = 0
 
-        // Shared counter for tracking finished handlers.
-        // Handler threads increment this when done; main loop reads and resets.
-        final class HandlerCounter: @unchecked Sendable {
-            private let lock = NSLock()
-            private var count = 0
+        // Event queue: both incoming frames and handler-done signals arrive here.
+        // This unblocks the main loop when a handler finishes even if no frames
+        // are arriving on stdin — without this, queued requests would never be
+        // dequeued after all input frames have been sent.
+        enum LoopEvent {
+            case frame(Frame)
+            case readError(Error)
+            case eof
+            case handlerDone
+        }
+        let eventQueue = BlockingQueue<LoopEvent>()
 
-            func increment() {
-                lock.lock()
-                count += 1
-                lock.unlock()
-            }
-
-            func drain() -> Int {
-                lock.lock()
-                let n = count
-                count = 0
-                lock.unlock()
-                return n
+        // Spawn reader thread: reads frames from stdin and pushes to eventQueue.
+        let readerEventQueue = eventQueue
+        Thread.detachNewThread {
+            while true {
+                do {
+                    guard let frame = try frameReader.read() else {
+                        readerEventQueue.push(.eof)
+                        return
+                    }
+                    readerEventQueue.push(.frame(frame))
+                } catch {
+                    readerEventQueue.push(.readError(error))
+                    return
+                }
             }
         }
-        let finishedCounter = HandlerCounter()
 
         // Helper: spawn a handler thread for a request.
         func spawnHandler(
@@ -2710,7 +2717,7 @@ public final class PluginRuntime: @unchecked Sendable {
             pendingPeerRequests: NSMutableDictionary,
             pendingPeerRequestsLock: NSLock,
             maxChunk: Int,
-            finishedCounter: HandlerCounter
+            eventQueue: BlockingQueue<LoopEvent>
         ) {
             Thread.detachNewThread {
                 fputs("[PluginRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
@@ -2763,15 +2770,15 @@ public final class PluginRuntime: @unchecked Sendable {
                     try? outputSender.send(errFrame)
                 }
 
-                finishedCounter.increment()
+                // Notify the main loop that a handler slot is free.
+                eventQueue.push(.handlerDone)
             }
         }
 
-        // Main loop - stays responsive for heartbeats
-        while true {
-
+        // Main loop: dequeue events (frames or handler-done signals).
+        mainLoop: while true {
             // Reap finished handlers and drain the queue into freed slots.
-            runningHandlerCount -= finishedCounter.drain()
+            runningHandlerCount = max(0, runningHandlerCount)
 
             // Drain queue: spawn handlers for queued requests that now have capacity.
             let cap = capacity.get()
@@ -2794,19 +2801,25 @@ public final class PluginRuntime: @unchecked Sendable {
                     pendingPeerRequests: pendingPeerRequests,
                     pendingPeerRequestsLock: pendingPeerRequestsLock,
                     maxChunk: self.limits.maxChunk,
-                    finishedCounter: finishedCounter
+                    eventQueue: eventQueue
                 )
                 runningHandlerCount += 1
             }
 
-            // Read next frame
+            guard let event = eventQueue.dequeue() else {
+                break // Queue finished (should not happen)
+            }
+
             let frame: Frame
-            do {
-                guard let f = try frameReader.read() else {
-                    break // EOF - stdin closed
-                }
+            switch event {
+            case .handlerDone:
+                runningHandlerCount -= 1
+                continue
+            case .frame(let f):
                 frame = f
-            } catch {
+            case .eof:
+                break mainLoop
+            case .readError(let error):
                 throw PluginRuntimeError.ioError("\(error)")
             }
 
@@ -2910,7 +2923,7 @@ public final class PluginRuntime: @unchecked Sendable {
                         pendingPeerRequests: pendingPeerRequests,
                         pendingPeerRequestsLock: pendingPeerRequestsLock,
                         maxChunk: self.limits.maxChunk,
-                        finishedCounter: finishedCounter
+                        eventQueue: eventQueue
                     )
                     runningHandlerCount += 1
                 }
