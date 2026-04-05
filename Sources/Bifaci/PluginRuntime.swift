@@ -1686,6 +1686,35 @@ public struct Manifest: Codable, Sendable {
 /// **This is the ONLY supported way for plugins to communicate with the host.**
 /// The manifest MUST be provided - plugins without a manifest will fail handshake.
 @available(macOS 10.15.4, iOS 13.4, *)
+/// Shared handle for dynamic concurrency capacity adjustment.
+///
+/// Cartridges receive this via `PluginRuntime.capacityHandle()` and can call
+/// `set(_:)` at any time to adjust how many concurrent requests the runtime
+/// will dispatch to handlers.
+public final class CapacityHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: Int
+
+    init(_ initial: Int) {
+        _value = initial
+    }
+
+    /// Set the concurrency capacity. 0 means unlimited.
+    public func set(_ n: Int) {
+        lock.lock()
+        _value = n
+        lock.unlock()
+    }
+
+    /// Get the current capacity. 0 means unlimited.
+    public func get() -> Int {
+        lock.lock()
+        let v = _value
+        lock.unlock()
+        return v
+    }
+}
+
 public final class PluginRuntime: @unchecked Sendable {
 
     // MARK: - Properties
@@ -1702,6 +1731,9 @@ public final class PluginRuntime: @unchecked Sendable {
     /// Parsed manifest for CLI mode support.
     /// Contains cap definitions with command names and argument sources.
     let parsedManifest: Manifest?
+
+    /// Concurrency capacity: 0 = unlimited, N = max N concurrent handlers.
+    private let capacity = CapacityHandle(0)
 
     // MARK: - Initialization
 
@@ -1769,6 +1801,26 @@ public final class PluginRuntime: @unchecked Sendable {
         if findHandler(capUrn: CSCapDiscard) == nil {
             register_op_type(capUrn: CSCapDiscard, make: DiscardOp.init)
         }
+    }
+
+    // MARK: - Capacity
+
+    /// Set the maximum number of concurrent handler invocations.
+    ///
+    /// When set to N > 0, the runtime queues incoming requests beyond N active
+    /// handlers. Queued requests receive a LOG frame with `level="queued"` so the
+    /// pipeline's activity timeout pauses for that body.
+    ///
+    /// - `0` — unlimited (default)
+    /// - `1` — serial execution (e.g., mlxcartridge with single model loaded)
+    /// - `N` — up to N concurrent handlers
+    public func setCapacity(_ n: Int) {
+        capacity.set(n)
+    }
+
+    /// Get a handle to the concurrency capacity for dynamic adjustment.
+    public func capacityHandle() -> CapacityHandle {
+        return capacity
     }
 
     // MARK: - Handler Registration
@@ -2599,7 +2651,9 @@ public final class PluginRuntime: @unchecked Sendable {
         let pendingHeartbeatsLock = NSLock()
 
         // Track pending incoming requests (host invoking plugin caps)
-        // Maps request ID to (capUrn, continuation) - forwards request frames to handler
+        // Maps request ID to (capUrn, continuation) - forwards request frames to handler.
+        // Created on REQ even for queued requests, so frames accumulate until
+        // the handler thread is spawned and the demux drains them.
         struct PendingIncomingRequest {
             let capUrn: String
             let continuation: AsyncStream<Frame>.Continuation
@@ -2607,8 +2661,143 @@ public final class PluginRuntime: @unchecked Sendable {
         var pendingIncoming: [MessageId: PendingIncomingRequest] = [:]
         let pendingIncomingLock = NSLock()
 
+        // Queue for requests waiting for a handler slot.
+        struct QueuedRequest {
+            let factory: OpFactory
+            let capUrn: String
+            let routingId: MessageId?
+            let requestId: MessageId
+            let outputMediaUrn: String
+            let stream: AsyncStream<Frame>
+        }
+        var requestQueue: [QueuedRequest] = []
+        var runningHandlerCount = 0
+
+        // Shared counter for tracking finished handlers.
+        // Handler threads increment this when done; main loop reads and resets.
+        final class HandlerCounter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var count = 0
+
+            func increment() {
+                lock.lock()
+                count += 1
+                lock.unlock()
+            }
+
+            func drain() -> Int {
+                lock.lock()
+                let n = count
+                count = 0
+                lock.unlock()
+                return n
+            }
+        }
+        let finishedCounter = HandlerCounter()
+
+        // Helper: spawn a handler thread for a request.
+        func spawnHandler(
+            requestId: MessageId,
+            capUrn: String,
+            routingId: MessageId?,
+            outputMediaUrn: String,
+            factory: @escaping OpFactory,
+            stream: AsyncStream<Frame>,
+            outputSender: any FrameSender,
+            frameWriter: FrameWriter,
+            writerLock: NSLock,
+            seqAssigner: SeqAssigner,
+            pendingPeerRequests: NSMutableDictionary,
+            pendingPeerRequestsLock: NSLock,
+            maxChunk: Int,
+            finishedCounter: HandlerCounter
+        ) {
+            Thread.detachNewThread {
+                fputs("[PluginRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
+                let framesQueue = BlockingQueue<Frame>()
+
+                Task {
+                    for await frame in stream {
+                        framesQueue.enqueue(frame)
+                    }
+                    framesQueue.finish()
+                }
+
+                let frameIterator = AnyIterator<Frame> {
+                    return framesQueue.dequeue()
+                }
+
+                let inputPackage = demuxMultiStream(frameIterator: frameIterator)
+
+                let responseStreamId = UUID().uuidString
+                let outputStream = OutputStream(
+                    sender: outputSender,
+                    streamId: responseStreamId,
+                    mediaUrn: outputMediaUrn,
+                    requestId: requestId,
+                    routingId: routingId,
+                    maxChunk: maxChunk
+                )
+
+                let peer = PeerInvokerImpl(
+                    writer: frameWriter,
+                    writerLock: writerLock,
+                    seqAssigner: seqAssigner,
+                    pendingRequests: pendingPeerRequests,
+                    pendingRequestsLock: pendingPeerRequestsLock,
+                    maxChunk: maxChunk
+                )
+
+                do {
+                    let op = factory()
+                    try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
+
+                    fputs("[PluginRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
+                    var endFrame = Frame.end(id: requestId, finalPayload: nil)
+                    endFrame.routingId = routingId
+                    try? outputSender.send(endFrame)
+                } catch {
+                    fputs("[PluginRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
+                    var errFrame = Frame.err(id: requestId, code: "HANDLER_ERROR", message: "\(error)")
+                    errFrame.routingId = routingId
+                    try? outputSender.send(errFrame)
+                }
+
+                finishedCounter.increment()
+            }
+        }
+
         // Main loop - stays responsive for heartbeats
         while true {
+
+            // Reap finished handlers and drain the queue into freed slots.
+            runningHandlerCount -= finishedCounter.drain()
+
+            // Drain queue: spawn handlers for queued requests that now have capacity.
+            let cap = capacity.get()
+            while !requestQueue.isEmpty && (cap == 0 || runningHandlerCount < cap) {
+                let queued = requestQueue.removeFirst()
+
+                fputs("[PluginRuntime] dequeuing request: cap='\(queued.capUrn)' rid=\(queued.requestId) remaining_queue=\(requestQueue.count)\n", stderr)
+
+                spawnHandler(
+                    requestId: queued.requestId,
+                    capUrn: queued.capUrn,
+                    routingId: queued.routingId,
+                    outputMediaUrn: queued.outputMediaUrn,
+                    factory: queued.factory,
+                    stream: queued.stream,
+                    outputSender: outputSender,
+                    frameWriter: frameWriter,
+                    writerLock: writerLock,
+                    seqAssigner: seqAssigner,
+                    pendingPeerRequests: pendingPeerRequests,
+                    pendingPeerRequestsLock: pendingPeerRequestsLock,
+                    maxChunk: self.limits.maxChunk,
+                    finishedCounter: finishedCounter
+                )
+                runningHandlerCount += 1
+            }
 
             // Read next frame
             let frame: Frame
@@ -2666,7 +2855,9 @@ public final class PluginRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // Create AsyncStream for forwarding frames to handler
+                // Create AsyncStream for forwarding frames to handler.
+                // Always created immediately so subsequent frames are routed here
+                // even if the handler isn't spawned yet (queued).
                 let (stream, continuation) = AsyncStream<Frame>.makeStream()
 
                 // Register pending request
@@ -2677,70 +2868,51 @@ public final class PluginRuntime: @unchecked Sendable {
                 )
                 pendingIncomingLock.unlock()
 
-                // Spawn handler thread immediately (matches Rust: spawn on REQ, stream frames)
                 let requestId = frame.id
-                let routingId = frame.routingId  // Capture routing_id to include in responses
+                let routingId = frame.routingId
                 let outputMediaUrn = cap.getOutSpec()
 
-                Thread.detachNewThread {
-                    fputs("[PluginRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
-                    // Create blocking queue for frame delivery
-                    let framesQueue = BlockingQueue<Frame>()
-
-                    // Spawn async task to feed frames into queue
-                    Task {
-                        for await frame in stream {
-                            framesQueue.enqueue(frame)
-                        }
-                        framesQueue.finish() // Signal no more frames
-                    }
-
-                    // Create iterator that reads from blocking queue
-                    let frameIterator = AnyIterator<Frame> {
-                        return framesQueue.dequeue()
-                    }
-
-                    // Demux frames into InputPackage
-                    let inputPackage = demuxMultiStream(frameIterator: frameIterator)
-
-                    // Create OutputStream for response (uses shared outputSender for seq assignment)
-                    let responseStreamId = UUID().uuidString
-                    let outputStream = OutputStream(
-                        sender: outputSender,
-                        streamId: responseStreamId,
-                        mediaUrn: outputMediaUrn,
-                        requestId: requestId,
-                        routingId: routingId,
-                        maxChunk: self.limits.maxChunk
+                let cap2 = capacity.get()
+                if cap2 > 0 && runningHandlerCount >= cap2 {
+                    // At capacity — queue the request, send "queued" LOG back to caller.
+                    let queuePos = requestQueue.count + 1
+                    var logFrame = Frame.log(
+                        id: requestId,
+                        level: "queued",
+                        message: "Request queued (position \(queuePos), \(runningHandlerCount) active)"
                     )
+                    logFrame.routingId = routingId
+                    try? outputSender.send(logFrame)
 
-                    // Create PeerInvoker (shares seqAssigner)
-                    let peer = PeerInvokerImpl(
-                        writer: frameWriter,
+                    fputs("[PluginRuntime] request queued: cap='\(capUrn)' rid=\(requestId) queue_pos=\(queuePos)\n", stderr)
+
+                    requestQueue.append(QueuedRequest(
+                        factory: factory,
+                        capUrn: capUrn,
+                        routingId: routingId,
+                        requestId: requestId,
+                        outputMediaUrn: outputMediaUrn,
+                        stream: stream
+                    ))
+                } else {
+                    // Under capacity — spawn handler immediately.
+                    spawnHandler(
+                        requestId: requestId,
+                        capUrn: capUrn,
+                        routingId: routingId,
+                        outputMediaUrn: outputMediaUrn,
+                        factory: factory,
+                        stream: stream,
+                        outputSender: outputSender,
+                        frameWriter: frameWriter,
                         writerLock: writerLock,
                         seqAssigner: seqAssigner,
-                        pendingRequests: pendingPeerRequests,
-                        pendingRequestsLock: pendingPeerRequestsLock,
-                        maxChunk: self.limits.maxChunk
+                        pendingPeerRequests: pendingPeerRequests,
+                        pendingPeerRequestsLock: pendingPeerRequestsLock,
+                        maxChunk: self.limits.maxChunk,
+                        finishedCounter: finishedCounter
                     )
-
-                    do {
-                        // Invoke Op handler — dispatchOp closes output stream on success
-                        let op = factory()
-                        try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
-
-                        fputs("[PluginRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
-                        // Send END frame with routing_id (via outputSender for seq assignment)
-                        var endFrame = Frame.end(id: requestId, finalPayload: nil)
-                        endFrame.routingId = routingId
-                        try? outputSender.send(endFrame)
-
-                    } catch {
-                        fputs("[PluginRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
-                        var errFrame = Frame.err(id: requestId, code: "HANDLER_ERROR", message: "\(error)")
-                        errFrame.routingId = routingId
-                        try? outputSender.send(errFrame)
-                    }
+                    runningHandlerCount += 1
                 }
                 continue
 
