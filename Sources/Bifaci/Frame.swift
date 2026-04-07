@@ -280,12 +280,34 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
-    /// Create an END frame to mark stream completion
+    /// Create an END frame to mark stream completion.
+    /// Does NOT set exit_code — absence of exit_code in meta means failure.
+    /// Use `endOk` for successful completion (exit_code=0).
     public static func end(id: MessageId, finalPayload: Data? = nil) -> Frame {
         var frame = Frame(frameType: .end, id: id)
         frame.payload = finalPayload
         frame.eof = true
         return frame
+    }
+
+    /// Create an END frame with exit_code=0 (success).
+    /// Only exit_code=0 means success. Absence of exit_code or any non-zero value means failure.
+    public static func endOk(id: MessageId, finalPayload: Data? = nil) -> Frame {
+        var frame = Frame(frameType: .end, id: id)
+        frame.payload = finalPayload
+        frame.eof = true
+        frame.meta = ["exit_code": .unsignedInt(0)]
+        return frame
+    }
+
+    /// Read exit_code from an END frame's meta. Returns nil if absent.
+    public var exitCode: Int64? {
+        guard let meta = meta, let value = meta["exit_code"] else { return nil }
+        switch value {
+        case .unsignedInt(let n): return Int64(n)
+        case .negativeInt(let n): return -1 - Int64(n)
+        default: return nil
+        }
     }
 
     /// Create a LOG frame for progress/status

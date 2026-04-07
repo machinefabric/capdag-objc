@@ -108,7 +108,7 @@ public final class ResponseWriter: @unchecked Sendable {
             send(Frame.streamEnd(reqId: MessageId.uint(0), streamId: streamId, chunkCount: chunkCount))
         }
 
-        send(Frame.end(id: MessageId.uint(0)))
+        send(Frame.endOk(id: MessageId.uint(0)))
     }
 
     /// Send a list response: STREAM_START + one CHUNK per item + STREAM_END + END.
@@ -133,7 +133,7 @@ public final class ResponseWriter: @unchecked Sendable {
         }
 
         send(Frame.streamEnd(reqId: MessageId.uint(0), streamId: streamId, chunkCount: UInt64(items.count)))
-        send(Frame.end(id: MessageId.uint(0)))
+        send(Frame.endOk(id: MessageId.uint(0)))
     }
 
     /// Send an error response.
@@ -226,7 +226,7 @@ final class IdentityHandler: FrameHandler {
                 output.send(Frame.chunk(reqId: MessageId.uint(0), streamId: streamId, seq: 0, payload: data, chunkIndex: 0, checksum: checksum))
 
                 output.send(Frame.streamEnd(reqId: MessageId.uint(0), streamId: streamId, chunkCount: 1))
-                output.send(Frame.end(id: MessageId.uint(0)))
+                output.send(Frame.endOk(id: MessageId.uint(0)))
                 return
 
             default:

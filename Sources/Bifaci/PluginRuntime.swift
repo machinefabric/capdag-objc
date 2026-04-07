@@ -2760,7 +2760,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
 
                     fputs("[PluginRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
-                    var endFrame = Frame.end(id: requestId, finalPayload: nil)
+                    var endFrame = Frame.endOk(id: requestId, finalPayload: nil)
                     endFrame.routingId = routingId
                     try? outputSender.send(endFrame)
                 } catch {
