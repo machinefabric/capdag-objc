@@ -684,6 +684,25 @@ public final class RelaySwitch: @unchecked Sendable {
             // Forward to destination
             try writeToMasterIdx(destIdx, &mutableFrame)
 
+        case .cancel:
+            // Cancel routes like a continuation frame — look up XID from RID
+            let xid: MessageId
+            if let existingXid = frame.routingId {
+                xid = existingXid
+            } else {
+                guard let lookedUpXid = ridToXid[frame.id] else {
+                    throw RelaySwitchError.unknownRequest(frame.id.toString())
+                }
+                xid = lookedUpXid
+                mutableFrame.routingId = xid
+            }
+
+            let key = RoutingKey(xid: xid, rid: frame.id)
+            guard let entry = requestRouting[key] else {
+                throw RelaySwitchError.unknownRequest(frame.id.toString())
+            }
+            try writeToMasterIdx(entry.destinationMasterIdx, &mutableFrame)
+
         default:
             throw RelaySwitchError.protocolError("Unexpected frame type from engine: \(frame.frameType)")
         }
@@ -981,6 +1000,31 @@ public final class RelaySwitch: @unchecked Sendable {
             }
             // Pass through to engine (for visibility)
             return frame
+
+        case .cancel:
+            // Cancel from plugin — route to destination like a continuation frame.
+            let rid = frame.id
+            let xid: MessageId
+            if let existingXid = frame.routingId {
+                xid = existingXid
+            } else {
+                guard let lookedUpXid = ridToXid[rid] else {
+                    // Unknown RID — silently ignore (request may already be completed)
+                    return nil
+                }
+                xid = lookedUpXid
+                mutableFrame.routingId = xid
+            }
+
+            let key = RoutingKey(xid: xid, rid: rid)
+            guard let entry = requestRouting[key] else {
+                // Unknown routing — silently ignore
+                return nil
+            }
+
+            fputs("[RelaySwitch] Routing Cancel from master \(sourceIdx) to master \(entry.destinationMasterIdx) xid=\(xid) rid=\(rid)\n", stderr)
+            try writeToMasterIdx(entry.destinationMasterIdx, &mutableFrame)
+            return nil
 
         default:
             return frame

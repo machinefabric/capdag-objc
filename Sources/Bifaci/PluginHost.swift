@@ -214,6 +214,8 @@ enum ShutdownReason {
     /// Pending requests MUST get ERR frames with code "OOM_KILLED" so callers
     /// can fail fast instead of hanging forever.
     case oomKill
+    /// Request was cancelled. Pending requests get ERR frames with code "CANCELLED".
+    case cancelled
 }
 
 private class ManagedPlugin {
@@ -362,6 +364,10 @@ public final class PluginHost: @unchecked Sendable {
     /// This avoids premature cleanup in self-loop peer request scenarios where the same RID
     /// appears in both outgoing and incoming maps.
     private var incomingRxids: [RxidKey: Int] = [:]
+
+    /// Tracks which incoming request spawned which outgoing peer RIDs.
+    /// Maps parent (xid, rid) → list of child peer RIDs. Used for cancel cascade.
+    private var incomingToPeerRids: [RxidKey: [MessageId]] = [:]
 
     /// Aggregate capabilities (serialized JSON manifest of all plugin caps).
     private var _capabilities: Data = Data()
@@ -832,6 +838,53 @@ public final class PluginHost: @unchecked Sendable {
             // These should never arrive from the engine through the relay
             fputs("[PluginHost] Protocol error: \(frame.frameType) from relay\n", stderr)
 
+        case .cancel:
+            // Cancel from relay — route to the plugin handling this request.
+            guard let xid = frame.routingId else {
+                fputs("[PluginHost] Cancel frame missing XID — ignoring\n", stderr)
+                return
+            }
+            let rid = frame.id
+            let key = RxidKey(xid: xid, rid: rid)
+            let forceKill = frame.forceKill ?? false
+
+            stateLock.lock()
+            guard let pluginIdx = incomingRxids[key] else {
+                stateLock.unlock()
+                fputs("[PluginHost] Cancel for unknown request (\(xid), \(rid)) — ignoring\n", stderr)
+                return
+            }
+
+            if forceKill {
+                // Force kill: set shutdown reason and kill the process
+                fputs("[PluginHost] Cancel force_kill=true for plugin \(pluginIdx) rid=\(rid)\n", stderr)
+                plugins[pluginIdx].shutdownReason = .cancelled
+                let pid = plugins[pluginIdx].pid
+                stateLock.unlock()
+                if let pid = pid {
+                    kill(pid, SIGKILL)
+                }
+            } else {
+                // Cooperative cancel: forward Cancel frame to the plugin
+                fputs("[PluginHost] Cancel cooperative for plugin \(pluginIdx) rid=\(rid)\n", stderr)
+                let plugin = plugins[pluginIdx]
+                stateLock.unlock()
+                let _ = plugin.writeFrame(frame)
+
+                // Also cascade: send Cancel to relay for each peer call spawned by this request
+                stateLock.lock()
+                if let peerRids = incomingToPeerRids[key] {
+                    stateLock.unlock()
+                    for peerRid in peerRids {
+                        fputs("[PluginHost] Cascading Cancel to peer call rid=\(peerRid)\n", stderr)
+                        let cancel = Frame.cancel(targetRid: peerRid, forceKill: false)
+                        sendToRelay(cancel)
+                    }
+                } else {
+                    stateLock.unlock()
+                }
+            }
+
         case .relayNotify, .relayState:
             // Relay frames should be intercepted by the relay layer, never reach here
             fputs("[PluginHost] Protocol error: relay frame \(frame.frameType) reached host\n", stderr)
@@ -891,6 +944,26 @@ public final class PluginHost: @unchecked Sendable {
             outgoingRids[frame.id] = pluginIdx
             let flowKey = FlowKey.fromFrame(frame)
             outgoingMaxSeq[flowKey] = frame.seq
+
+            // Track parent→child peer call mapping for cancel cascade
+            if let meta = frame.meta, let parentRidCbor = meta["parent_rid"] {
+                let parentRid: MessageId?
+                switch parentRidCbor {
+                case .byteString(let bytes) where bytes.count == 16:
+                    parentRid = .uuid(Data(bytes))
+                case .unsignedInt(let n):
+                    parentRid = .uint(n)
+                default:
+                    parentRid = nil
+                }
+                if let parentRid = parentRid {
+                    // Find the parent's incoming key
+                    let parentKey = incomingRxids.first(where: { $0.key.rid == parentRid })?.key
+                    if let pk = parentKey {
+                        incomingToPeerRids[pk, default: []].append(frame.id)
+                    }
+                }
+            }
             stateLock.unlock()
             sendToRelay(frame)
 
@@ -1020,6 +1093,7 @@ public final class PluginHost: @unchecked Sendable {
         }
         for entry in failedIncoming {
             incomingRxids.removeValue(forKey: entry.key)
+            incomingToPeerRids.removeValue(forKey: entry.key)
         }
 
         // Determine error code and message based on shutdown reason.
@@ -1044,6 +1118,11 @@ public final class PluginHost: @unchecked Sendable {
                 ? "Plugin \(pluginPath) killed by OOM watchdog\(exitSuffix)."
                 : "Plugin \(pluginPath) killed by OOM watchdog\(exitSuffix). stderr:\n\(stderrContent)"
             errInfo = (code: "OOM_KILLED", message: msg)
+            plugin.lastDeathMessage = msg
+        case .cancelled:
+            // Cancel-triggered kill — ERR "CANCELLED" for all pending work
+            let msg = "Plugin \(pluginPath) killed by cancel request."
+            errInfo = (code: "CANCELLED", message: msg)
             plugin.lastDeathMessage = msg
         case .appExit:
             // Clean shutdown — no ERR frames, relay is closing

@@ -1373,6 +1373,7 @@ func dispatchOp(op: AnyOp<Void>, input: InputPackage, output: OutputStream, peer
 private struct PendingPeerRequest {
     let continuation: AsyncStream<Frame>.Continuation
     var isComplete: Bool
+    let originRequestId: MessageId
 }
 
 // MARK: - Internal: PeerInvokerImpl
@@ -1414,14 +1415,16 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
     private let seqAssigner: SeqAssigner
     private let pendingRequests: NSMutableDictionary // [MessageId: PendingPeerRequest]
     private let pendingRequestsLock: NSLock
+    private let originRequestId: MessageId
     private let maxChunk: Int
 
-    init(writer: FrameWriter, writerLock: NSLock, seqAssigner: SeqAssigner, pendingRequests: NSMutableDictionary, pendingRequestsLock: NSLock, maxChunk: Int) {
+    init(writer: FrameWriter, writerLock: NSLock, seqAssigner: SeqAssigner, pendingRequests: NSMutableDictionary, pendingRequestsLock: NSLock, originRequestId: MessageId, maxChunk: Int) {
         self.writer = writer
         self.writerLock = writerLock
         self.seqAssigner = seqAssigner
         self.pendingRequests = pendingRequests
         self.pendingRequestsLock = pendingRequestsLock
+        self.originRequestId = originRequestId
         self.maxChunk = maxChunk
     }
 
@@ -1436,7 +1439,8 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
         // Create pending request tracking
         let pending = PendingPeerRequest(
             continuation: continuation,
-            isComplete: false
+            isComplete: false,
+            originRequestId: originRequestId
         )
 
         // Register the pending request before sending REQ
@@ -1444,10 +1448,18 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
         pendingRequests[requestId] = pending
         pendingRequestsLock.unlock()
 
-        // Send REQ with empty payload — apply seq assignment
+        // Send REQ with empty payload, stamped with parent_rid for cancel cascade
         writerLock.lock()
         do {
             var reqFrame = Frame.req(id: requestId, capUrn: capUrn, payload: Data(), contentType: "application/cbor")
+            var meta = reqFrame.meta ?? [:]
+            switch originRequestId {
+            case .uuid(let data):
+                meta["parent_rid"] = .byteString([UInt8](data))
+            case .uint(let n):
+                meta["parent_rid"] = .unsignedInt(n)
+            }
+            reqFrame.meta = meta
             seqAssigner.assign(&reqFrame)
             try writer.write(reqFrame)
         } catch {
@@ -2672,6 +2684,8 @@ public final class PluginRuntime: @unchecked Sendable {
         }
         var requestQueue: [QueuedRequest] = []
         var runningHandlerCount = 0
+        var cancelledRequests = Set<MessageId>()
+        var cancelledRoutingIds: [MessageId: MessageId?] = [:]
 
         // Event queue: both incoming frames and handler-done signals arrive here.
         // This unblocks the main loop when a handler finishes even if no frames
@@ -2681,7 +2695,7 @@ public final class PluginRuntime: @unchecked Sendable {
             case frame(Frame)
             case readError(Error)
             case eof
-            case handlerDone
+            case handlerDone(MessageId)
         }
         let eventQueue = BlockingQueue<LoopEvent>()
 
@@ -2752,6 +2766,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     seqAssigner: seqAssigner,
                     pendingRequests: pendingPeerRequests,
                     pendingRequestsLock: pendingPeerRequestsLock,
+                    originRequestId: requestId,
                     maxChunk: maxChunk
                 )
 
@@ -2771,7 +2786,7 @@ public final class PluginRuntime: @unchecked Sendable {
                 }
 
                 // Notify the main loop that a handler slot is free.
-                eventQueue.push(.handlerDone)
+                eventQueue.push(.handlerDone(requestId))
             }
         }
 
@@ -2824,8 +2839,17 @@ public final class PluginRuntime: @unchecked Sendable {
 
             let frame: Frame
             switch event {
-            case .handlerDone:
+            case .handlerDone(let rid):
                 runningHandlerCount -= 1
+                // If this handler was cancelled, send ERR "CANCELLED" now
+                if cancelledRequests.contains(rid) {
+                    cancelledRequests.remove(rid)
+                    let routingId = cancelledRoutingIds.removeValue(forKey: rid) ?? nil
+                    var err = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
+                    err.routingId = routingId
+                    try? outputSender.send(err)
+                    fputs("[PluginRuntime] Cancelled handler finished, sent ERR: rid=\(rid)\n", stderr)
+                }
                 continue
             case .frame(let f):
                 frame = f
@@ -3073,6 +3097,69 @@ public final class PluginRuntime: @unchecked Sendable {
                     pending.continuation.yield(frame)
                 }
                 pendingPeerRequestsLock.unlock()
+
+            case .cancel:
+                let targetRid = frame.id
+                fputs("[PluginRuntime] Cancel received: rid=\(targetRid) forceKill=\(frame.forceKill ?? false)\n", stderr)
+
+                // Skip if already cancelled
+                if cancelledRequests.contains(targetRid) {
+                    continue
+                }
+
+                // Case 1: Queued — remove from queue and send ERR
+                if let idx = requestQueue.firstIndex(where: { $0.requestId == targetRid }) {
+                    let queued = requestQueue.remove(at: idx)
+                    pendingIncomingLock.lock()
+                    if let pending = pendingIncoming.removeValue(forKey: targetRid) {
+                        pending.continuation.finish()
+                    }
+                    pendingIncomingLock.unlock()
+                    var err = Frame.err(id: targetRid, code: "CANCELLED", message: "Request cancelled while queued")
+                    err.routingId = queued.routingId
+                    try? outputSender.send(err)
+                    fputs("[PluginRuntime] Cancelled queued request: rid=\(targetRid)\n", stderr)
+                    continue
+                }
+
+                // Case 2: In-flight handler — finish continuation (cooperative cancel)
+                pendingIncomingLock.lock()
+                if let pending = pendingIncoming.removeValue(forKey: targetRid) {
+                    pendingIncomingLock.unlock()
+                    // Finishing the continuation ends the handler's frame iterator → handler exits
+                    pending.continuation.finish()
+                    cancelledRequests.insert(targetRid)
+                    // Store routing ID to stamp on ERR when handlerDone arrives
+                    // Look it up from the QueuedRequest or the REQ frame's routingId
+                    // Since pendingIncoming doesn't store routingId, we check if there's
+                    // a way — actually, we need to track it. Use frame.routingId from Cancel.
+                    cancelledRoutingIds[targetRid] = frame.routingId
+
+                    // Cancel peer calls originating from this request
+                    pendingPeerRequestsLock.lock()
+                    var peerRidsToCancel: [MessageId] = []
+                    for key in pendingPeerRequests.allKeys {
+                        if let rid = key as? MessageId,
+                           let pending = pendingPeerRequests[rid] as? PendingPeerRequest,
+                           pending.originRequestId == targetRid {
+                            peerRidsToCancel.append(rid)
+                            pending.continuation.finish()
+                        }
+                    }
+                    for rid in peerRidsToCancel {
+                        pendingPeerRequests.removeObject(forKey: rid)
+                        // Send Cancel for each peer call to the host
+                        let cancel = Frame.cancel(targetRid: rid, forceKill: frame.forceKill ?? false)
+                        try? outputSender.send(cancel)
+                    }
+                    pendingPeerRequestsLock.unlock()
+
+                    fputs("[PluginRuntime] Cancelled in-flight request (cooperative): rid=\(targetRid)\n", stderr)
+                } else {
+                    pendingIncomingLock.unlock()
+                    // Case 3: Unknown — ignore
+                    fputs("[PluginRuntime] Cancel for unknown rid=\(targetRid) — ignoring\n", stderr)
+                }
 
             case .relayNotify, .relayState:
                 // Relay frame types should NEVER reach the plugin runtime — they are

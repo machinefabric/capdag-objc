@@ -459,6 +459,17 @@ public final class InProcessPluginHost {
                     continuation.finish()
                 }
 
+            case .cancel:
+                // Cancel: close handler's input stream (cooperative cancel) and send ERR
+                let targetRid = frame.id
+                let xid = frame.routingId
+                if let continuation = active.removeValue(forKey: targetRid) {
+                    continuation.finish()
+                }
+                var err = Frame.err(id: targetRid, code: "CANCELLED", message: "Request cancelled")
+                err.routingId = xid
+                writeContinuation.yield(err)
+
             default:
                 // RelayNotify, RelayState, etc. — not expected from relay side
                 break

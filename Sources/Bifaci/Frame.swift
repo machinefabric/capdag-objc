@@ -42,6 +42,8 @@ public enum FrameType: UInt8, Sendable {
     case relayNotify = 10
     /// Relay host system resources + cap demands (master → slave). Carries opaque resource payload.
     case relayState = 11
+    /// Cancel a specific in-flight request by RID. Carries optional force_kill flag.
+    case cancel = 12
 }
 
 /// Message ID - either a 16-byte UUID or a simple integer
@@ -184,6 +186,9 @@ public struct Frame: @unchecked Sendable {
     /// Whether the producer used emit_list_item (true) or write (false).
     /// Set on STREAM_START frames. nil means legacy producer that didn't set it.
     public var isSequence: Bool?
+    /// Whether Cancel should force-kill the plugin process (true) or cooperatively cancel (false).
+    /// Present on Cancel frames only.
+    public var forceKill: Bool?
 
     public init(frameType: FrameType, id: MessageId) {
         self.frameType = frameType
@@ -400,6 +405,17 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
+    /// Create a CANCEL frame targeting a specific request by RID.
+    ///
+    /// - Parameters:
+    ///   - targetRid: The request ID to cancel
+    ///   - forceKill: If true, force-kill the plugin process. If false, cooperative cancel.
+    public static func cancel(targetRid: MessageId, forceKill: Bool) -> Frame {
+        var frame = Frame(frameType: .cancel, id: targetRid)
+        frame.forceKill = forceKill
+        return frame
+    }
+
     // MARK: - Accessors
 
     /// Check if this is the final frame in a stream
@@ -532,7 +548,7 @@ public struct Frame: @unchecked Sendable {
     /// and reorder buffers entirely.
     public func isFlowFrame() -> Bool {
         switch frameType {
-        case .hello, .heartbeat, .relayNotify, .relayState:
+        case .hello, .heartbeat, .relayNotify, .relayState, .cancel:
             return false
         default:
             return true
@@ -591,4 +607,5 @@ public enum FrameKey: UInt64 {
     case chunkCount = 15
     case checksum = 16
     case isSequence = 17
+    case forceKill = 18
 }
