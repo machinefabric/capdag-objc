@@ -106,6 +106,26 @@ public final class InputStream: Sequence, @unchecked Sendable {
         _mediaUrn
     }
 
+    /// Collect each chunk as a separate item with its raw bytes.
+    /// For sequence streams (is_sequence=true), each chunk is one item.
+    /// Returns an array of raw byte items, CBOR-unwrapped.
+    public func collectItems() throws -> [Data] {
+        var items: [Data] = []
+        for itemResult in self {
+            let item = try itemResult.get()
+            switch item {
+            case .byteString(let bytes):
+                items.append(Data(bytes))
+            case .utf8String(let str):
+                items.append(str.data(using: .utf8) ?? Data())
+            default:
+                let encoded = Data(item.encode())
+                items.append(encoded)
+            }
+        }
+        return items
+    }
+
     /// Collect all chunks into a single byte vector (scalar path).
     /// Extracts inner bytes from .byteString/.utf8String and concatenates.
     /// Use this for scalar (non-list) streams.
