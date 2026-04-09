@@ -80,11 +80,10 @@ NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;record;textab
 NSString * const CSMediaLlmInferenceOutput = @"media:generated-text;record;textable";
 NSString * const CSMediaFileMetadata = @"media:file-metadata;record;textable";
 NSString * const CSMediaDocumentOutline = @"media:document-outline;record;textable";
-NSString * const CSMediaDisboundPage = @"media:disbound-page;list;textable";
+NSString * const CSMediaDisboundPage = @"media:disbound-page;textable";
 NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
 NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
-NSString * const CSMediaDecision = @"media:bool;decision;textable";
-NSString * const CSMediaDecisionArray = @"media:bool;decision;list;textable";
+NSString * const CSMediaDecision = @"media:decision;json;record;textable";
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION

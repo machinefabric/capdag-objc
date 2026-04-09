@@ -12,20 +12,13 @@
 // MARK: - InputCardinality Functions
 
 CSInputCardinality CSInputCardinalityFromMediaUrn(NSString *urn) {
-    NSError *error = nil;
-    CSMediaUrn *mediaUrn = [CSMediaUrn fromString:urn error:&error];
-
-    if (error || !mediaUrn) {
-        // Invalid URN - fail hard, don't hide the issue
-        [NSException raise:NSInvalidArgumentException
-                    format:@"Invalid media URN in cardinality detection: %@ - %@", urn, error.localizedDescription];
-    }
-
-    if ([mediaUrn isList]) {
-        return CSInputCardinalitySequence;
-    } else {
-        return CSInputCardinalitySingle;
-    }
+    // Cardinality is NOT derived from the media URN — the list tag is a semantic
+    // type indicator, not a shape indicator. Cardinality comes from context
+    // (how many files the user provided, is_sequence on the wire).
+    // This function always returns Single. Callers that need actual cardinality
+    // must get it from the input context, not the URN.
+    (void)urn;
+    return CSInputCardinalitySingle;
 }
 
 BOOL CSInputCardinalityIsMultiple(CSInputCardinality cardinality) {
@@ -37,34 +30,10 @@ BOOL CSInputCardinalityAcceptsSingle(CSInputCardinality cardinality) {
 }
 
 NSString *CSInputCardinalityApplyToUrn(CSInputCardinality cardinality, NSString *baseUrn) {
-    NSError *error = nil;
-    CSMediaUrn *mediaUrn = [CSMediaUrn fromString:baseUrn error:&error];
-
-    if (error || !mediaUrn) {
-        [NSException raise:NSInvalidArgumentException
-                    format:@"Invalid media URN in apply_to_urn: %@ - %@", baseUrn, error.localizedDescription];
-    }
-
-    BOOL hasList = [mediaUrn isList];
-
-    switch (cardinality) {
-        case CSInputCardinalitySingle:
-        case CSInputCardinalityAtLeastOne:
-            if (hasList) {
-                // Remove list marker
-                return [[mediaUrn withoutTag:@"list"] toString];
-            } else {
-                return baseUrn;
-            }
-
-        case CSInputCardinalitySequence:
-            if (hasList) {
-                return baseUrn;
-            } else {
-                // Add list marker (wildcard value)
-                return [[mediaUrn withTag:@"list" value:@"*"] toString];
-            }
-    }
+    // Cardinality is a shape concern (is_sequence), not a URN concern.
+    // The URN is never modified for cardinality — return it unchanged.
+    (void)cardinality;
+    return baseUrn;
 }
 
 // MARK: - CardinalityCompatibility Functions

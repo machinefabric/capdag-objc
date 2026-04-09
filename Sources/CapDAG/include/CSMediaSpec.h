@@ -100,11 +100,10 @@ FOUNDATION_EXPORT NSString * const CSMediaEmbeddingVector; // media:embedding-ve
 FOUNDATION_EXPORT NSString * const CSMediaLlmInferenceOutput; // media:generated-text;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaFileMetadata;    // media:file-metadata;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaDocumentOutline; // media:document-outline;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaDisboundPage;    // media:disbound-page;list;textable
+FOUNDATION_EXPORT NSString * const CSMediaDisboundPage;    // media:disbound-page;textable
 FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:image-caption;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;textable;transcription
-FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:bool;decision;textable
-FOUNDATION_EXPORT NSString * const CSMediaDecisionArray;   // media:bool;decision;list;textable
+FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
 
 // ============================================================================
 // STANDARD CAP URN CONSTANTS

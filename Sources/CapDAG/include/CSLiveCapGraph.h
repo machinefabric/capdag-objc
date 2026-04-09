@@ -45,10 +45,10 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
 @property (nonatomic, strong, readonly) CSMediaUrn *toSpec;
 /// Type of edge
 @property (nonatomic, assign, readonly) CSLiveMachinePlanEdgeType edgeType;
-/// Input cardinality
-@property (nonatomic, assign, readonly) CSInputCardinality inputCardinality;
-/// Output cardinality
-@property (nonatomic, assign, readonly) CSInputCardinality outputCardinality;
+/// Whether the cap's main input expects a sequence
+@property (nonatomic, assign, readonly) BOOL inputIsSequence;
+/// Whether the cap's output produces a sequence
+@property (nonatomic, assign, readonly) BOOL outputIsSequence;
 
 /// Cap URN (for Cap edges only; nil for cardinality transitions)
 @property (nonatomic, strong, readonly, nullable) CSCapUrn *capUrn;
@@ -69,8 +69,8 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
                      capUrn:(CSCapUrn *)capUrn
                       title:(NSString *)title
                 specificity:(NSUInteger)specificity
-           inputCardinality:(CSInputCardinality)inputCard
-          outputCardinality:(CSInputCardinality)outputCard;
+            inputIsSequence:(BOOL)inputIsSeq
+           outputIsSequence:(BOOL)outputIsSeq;
 
 /// Create a ForEach edge (list -> item)
 + (instancetype)forEachEdgeFrom:(CSMediaUrn *)from to:(CSMediaUrn *)to;
@@ -112,16 +112,20 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
 - (NSUInteger)edgeCount;
 
 /// BFS: find all reachable targets from source, up to maxDepth.
+/// isSequence indicates whether the source data is a sequence (multiple items) or scalar.
 /// Returns targets sorted by (min_path_length, display_name).
 - (NSArray<CSReachableTargetInfo *> *)getReachableTargetsFromSource:(CSMediaUrn *)source
-                                                          maxDepth:(NSUInteger)maxDepth;
+                                                          maxDepth:(NSUInteger)maxDepth
+                                                        isSequence:(BOOL)isSequence;
 
 /// DFS: find all paths to exact target (uses isEquivalentTo: for matching).
+/// isSequence indicates whether the source data is a sequence (multiple items) or scalar.
 /// Returns paths sorted by (cap_step_count, specificity desc, urn lex).
 - (NSArray<CSStrand *> *)findPathsToExactTarget:(CSMediaUrn *)source
                                                    target:(CSMediaUrn *)target
                                                  maxDepth:(NSUInteger)maxDepth
-                                                 maxPaths:(NSUInteger)maxPaths;
+                                                 maxPaths:(NSUInteger)maxPaths
+                                               isSequence:(BOOL)isSequence;
 
 @end
 

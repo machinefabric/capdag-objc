@@ -317,6 +317,7 @@
     CSCapArg *arg = [[CSCapArg alloc] init];
     arg->_mediaUrn = [mediaUrn copy];
     arg->_required = required;
+    arg->_isSequence = NO;
     arg->_sources = [sources copy];
     arg->_argDescription = [argDescription copy];
     arg->_defaultValue = defaultValue;
@@ -373,9 +374,14 @@
     id defaultValue = dictionary[@"default_value"];
     NSDictionary *metadata = dictionary[@"metadata"];
 
+    // Optional: is_sequence (defaults to NO)
+    NSNumber *isSequenceValue = dictionary[@"is_sequence"];
+    BOOL isSequence = isSequenceValue ? [isSequenceValue boolValue] : NO;
+
     CSCapArg *arg = [[CSCapArg alloc] init];
     arg->_mediaUrn = [mediaUrn copy];
     arg->_required = required;
+    arg->_isSequence = isSequence;
     arg->_sources = [sources copy];
     arg->_argDescription = [argDescription copy];
     arg->_defaultValue = defaultValue;
@@ -389,6 +395,9 @@
 
     dict[@"media_urn"] = self.mediaUrn;
     dict[@"required"] = @(self.required);
+    if (self.isSequence) {
+        dict[@"is_sequence"] = @YES;
+    }
 
     NSMutableArray *sourceDicts = [NSMutableArray array];
     for (CSArgSource *source in self.sources) {
@@ -473,6 +482,7 @@
     CSCapArg *copy = [[CSCapArg alloc] init];
     copy->_mediaUrn = [self.mediaUrn copy];
     copy->_required = self.required;
+    copy->_isSequence = self.isSequence;
     copy->_sources = [[NSArray alloc] initWithArray:self.sources copyItems:YES];
     copy->_argDescription = [self.argDescription copy];
     copy->_defaultValue = self.defaultValue;
@@ -483,6 +493,7 @@
 - (void)encodeWithCoder:(NSCoder *)coder {
     [coder encodeObject:self.mediaUrn forKey:@"mediaUrn"];
     [coder encodeBool:self.required forKey:@"required"];
+    [coder encodeBool:self.isSequence forKey:@"isSequence"];
     [coder encodeObject:self.sources forKey:@"sources"];
     [coder encodeObject:self.argDescription forKey:@"argDescription"];
     [coder encodeObject:self.defaultValue forKey:@"defaultValue"];
@@ -501,6 +512,7 @@
     if (self) {
         _mediaUrn = mediaUrn;
         _required = [coder decodeBoolForKey:@"required"];
+        _isSequence = [coder decodeBoolForKey:@"isSequence"];
         _sources = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSArgSource class], nil] forKey:@"sources"];
         _argDescription = [coder decodeObjectOfClass:[NSString class] forKey:@"argDescription"];
         _defaultValue = [coder decodeObjectForKey:@"defaultValue"];
@@ -551,6 +563,7 @@
     CSCapOutput *output = [[CSCapOutput alloc] init];
     output->_mediaUrn = [mediaUrn copy];
     output->_outputDescription = [outputDescription copy];
+    output->_isSequence = NO;
     output->_metadata = nil;
     return output;
 }
@@ -558,6 +571,7 @@
 + (instancetype)outputWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
     NSString *mediaUrn = dictionary[@"media_urn"];
     NSString *outputDescription = dictionary[@"output_description"];
+    NSNumber *isSequenceValue = dictionary[@"is_sequence"];
     NSDictionary *metadata = dictionary[@"metadata"];
 
     // FAIL HARD on missing required fields
@@ -582,6 +596,7 @@
     CSCapOutput *output = [[CSCapOutput alloc] init];
     output->_mediaUrn = [mediaUrn copy];
     output->_outputDescription = [outputDescription copy];
+    output->_isSequence = isSequenceValue ? [isSequenceValue boolValue] : NO;
     output->_metadata = [metadata copy];
 
     return output;
@@ -591,6 +606,7 @@
     CSCapOutput *copy = [[CSCapOutput alloc] init];
     copy->_mediaUrn = [self.mediaUrn copy];
     copy->_outputDescription = [self.outputDescription copy];
+    copy->_isSequence = self.isSequence;
     copy->_metadata = [self.metadata copy];
     return copy;
 }
@@ -598,6 +614,7 @@
 - (void)encodeWithCoder:(NSCoder *)coder {
     [coder encodeObject:self.mediaUrn forKey:@"mediaUrn"];
     [coder encodeObject:self.outputDescription forKey:@"outputDescription"];
+    [coder encodeBool:self.isSequence forKey:@"isSequence"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
 }
 
@@ -614,6 +631,7 @@
     if (self) {
         _mediaUrn = mediaUrn;
         _outputDescription = outputDescription;
+        _isSequence = [coder decodeBoolForKey:@"isSequence"];
         _metadata = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadata"];
     }
     return self;

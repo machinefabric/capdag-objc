@@ -82,15 +82,8 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn without_tag(&self, key: &str) -> Self
 - (CSMediaUrn * _Nonnull)withoutTag:(NSString * _Nonnull)key;
 
-/// Create a new MediaUrn with the list marker tag added.
-/// If already a list, returns an equivalent copy (idempotent).
-/// Mirrors Rust: pub fn with_list(&self) -> MediaUrn
-- (CSMediaUrn * _Nonnull)withList;
-
-/// Create a new MediaUrn with the list marker tag removed.
-/// If already scalar, returns an equivalent copy (idempotent).
-/// Mirrors Rust: pub fn without_list(&self) -> MediaUrn
-- (CSMediaUrn * _Nonnull)withoutList;
+// withList and withoutList removed — list tag is semantic, not shape.
+// Shape (scalar vs sequence) is tracked via is_sequence, not URN manipulation.
 
 /// Compute the least upper bound (LUB) of an array of media URNs.
 /// The LUB keeps only tags that are common to ALL inputs (with matching values).

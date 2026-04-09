@@ -122,6 +122,13 @@ public final class ResponseWriter: @unchecked Sendable {
     /// `emitListResponse` is for list-typed cap outputs where the executor's
     /// list path expects a CBOR sequence without transport wrapping.
     public func emitListResponse(mediaUrn: String, items: [CBOR]) {
+        emitListResponseWithMetas(mediaUrn: mediaUrn, items: items, itemMetas: [])
+    }
+
+    /// Emit a sequence response with optional per-item metadata.
+    /// Each entry in `itemMetas` corresponds to the item at the same index.
+    /// If `itemMetas` is shorter than `items`, remaining items get no meta.
+    public func emitListResponseWithMetas(mediaUrn: String, items: [CBOR], itemMetas: [[String: CBOR]?]) {
         let streamId = "result"
 
         send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn, isSequence: true))
@@ -129,7 +136,11 @@ public final class ResponseWriter: @unchecked Sendable {
         for (index, item) in items.enumerated() {
             let cborPayload = Data(item.encode())
             let checksum = Frame.computeChecksum(cborPayload)
-            send(Frame.chunk(reqId: MessageId.uint(0), streamId: streamId, seq: 0, payload: cborPayload, chunkIndex: UInt64(index), checksum: checksum))
+            var chunk = Frame.chunk(reqId: MessageId.uint(0), streamId: streamId, seq: 0, payload: cborPayload, chunkIndex: UInt64(index), checksum: checksum)
+            if index < itemMetas.count, let meta = itemMetas[index] {
+                chunk.meta = meta
+            }
+            send(chunk)
         }
 
         send(Frame.streamEnd(reqId: MessageId.uint(0), streamId: streamId, chunkCount: UInt64(items.count)))

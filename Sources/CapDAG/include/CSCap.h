@@ -137,6 +137,9 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Whether this argument is required
 @property (nonatomic, readonly) BOOL required;
 
+/// Whether this argument carries a sequence of items (YES) or a single item (NO, default)
+@property (nonatomic, readonly) BOOL isSequence;
+
 /// Array of sources for this argument
 @property (nonatomic, readonly) NSArray<CSArgSource *> *sources;
 
@@ -250,6 +253,8 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 @property (nonatomic, readonly) NSString *mediaUrn;
 @property (nonatomic, readonly) NSString *outputDescription;
+/// Whether this output produces a sequence of items (YES) or a single item (NO, default)
+@property (nonatomic, readonly) BOOL isSequence;
 @property (nonatomic, readonly, nullable) NSDictionary *metadata;
 
 /**

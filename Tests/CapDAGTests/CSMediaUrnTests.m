@@ -1,6 +1,7 @@
 //
 //  CSMediaUrnTests.m
-//  Tests for CSMediaUrn withList/withoutList/lub and predicates
+//  Tests for CSMediaUrn lub and predicates
+//  NOTE: withList/withoutList removed — list tag is semantic, shape uses is_sequence.
 //
 
 #import <XCTest/XCTest.h>
@@ -10,39 +11,6 @@
 @end
 
 @implementation CSMediaUrnTests
-
-#pragma mark - withList / withoutList
-
-// TEST850: with_list adds list marker, without_list removes it
-- (void)test850_with_list_without_list {
-    NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
-    XCTAssertNotNil(pdf);
-    XCTAssertTrue([pdf isScalar]);
-    XCTAssertFalse([pdf isList]);
-
-    CSMediaUrn *pdfList = [pdf withList];
-    XCTAssertTrue([pdfList isList]);
-    XCTAssertFalse([pdfList isScalar]);
-    // The list URN should still conform to scalar pattern
-    XCTAssertTrue([pdfList conformsTo:pdf], @"list version should still conform to scalar pattern");
-
-    CSMediaUrn *backToScalar = [pdfList withoutList];
-    XCTAssertTrue([backToScalar isScalar]);
-    XCTAssertTrue([backToScalar isEquivalentTo:pdf], @"removing list should restore original");
-}
-
-// TEST851: with_list is idempotent
-- (void)test851_with_list_idempotent {
-    NSError *error;
-    CSMediaUrn *listUrn = [CSMediaUrn fromString:@"media:json;list;textable" error:&error];
-    XCTAssertNotNil(listUrn);
-    XCTAssertTrue([listUrn isList]);
-
-    CSMediaUrn *doubleList = [listUrn withList];
-    XCTAssertTrue([doubleList isList]);
-    XCTAssertTrue([doubleList isEquivalentTo:listUrn], @"adding list to already-list should be no-op");
-}
 
 #pragma mark - Least Upper Bound (LUB)
 
@@ -303,8 +271,8 @@
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaBoolean error:&e] isBool]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaBooleanArray error:&e] isBool]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaDecision error:&e] isBool]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaDecisionArray error:&e] isBool]);
+    // CSMediaDecision is now a JSON record, not a bool type
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaDecision error:&e] isBool]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isBool]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaInteger error:&e] isBool]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isBool]);

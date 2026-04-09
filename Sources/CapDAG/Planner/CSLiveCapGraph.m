@@ -21,8 +21,8 @@
 @property (nonatomic, strong, readwrite) CSMediaUrn *fromSpec;
 @property (nonatomic, strong, readwrite) CSMediaUrn *toSpec;
 @property (nonatomic, assign, readwrite) CSLiveMachinePlanEdgeType edgeType;
-@property (nonatomic, assign, readwrite) CSInputCardinality inputCardinality;
-@property (nonatomic, assign, readwrite) CSInputCardinality outputCardinality;
+@property (nonatomic, assign, readwrite) BOOL inputIsSequence;
+@property (nonatomic, assign, readwrite) BOOL outputIsSequence;
 @property (nonatomic, strong, readwrite, nullable) CSCapUrn *capUrn;
 @property (nonatomic, copy, readwrite, nullable) NSString *capTitle;
 @property (nonatomic, assign, readwrite) NSUInteger specificity;
@@ -35,8 +35,8 @@
                      capUrn:(CSCapUrn *)capUrn
                       title:(NSString *)title
                 specificity:(NSUInteger)specificity
-           inputCardinality:(CSInputCardinality)inputCard
-          outputCardinality:(CSInputCardinality)outputCard {
+           inputIsSequence:(BOOL)inputIsSeq
+          outputIsSequence:(BOOL)outputIsSeq {
     CSLiveMachinePlanEdge *edge = [[CSLiveMachinePlanEdge alloc] init];
     edge.fromSpec = from;
     edge.toSpec = to;
@@ -44,8 +44,8 @@
     edge.capUrn = capUrn;
     edge.capTitle = title;
     edge.specificity = specificity;
-    edge.inputCardinality = inputCard;
-    edge.outputCardinality = outputCard;
+    edge.inputIsSequence = inputIsSeq;
+    edge.outputIsSequence = outputIsSeq;
     return edge;
 }
 
@@ -54,8 +54,8 @@
     edge.fromSpec = from;
     edge.toSpec = to;
     edge.edgeType = CSLiveMachinePlanEdgeTypeForEach;
-    edge.inputCardinality = CSInputCardinalitySequence;
-    edge.outputCardinality = CSInputCardinalitySingle;
+    edge.inputIsSequence = YES;
+    edge.outputIsSequence = NO;
     edge.specificity = 0;
     return edge;
 }
@@ -65,8 +65,8 @@
     edge.fromSpec = from;
     edge.toSpec = to;
     edge.edgeType = CSLiveMachinePlanEdgeTypeCollect;
-    edge.inputCardinality = CSInputCardinalitySingle;
-    edge.outputCardinality = CSInputCardinalitySequence;
+    edge.inputIsSequence = NO;
+    edge.outputIsSequence = YES;
     edge.specificity = 0;
     return edge;
 }
@@ -137,7 +137,7 @@
     for (CSCap *cap in caps) {
         [self addCap:cap];
     }
-    [self insertCardinalityTransitions];
+    // Cardinality transitions (ForEach/Collect) are synthesized dynamically in getOutgoingEdges:isSequence:
 }
 
 - (void)syncFromCapUrns:(NSArray<NSString *> *)capUrns
@@ -179,7 +179,7 @@
             }
         }
 
-        [self insertCardinalityTransitions];
+        // Cardinality transitions (ForEach/Collect) are synthesized dynamically in getOutgoingEdges:isSequence:
         completion();
     }];
 }
@@ -213,9 +213,19 @@
     NSString *toCanonical = [toSpec toString];
     NSString *capCanonical = [cap.capUrn toString];
 
-    // Determine cardinality from media URNs
-    CSInputCardinality inputCard = CSInputCardinalityFromMediaUrn(fromCanonical);
-    CSInputCardinality outputCard = CSInputCardinalityFromMediaUrn(toCanonical);
+    // Determine input/output is_sequence from cap arg/output definitions
+    // Main input arg: the one with a stdin source
+    BOOL inputIsSeq = NO;
+    for (CSCapArg *arg in cap.args) {
+        for (CSArgSource *source in arg.sources) {
+            if (source.stdinMediaUrn != nil) {
+                inputIsSeq = arg.isSequence;
+                break;
+            }
+        }
+        if (inputIsSeq) break;
+    }
+    BOOL outputIsSeq = cap.output ? cap.output.isSequence : NO;
 
     // Create edge
     NSUInteger edgeIdx = self.edges.count;
@@ -224,8 +234,8 @@
                                               capUrn:cap.capUrn
                                                title:cap.title
                                          specificity:(NSUInteger)[cap.capUrn specificity]
-                                    inputCardinality:inputCard
-                                   outputCardinality:outputCard];
+                                    inputIsSequence:inputIsSeq
+                                   outputIsSequence:outputIsSeq];
     [self.edges addObject:edge];
 
     // Update indices
@@ -260,34 +270,39 @@
 
 // MARK: - Outgoing Edges (conformsTo matching)
 
-/// Get all edges whose from_spec the source conforms to, with cardinality checks.
-/// Scans ALL edges (not index) because conformsTo cannot use dictionary lookup.
-- (NSArray<CSLiveMachinePlanEdge *> *)getOutgoingEdges:(CSMediaUrn *)source {
-    NSMutableArray<CSLiveMachinePlanEdge *> *result = [NSMutableArray array];
-    BOOL sourceIsList = [source isList];
+/// Get all outgoing edges from source, with cardinality transitions synthesized dynamically.
+/// Cap edges are matched purely on conformsTo. ForEach/Collect are synthesized based on isSequence.
+/// Returns array of dictionaries with @"edge" (CSLiveMachinePlanEdge) and @"isSequence" (NSNumber BOOL).
+- (NSArray<NSDictionary *> *)getOutgoingEdges:(CSMediaUrn *)source isSequence:(BOOL)isSequence {
+    NSMutableArray<NSDictionary *> *result = [NSMutableArray array];
 
     for (CSLiveMachinePlanEdge *edge in self.edges) {
-        BOOL edgeExpectsList = [edge.fromSpec isList];
+        NSAssert(edge.edgeType == CSLiveMachinePlanEdgeTypeCap,
+                 @"Non-cap edge found in graph storage: %@", edge);
+        if (![source conformsTo:edge.fromSpec]) continue;
 
-        // Check cardinality compatibility
-        BOOL cardinalityCompatible = NO;
-        switch (edge.edgeType) {
-            case CSLiveMachinePlanEdgeTypeCap:
-                cardinalityCompatible = (edgeExpectsList == sourceIsList);
+        // Cardinality compatibility:
+        // sequence data → scalar cap: needs ForEach first, skip direct match
+        // scalar data → sequence cap: single item wraps into 1-item sequence, OK
+        if (isSequence && !edge.inputIsSequence) continue;
+
+        BOOL outIsSeq = edge.outputIsSequence;
+        [result addObject:@{@"edge": edge, @"isSequence": @(outIsSeq)}];
+    }
+
+    // Synthesize ForEach when data is a sequence
+    if (isSequence) {
+        // Check if any scalar cap could consume items after ForEach
+        BOOL hasScalarConsumers = NO;
+        for (CSLiveMachinePlanEdge *edge in self.edges) {
+            if (!edge.inputIsSequence && [source conformsTo:edge.fromSpec]) {
+                hasScalarConsumers = YES;
                 break;
-            case CSLiveMachinePlanEdgeTypeForEach:
-                cardinalityCompatible = (sourceIsList && ![edge.toSpec isList]);
-                break;
-            case CSLiveMachinePlanEdgeTypeCollect:
-                cardinalityCompatible = (!sourceIsList && [edge.toSpec isList]);
-                break;
+            }
         }
-
-        if (!cardinalityCompatible) continue;
-
-        // Check type conformance
-        if ([source conformsTo:edge.fromSpec]) {
-            [result addObject:edge];
+        if (hasScalarConsumers) {
+            CSLiveMachinePlanEdge *foreachEdge = [CSLiveMachinePlanEdge forEachEdgeFrom:source to:source];
+            [result addObject:@{@"edge": foreachEdge, @"isSequence": @NO}];
         }
     }
 
@@ -295,183 +310,25 @@
 }
 
 // MARK: - Cardinality Transitions
+// insertCardinalityTransitions removed — ForEach/Collect are synthesized dynamically
+// in getOutgoingEdges:isSequence: based on the current is_sequence state.
 
-- (void)insertCardinalityTransitions {
-    // Collect all unique list-typed output specs from existing edges
-    // Sort for deterministic iteration order
-    NSMutableArray<CSMediaUrn *> *listOutputs = [NSMutableArray array];
-    NSMutableSet<NSString *> *seenListCanonicals = [NSMutableSet set];
-
-    for (CSLiveMachinePlanEdge *edge in self.edges) {
-        if ([edge.toSpec isList]) {
-            NSString *canonical = [edge.toSpec toString];
-            if (![seenListCanonicals containsObject:canonical]) {
-                [seenListCanonicals addObject:canonical];
-                [listOutputs addObject:edge.toSpec];
-            }
-        }
-    }
-
-    // Sort for determinism
-    [listOutputs sortUsingComparator:^NSComparisonResult(CSMediaUrn *a, CSMediaUrn *b) {
-        return [[a toString] compare:[b toString]];
-    }];
-
-    if (listOutputs.count == 0) return;
-
-    // For each list output, check if we have caps that accept the singular version
-    NSMutableArray<NSArray<CSMediaUrn *> *> *foreachEdgesToAdd = [NSMutableArray array];
-
-    for (CSMediaUrn *listSpec in listOutputs) {
-        CSMediaUrn *itemSpec = [listSpec withoutTag:@"list"];
-
-        // Check if any edge accepts the item spec
-        BOOL hasSingularConsumer = NO;
-        for (CSLiveMachinePlanEdge *edge in self.edges) {
-            if ([itemSpec conformsTo:edge.fromSpec]) {
-                hasSingularConsumer = YES;
-                break;
-            }
-        }
-
-        if (hasSingularConsumer) {
-            [foreachEdgesToAdd addObject:@[listSpec, itemSpec]];
-        }
-    }
-
-    // Add ForEach edges
-    for (NSArray<CSMediaUrn *> *pair in foreachEdgesToAdd) {
-        CSMediaUrn *listSpec = pair[0];
-        CSMediaUrn *itemSpec = pair[1];
-        NSString *listCanonical = [listSpec toString];
-        NSString *itemCanonical = [itemSpec toString];
-
-        NSUInteger edgeIdx = self.edges.count;
-        CSLiveMachinePlanEdge *foreachEdge = [CSLiveMachinePlanEdge forEachEdgeFrom:listSpec to:itemSpec];
-        [self.edges addObject:foreachEdge];
-
-        if (!self.outgoing[listCanonical]) {
-            self.outgoing[listCanonical] = [NSMutableArray array];
-        }
-        [self.outgoing[listCanonical] addObject:@(edgeIdx)];
-
-        if (!self.incoming[itemCanonical]) {
-            self.incoming[itemCanonical] = [NSMutableArray array];
-        }
-        [self.incoming[itemCanonical] addObject:@(edgeIdx)];
-
-        [self.nodes addObject:listCanonical];
-        [self.nodes addObject:itemCanonical];
-    }
-
-    // Insert Collect edges for existing list types
-    [self insertCollectEdgesForExistingLists];
-}
-
-- (void)insertCollectEdgesForExistingLists {
-    // Find all list specs that exist as Cap outputs (not synthetic edges)
-    NSMutableArray<CSMediaUrn *> *existingListOutputs = [NSMutableArray array];
-    NSMutableSet<NSString *> *seenCanonicals = [NSMutableSet set];
-
-    for (CSLiveMachinePlanEdge *edge in self.edges) {
-        if (edge.edgeType == CSLiveMachinePlanEdgeTypeCap && [edge.toSpec isList]) {
-            NSString *canonical = [edge.toSpec toString];
-            if (![seenCanonicals containsObject:canonical]) {
-                [seenCanonicals addObject:canonical];
-                [existingListOutputs addObject:edge.toSpec];
-            }
-        }
-    }
-
-    // Sort for determinism
-    [existingListOutputs sortUsingComparator:^NSComparisonResult(CSMediaUrn *a, CSMediaUrn *b) {
-        return [[a toString] compare:[b toString]];
-    }];
-
-    NSMutableArray<NSArray<CSMediaUrn *> *> *collectEdgesToAdd = [NSMutableArray array];
-
-    for (CSMediaUrn *listSpec in existingListOutputs) {
-        CSMediaUrn *itemSpec = [listSpec withoutTag:@"list"];
-
-        // Check if we have any cap that outputs the singular version
-        BOOL hasSingularOutput = NO;
-        for (CSLiveMachinePlanEdge *edge in self.edges) {
-            if (edge.edgeType == CSLiveMachinePlanEdgeTypeCap &&
-                ![edge.toSpec isList] &&
-                [edge.toSpec isEquivalentTo:itemSpec]) {
-                hasSingularOutput = YES;
-                break;
-            }
-        }
-
-        // Also check if any cap can consume the item
-        BOOL hasItemConsumer = NO;
-        if (!hasSingularOutput) {
-            for (CSLiveMachinePlanEdge *edge in self.edges) {
-                if (edge.edgeType == CSLiveMachinePlanEdgeTypeCap &&
-                    [itemSpec conformsTo:edge.fromSpec]) {
-                    hasItemConsumer = YES;
-                    break;
-                }
-            }
-        }
-
-        if (hasSingularOutput || hasItemConsumer) {
-            [collectEdgesToAdd addObject:@[itemSpec, listSpec]];
-        }
-    }
-
-    // Add Collect edges (checking for duplicates)
-    for (NSArray<CSMediaUrn *> *pair in collectEdgesToAdd) {
-        CSMediaUrn *itemSpec = pair[0];
-        CSMediaUrn *listSpec = pair[1];
-
-        // Check for duplicate
-        BOOL alreadyExists = NO;
-        for (CSLiveMachinePlanEdge *edge in self.edges) {
-            if (edge.edgeType == CSLiveMachinePlanEdgeTypeCollect &&
-                [edge.fromSpec isEquivalentTo:itemSpec] &&
-                [edge.toSpec isEquivalentTo:listSpec]) {
-                alreadyExists = YES;
-                break;
-            }
-        }
-        if (alreadyExists) continue;
-
-        NSString *itemCanonical = [itemSpec toString];
-        NSString *listCanonical = [listSpec toString];
-
-        NSUInteger edgeIdx = self.edges.count;
-        CSLiveMachinePlanEdge *collectEdge = [CSLiveMachinePlanEdge collectEdgeFrom:itemSpec to:listSpec];
-        [self.edges addObject:collectEdge];
-
-        if (!self.outgoing[itemCanonical]) {
-            self.outgoing[itemCanonical] = [NSMutableArray array];
-        }
-        [self.outgoing[itemCanonical] addObject:@(edgeIdx)];
-
-        if (!self.incoming[listCanonical]) {
-            self.incoming[listCanonical] = [NSMutableArray array];
-        }
-        [self.incoming[listCanonical] addObject:@(edgeIdx)];
-
-        [self.nodes addObject:itemCanonical];
-        [self.nodes addObject:listCanonical];
-    }
-}
+// insertCollectEdgesForExistingLists removed — Collect edges are synthesized dynamically.
 
 // MARK: - Reachable Targets (BFS)
 
 - (NSArray<CSReachableTargetInfo *> *)getReachableTargetsFromSource:(CSMediaUrn *)source
-                                                          maxDepth:(NSUInteger)maxDepth {
+                                                          maxDepth:(NSUInteger)maxDepth
+                                                        isSequence:(BOOL)isSequence {
     NSMutableDictionary<NSString *, CSReachableTargetInfo *> *results = [NSMutableDictionary dictionary];
+    // Visited tracks (urn, isSequence) pairs to avoid infinite loops through ForEach/Collect
     NSMutableSet<NSString *> *visited = [NSMutableSet set];
-    // Queue entries: [CSMediaUrn, NSNumber(depth)]
+    // Queue entries: [CSMediaUrn, NSNumber(depth), NSNumber(isSequence)]
     NSMutableArray<NSArray *> *queue = [NSMutableArray array];
 
-    NSString *sourceCanonical = [source toString];
-    [queue addObject:@[source, @0]];
-    [visited addObject:sourceCanonical];
+    NSString *sourceKey = [NSString stringWithFormat:@"%@|%d", [source toString], isSequence];
+    [queue addObject:@[source, @0, @(isSequence)]];
+    [visited addObject:sourceKey];
 
     while (queue.count > 0) {
         NSArray *item = queue.firstObject;
@@ -479,11 +336,14 @@
 
         CSMediaUrn *current = item[0];
         NSUInteger depth = [item[1] unsignedIntegerValue];
+        BOOL currentIsSequence = [item[2] boolValue];
 
         if (depth >= maxDepth) continue;
 
-        NSArray<CSLiveMachinePlanEdge *> *outEdges = [self getOutgoingEdges:current];
-        for (CSLiveMachinePlanEdge *edge in outEdges) {
+        NSArray<NSDictionary *> *outEdges = [self getOutgoingEdges:current isSequence:currentIsSequence];
+        for (NSDictionary *edgeDict in outEdges) {
+            CSLiveMachinePlanEdge *edge = edgeDict[@"edge"];
+            BOOL nextIsSequence = [edgeDict[@"isSequence"] boolValue];
             NSUInteger newDepth = depth + 1;
             NSString *outputCanonical = [edge.toSpec toString];
 
@@ -499,10 +359,11 @@
             }
             info.pathCount += 1;
 
-            // Continue BFS if not visited
-            if (![visited containsObject:outputCanonical]) {
-                [visited addObject:outputCanonical];
-                [queue addObject:@[edge.toSpec, @(newDepth)]];
+            // Continue BFS if not visited (track isSequence state)
+            NSString *nextKey = [NSString stringWithFormat:@"%@|%d", outputCanonical, nextIsSequence];
+            if (![visited containsObject:nextKey]) {
+                [visited addObject:nextKey];
+                [queue addObject:@[edge.toSpec, @(newDepth), @(nextIsSequence)]];
             }
         }
     }
@@ -524,7 +385,8 @@
 - (NSArray<CSStrand *> *)findPathsToExactTarget:(CSMediaUrn *)source
                                                    target:(CSMediaUrn *)target
                                                  maxDepth:(NSUInteger)maxDepth
-                                                 maxPaths:(NSUInteger)maxPaths {
+                                                 maxPaths:(NSUInteger)maxPaths
+                                               isSequence:(BOOL)isSequence {
     // If source already satisfies target, return empty
     if ([source isEquivalentTo:target]) {
         return @[];
@@ -541,7 +403,8 @@
                visited:visited
               allPaths:allPaths
               maxDepth:maxDepth
-              maxPaths:maxPaths];
+              maxPaths:maxPaths
+            isSequence:isSequence];
 
     // Sort paths deterministically
     [allPaths sortUsingComparator:^NSComparisonResult(CSStrand *a, CSStrand *b) {
@@ -558,7 +421,8 @@
              visited:(NSMutableSet<NSString *> *)visited
             allPaths:(NSMutableArray<CSStrand *> *)allPaths
             maxDepth:(NSUInteger)maxDepth
-            maxPaths:(NSUInteger)maxPaths {
+            maxPaths:(NSUInteger)maxPaths
+          isSequence:(BOOL)isSequence {
 
     if (allPaths.count >= maxPaths) return;
 
@@ -584,15 +448,18 @@
 
     if (currentPath.count >= maxDepth) return;
 
-    NSString *currentCanonical = [current toString];
-    [visited addObject:currentCanonical];
+    // Track (urn, isSequence) pairs to avoid infinite ForEach/Collect loops
+    NSString *currentKey = [NSString stringWithFormat:@"%@|%d", [current toString], isSequence];
+    [visited addObject:currentKey];
 
     // Explore outgoing edges
-    NSArray<CSLiveMachinePlanEdge *> *outEdges = [self getOutgoingEdges:current];
-    for (CSLiveMachinePlanEdge *edge in outEdges) {
-        NSString *nextCanonical = [edge.toSpec toString];
+    NSArray<NSDictionary *> *outEdges = [self getOutgoingEdges:current isSequence:isSequence];
+    for (NSDictionary *edgeDict in outEdges) {
+        CSLiveMachinePlanEdge *edge = edgeDict[@"edge"];
+        BOOL nextIsSequence = [edgeDict[@"isSequence"] boolValue];
+        NSString *nextKey = [NSString stringWithFormat:@"%@|%d", [edge.toSpec toString], nextIsSequence];
 
-        if (![visited containsObject:nextCanonical]) {
+        if (![visited containsObject:nextKey]) {
             // Convert edge type to step info
             CSStrandStep *step = [[CSStrandStep alloc] init];
             step.fromSpec = [edge.fromSpec toString];
@@ -606,13 +473,11 @@
                     break;
                 case CSLiveMachinePlanEdgeTypeForEach:
                     step.stepType = CSStrandStepTypeForEach;
-                    step.itemMediaUrn = [edge.toSpec toString];
-                    step.listMediaUrn = [edge.fromSpec toString];
+                    step.mediaUrn = [edge.toSpec toString];
                     break;
                 case CSLiveMachinePlanEdgeTypeCollect:
                     step.stepType = CSStrandStepTypeCollect;
-                    step.itemMediaUrn = [edge.fromSpec toString];
-                    step.listMediaUrn = [edge.toSpec toString];
+                    step.mediaUrn = [edge.fromSpec toString];
                     break;
             }
 
@@ -625,14 +490,15 @@
                        visited:visited
                       allPaths:allPaths
                       maxDepth:maxDepth
-                      maxPaths:maxPaths];
+                      maxPaths:maxPaths
+                    isSequence:nextIsSequence];
 
             [currentPath removeLastObject];
         }
     }
 
     // Remove from visited for backtracking (enables multiple paths through same node)
-    [visited removeObject:currentCanonical];
+    [visited removeObject:currentKey];
 }
 
 // MARK: - Path Comparison (Deterministic Ordering)

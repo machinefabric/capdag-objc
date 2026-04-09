@@ -76,10 +76,8 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 @property (nonatomic, copy, nullable) NSString *fromSpec;
 /// Output media spec for this step
 @property (nonatomic, copy, nullable) NSString *toSpec;
-/// For ForEach/Collect: item media URN
-@property (nonatomic, copy, nullable) NSString *itemMediaUrn;
-/// For ForEach/Collect: list media URN
-@property (nonatomic, copy, nullable) NSString *listMediaUrn;
+/// For ForEach/Collect: the media URN (same for both from and to — shape transition, not type)
+@property (nonatomic, copy, nullable) NSString *mediaUrn;
 /// Specificity score (0 for cardinality transitions)
 @property (nonatomic, assign) NSUInteger specificity;
 /// Human-readable title for this step

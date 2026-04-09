@@ -42,7 +42,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:pdf" error:&error];
     XCTAssertNotNil(source);
 
-    NSArray<CSReachableTargetInfo *> *targets = [graph getReachableTargetsFromSource:source maxDepth:5];
+    NSArray<CSReachableTargetInfo *> *targets = [graph getReachableTargetsFromSource:source maxDepth:5 isSequence:NO];
     XCTAssertEqual(targets.count, 1u);
     XCTAssertEqual(targets[0].minDepth, 1u);
 }
@@ -67,13 +67,13 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
     // Query for singular — should find exactly 1 path
     CSMediaUrn *targetSingular = [CSMediaUrn fromString:@"media:analysis-result" error:&error];
-    NSArray *pathsSingular = [graph findPathsToExactTarget:source target:targetSingular maxDepth:5 maxPaths:10];
+    NSArray *pathsSingular = [graph findPathsToExactTarget:source target:targetSingular maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(pathsSingular.count, 1u, @"singular query should find exactly 1 path");
     XCTAssertEqualObjects([pathsSingular[0] steps][0].capUrn ? [pathsSingular[0] steps][0].capUrn : @"", [cap1.capUrn toString]);
 
     // Query for list — should find exactly 1 path
     CSMediaUrn *targetPlural = [CSMediaUrn fromString:@"media:analysis-result;list" error:&error];
-    NSArray *pathsPlural = [graph findPathsToExactTarget:source target:targetPlural maxDepth:5 maxPaths:10];
+    NSArray *pathsPlural = [graph findPathsToExactTarget:source target:targetPlural maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(pathsPlural.count, 1u, @"list query should find exactly 1 path");
 }
 
@@ -89,7 +89,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:pdf" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:summary-text" error:&error];
 
-    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
 
     XCTAssertEqual(paths.count, 1u);
     XCTAssertEqual(paths[0].totalSteps, 2);
@@ -110,8 +110,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:extracted-text" error:&error];
 
     // Run twice — same order
-    NSArray *paths1 = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
-    NSArray *paths2 = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray *paths1 = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
+    NSArray *paths2 = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
 
     XCTAssertEqual(paths1.count, paths2.count);
     for (NSUInteger i = 0; i < paths1.count; i++) {
@@ -158,7 +158,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:a" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:c" error:&error];
 
-    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
 
     XCTAssertEqual(paths.count, 1u, @"Should find one path through intermediate");
     CSStrand *path = paths[0];
@@ -178,7 +178,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:a" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:c" error:&error];
 
-    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
 
     XCTAssertEqual(paths.count, 0u, @"Should find no paths when target unreachable");
 }
@@ -195,7 +195,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:a" error:&error];
 
-    NSArray<CSReachableTargetInfo *> *targets = [graph getReachableTargetsFromSource:source maxDepth:5];
+    NSArray<CSReachableTargetInfo *> *targets = [graph getReachableTargetsFromSource:source maxDepth:5 isSequence:NO];
 
     XCTAssertEqual(targets.count, 2u, @"Should find 2 reachable targets");
     NSMutableSet *targetSpecs = [NSMutableSet set];
@@ -217,7 +217,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:png" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:textable" error:&error];
 
-    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(paths.count, 0u, @"Should NOT find path from PNG via PDF cap");
 }
 
@@ -232,7 +232,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:pdf" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:thumbnail" error:&error];
 
-    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(paths.count, 0u, @"Should NOT find path from PDF via PNG cap");
 }
 
@@ -248,13 +248,13 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     NSError *error = nil;
     // PNG should only reach thumbnail
     CSMediaUrn *pngSource = [CSMediaUrn fromString:@"media:png" error:&error];
-    NSArray *pngTargets = [graph getReachableTargetsFromSource:pngSource maxDepth:5];
+    NSArray *pngTargets = [graph getReachableTargetsFromSource:pngSource maxDepth:5 isSequence:NO];
     XCTAssertEqual(pngTargets.count, 1u, @"PNG should reach 1 target");
     XCTAssertEqualObjects(((CSReachableTargetInfo *)pngTargets[0]).mediaUrn, @"media:thumbnail");
 
     // PDF should only reach textable
     CSMediaUrn *pdfSource = [CSMediaUrn fromString:@"media:pdf" error:&error];
-    NSArray *pdfTargets = [graph getReachableTargetsFromSource:pdfSource maxDepth:5];
+    NSArray *pdfTargets = [graph getReachableTargetsFromSource:pdfSource maxDepth:5 isSequence:NO];
     XCTAssertEqual(pdfTargets.count, 1u, @"PDF should reach 1 target");
     XCTAssertEqualObjects(((CSReachableTargetInfo *)pdfTargets[0]).mediaUrn, @"media:textable");
 }
@@ -272,13 +272,13 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     // PNG should find 2-step path
     CSMediaUrn *pngSource = [CSMediaUrn fromString:@"media:png" error:&error];
     CSMediaUrn *thumbTarget = [CSMediaUrn fromString:@"media:thumbnail" error:&error];
-    NSArray *pngPaths = [graph findPathsToExactTarget:pngSource target:thumbTarget maxDepth:5 maxPaths:10];
+    NSArray *pngPaths = [graph findPathsToExactTarget:pngSource target:thumbTarget maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(pngPaths.count, 1u, @"PNG should find 1 path to thumbnail");
     XCTAssertEqual(((CSStrand *)pngPaths[0]).steps.count, 2u, @"Path should have 2 steps");
 
     // PDF should find no path
     CSMediaUrn *pdfSource = [CSMediaUrn fromString:@"media:pdf" error:&error];
-    NSArray *pdfPaths = [graph findPathsToExactTarget:pdfSource target:thumbTarget maxDepth:5 maxPaths:10];
+    NSArray *pdfPaths = [graph findPathsToExactTarget:pdfSource target:thumbTarget maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(pdfPaths.count, 0u, @"PDF should find no path to thumbnail");
 }
 
@@ -297,44 +297,52 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:format-a" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:format-c" error:&error];
 
-    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10];
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
 
     XCTAssertGreaterThanOrEqual(paths.count, 2u, @"Should find at least 2 paths");
     XCTAssertEqual(paths[0].steps.count, 1u, @"Shortest path should be first (1 step)");
     XCTAssertEqualObjects(paths[0].steps[0].capUrn, [direct.capUrn toString]);
 }
 
-// TEST788: ForEach edges inserted for list→singular transitions
-- (void)test788ForEachEdgesInserted {
+// TEST788: ForEach synthesized when input is a sequence
+- (void)test788ForEachWithSequenceInput {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
-    CSCap *disbind = makeTestCap(@"media:pdf", @"media:page;textable;list", @"disbind", @"Disbind PDF");
+    // Two caps: pdf→page and textable→decision
+    CSCap *disbind = makeTestCap(@"media:pdf", @"media:page;textable", @"disbind", @"Disbind PDF");
     CSCap *choose = makeTestCap(@"media:textable", @"media:decision;bool;textable", @"choose", @"Make a Decision");
 
     [graph syncFromCaps:@[disbind, choose]];
 
-    // Check ForEach edges were inserted
-    BOOL hasForEach = NO;
-    // Access edges via edge count — we can't directly access the array, but
-    // we can check by querying paths
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:pdf" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:decision;bool;textable" error:&error];
 
-    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:10 maxPaths:20];
-
-    // Should find at least one path that goes through ForEach
-    for (CSStrand *path in paths) {
+    // With isSequence:NO (single PDF), should find direct path: disbind → choose (no ForEach)
+    NSArray<CSStrand *> *scalarPaths = [graph findPathsToExactTarget:source target:target maxDepth:10 maxPaths:20 isSequence:NO];
+    BOOL hasForEachScalar = NO;
+    for (CSStrand *path in scalarPaths) {
         for (CSStrandStep *step in path.steps) {
             if (step.stepType == CSStrandStepTypeForEach) {
-                hasForEach = YES;
+                hasForEachScalar = YES;
                 break;
             }
         }
-        if (hasForEach) break;
     }
+    XCTAssertFalse(hasForEachScalar, @"Scalar input should NOT produce ForEach step");
 
-    XCTAssertTrue(hasForEach, @"Should find path with ForEach step (pdf → disbind → ForEach → choose)");
+    // With isSequence:YES (multiple PDFs), should find path with ForEach
+    NSArray<CSStrand *> *seqPaths = [graph findPathsToExactTarget:source target:target maxDepth:10 maxPaths:20 isSequence:YES];
+    BOOL hasForEachSeq = NO;
+    for (CSStrand *path in seqPaths) {
+        for (CSStrandStep *step in path.steps) {
+            if (step.stepType == CSStrandStepTypeForEach) {
+                hasForEachSeq = YES;
+                break;
+            }
+        }
+    }
+    XCTAssertTrue(hasForEachSeq, @"Sequence input should produce ForEach step");
 }
 
 // TEST790: Identity URN is specific, not equivalent to everything

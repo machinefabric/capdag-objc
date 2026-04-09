@@ -792,17 +792,13 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
         [resolvedFiles addObject:resolved];
     }
 
-    // Determine aggregate cardinality
+    // Determine aggregate cardinality from file count alone.
+    // Content structure (list/record) is a media type concern, not a cardinality concern.
+    // Cardinality is purely about how many items are in the input — is_sequence on the wire.
     CSInputCardinality cardinality;
     if (resolvedFiles.count == 1) {
-        // Single file: cardinality depends on content structure
-        if ([resolvedFiles[0] isList]) {
-            cardinality = CSInputCardinalitySequence;
-        } else {
-            cardinality = CSInputCardinalitySingle;
-        }
+        cardinality = CSInputCardinalitySingle;
     } else {
-        // Multiple files: always sequence
         cardinality = CSInputCardinalitySequence;
     }
 

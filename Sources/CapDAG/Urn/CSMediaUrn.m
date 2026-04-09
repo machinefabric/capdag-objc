@@ -195,15 +195,10 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return [[self tags] count];
 }
 
-// MARK: - List cardinality builders
-
-- (CSMediaUrn *)withList {
-    return [self withTag:@"list" value:@"*"];
-}
-
-- (CSMediaUrn *)withoutList {
-    return [self withoutTag:@"list"];
-}
+// MARK: - List type queries (semantic, not shape)
+// withList and withoutList have been removed — the list tag is a semantic type
+// indicator (the data IS a list), not a shape indicator. Shape is tracked via
+// is_sequence on the wire protocol, not by manipulating URNs.
 
 + (CSMediaUrn *)lub:(NSArray<CSMediaUrn *> *)urns {
     if (urns.count == 0) {
