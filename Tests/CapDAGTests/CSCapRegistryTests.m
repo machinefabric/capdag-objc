@@ -143,6 +143,7 @@ static NSString *buildRegistryURL(NSString *urn) {
                              title:@"Extract Metadata"
                            command:@"extract-metadata"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                               args:@[]

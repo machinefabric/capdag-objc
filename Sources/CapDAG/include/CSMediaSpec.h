@@ -162,6 +162,14 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 /// Optional description
 @property (nonatomic, readonly, nullable) NSString *descriptionText;
 
+/// Optional long-form markdown documentation.
+///
+/// Rendered in media info panels, the cap navigator, capdag-dot-com,
+/// and anywhere else a rich-text explanation of the media spec is
+/// useful. Authored as a triple-quoted literal string in the source
+/// TOML so newlines and markdown punctuation pass through unchanged.
+@property (nonatomic, readonly, nullable) NSString *documentation;
+
 /// Optional validation rules (inherent to the semantic type)
 @property (nonatomic, readonly, nullable) CSMediaValidation *validation;
 
@@ -178,6 +186,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
  * @param schema Optional JSON Schema for local validation
  * @param title Optional display-friendly title
  * @param descriptionText Optional description
+ * @param documentation Optional long-form markdown documentation
  * @param validation Optional validation rules
  * @param metadata Optional metadata dictionary
  * @param extensions File extensions for storing this media type (can be empty array)
@@ -188,6 +197,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
                          schema:(nullable NSDictionary *)schema
                           title:(nullable NSString *)title
                 descriptionText:(nullable NSString *)descriptionText
+                  documentation:(nullable NSString *)documentation
                      validation:(nullable CSMediaValidation *)validation
                        metadata:(nullable NSDictionary *)metadata
                      extensions:(NSArray<NSString *> *)extensions;

@@ -139,6 +139,7 @@ NSString *CSGetProfileURL(NSString *profileName) {
 @property (nonatomic, readwrite, nullable) NSDictionary *schema;
 @property (nonatomic, readwrite, nullable) NSString *title;
 @property (nonatomic, readwrite, nullable) NSString *descriptionText;
+@property (nonatomic, readwrite, nullable) NSString *documentation;
 @property (nonatomic, readwrite, nullable) NSString *mediaUrn;
 @property (nonatomic, readwrite, nullable) CSMediaValidation *validation;
 @property (nonatomic, readwrite, nullable) NSDictionary *metadata;
@@ -288,7 +289,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
                           title:(nullable NSString *)title
                 descriptionText:(nullable NSString *)descriptionText
                      validation:(nullable CSMediaValidation *)validation {
-    return [self withContentType:contentType profile:profile schema:schema title:title descriptionText:descriptionText validation:validation metadata:nil extensions:@[]];
+    return [self withContentType:contentType profile:profile schema:schema title:title descriptionText:descriptionText documentation:nil validation:validation metadata:nil extensions:@[]];
 }
 
 + (instancetype)withContentType:(NSString *)contentType
@@ -296,6 +297,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
                          schema:(nullable NSDictionary *)schema
                           title:(nullable NSString *)title
                 descriptionText:(nullable NSString *)descriptionText
+                  documentation:(nullable NSString *)documentation
                      validation:(nullable CSMediaValidation *)validation
                        metadata:(nullable NSDictionary *)metadata
                      extensions:(NSArray<NSString *> *)extensions {
@@ -305,6 +307,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
     spec.schema = schema;
     spec.title = title;
     spec.descriptionText = descriptionText;
+    spec.documentation = documentation;
     spec.validation = validation;
     spec.metadata = metadata;
     spec.extensions = extensions ?: @[];
@@ -388,6 +391,15 @@ CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
                 NSDictionary *schema = def[@"schema"];
                 NSString *title = def[@"title"];
                 NSString *descriptionText = def[@"description"];
+                // Long-form markdown documentation. Snake_case in JSON to
+                // match the capgraph schema; we accept it only as a
+                // non-empty NSString and discard empty strings so the
+                // absent/empty cases collapse to nil.
+                NSString *documentation = nil;
+                id documentationField = def[@"documentation"];
+                if ([documentationField isKindOfClass:[NSString class]] && [(NSString *)documentationField length] > 0) {
+                    documentation = (NSString *)documentationField;
+                }
 
                 // Parse validation if present
                 CSMediaValidation *validation = nil;
@@ -421,7 +433,7 @@ CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
                     return nil;
                 }
 
-                CSMediaSpec *spec = [CSMediaSpec withContentType:mediaType profile:profileUri schema:schema title:title descriptionText:descriptionText validation:validation metadata:metadata extensions:extensions];
+                CSMediaSpec *spec = [CSMediaSpec withContentType:mediaType profile:profileUri schema:schema title:title descriptionText:descriptionText documentation:documentation validation:validation metadata:metadata extensions:extensions];
                 spec.mediaUrn = mediaUrn;
                 return spec;
             }

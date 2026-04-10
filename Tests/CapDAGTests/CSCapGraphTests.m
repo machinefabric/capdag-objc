@@ -47,6 +47,7 @@
                        title:title
                      command:@"convert"
                  description:title
+               documentation:nil
                     metadata:@{}
                   mediaSpecs:@[]
                    args:@[]
@@ -228,6 +229,7 @@
                              title:@"PDF Binary to String"
                            command:@"convert"
                        description:@"PDF Binary to String"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:@[]

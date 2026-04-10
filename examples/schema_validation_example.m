@@ -94,6 +94,7 @@
                              title:@"Create User"
                            command:@"create-user"
                        description:@"Create a new user with validation"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:mediaSpecs
                               args:@[userArg]

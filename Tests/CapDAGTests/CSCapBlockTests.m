@@ -46,6 +46,7 @@
                        title:title
                      command:@"test"
                  description:title
+               documentation:nil
                     metadata:@{}
                   mediaSpecs:@[]
                         args:@[]

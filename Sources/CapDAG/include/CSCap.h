@@ -353,6 +353,15 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Optional description
 @property (nonatomic, readonly, nullable) NSString *capDescription;
 
+/// Optional long-form markdown documentation.
+///
+/// Rendered in capability info panels, the cap navigator,
+/// capdag-dot-com, and anywhere else a rich-text explanation of the
+/// cap is useful. Authored as a triple-quoted literal string in the
+/// source TOML so newlines and markdown punctuation pass through
+/// unchanged.
+@property (nonatomic, readonly, nullable) NSString *documentation;
+
 /// Optional metadata as key-value pairs
 @property (nonatomic, readonly) NSDictionary<NSString *, NSString *> *metadata;
 
@@ -381,6 +390,7 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  * @param title The human-readable title (required)
  * @param command The command string
  * @param description The cap description
+ * @param documentation Optional long-form markdown documentation
  * @param metadata The cap metadata
  * @param mediaSpecs Media spec array (each element has urn, media_type, profile_uri, etc.)
  * @param args The cap arguments array
@@ -392,6 +402,7 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
                      title:(NSString * _Nonnull)title
                    command:(NSString * _Nonnull)command
                description:(nullable NSString *)description
+             documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> * _Nonnull)metadata
                 mediaSpecs:(NSArray<NSDictionary *> * _Nonnull)mediaSpecs
                       args:(NSArray<CSCapArg *> * _Nonnull)args

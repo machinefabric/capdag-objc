@@ -62,6 +62,7 @@
                              title:@"Test"
                            command:@"test"
                        description:@"Test capability"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:@[]
@@ -105,6 +106,7 @@
                                    title:@"Generate"
                                  command:@"generate"
                              description:@"General generation"
+                           documentation:nil
                                 metadata:@{}
                               mediaSpecs:@[]
                                args:@[]
@@ -118,6 +120,7 @@
                                     title:@"Generate"
                                   command:@"generate"
                               description:@"Specific text generation"
+                            documentation:nil
                                  metadata:@{}
                                mediaSpecs:@[]
                                 args:@[]
@@ -162,6 +165,7 @@
                              title:@"Test"
                            command:@"test"
                        description:@"Test"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:@[]
@@ -187,6 +191,7 @@
                              title:@"Test"
                            command:@"test"
                        description:@"Test"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:@[]
@@ -217,6 +222,7 @@ static CSCap *makeCap(NSString *urnString, NSString *title) {
                        title:title
                      command:@"test"
                  description:title
+               documentation:nil
                     metadata:@{}
                   mediaSpecs:@[]
                        args:@[]
@@ -473,6 +479,7 @@ static NSString* testMatrixUrn(NSString *tags) {
                              title:@"Test"
                            command:@"test"
                        description:@"Test"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:@[]

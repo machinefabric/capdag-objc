@@ -294,6 +294,7 @@
                              title:@"Process User"
                            command:@"process-user"
                        description:@"Process user data"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:mediaSpecs
                               args:@[userArg]
@@ -364,6 +365,7 @@
                              title:@"Query Data"
                            command:@"query-data"
                        description:@"Query data"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:mediaSpecs
                               args:@[]
@@ -733,6 +735,7 @@
                              title:@"Transform JSON"
                            command:@"transform-json"
                        description:@"Transform JSON data"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:mediaSpecs
                               args:@[inputArg]

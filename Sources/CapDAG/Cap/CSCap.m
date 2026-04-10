@@ -824,6 +824,14 @@
 
     // Optional fields
     NSString *capDescription = dictionary[@"cap_description"];
+    // Long-form markdown documentation. Snake_case in JSON to match the
+    // capgraph schema; we accept it only as a non-empty NSString and
+    // discard empty strings so the absent/empty cases collapse to nil.
+    NSString *documentation = nil;
+    id documentationField = dictionary[@"documentation"];
+    if ([documentationField isKindOfClass:[NSString class]] && [(NSString *)documentationField length] > 0) {
+        documentation = (NSString *)documentationField;
+    }
     NSDictionary *metadata = dictionary[@"metadata"] ?: @{};
     NSArray<NSDictionary *> *mediaSpecs = dictionary[@"media_specs"] ?: @[];
     NSDictionary *metadataJSON = dictionary[@"metadata_json"];
@@ -865,6 +873,7 @@
                             title:title
                           command:command
                       description:capDescription
+                    documentation:documentation
                          metadata:metadata
                        mediaSpecs:mediaSpecs
                              args:args
@@ -883,6 +892,12 @@
 
     if (self.capDescription) {
         dict[@"cap_description"] = self.capDescription;
+    }
+
+    // Long-form markdown documentation. Omitted entirely when nil to
+    // match the Rust serializer (which uses skip_serializing_if).
+    if (self.documentation) {
+        dict[@"documentation"] = self.documentation;
     }
 
     dict[@"metadata"] = self.metadata ?: @{};
@@ -951,6 +966,10 @@
         [desc appendFormat:@", description: %@", self.capDescription];
     }
 
+    if (self.documentation) {
+        [desc appendFormat:@", documentation: %lu chars", (unsigned long)self.documentation.length];
+    }
+
     if (self.metadata.count > 0) {
         [desc appendFormat:@", metadata: %@", self.metadata];
     }
@@ -982,6 +1001,10 @@
     if ((self.capDescription == nil) != (other.capDescription == nil)) return NO;
     if (self.capDescription && ![self.capDescription isEqualToString:other.capDescription]) return NO;
 
+    // Long-form markdown documentation
+    if ((self.documentation == nil) != (other.documentation == nil)) return NO;
+    if (self.documentation && ![self.documentation isEqualToString:other.documentation]) return NO;
+
     // Metadata dictionary
     if (![self.metadata isEqualToDictionary:other.metadata]) return NO;
 
@@ -1012,6 +1035,7 @@
     NSUInteger hash = [self.capUrn hash];
     hash ^= [self.title hash];
     hash ^= [self.command hash];
+    hash ^= [self.documentation hash];
     hash ^= [self.metadata hash];
     hash ^= [self.mediaSpecs hash];
     hash ^= [self.args hash];
@@ -1030,6 +1054,7 @@
                              title:self.title
                            command:self.command
                        description:self.capDescription
+                     documentation:self.documentation
                           metadata:self.metadata
                         mediaSpecs:self.mediaSpecs
                               args:self.args
@@ -1044,6 +1069,7 @@
     [coder encodeObject:self.title forKey:@"title"];
     [coder encodeObject:self.command forKey:@"command"];
     [coder encodeObject:self.capDescription forKey:@"capDescription"];
+    [coder encodeObject:self.documentation forKey:@"documentation"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
     [coder encodeObject:self.mediaSpecs forKey:@"mediaSpecs"];
     [coder encodeObject:self.args forKey:@"args"];
@@ -1057,6 +1083,7 @@
     NSString *title = [coder decodeObjectOfClass:[NSString class] forKey:@"title"];
     NSString *command = [coder decodeObjectOfClass:[NSString class] forKey:@"command"];
     NSString *description = [coder decodeObjectOfClass:[NSString class] forKey:@"capDescription"];
+    NSString *documentation = [coder decodeObjectOfClass:[NSString class] forKey:@"documentation"];
     NSDictionary *metadata = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadata"];
     NSArray *mediaSpecs = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [NSDictionary class], nil] forKey:@"mediaSpecs"];
     NSArray *args = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSCapArg class], nil] forKey:@"args"];
@@ -1073,6 +1100,7 @@
                             title:title
                           command:command
                       description:description
+                    documentation:documentation
                          metadata:metadata
                        mediaSpecs:mediaSpecs ?: @[]
                              args:args ?: @[]
@@ -1089,6 +1117,7 @@
                       title:title
                     command:command
                 description:nil
+              documentation:nil
                    metadata:@{}
                  mediaSpecs:@[]
                        args:@[]
@@ -1100,6 +1129,7 @@
                      title:(NSString *)title
                    command:(NSString *)command
                description:(nullable NSString *)description
+             documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> *)metadata
                 mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
                       args:(NSArray<CSCapArg *> *)args
@@ -1115,6 +1145,7 @@
     cap->_title = [title copy];
     cap->_command = [command copy];
     cap->_capDescription = [description copy];
+    cap->_documentation = [documentation copy];
     cap->_metadata = [metadata copy];
     cap->_mediaSpecs = [mediaSpecs copy];
     cap->_args = [args copy];

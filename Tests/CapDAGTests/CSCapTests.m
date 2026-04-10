@@ -29,6 +29,7 @@
                              title:@"Test Cap"
                            command:@"test-command"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -53,6 +54,7 @@
                              title:@"Parse JSON"
                            command:@"parse-cmd"
                        description:@"Parse JSON data"
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -74,6 +76,7 @@
                               title:@"Generate"
                             command:@"generate"
                         description:@"Generate embeddings"
+                      documentation:nil
                            metadata:@{}
                          mediaSpecs:@[]
                           args:@[]
@@ -94,6 +97,7 @@
                               title:@"Generate"
                             command:@"generate"
                         description:@"Generate embeddings"
+                      documentation:nil
                            metadata:@{}
                          mediaSpecs:@[]
                                args:@[stdinArg]
@@ -117,6 +121,7 @@
                              title:@"Transform"
                            command:@"test-command"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -146,6 +151,7 @@
                                   title:@"Generate"
                                 command:@"generate"
                             description:@"Generate embeddings"
+                          documentation:nil
                                metadata:@{@"model": @"sentence-transformer"}
                              mediaSpecs:@[]
                                    args:@[stdinArg]
@@ -386,6 +392,7 @@
                              title:@"Test"
                            command:@"test"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:mediaSpecs
                          args:@[]
@@ -426,6 +433,7 @@
                              title:@"Extract Metadata"
                            command:@"extract-metadata"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -454,6 +462,7 @@
                              title:@"Extract Metadata"
                            command:@"extract-metadata"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -479,6 +488,7 @@
                              title:@"Extract Metadata"
                            command:@"extract-metadata"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -569,6 +579,7 @@
                              title:@"Extract Metadata"
                            command:@"extract-metadata"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -579,6 +590,7 @@
                              title:@"Extract Outline"
                            command:@"extract-outline"
                        description:nil
+                     documentation:nil
                           metadata:@{@"supports_outline": @"true"}
                         mediaSpecs:@[]
                          args:args
@@ -630,6 +642,7 @@
                              title:@"Validate"
                            command:@"validate"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -677,6 +690,7 @@
                              title:@"Process"
                            command:@"process"
                        description:nil
+                     documentation:nil
                           metadata:@{}
                         mediaSpecs:@[]
                          args:args
@@ -764,6 +778,125 @@
 
     XCTAssertNotNil(customOutput);
     XCTAssertEqualObjects(customOutput.mediaUrn, @"my:custom-output.v1");
+}
+
+// Mirrors TEST920 in capdag/src/cap/definition.rs and the JS
+// testJS_capDocumentationRoundTrip test. The body is non-trivial — multi-line,
+// embedded backticks and double quotes, Unicode dingbat (\u2605) — so any
+// escaping mismatch between dictionary serialization here and the Rust /
+// JS counterparts surfaces as a failed round-trip.
+- (void)testCapDocumentationRoundTrip {
+    NSError *error;
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=media:void;op=documented;out=\"media:record;textable\"" error:&error];
+    XCTAssertNotNil(urn);
+
+    NSString *body = @"# Documented Cap\r\n\nDoes the thing.\n\n```bash\necho \"hi\"\n```\n\nSee also: \u2605\n";
+
+    CSCap *cap = [CSCap capWithUrn:urn
+                             title:@"Documented Cap"
+                           command:@"documented"
+                       description:@"short"
+                     documentation:body
+                          metadata:@{}
+                        mediaSpecs:@[]
+                              args:@[]
+                            output:nil
+                      metadataJSON:nil];
+    XCTAssertNotNil(cap);
+    XCTAssertEqualObjects(cap.documentation, body, @"Constructor must store documentation verbatim");
+
+    NSDictionary *dict = [cap toDictionary];
+    XCTAssertEqualObjects(dict[@"documentation"], body, @"toDictionary must include documentation when set");
+
+    NSError *parseError;
+    CSCap *restored = [CSCap capWithDictionary:dict error:&parseError];
+    XCTAssertNotNil(restored, @"capWithDictionary must succeed: %@", parseError);
+    XCTAssertEqualObjects(restored.documentation, body, @"capWithDictionary must restore documentation body verbatim");
+    XCTAssertEqualObjects(restored, cap, @"Round-tripped cap must equal the original");
+
+    // Independent identity through copy and the equality contract.
+    CSCap *copied = [cap copy];
+    XCTAssertEqualObjects(copied.documentation, body);
+    XCTAssertEqualObjects(copied, cap);
+}
+
+// When documentation is nil, toDictionary must omit the field entirely. This
+// matches the Rust serializer's skip-when-None semantics and the JS toJSON
+// behaviour. A regression where nil is emitted as `documentation: NSNull` (or
+// simply not omitted) would break the symmetric round-trip with Rust.
+- (void)testCapDocumentationOmittedWhenNil {
+    NSError *error;
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=media:void;op=undocumented;out=\"media:record;textable\"" error:&error];
+    XCTAssertNotNil(urn);
+
+    CSCap *cap = [CSCap capWithUrn:urn
+                             title:@"Undocumented Cap"
+                           command:@"undocumented"
+                       description:nil
+                     documentation:nil
+                          metadata:@{}
+                        mediaSpecs:@[]
+                              args:@[]
+                            output:nil
+                      metadataJSON:nil];
+    XCTAssertNotNil(cap);
+    XCTAssertNil(cap.documentation);
+
+    NSDictionary *dict = [cap toDictionary];
+    XCTAssertNil(dict[@"documentation"], @"toDictionary must omit documentation when nil");
+    XCTAssertFalse([dict.allKeys containsObject:@"documentation"], @"documentation key must be absent, not nil-valued");
+
+    // Empty-string documentation in the source dictionary must round-trip
+    // to nil — the parser collapses empty strings to absence so callers
+    // never see the difference between "" and missing.
+    NSMutableDictionary *withEmpty = [dict mutableCopy];
+    withEmpty[@"documentation"] = @"";
+    NSError *parseError;
+    CSCap *parsed = [CSCap capWithDictionary:withEmpty error:&parseError];
+    XCTAssertNotNil(parsed, @"capWithDictionary must succeed: %@", parseError);
+    XCTAssertNil(parsed.documentation, @"Empty string in documentation must collapse to nil");
+}
+
+// Documentation propagates from a mediaSpecs definition through
+// CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the
+// Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on
+// the JS side.
+- (void)testMediaSpecDocumentationPropagatesThroughResolve {
+    NSString *body = @"## Markdown body\n\nWith `code` and a [link](https://example.com).";
+
+    NSArray<NSDictionary *> *mediaSpecs = @[
+        @{
+            @"urn": @"media:doc-test;textable",
+            @"media_type": @"text/plain",
+            @"title": @"Documented",
+            @"description": @"short desc",
+            @"documentation": body
+        }
+    ];
+
+    NSError *error;
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:doc-test;textable", mediaSpecs, &error);
+    XCTAssertNotNil(resolved, @"Resolution must succeed: %@", error);
+    XCTAssertEqualObjects(resolved.documentation, body, @"documentation must propagate into CSMediaSpec");
+    // The short description must remain distinct from the long markdown
+    // body — they are different fields with different semantics.
+    XCTAssertEqualObjects(resolved.descriptionText, @"short desc");
+
+    // Missing documentation must collapse to nil, not @"" or NSNull.
+    NSArray<NSDictionary *> *noDocSpecs = @[
+        @{ @"urn": @"media:doc-test;textable", @"media_type": @"text/plain", @"title": @"No Doc" }
+    ];
+    CSMediaSpec *noDoc = CSResolveMediaUrn(@"media:doc-test;textable", noDocSpecs, &error);
+    XCTAssertNotNil(noDoc);
+    XCTAssertNil(noDoc.documentation, @"Missing documentation must resolve to nil");
+
+    // Empty-string documentation must collapse to nil.
+    NSArray<NSDictionary *> *emptyDocSpecs = @[
+        @{ @"urn": @"media:doc-test;textable", @"media_type": @"text/plain", @"title": @"Empty", @"documentation": @"" }
+    ];
+    CSMediaSpec *emptyDoc = CSResolveMediaUrn(@"media:doc-test;textable", emptyDocSpecs, &error);
+    XCTAssertNotNil(emptyDoc);
+    XCTAssertNil(emptyDoc.documentation, @"Empty string in documentation must collapse to nil");
 }
 
 @end
