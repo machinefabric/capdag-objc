@@ -122,10 +122,10 @@ final class CborFrameTests: XCTestCase {
         XCTAssertNil(frame.helloManifest, "Host HELLO should not include manifest")
     }
 
-    // TEST181: Frame.helloWithManifest produces HELLO with manifest bytes for plugin side
+    // TEST181: Frame.helloWithManifest produces HELLO with manifest bytes for cartridge side
     func test181_helloFrameWithManifest() {
         let manifestJSON = """
-        {"name":"TestPlugin","version":"1.0.0","description":"Test","caps":[{"urn":"cap:","title":"Identity","command":"identity"}]}
+        {"name":"TestCartridge","version":"1.0.0","description":"Test","caps":[{"urn":"cap:","title":"Identity","command":"identity"}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
@@ -134,7 +134,7 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.helloMaxFrame, 1_000_000)
         XCTAssertEqual(frame.helloMaxChunk, 100_000)
         XCTAssertEqual(frame.helloMaxReorderBuffer, 64)
-        XCTAssertNotNil(frame.helloManifest, "Plugin HELLO must include manifest")
+        XCTAssertNotNil(frame.helloManifest, "Cartridge HELLO must include manifest")
         XCTAssertEqual(frame.helloManifest, manifestData)
     }
 
@@ -433,7 +433,7 @@ final class CborFrameTests: XCTestCase {
     // TEST211: HELLO with manifest encode/decode roundtrip preserves manifest bytes
     func test211_helloWithManifestRoundtrip() throws {
         let manifestJSON = """
-        {"name":"TestPlugin","version":"1.0.0","description":"Test description","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}
+        {"name":"TestCartridge","version":"1.0.0","description":"Test description","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 500_000, maxChunk: 50_000, maxReorderBuffer: 64)
@@ -955,53 +955,53 @@ final class CborFrameTests: XCTestCase {
         XCTAssertTrue(chunk.isEof)
     }
 
-    // TEST237: PluginResponse.single final_payload returns the single payload
-    func test237_pluginResponseSingle() {
-        let response = PluginResponse.single("hello".data(using: .utf8)!)
+    // TEST237: CartridgeResponse.single final_payload returns the single payload
+    func test237_cartridgeResponseSingle() {
+        let response = CartridgeResponse.single("hello".data(using: .utf8)!)
         XCTAssertEqual(response.finalPayload, "hello".data(using: .utf8)!)
         XCTAssertEqual(response.concatenated(), "hello".data(using: .utf8)!)
     }
 
-    // TEST238: PluginResponse.single with empty payload returns empty data
-    func test238_pluginResponseSingleEmpty() {
-        let response = PluginResponse.single(Data())
+    // TEST238: CartridgeResponse.single with empty payload returns empty data
+    func test238_cartridgeResponseSingleEmpty() {
+        let response = CartridgeResponse.single(Data())
         XCTAssertEqual(response.finalPayload, Data())
         XCTAssertEqual(response.concatenated(), Data())
     }
 
-    // TEST239: PluginResponse.streaming concatenated joins all chunk payloads in order
-    func test239_pluginResponseStreaming() {
+    // TEST239: CartridgeResponse.streaming concatenated joins all chunk payloads in order
+    func test239_cartridgeResponseStreaming() {
         let chunks = [
             ResponseChunk(payload: "hello".data(using: .utf8)!, seq: 0, offset: nil, len: nil, isEof: false),
             ResponseChunk(payload: " ".data(using: .utf8)!, seq: 1, offset: nil, len: nil, isEof: false),
             ResponseChunk(payload: "world".data(using: .utf8)!, seq: 2, offset: nil, len: nil, isEof: true),
         ]
-        let response = PluginResponse.streaming(chunks)
+        let response = CartridgeResponse.streaming(chunks)
         XCTAssertEqual(response.concatenated(), "hello world".data(using: .utf8)!)
     }
 
-    // TEST240: PluginResponse.streaming finalPayload returns the last chunk's payload
-    func test240_pluginResponseStreamingFinalPayload() {
+    // TEST240: CartridgeResponse.streaming finalPayload returns the last chunk's payload
+    func test240_cartridgeResponseStreamingFinalPayload() {
         let chunks = [
             ResponseChunk(payload: "first".data(using: .utf8)!, seq: 0, offset: nil, len: nil, isEof: false),
             ResponseChunk(payload: "last".data(using: .utf8)!, seq: 1, offset: nil, len: nil, isEof: true),
         ]
-        let response = PluginResponse.streaming(chunks)
+        let response = CartridgeResponse.streaming(chunks)
         XCTAssertEqual(response.finalPayload, "last".data(using: .utf8)!)
     }
 
-    // TEST241: PluginResponse.streaming with empty chunks vec returns empty concatenation
-    func test241_pluginResponseStreamingEmptyChunks() {
-        let response = PluginResponse.streaming([])
+    // TEST241: CartridgeResponse.streaming with empty chunks vec returns empty concatenation
+    func test241_cartridgeResponseStreamingEmptyChunks() {
+        let response = CartridgeResponse.streaming([])
         XCTAssertEqual(response.concatenated(), Data())
         XCTAssertNil(response.finalPayload)
     }
 
-    // TEST242: PluginResponse.streaming concatenated with large payload
-    func test242_pluginResponseStreamingLargePayload() {
+    // TEST242: CartridgeResponse.streaming concatenated with large payload
+    func test242_cartridgeResponseStreamingLargePayload() {
         let chunk1 = ResponseChunk(payload: Data(repeating: 0xAA, count: 1000), seq: 0, offset: nil, len: nil, isEof: false)
         let chunk2 = ResponseChunk(payload: Data(repeating: 0xBB, count: 2000), seq: 1, offset: nil, len: nil, isEof: true)
-        let response = PluginResponse.streaming([chunk1, chunk2])
+        let response = CartridgeResponse.streaming([chunk1, chunk2])
 
         let result = response.concatenated()
         XCTAssertEqual(result.count, 3000)
@@ -1011,12 +1011,12 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(result[2999], 0xBB)
     }
 
-    // TEST243: PluginHostError variants display correct error messages
+    // TEST243: CartridgeHostError variants display correct error messages
     @available(macOS 10.15.4, iOS 13.4, *)
-    func test243_pluginHostErrorDisplay() {
-        let errors: [(PluginHostError, String)] = [
+    func test243_cartridgeHostErrorDisplay() {
+        let errors: [(CartridgeHostError, String)] = [
             (.handshakeFailed("timeout"), "timeout"),
-            (.pluginError(code: "NOT_FOUND", message: "Cap not found"), "NOT_FOUND"),
+            (.cartridgeError(code: "NOT_FOUND", message: "Cap not found"), "NOT_FOUND"),
             (.processExited, "exited"),
             (.closed, "closed"),
         ]

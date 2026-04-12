@@ -2,7 +2,7 @@
 //  CSCapMatrix.h
 //  CapSet registry for unified capability host discovery
 //
-//  Provides unified interface for finding cap sets (both providers and plugins)
+//  Provides unified interface for finding cap sets (both providers and cartridges)
 //  that can satisfy capability requests using subset matching.
 //
 
@@ -33,7 +33,7 @@ typedef NS_ENUM(NSInteger, CSCapMatrixErrorType) {
 @end
 
 /**
- * Unified registry for cap sets (providers and plugins)
+ * Unified registry for cap sets (providers and cartridges)
  */
 @interface CSCapMatrix : NSObject
 

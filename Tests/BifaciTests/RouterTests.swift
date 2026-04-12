@@ -25,7 +25,7 @@ final class RouterTests: XCTestCase {
         for capUrn in testCaps {
             let reqId = Data(repeating: 0x42, count: 16)
             XCTAssertThrowsError(try router.beginRequest(capUrn: capUrn, reqId: reqId)) { error in
-                guard case PluginHostError.peerInvokeNotSupported(let urn) = error else {
+                guard case CartridgeHostError.peerInvokeNotSupported(let urn) = error else {
                     XCTFail("Expected peerInvokeNotSupported for \(capUrn), got \(error)")
                     return
                 }

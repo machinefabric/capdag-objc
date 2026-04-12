@@ -5,9 +5,9 @@ import SwiftCBOR
 import Ops
 
 // =============================================================================
-// PluginRuntime + CapArgumentValue Tests
+// CartridgeRuntime + CapArgumentValue Tests
 //
-// Covers TEST248-273 from plugin_runtime.rs and TEST274-283 from caller.rs
+// Covers TEST248-273 from cartridge_runtime.rs and TEST274-283 from caller.rs
 // in the reference Rust implementation.
 //
 // N/A tests (Rust-specific traits):
@@ -102,12 +102,12 @@ final class EmitCborBytesOp: Op, @unchecked Sendable {
 // See: streamToInputPackage(), OutputCollector, createCollectingOutputStream()
 
 @available(macOS 10.15.4, iOS 13.4, *)
-final class PluginRuntimeTests: XCTestCase {
+final class CartridgeRuntimeTests: XCTestCase {
 
     // MARK: - Test Constants
 
     static let testManifestJSON = """
-    {"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
+    {"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
     """
     static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -115,7 +115,7 @@ final class PluginRuntimeTests: XCTestCase {
 
     // TEST248: Test register_op and find_handler by exact cap URN
     func test248_registerAndFindHandler() {
-        let runtime = PluginRuntime(manifest: Self.testManifestData)
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
         runtime.register_op(capUrn: "cap:in=*;op=test;out=*") {
             AnyOp(EmitCborBytesOp(bytes: Array("result".utf8)))
@@ -127,7 +127,7 @@ final class PluginRuntimeTests: XCTestCase {
 
     // TEST249: Test register_op handler echoes bytes directly
     func test249_rawHandler() throws {
-        let runtime = PluginRuntime(manifest: Self.testManifestData)
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
         runtime.register_op(capUrn: "cap:op=raw") { AnyOp(EchoAllBytesOp()) }
 
@@ -150,14 +150,14 @@ final class PluginRuntimeTests: XCTestCase {
 
     // TEST252: find_handler returns None for unregistered cap URNs
     func test252_findHandlerUnknownCap() {
-        let runtime = PluginRuntime(manifest: Self.testManifestData)
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
         XCTAssertNil(runtime.findHandler(capUrn: "cap:op=nonexistent"),
             "unregistered cap must return nil")
     }
 
     // TEST270: Test registering multiple Op handlers for different caps and finding each independently
     func test270_multipleHandlers() throws {
-        let runtime = PluginRuntime(manifest: Self.testManifestData)
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
         runtime.register_op(capUrn: "cap:op=alpha") { AnyOp(WriteFixedOp(data: Data("a".utf8))) }
         runtime.register_op(capUrn: "cap:op=beta")  { AnyOp(WriteFixedOp(data: Data("b".utf8))) }
@@ -188,7 +188,7 @@ final class PluginRuntimeTests: XCTestCase {
 
     // TEST271: Test Op handler replacing an existing registration for the same cap URN
     func test271_handlerReplacement() throws {
-        let runtime = PluginRuntime(manifest: Self.testManifestData)
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
         runtime.register_op(capUrn: "cap:op=test") { AnyOp(WriteFixedOp(data: Data("first".utf8))) }
         runtime.register_op(capUrn: "cap:op=test") { AnyOp(WriteFixedOp(data: Data("second".utf8))) }
@@ -209,7 +209,7 @@ final class PluginRuntimeTests: XCTestCase {
         let noPeer = NoPeerInvoker()
 
         XCTAssertThrowsError(try noPeer.call(capUrn: "cap:op=test")) { error in
-            if let runtimeError = error as? PluginRuntimeError,
+            if let runtimeError = error as? CartridgeRuntimeError,
                case .peerRequestError(let msg) = runtimeError {
                 XCTAssertTrue(msg.lowercased().contains("not supported"),
                     "error must indicate peer not supported: \(msg)")
@@ -229,23 +229,23 @@ final class PluginRuntimeTests: XCTestCase {
 
     // MARK: - Runtime Creation Tests (TEST256-258)
 
-    // TEST256: PluginRuntime with manifest JSON stores manifest data and parses when valid
+    // TEST256: CartridgeRuntime with manifest JSON stores manifest data and parses when valid
     func test256_withManifestJson() {
-        let runtime = PluginRuntime(manifestJSON: Self.testManifestJSON)
+        let runtime = CartridgeRuntime(manifestJSON: Self.testManifestJSON)
         XCTAssertFalse(runtime.manifestData.isEmpty, "manifestData must be populated")
         // Note: "cap:op=test" may or may not parse as valid Manifest depending on validation
     }
 
-    // TEST257: PluginRuntime with invalid JSON still creates runtime
+    // TEST257: CartridgeRuntime with invalid JSON still creates runtime
     func test257_newWithInvalidJson() {
-        let runtime = PluginRuntime(manifest: "not json".data(using: .utf8)!)
+        let runtime = CartridgeRuntime(manifest: "not json".data(using: .utf8)!)
         XCTAssertFalse(runtime.manifestData.isEmpty, "manifestData should store raw bytes")
         XCTAssertNil(runtime.parsedManifest, "invalid JSON should leave parsedManifest as nil")
     }
 
-    // TEST258: PluginRuntime with valid manifest data creates runtime with parsed manifest
+    // TEST258: CartridgeRuntime with valid manifest data creates runtime with parsed manifest
     func test258_withManifestStruct() {
-        let runtime = PluginRuntime(manifest: Self.testManifestData)
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
         XCTAssertFalse(runtime.manifestData.isEmpty)
         // parsedManifest may or may not be nil depending on whether "cap:op=test" validates
         // The key behavior is that manifestData is stored
@@ -301,7 +301,7 @@ final class PluginRuntimeTests: XCTestCase {
             contentType: "application/cbor",
             capUrn: "cap:in=media:string;textable;op=test;out=*"
         )) { error in
-            if let runtimeError = error as? PluginRuntimeError,
+            if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
                 XCTAssertTrue(msg.contains("No argument found matching"), "\(msg)")
             }
@@ -327,7 +327,7 @@ final class PluginRuntimeTests: XCTestCase {
             contentType: "application/cbor",
             capUrn: "cap:in=*;op=test;out=*"
         )) { error in
-            if let runtimeError = error as? PluginRuntimeError,
+            if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
                 XCTAssertTrue(msg.contains("must be an array"), "\(msg)")
             }
@@ -349,7 +349,7 @@ final class PluginRuntimeTests: XCTestCase {
             contentType: "application/cbor",
             capUrn: "not-a-cap-urn"
         )) { error in
-            if let runtimeError = error as? PluginRuntimeError,
+            if let runtimeError = error as? CartridgeRuntimeError,
                case .capUrnError = runtimeError {
                 // Expected - matches Rust behavior
             } else {
@@ -409,22 +409,22 @@ final class PluginRuntimeTests: XCTestCase {
 
     // TEST268: RuntimeError variants display correct messages
     func test268_runtimeErrorDisplay() {
-        let err1 = PluginRuntimeError.noHandler("cap:op=missing")
+        let err1 = CartridgeRuntimeError.noHandler("cap:op=missing")
         XCTAssertTrue((err1.errorDescription ?? "").contains("cap:op=missing"))
 
-        let err2 = PluginRuntimeError.missingArgument("model")
+        let err2 = CartridgeRuntimeError.missingArgument("model")
         XCTAssertTrue((err2.errorDescription ?? "").contains("model"))
 
-        let err3 = PluginRuntimeError.unknownSubcommand("badcmd")
+        let err3 = CartridgeRuntimeError.unknownSubcommand("badcmd")
         XCTAssertTrue((err3.errorDescription ?? "").contains("badcmd"))
 
-        let err4 = PluginRuntimeError.manifestError("parse failed")
+        let err4 = CartridgeRuntimeError.manifestError("parse failed")
         XCTAssertTrue((err4.errorDescription ?? "").contains("parse failed"))
 
-        let err5 = PluginRuntimeError.peerRequestError("denied")
+        let err5 = CartridgeRuntimeError.peerRequestError("denied")
         XCTAssertTrue((err5.errorDescription ?? "").contains("denied"))
 
-        let err6 = PluginRuntimeError.peerResponseError("timeout")
+        let err6 = CartridgeRuntimeError.peerResponseError("timeout")
         XCTAssertTrue((err6.errorDescription ?? "").contains("timeout"))
     }
 
@@ -451,12 +451,12 @@ final class PluginRuntimeTests: XCTestCase {
     // TEST251: Op handler errors propagate through RuntimeError::Handler
     func test251_typedHandlerErrorPropagation() {
         // Verify that errors thrown from handlers are wrapped correctly
-        let error = PluginRuntimeError.handlerError("test handler error")
+        let error = CartridgeRuntimeError.handlerError("test handler error")
         XCTAssertTrue((error.errorDescription ?? "").contains("Handler"))
 
         // Verify error types are distinct
-        let handlerErr = PluginRuntimeError.handlerError("x")
-        let protocolErr = PluginRuntimeError.protocolError("x")
+        let handlerErr = CartridgeRuntimeError.handlerError("x")
+        let protocolErr = CartridgeRuntimeError.protocolError("x")
         XCTAssertNotEqual(handlerErr.errorDescription, protocolErr.errorDescription)
     }
 
@@ -568,7 +568,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
     // Helper to create test manifest with caps
     private func createTestManifest(caps: [CapDefinition]) -> Data {
-        // Always append CAP_IDENTITY at the end - plugins must declare it
+        // Always append CAP_IDENTITY at the end - cartridges must declare it
         // (Appending instead of prepending to avoid breaking tests that reference caps[0])
         var allCaps = caps
         let identityCap = CapDefinition(
@@ -579,9 +579,9 @@ final class CborFilePathConversionTests: XCTestCase {
         allCaps.append(identityCap)
 
         let manifest = Manifest(
-            name: "TestPlugin",
+            name: "TestCartridge",
             version: "1.0.0",
-            description: "Test plugin",
+            description: "Test cartridge",
             caps: allCaps
         )
         return try! JSONEncoder().encode(manifest)
@@ -639,14 +639,14 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Register Op handler that echoes payload
         runtime.register_op(capUrn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"") {
             AnyOp(EchoAllBytesOp())
         }
 
-        // Simulate CLI invocation: plugin process /path/to/file.pdf
+        // Simulate CLI invocation: cartridge process /path/to/file.pdf
         let cliArgs = [testFile.path]
         let raw_payload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
 
@@ -690,7 +690,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
         // Use reflection or manual extraction to test extractArgValue
@@ -728,7 +728,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         runtime.register_op(capUrn: cap.urn) { AnyOp(EchoAllBytesOp()) }
 
@@ -772,7 +772,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Pass glob pattern as JSON array
         let pattern = "\(tempDir.path)/*.txt"
@@ -829,7 +829,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["/nonexistent/file.pdf"]
 
@@ -862,7 +862,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         runtime.register_op(capUrn: cap.urn) { AnyOp(EchoAllBytesOp()) }
 
@@ -901,9 +901,9 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
-        // CLI: plugin test /path/to/file (position 0 after subcommand)
+        // CLI: cartridge test /path/to/file (position 0 after subcommand)
         let cliArgs = [testFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
@@ -931,7 +931,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["mlx-community/Llama-3.2-3B-Instruct-4bit"]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -961,7 +961,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Pass invalid JSON (not an array)
         let cliArgs = ["not a json array"]
@@ -995,7 +995,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Construct JSON array with both existing and non-existing files
         let pathsJSON = try JSONEncoder().encode([file1.path, file2Path.path])
@@ -1039,7 +1039,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1072,7 +1072,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1105,7 +1105,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1139,7 +1139,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Only provide position arg, no --file flag
         let cliArgs = [testFile.path]
@@ -1173,7 +1173,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Track what the handler receives using a class wrapper for thread-safe capture
         final class PayloadCapture: @unchecked Sendable {
@@ -1239,7 +1239,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["[]"]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1284,7 +1284,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
 
@@ -1316,7 +1316,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["test value"]
         let payload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1380,7 +1380,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Glob pattern that matches nothing
         let pattern = "\(tempDir.path)/nonexistent_*.xyz"
@@ -1431,7 +1431,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Glob that matches both file and directory
         let pattern = "\(tempDir.path)/*"
@@ -1490,7 +1490,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Multiple patterns
         let pattern1 = "\(tempDir.path)/*.txt"
@@ -1556,7 +1556,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [linkFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1592,7 +1592,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
@@ -1620,7 +1620,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Invalid glob pattern (unclosed bracket)
         let pattern = "[invalid"
@@ -1661,7 +1661,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
 
@@ -1691,7 +1691,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let data = "small payload".data(using: .utf8)!
         let reader = InputStream(data: data)
@@ -1729,7 +1729,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Use small max_chunk to force multi-chunk
         let data = Data((0..<1000).map { UInt8($0 % 256) })
@@ -1759,7 +1759,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let reader = InputStream(data: Data())
 
@@ -1817,7 +1817,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         let reader = ErrorInputStream()
 
@@ -1851,7 +1851,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // CLI mode: pass file path as positional argument
         let cliArgs = [testFile.path]
@@ -1893,7 +1893,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Mock stdin with Data (simulates piped binary)
         let mockStdin = InputStream(data: pdfContent)
@@ -1964,7 +1964,7 @@ final class CborFilePathConversionTests: XCTestCase {
         )
 
         let manifest = createTestManifest(caps: [cap])
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Register Op handler that captures received bytes and echoes them
         let resultHolderRef = resultHolder
@@ -2214,6 +2214,6 @@ private func streamToInputPackage(_ stream: AsyncStream<Frame>) -> InputPackage 
         return frame
     }
 
-    // Use the demuxMultiStream function from PluginRuntime
+    // Use the demuxMultiStream function from CartridgeRuntime
     return demuxMultiStream(frameIterator: frameIterator)
 }

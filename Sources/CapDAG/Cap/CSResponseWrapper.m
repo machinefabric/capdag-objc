@@ -1,6 +1,6 @@
 //
 //  CSResponseWrapper.m
-//  Response wrapper for unified plugin output handling with validation
+//  Response wrapper for unified cartridge output handling with validation
 //
 //  NOTE: Validation now uses mediaSpec -> spec ID resolution.
 //

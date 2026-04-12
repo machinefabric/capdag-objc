@@ -2,7 +2,7 @@
 ///
 /// The RelaySwitch sits above multiple RelayMasters and provides deterministic
 /// request routing based on cap URN matching. It plays the same role for RelayMasters
-/// that PluginHost plays for plugins.
+/// that CartridgeHost plays for cartridges.
 ///
 /// ## Architecture
 ///
@@ -100,11 +100,11 @@ private struct RoutingEntry {
 
 private struct RelayNotifyCapabilitiesPayload: Codable {
     let caps: [String]
-    let installedPlugins: [InstalledPluginIdentity]
+    let installedCartridges: [InstalledCartridgeIdentity]
 
     enum CodingKeys: String, CodingKey {
         case caps
-        case installedPlugins = "installed_plugins"
+        case installedCartridges = "installed_cartridges"
     }
 }
 
@@ -132,16 +132,16 @@ private final class MasterConnection: @unchecked Sendable {
     var manifest: Data
     var limits: Limits
     var caps: [String]
-    var installedPlugins: [InstalledPluginIdentity]
+    var installedCartridges: [InstalledCartridgeIdentity]
     var healthy: Bool
 
-    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedPlugins: [InstalledPluginIdentity], healthy: Bool) {
+    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeIdentity], healthy: Bool) {
         self.socketWriter = socketWriter
         self.seqAssigner = seqAssigner
         self.manifest = manifest
         self.limits = limits
         self.caps = caps
-        self.installedPlugins = installedPlugins
+        self.installedCartridges = installedCartridges
         self.healthy = healthy
         self.reorderBuffer = ReorderBuffer(maxBufferPerFlow: limits.maxReorderBuffer)
     }
@@ -170,7 +170,7 @@ public final class RelaySwitch: @unchecked Sendable {
     private var xidCounter: UInt64 = 0
 
     private var aggregateCapabilities: Data = Data()
-    private var aggregateInstalledPlugins: [InstalledPluginIdentity] = []
+    private var aggregateInstalledCartridges: [InstalledCartridgeIdentity] = []
     private var negotiatedLimits: Limits = Limits()
     private let lock = NSLock()
     private var frameChannel: [(masterIdx: Int, frame: Frame?, error: Error?)] = []
@@ -186,7 +186,7 @@ public final class RelaySwitch: @unchecked Sendable {
     /// 2. After all verified: spawn reader threads
     ///
     /// Identity verification sends CAP_IDENTITY request with nonce, expects echo response.
-    /// Updated RelayNotify frames during verification are captured (hosts send full caps after plugin startup).
+    /// Updated RelayNotify frames during verification are captured (hosts send full caps after cartridge startup).
     ///
     /// - Parameter sockets: Array of socket pairs (one per master). Can be empty — use add_master later.
     /// - Throws: RelaySwitchError if construction or identity verification fails
@@ -264,7 +264,7 @@ public final class RelaySwitch: @unchecked Sendable {
             seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
 
             // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
-            // Also handle updated RelayNotify frames (host sends full caps after plugin startup)
+            // Also handle updated RelayNotify frames (host sends full caps after cartridge startup)
             var accumulated = Data()
             while true {
                 guard let frame = try socketReader.read() else {
@@ -273,7 +273,7 @@ public final class RelaySwitch: @unchecked Sendable {
 
                 switch frame.frameType {
                 case .relayNotify:
-                    // PluginHostRuntime sends the full RelayNotify (with all caps)
+                    // CartridgeHostRuntime sends the full RelayNotify (with all caps)
                     // through RelaySlave during identity verification. Update caps.
                     if let manifest = frame.relayNotifyManifest {
                         capsPayload = manifest
@@ -319,7 +319,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 manifest: capsPayload,
                 limits: masterLimits,
                 caps: caps,
-                installedPlugins: notifyPayload.installedPlugins,
+                installedCartridges: notifyPayload.installedCartridges,
                 healthy: true
             )
             masters.append(masterConn)
@@ -391,7 +391,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         masters[masterIdx].manifest = manifest
                         masters[masterIdx].limits = limits
                         masters[masterIdx].caps = payload.caps
-                        masters[masterIdx].installedPlugins = payload.installedPlugins
+                        masters[masterIdx].installedCartridges = payload.installedCartridges
                         rebuildCapTable()
                         rebuildCapabilities()
                         rebuildLimits()
@@ -573,7 +573,7 @@ public final class RelaySwitch: @unchecked Sendable {
             manifest: capsPayload,
             limits: masterLimits,
             caps: caps,
-            installedPlugins: notifyPayload.installedPlugins,
+            installedCartridges: notifyPayload.installedCartridges,
             healthy: true
         )
         let newIdx = masters.count
@@ -609,7 +609,7 @@ public final class RelaySwitch: @unchecked Sendable {
         return negotiatedLimits
     }
 
-    /// Send a frame to the appropriate master (engine → plugin direction).
+    /// Send a frame to the appropriate master (engine → cartridge direction).
     ///
     /// REQ frames: Assigned XID if absent, routed by cap URN.
     /// Continuation frames: Routed by (XID, RID) pair.
@@ -708,10 +708,10 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    /// Read the next frame from any master (plugin → engine direction).
+    /// Read the next frame from any master (cartridge → engine direction).
     ///
     /// Blocks until a frame is available from any master. Returns nil when all masters have closed.
-    /// Peer requests (plugin → plugin) are handled internally and not returned.
+    /// Peer requests (cartridge → cartridge) are handled internally and not returned.
     public func readFromMasters() throws -> Frame? {
         while true {
             frameSemaphore.wait()
@@ -856,7 +856,7 @@ public final class RelaySwitch: @unchecked Sendable {
         return matches.first?.masterIdx
     }
 
-    /// Handle a frame arriving from a master (plugin → engine direction).
+    /// Handle a frame arriving from a master (cartridge → engine direction).
     ///
     /// Returns Some(frame) if the frame should be forwarded to the engine.
     /// Returns nil if the frame was handled internally (peer request or request continuation).
@@ -868,14 +868,14 @@ public final class RelaySwitch: @unchecked Sendable {
 
         switch frame.frameType {
         case .req:
-            // Peer request: plugin → plugin via switch (no preference)
+            // Peer request: cartridge → cartridge via switch (no preference)
             guard let cap = frame.cap, let destIdx = findMasterForCap(cap, preferredCap: nil) else {
                 throw RelaySwitchError.noHandler(frame.cap ?? "nil")
             }
 
-            // REQs from plugins should NOT have XID (per protocol spec)
+            // REQs from cartridges should NOT have XID (per protocol spec)
             if frame.routingId != nil {
-                throw RelaySwitchError.protocolError("REQ from plugin should not have XID")
+                throw RelaySwitchError.protocolError("REQ from cartridge should not have XID")
             }
 
             // Assign fresh XID
@@ -991,7 +991,7 @@ public final class RelaySwitch: @unchecked Sendable {
                let newLimits = frame.relayNotifyLimits {
                 let payload = try Self.parseRelayNotifyPayload(manifest)
                 masters[sourceIdx].caps = payload.caps
-                masters[sourceIdx].installedPlugins = payload.installedPlugins
+                masters[sourceIdx].installedCartridges = payload.installedCartridges
                 masters[sourceIdx].manifest = manifest
                 masters[sourceIdx].limits = newLimits
                 rebuildCapTable()
@@ -1002,7 +1002,7 @@ public final class RelaySwitch: @unchecked Sendable {
             return frame
 
         case .cancel:
-            // Cancel from plugin — route to destination like a continuation frame.
+            // Cancel from cartridge — route to destination like a continuation frame.
             let rid = frame.id
             let xid: MessageId
             if let existingXid = frame.routingId {
@@ -1086,16 +1086,16 @@ public final class RelaySwitch: @unchecked Sendable {
 
     private func rebuildCapabilities() {
         var allCaps = Set<String>()
-        var allInstalledPlugins = Set<InstalledPluginIdentity>()
+        var allInstalledCartridges = Set<InstalledCartridgeIdentity>()
         for master in masters {
             if master.healthy {
                 allCaps.formUnion(master.caps)
-                allInstalledPlugins.formUnion(master.installedPlugins)
+                allInstalledCartridges.formUnion(master.installedCartridges)
             }
         }
 
         let capsArray = Array(allCaps).sorted()
-        aggregateInstalledPlugins = Array(allInstalledPlugins).sorted {
+        aggregateInstalledCartridges = Array(allInstalledCartridges).sorted {
             if $0.id != $1.id { return $0.id < $1.id }
             if $0.version != $1.version { return $0.version < $1.version }
             return $0.sha256 < $1.sha256
@@ -1126,10 +1126,10 @@ public final class RelaySwitch: @unchecked Sendable {
 
     // MARK: - Helper Functions
 
-    public func installedPlugins() -> [InstalledPluginIdentity] {
+    public func installedCartridges() -> [InstalledCartridgeIdentity] {
         lock.lock()
         defer { lock.unlock() }
-        return aggregateInstalledPlugins
+        return aggregateInstalledCartridges
     }
 
     private static func parseRelayNotifyPayload(_ manifest: Data) throws -> RelayNotifyCapabilitiesPayload {
@@ -1137,7 +1137,7 @@ public final class RelaySwitch: @unchecked Sendable {
         do {
             payload = try JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         } catch {
-            throw RelaySwitchError.protocolError("RelayNotify payload must contain caps and installed_plugins: \(error)")
+            throw RelaySwitchError.protocolError("RelayNotify payload must contain caps and installed_cartridges: \(error)")
         }
 
         // Verify CAP_IDENTITY is present — mandatory for every host
@@ -1155,7 +1155,7 @@ public final class RelaySwitch: @unchecked Sendable {
         return payload
     }
 }
-public struct InstalledPluginIdentity: Codable, Hashable, Sendable {
+public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public let id: String
     public let version: String
     public let sha256: String

@@ -1,6 +1,6 @@
 //
 //  CSCapValidator.m
-//  Cap schema validation for plugin interactions
+//  Cap schema validation for cartridge interactions
 //
 //  NOTE: Type validation now uses mediaSpec -> spec ID resolution.
 //  The old CSArgumentType and CSOutputType enums have been removed.

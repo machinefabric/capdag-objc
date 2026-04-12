@@ -290,22 +290,22 @@
 - (void)testCapGraphWithCapBlock {
     // Integration test: build graph from CapBlock
     CSCapMatrix *providerRegistry = [CSCapMatrix registry];
-    CSCapMatrix *pluginRegistry = [CSCapMatrix registry];
+    CSCapMatrix *cartridgeRegistry = [CSCapMatrix registry];
 
     MockCapSetForGraph *providerHost = [[MockCapSetForGraph alloc] initWithName:@"provider"];
-    MockCapSetForGraph *pluginHost = [[MockCapSetForGraph alloc] initWithName:@"plugin"];
+    MockCapSetForGraph *cartridgeHost = [[MockCapSetForGraph alloc] initWithName:@"cartridge"];
 
     // Provider: binary -> str
     CSCap *providerCap = [self makeGraphCapWithInSpec:@"media:" outSpec:@"media:string" title:@"Provider Binary to String"];
     [providerRegistry registerCapSet:@"provider" host:providerHost capabilities:@[providerCap] error:nil];
 
-    // Plugin: str -> obj
-    CSCap *pluginCap = [self makeGraphCapWithInSpec:@"media:string" outSpec:@"media:record;textable" title:@"Plugin String to Object"];
-    [pluginRegistry registerCapSet:@"plugin" host:pluginHost capabilities:@[pluginCap] error:nil];
+    // Cartridge: str -> obj
+    CSCap *cartridgeCap = [self makeGraphCapWithInSpec:@"media:string" outSpec:@"media:record;textable" title:@"Cartridge String to Object"];
+    [cartridgeRegistry registerCapSet:@"cartridge" host:cartridgeHost capabilities:@[cartridgeCap] error:nil];
 
     CSCapBlock *cube = [CSCapBlock cube];
     [cube addRegistry:@"providers" registry:providerRegistry];
-    [cube addRegistry:@"plugins" registry:pluginRegistry];
+    [cube addRegistry:@"cartridges" registry:cartridgeRegistry];
 
     CSCapGraph *graph = [cube graph];
 
@@ -318,7 +318,7 @@
 
     // Verify edges come from different registries
     XCTAssertEqualObjects(path[0].registryName, @"providers", @"First edge from providers");
-    XCTAssertEqualObjects(path[1].registryName, @"plugins", @"Second edge from plugins");
+    XCTAssertEqualObjects(path[1].registryName, @"cartridges", @"Second edge from cartridges");
 }
 
 @end

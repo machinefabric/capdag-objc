@@ -3,12 +3,12 @@
 //  Cap SDK - Core cap URN and definition system
 //
 //  This library provides the fundamental cap URN system used across
-//  all MachineFabric plugins and providers. It defines the formal structure for cap
+//  all MachineFabric cartridges and providers. It defines the formal structure for cap
 //  identifiers with flat tag-based naming, wildcard support, and specificity comparison.
 //
-//  ## Plugin Communication
+//  ## Cartridge Communication
 //
-//  The library also provides unified plugin communication infrastructure:
+//  The library also provides unified cartridge communication infrastructure:
 //
 //  - **Binary Packet Framing** (`CSPacket`): Length-prefixed binary packets for stdin/stdout
 //  - **Message Envelope** (`CSMessage`): JSON message types for requests/responses
@@ -39,7 +39,7 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 #import "CSCapBlock.h"
 #import "CSCapGraph.h"
 
-// Plugin communication infrastructure
+// Cartridge communication infrastructure
 #import "CSPacket.h"
 #import "CSMessage.h"
 

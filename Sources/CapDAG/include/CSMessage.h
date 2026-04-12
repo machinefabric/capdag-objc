@@ -1,13 +1,13 @@
 //
 //  CSMessage.h
-//  Message Envelope Types for Plugin Communication
+//  Message Envelope Types for Cartridge Communication
 //
 //  Messages are JSON envelopes that travel inside binary packets.
 //  They provide routing (cap URN), correlation (request ID), and typing.
 //
 //  Message flow:
-//  Host → Plugin:  CapRequest  (invoke a cap)
-//  Plugin → Host:  CapResponse (single response) or StreamChunk (streaming)
+//  Host → Cartridge:  CapRequest  (invoke a cap)
+//  Cartridge → Host:  CapResponse (single response) or StreamChunk (streaming)
 //  Either → Either: Error (error condition)
 //
 
@@ -17,19 +17,19 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Message types for the envelope
 typedef NS_ENUM(NSInteger, CSMessageType) {
-    /// Request to invoke a cap (host → plugin)
+    /// Request to invoke a cap (host → cartridge)
     CSMessageTypeCapRequest,
-    /// Acknowledge request received, processing started (plugin → host)
+    /// Acknowledge request received, processing started (cartridge → host)
     CSMessageTypeAck,
-    /// Progress update during processing (plugin → host)
+    /// Progress update during processing (cartridge → host)
     CSMessageTypeProgress,
-    /// Single complete response (plugin → host)
+    /// Single complete response (cartridge → host)
     CSMessageTypeCapResponse,
-    /// Streaming chunk (plugin → host)
+    /// Streaming chunk (cartridge → host)
     CSMessageTypeStreamChunk,
-    /// Stream complete marker (plugin → host)
+    /// Stream complete marker (cartridge → host)
     CSMessageTypeStreamEnd,
-    /// Plugin is idle, ready for next request (plugin → host)
+    /// Cartridge is idle, ready for next request (cartridge → host)
     CSMessageTypeIdle,
     /// Error message (either direction)
     CSMessageTypeError,
@@ -48,7 +48,7 @@ typedef NS_ENUM(NSInteger, CSMessageErrorCode) {
 #pragma mark - CSMessage
 
 /**
- * The message envelope that wraps all plugin communication.
+ * The message envelope that wraps all cartridge communication.
  * This is serialized as JSON inside binary packets.
  */
 @interface CSMessage : NSObject <NSCopying>
@@ -139,7 +139,7 @@ typedef NS_ENUM(NSInteger, CSMessageErrorCode) {
                               message:(nullable NSString *)message;
 
 /**
- * Create an idle message (plugin ready for next request).
+ * Create an idle message (cartridge ready for next request).
  * @return A new CSMessage instance
  */
 + (instancetype)idle;

@@ -23,7 +23,7 @@ extern NSString * const CSCapIdentity;
  * Discard capability — the terminal morphism.
  * Standard, but NOT mandatory.
  * Accepts any media type as input and produces void output.
- * The capdag lib MAY provide a default implementation; plugins may override.
+ * The capdag lib MAY provide a default implementation; cartridges may override.
  * URN: cap:in=media:;out=media:void
  */
 extern NSString * const CSCapDiscard;

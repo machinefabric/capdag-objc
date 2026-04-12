@@ -1,13 +1,13 @@
 //
-//  InProcessPluginHost.swift
-//  In-Process Plugin Host — Direct dispatch to FrameHandler protocols
+//  InProcessCartridgeHost.swift
+//  In-Process Cartridge Host — Direct dispatch to FrameHandler protocols
 //
-//  Sits where PluginHost sits (connected to RelaySlave via local socket pair),
-//  but routes requests to `FrameHandler` protocol conformers instead of plugin binaries.
+//  Sits where CartridgeHost sits (connected to RelaySlave via local socket pair),
+//  but routes requests to `FrameHandler` protocol conformers instead of cartridge binaries.
 //
 //  ## Architecture
 //
-//  RelaySlave ←→ InProcessPluginHost ←→ Handler A (streaming frames)
+//  RelaySlave ←→ InProcessCartridgeHost ←→ Handler A (streaming frames)
 //                                    ←→ Handler B (streaming frames)
 //                                    ←→ Handler C (streaming frames)
 //
@@ -18,7 +18,7 @@
 //  END) are forwarded to the handler. The handler processes frames natively —
 //  streaming or accumulating as it sees fit.
 //
-//  This matches how real plugins work: PluginRuntime forwards frames to handlers,
+//  This matches how real cartridges work: CartridgeRuntime forwards frames to handlers,
 //  and each handler decides how to consume/produce data.
 
 import Foundation
@@ -247,7 +247,7 @@ final class IdentityHandler: FrameHandler {
     }
 }
 
-// MARK: - In-Process Plugin Host
+// MARK: - In-Process Cartridge Host
 
 /// Entry for a registered in-process handler.
 struct HandlerEntry {
@@ -258,26 +258,26 @@ struct HandlerEntry {
 
 private struct RelayNotifyCapabilitiesPayload: Codable {
     let caps: [String]
-    let installedPlugins: [InstalledPluginIdentity]
+    let installedCartridges: [InstalledCartridgeIdentity]
 
     enum CodingKeys: String, CodingKey {
         case caps
-        case installedPlugins = "installed_plugins"
+        case installedCartridges = "installed_cartridges"
     }
 }
 
 /// Cap table entry: (cap_urn_string, handler_index).
 typealias CapTable = [(String, Int)]
 
-/// A plugin host that dispatches to in-process FrameHandler implementations.
+/// A cartridge host that dispatches to in-process FrameHandler implementations.
 ///
 /// Speaks the Frame protocol to a RelaySlave, but routes requests to
 /// `FrameHandler` protocol conformers via frame channels — no accumulation
 /// at the host level, handlers own the streaming.
-public final class InProcessPluginHost {
+public final class InProcessCartridgeHost {
     private let handlers: [HandlerEntry]
 
-    /// Create a new in-process plugin host with the given handlers.
+    /// Create a new in-process cartridge host with the given handlers.
     ///
     /// Each handler is a tuple of (name, caps, handler).
     public init(handlers: [(name: String, caps: [CSCap], handler: FrameHandler)]) {
@@ -298,7 +298,7 @@ public final class InProcessPluginHost {
         }
         let payload = RelayNotifyCapabilitiesPayload(
             caps: capUrns,
-            installedPlugins: []
+            installedCartridges: []
         )
         return try! JSONEncoder().encode(payload)
     }

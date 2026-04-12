@@ -5,7 +5,7 @@ import XCTest
 // =============================================================================
 // Streaming API Tests
 //
-// Covers TEST529-545 from plugin_runtime.rs in the reference Rust implementation.
+// Covers TEST529-545 from cartridge_runtime.rs in the reference Rust implementation.
 // Tests InputStream, InputPackage, OutputStream, and PeerCall streaming APIs.
 //
 // Note: We use Bifaci.InputStream and Bifaci.OutputStream to avoid ambiguity
@@ -845,10 +845,10 @@ final class StreamingAPITests: XCTestCase {
 
         do {
             let _: Void = try await stream.runWithKeepalive(progress: 0.25, message: "Loading") {
-                throw PluginRuntimeError.handlerError("load failed")
+                throw CartridgeRuntimeError.handlerError("load failed")
             }
             XCTFail("Should have thrown")
-        } catch let error as PluginRuntimeError {
+        } catch let error as CartridgeRuntimeError {
             if case .handlerError(let msg) = error {
                 XCTAssertEqual(msg, "load failed")
             } else {

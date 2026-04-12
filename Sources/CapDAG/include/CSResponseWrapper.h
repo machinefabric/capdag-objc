@@ -1,9 +1,9 @@
 //
 //  CSResponseWrapper.h
-//  Response wrapper for unified plugin output handling with validation
+//  Response wrapper for unified cartridge output handling with validation
 //
-//  Unified response wrapper for all plugin operations
-//  Provides type-safe deserialization of plugin output
+//  Unified response wrapper for all cartridge operations
+//  Provides type-safe deserialization of cartridge output
 //
 
 #import <Foundation/Foundation.h>
@@ -18,8 +18,8 @@ typedef NS_ENUM(NSInteger, CSResponseContentType) {
 };
 
 /**
- * Unified response wrapper for all plugin operations
- * Provides type-safe deserialization of plugin output
+ * Unified response wrapper for all cartridge operations
+ * Provides type-safe deserialization of cartridge output
  */
 @interface CSResponseWrapper : NSObject
 

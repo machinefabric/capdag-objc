@@ -1,7 +1,7 @@
 /// RelaySlave — Slave endpoint of the CBOR frame relay.
 ///
-/// Sits inside the plugin host process (e.g., XPC service). Bridges between a socket
-/// connection (to the RelayMaster in the engine) and local I/O (to/from PluginHost).
+/// Sits inside the cartridge host process (e.g., XPC service). Bridges between a socket
+/// connection (to the RelayMaster in the engine) and local I/O (to/from CartridgeHost).
 ///
 /// Two relay-specific frame types are intercepted and never leaked through:
 /// - RelayNotify (slave -> master): Capability advertisement, injected by the host runtime
@@ -24,24 +24,24 @@ public enum RelayError: Error, Sendable {
 }
 
 /// Slave relay endpoint. Manages bidirectional frame forwarding between
-/// a socket (master/engine side) and local streams (PluginHostRuntime side).
+/// a socket (master/engine side) and local streams (CartridgeHostRuntime side).
 @available(macOS 10.15.4, iOS 13.4, *)
 public final class RelaySlave: @unchecked Sendable {
     private static let log = OSLog(subsystem: "com.machinefabric.bifaci", category: "RelaySlave")
 
-    /// Read from PluginHostRuntime
+    /// Read from CartridgeHostRuntime
     private let localReader: FrameReader
-    /// Write to PluginHostRuntime
+    /// Write to CartridgeHostRuntime
     private let localWriter: FrameWriter
     /// Latest RelayState payload from master (thread-safe)
     private let resourceStateLock = NSLock()
     private var _resourceState: Data = Data()
 
-    /// Create a relay slave with local I/O streams (to/from PluginHostRuntime).
+    /// Create a relay slave with local I/O streams (to/from CartridgeHostRuntime).
     ///
     /// - Parameters:
-    ///   - localRead: FileHandle to read frames from (PluginHostRuntime output)
-    ///   - localWrite: FileHandle to write frames to (PluginHostRuntime input)
+    ///   - localRead: FileHandle to read frames from (CartridgeHostRuntime output)
+    ///   - localWrite: FileHandle to write frames to (CartridgeHostRuntime input)
     public init(localRead: FileHandle, localWrite: FileHandle) {
         self.localReader = FrameReader(handle: localRead)
         self.localWriter = FrameWriter(handle: localWrite)
@@ -99,7 +99,7 @@ public final class RelaySlave: @unchecked Sendable {
 
             defer {
                 group.leave()
-                // Close local writer to signal PluginHost that relay is gone.
+                // Close local writer to signal CartridgeHost that relay is gone.
                 // This causes the host's relay reader thread to get EOF -> relayClosed.
                 try? localWriter.handle.close()
             }
@@ -148,7 +148,7 @@ public final class RelaySlave: @unchecked Sendable {
         }
 
         // Thread 2: Local -> Socket (slave -> master direction)
-        // Uses ReorderBuffer to validate incoming seq from PluginHost
+        // Uses ReorderBuffer to validate incoming seq from CartridgeHost
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // Create reorder buffer for local -> socket direction
@@ -166,7 +166,7 @@ public final class RelaySlave: @unchecked Sendable {
                         return // Local side closed (host shut down)
                     }
 
-                    // Forward all frames, including RelayNotify (capability updates from PluginHost)
+                    // Forward all frames, including RelayNotify (capability updates from CartridgeHost)
                     // RelayState from local is dropped (deprecated/unused)
                     if frame.frameType == .relayState {
                         continue
@@ -208,11 +208,11 @@ public final class RelaySlave: @unchecked Sendable {
 
 
     /// Send a RelayNotify frame directly to the socket writer.
-    /// Used when capabilities change (plugin discovered, plugin died).
+    /// Used when capabilities change (cartridge discovered, cartridge died).
     ///
     /// - Parameters:
     ///   - socketWriter: Writer connected to the master relay socket
-    ///   - manifest: Aggregate manifest JSON of all available plugin capabilities
+    ///   - manifest: Aggregate manifest JSON of all available cartridge capabilities
     ///   - limits: Negotiated protocol limits
     public static func sendNotify(
         socketWriter: FrameWriter,

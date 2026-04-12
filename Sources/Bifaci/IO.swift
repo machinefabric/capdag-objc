@@ -530,16 +530,16 @@ public class FrameWriter: @unchecked Sendable {
 
 // MARK: - Handshake
 
-/// Handshake result including manifest (host side - receives plugin's HELLO with manifest)
+/// Handshake result including manifest (host side - receives cartridge's HELLO with manifest)
 public struct HandshakeResult: Sendable {
     /// Negotiated protocol limits
     public let limits: Limits
-    /// Plugin manifest JSON data (from plugin's HELLO response)
+    /// Cartridge manifest JSON data (from cartridge's HELLO response)
     public let manifest: Data?
 }
 
-/// Perform HELLO handshake and extract plugin manifest (host side - sends first)
-/// Returns HandshakeResult containing negotiated limits and plugin manifest.
+/// Perform HELLO handshake and extract cartridge manifest (host side - sends first)
+/// Returns HandshakeResult containing negotiated limits and cartridge manifest.
 @available(macOS 10.15.4, iOS 13.4, *)
 public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWriter) throws -> HandshakeResult {
     // Send our HELLO with our current limits
@@ -556,9 +556,9 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
         throw FrameError.handshakeFailed("Expected HELLO, got \(theirFrame.frameType)")
     }
 
-    // Extract manifest - REQUIRED for plugins
+    // Extract manifest - REQUIRED for cartridges
     guard let manifest = theirFrame.helloManifest else {
-        throw FrameError.handshakeFailed("Plugin HELLO missing required manifest")
+        throw FrameError.handshakeFailed("Cartridge HELLO missing required manifest")
     }
 
     // Protocol v2: All three limit fields are REQUIRED
@@ -586,11 +586,11 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     return HandshakeResult(limits: limits, manifest: manifest)
 }
 
-/// Accept HELLO handshake with manifest (plugin side - receives first, sends manifest in response)
+/// Accept HELLO handshake with manifest (cartridge side - receives first, sends manifest in response)
 /// - Parameters:
 ///   - reader: Frame reader for incoming data
 ///   - writer: Frame writer for outgoing data
-///   - manifest: Plugin manifest JSON data to include in HELLO response
+///   - manifest: Cartridge manifest JSON data to include in HELLO response
 /// - Returns: Negotiated protocol limits
 @available(macOS 10.15.4, iOS 13.4, *)
 public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter, manifest: Data) throws -> Limits {

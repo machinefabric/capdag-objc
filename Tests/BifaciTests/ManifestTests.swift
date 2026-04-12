@@ -17,15 +17,15 @@ final class ManifestTests: XCTestCase {
     func test148_capManifestCreation() throws {
         let cap = CapDefinition(urn: "cap:in=media:;out=media:", title: "Test Cap", command: "test")
         let manifest = Manifest(
-            name: "test-plugin",
+            name: "test-cartridge",
             version: "1.0.0",
-            description: "A test plugin",
+            description: "A test cartridge",
             caps: [cap]
         )
 
-        XCTAssertEqual(manifest.name, "test-plugin")
+        XCTAssertEqual(manifest.name, "test-cartridge")
         XCTAssertEqual(manifest.version, "1.0.0")
-        XCTAssertEqual(manifest.description, "A test plugin")
+        XCTAssertEqual(manifest.description, "A test cartridge")
         XCTAssertEqual(manifest.caps.count, 1)
         XCTAssertEqual(manifest.caps[0].urn, "cap:in=media:;out=media:")
     }
@@ -33,9 +33,9 @@ final class ManifestTests: XCTestCase {
     // TEST149: Test cap manifest with author field (via CSCapManifest which has author)
     func test149_capManifestWithAuthor() throws {
         let csManifest = CSCapManifest(
-            name: "test-plugin",
+            name: "test-cartridge",
             version: "1.0.0",
-            manifestDescription: "A test plugin",
+            manifestDescription: "A test cartridge",
             caps: []
         ).withAuthor("Test Author")
 
@@ -47,7 +47,7 @@ final class ManifestTests: XCTestCase {
         let capUrn = "cap:in=media:;out=media:"
         let cap = CapDefinition(urn: capUrn, title: "Process", command: "process")
         let original = Manifest(
-            name: "roundtrip-plugin",
+            name: "roundtrip-cartridge",
             version: "2.0.0",
             description: "Roundtrip test",
             caps: [cap]
@@ -108,9 +108,9 @@ final class ManifestTests: XCTestCase {
             CapDefinition(urn: "cap:in=image:;out=image:", title: "Convert", command: "convert"),
         ]
         let manifest = Manifest(
-            name: "multi-cap-plugin",
+            name: "multi-cap-cartridge",
             version: "1.0.0",
-            description: "Plugin with multiple caps",
+            description: "Cartridge with multiple caps",
             caps: caps
         )
 
@@ -131,9 +131,9 @@ final class ManifestTests: XCTestCase {
     // TEST153: Test cap manifest with empty caps list serializes and deserializes correctly
     func test153_capManifestEmptyCaps() throws {
         let manifest = Manifest(
-            name: "empty-caps-plugin",
+            name: "empty-caps-cartridge",
             version: "1.0.0",
-            description: "Plugin with no caps",
+            description: "Cartridge with no caps",
             caps: []
         )
 
@@ -191,12 +191,12 @@ final class ManifestTests: XCTestCase {
     // Additional test: CSCapManifest with pageUrl
     func test_csCapManifestWithPageUrl() throws {
         let manifest = CSCapManifest(
-            name: "plugin-with-url",
+            name: "cartridge-with-url",
             version: "1.0.0",
-            manifestDescription: "Plugin with page URL",
+            manifestDescription: "Cartridge with page URL",
             caps: []
-        ).withPageUrl("https://example.com/plugin")
+        ).withPageUrl("https://example.com/cartridge")
 
-        XCTAssertEqual(manifest.pageUrl, "https://example.com/plugin")
+        XCTAssertEqual(manifest.pageUrl, "https://example.com/cartridge")
     }
 }

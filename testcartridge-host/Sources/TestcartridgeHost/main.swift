@@ -1,6 +1,6 @@
 // testcartridge-host — standalone OOM watchdog microcosm
 //
-// Hosts testcartridge as a plugin (via PluginHost from Bifaci),
+// Hosts testcartridge as a cartridge (via CartridgeHost from Bifaci),
 // invokes test-memory-hog, monitors memory metrics, tests kill mechanisms.
 //
 // No engine, no relay, no gRPC, no XPC, no UI.
@@ -124,7 +124,7 @@ let hogHoldMediaUrn = "media:hog-hold-seconds;textable;numeric"
 
 /// Build the full frame sequence to invoke test-memory-hog.
 /// Returns (requestId, routingId, frames) — routingId is the XID that
-/// PluginHost.run() requires on all incoming frames.
+/// CartridgeHost.run() requires on all incoming frames.
 func buildMemoryHogRequest(sizeMb: Int, holdSeconds: Int) -> (reqId: MessageId, xid: MessageId, frames: [Frame]) {
     let reqId = MessageId.newUUID()
     let xid = MessageId.newUUID()  // We are the "relay" — we assign XID
@@ -180,7 +180,7 @@ func buildMemoryHogRequest(sizeMb: Int, holdSeconds: Int) -> (reqId: MessageId, 
 enum CapResult {
     case completed(String)    // Final textable output
     case error(String, String) // code, message
-    case pluginDied(String)
+    case cartridgeDied(String)
     case timeout              // No terminal frame within deadline
 }
 
@@ -242,7 +242,7 @@ func readResponse(reader: FrameReader, reqId: MessageId) -> CapResult {
     var resultText = ""
     while true {
         guard let frame = try? reader.read() else {
-            return .pluginDied("Reader EOF — plugin process likely died")
+            return .cartridgeDied("Reader EOF — cartridge process likely died")
         }
         if let result = processFrame(frame, reqId: reqId, resultText: &resultText) {
             return result
@@ -283,9 +283,9 @@ func allocationMb(percent: Int) -> Int {
 // MARK: - Test: Pressure + Kill
 
 /// Single test: allocate 90% of RAM with incompressible CSPRNG data, monitor
-/// memory, detect pressure (kernel or threshold), kill plugin, verify death.
+/// memory, detect pressure (kernel or threshold), kill cartridge, verify death.
 /// The goal is to overload the system — force the kernel into real pressure.
-func testPressureAndKill(host: PluginHost, writer: FrameWriter, reader: FrameReader) -> Bool {
+func testPressureAndKill(host: CartridgeHost, writer: FrameWriter, reader: FrameReader) -> Bool {
     let percent = 90
     let sizeMb = allocationMb(percent: percent)
     let holdSec = 120
@@ -403,9 +403,9 @@ func testPressureAndKill(host: PluginHost, writer: FrameWriter, reader: FrameRea
             break
         }
 
-        // Plugin already died (jetsam killed it before we could)?
-        if host.runningPlugins().isEmpty {
-            log("FAIL: jetsam killed plugin before we detected pressure")
+        // Cartridge already died (jetsam killed it before we could)?
+        if host.runningCartridges().isEmpty {
+            log("FAIL: jetsam killed cartridge before we detected pressure")
             log("  We need to detect earlier — tighten thresholds")
             source.cancel()
             readerDone.wait()
@@ -416,13 +416,13 @@ func testPressureAndKill(host: PluginHost, writer: FrameWriter, reader: FrameRea
     // Kill if we detected pressure
     if !killReason.isEmpty {
         log("  DETECTED: \(killReason)")
-        let plugins = host.runningPlugins()
-        if let p = plugins.first {
-            log("  Killing plugin pid=\(p.pid)...")
-            host.killPlugin(pid: p.pid)
+        let cartridges = host.runningCartridges()
+        if let p = cartridges.first {
+            log("  Killing cartridge pid=\(p.pid)...")
+            host.killCartridge(pid: p.pid)
             didKill = true
         } else {
-            log("FAIL: plugin already dead — jetsam beat us")
+            log("FAIL: cartridge already dead — jetsam beat us")
             source.cancel()
             readerDone.wait()
             return false
@@ -430,9 +430,9 @@ func testPressureAndKill(host: PluginHost, writer: FrameWriter, reader: FrameRea
     } else {
         // Timeout — kill for cleanup
         log("  No pressure detected in \(holdSec)s — killing for cleanup")
-        let plugins = host.runningPlugins()
-        if let p = plugins.first {
-            host.killPlugin(pid: p.pid)
+        let cartridges = host.runningCartridges()
+        if let p = cartridges.first {
+            host.killCartridge(pid: p.pid)
         }
         source.cancel()
         log("FAIL: no pressure detected — test inconclusive")
@@ -445,17 +445,17 @@ func testPressureAndKill(host: PluginHost, writer: FrameWriter, reader: FrameRea
     let after = SystemMemoryInfo.current()
     log("Memory after: \(after.summary())")
 
-    // Verify plugin is gone
-    let stillAlive = host.runningPlugins().contains { $0.running }
+    // Verify cartridge is gone
+    let stillAlive = host.runningCartridges().contains { $0.running }
 
     if didKill && !stillAlive {
-        log("PASS: Proactively detected pressure and killed plugin before jetsam")
+        log("PASS: Proactively detected pressure and killed cartridge before jetsam")
         return true
     } else if didKill {
-        log("FAIL: killed plugin but it's still running")
+        log("FAIL: killed cartridge but it's still running")
         return false
     } else {
-        log("FAIL: did not kill plugin")
+        log("FAIL: did not kill cartridge")
         return false
     }
 }
@@ -486,25 +486,25 @@ func findTestcartridge(explicitPath: String?) -> String {
         }
     }
     fputs("Error: testcartridge binary not found. Build it with: cargo build -p testcartridge\n", stderr)
-    fputs("Or specify: --plugin /path/to/testcartridge\n", stderr)
+    fputs("Or specify: --cartridge /path/to/testcartridge\n", stderr)
     exit(1)
 }
 
 func parseArgs() -> String? {
     let args = CommandLine.arguments
-    var pluginPath: String?
+    var cartridgePath: String?
     var i = 1
     while i < args.count {
         switch args[i] {
-        case "--plugin":
+        case "--cartridge":
             i += 1
             guard i < args.count else {
-                fputs("Error: --plugin requires a path argument\n", stderr)
+                fputs("Error: --cartridge requires a path argument\n", stderr)
                 exit(1)
             }
-            pluginPath = args[i]
+            cartridgePath = args[i]
         case "--help", "-h":
-            print("Usage: testcartridge-host [--plugin PATH]")
+            print("Usage: testcartridge-host [--cartridge PATH]")
             exit(0)
         default:
             fputs("Unknown argument: \(args[i])\n", stderr)
@@ -512,20 +512,20 @@ func parseArgs() -> String? {
         }
         i += 1
     }
-    return pluginPath
+    return cartridgePath
 }
 
 // --- Entry point ---
 
 let explicitPath = parseArgs()
-let pluginPath = findTestcartridge(explicitPath: explicitPath)
-log("Testcartridge: \(pluginPath)")
+let cartridgePath = findTestcartridge(explicitPath: explicitPath)
+log("Testcartridge: \(cartridgePath)")
 
 let toHostPipe = Pipe()
 let fromHostPipe = Pipe()
 
-let host = PluginHost()
-host.registerPlugin(path: pluginPath, knownCaps: [memoryHogCapUrn])
+let host = CartridgeHost()
+host.registerCartridge(path: cartridgePath, knownCaps: [memoryHogCapUrn])
 
 let hostThread = Thread {
     do {
@@ -535,10 +535,10 @@ let hostThread = Thread {
             resourceFn: { Data() }
         )
     } catch {
-        log("PluginHost.run() error: \(error)")
+        log("CartridgeHost.run() error: \(error)")
     }
 }
-hostThread.name = "PluginHost.run"
+hostThread.name = "CartridgeHost.run"
 hostThread.start()
 Thread.sleep(forTimeInterval: 0.1)
 

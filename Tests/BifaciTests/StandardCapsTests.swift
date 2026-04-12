@@ -41,7 +41,7 @@ final class StandardCapsTests: XCTestCase {
     func test475_manifestValidatePassesWithIdentity() throws {
         let identityUrn = try CSCapUrn.fromString(CSCapIdentity)
         let identityCap = CSCap(urn: identityUrn, title: "Identity", command: "identity")
-        let manifest = CSCapManifest(name: "TestPlugin",
+        let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
                                      manifestDescription: "Test",
                                      caps: [identityCap])
@@ -53,7 +53,7 @@ final class StandardCapsTests: XCTestCase {
     func test476_manifestValidateFailsWithoutIdentity() throws {
         let otherUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
         let otherCap = CSCap(urn: otherUrn, title: "Test", command: "test")
-        let manifest = CSCapManifest(name: "TestPlugin",
+        let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
                                      manifestDescription: "Test",
                                      caps: [otherCap])
@@ -66,7 +66,7 @@ final class StandardCapsTests: XCTestCase {
         // Test 1: Adding identity when missing
         let testUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
         let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")
-        let manifestWithout = CSCapManifest(name: "TestPlugin",
+        let manifestWithout = CSCapManifest(name: "TestCartridge",
                                             version: "1.0.0",
                                             manifestDescription: "Test",
                                             caps: [cap1])
@@ -82,19 +82,19 @@ final class StandardCapsTests: XCTestCase {
 
     // MARK: - Auto-Registration Tests (TEST478-480)
 
-    // TEST478: PluginRuntime auto-registers CAP_IDENTITY handler
-    func test478_pluginRuntimeAutoRegistersIdentity() throws {
+    // TEST478: CartridgeRuntime auto-registers CAP_IDENTITY handler
+    func test478_cartridgeRuntimeAutoRegistersIdentity() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","description":"Test","caps":[
             {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"}
         ]}
         """.data(using: .utf8)!
 
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
 
         // Verify identity handler is registered
         let identityHandler = runtime.findHandler(capUrn: CSCapIdentity)
-        XCTAssertNotNil(identityHandler, "PluginRuntime must auto-register CAP_IDENTITY handler")
+        XCTAssertNotNil(identityHandler, "CartridgeRuntime must auto-register CAP_IDENTITY handler")
     }
 
     // TEST479: CAP_IDENTITY handler echoes input unchanged
@@ -105,7 +105,7 @@ final class StandardCapsTests: XCTestCase {
         ]}
         """.data(using: .utf8)!
 
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
         let factory = runtime.findHandler(capUrn: CSCapIdentity)!
 
         // Create test input - pre-collected chunks
@@ -174,7 +174,7 @@ final class StandardCapsTests: XCTestCase {
         ]}
         """.data(using: .utf8)!
 
-        let runtime = PluginRuntime(manifest: manifest)
+        let runtime = CartridgeRuntime(manifest: manifest)
         let factory = runtime.findHandler(capUrn: CSCapDiscard)!
 
         // Create test input - pre-collected chunks

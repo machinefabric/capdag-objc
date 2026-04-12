@@ -20,13 +20,13 @@ final class TransformOp: Op, @unchecked Sendable {
 }
 
 // =============================================================================
-// PluginHost Multi-Plugin Runtime Tests
+// CartridgeHost Multi-Cartridge Runtime Tests
 //
-// Tests the restructured PluginHost which manages N plugin binaries with
-// frame routing. These mirror the Rust PluginHostRuntime tests (TEST413-425).
+// Tests the restructured CartridgeHost which manages N cartridge binaries with
+// frame routing. These mirror the Rust CartridgeHostRuntime tests (TEST413-425).
 //
 // Test architecture:
-//   Engine task ←→ Relay pipes ←→ PluginHost.run() ←→ Plugin pipes ←→ Plugin task
+//   Engine task ←→ Relay pipes ←→ CartridgeHost.run() ←→ Cartridge pipes ←→ Cartridge task
 // =============================================================================
 
 @available(macOS 10.15.4, iOS 13.4, *)
@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
+    {"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -62,19 +62,19 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         return Frame.helloWithManifest(limits: limits, manifest: manifest)
     }
 
-    /// Helper for mock plugins to handle identity verification after HELLO exchange.
+    /// Helper for mock cartridges to handle identity verification after HELLO exchange.
     /// Reads REQ + streaming frames, echoes payload back.
     nonisolated static func handleIdentityVerification(reader: FrameReader, writer: FrameWriter) throws {
         // Read REQ
         guard let req = try reader.read(), req.frameType == .req else {
-            throw PluginHostError.protocolError("Expected identity REQ")
+            throw CartridgeHostError.protocolError("Expected identity REQ")
         }
 
         // Read streaming frames until END, collect payload
         var payload = Data()
         while true {
             guard let frame = try reader.read() else {
-                throw PluginHostError.receiveFailed("Connection closed during identity verification")
+                throw CartridgeHostError.receiveFailed("Connection closed during identity verification")
             }
             if frame.frameType == .chunk, let p = frame.payload {
                 payload.append(p)
@@ -136,10 +136,10 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         reader: FrameReader
     ) throws -> (reqId: MessageId, cap: String, contentType: String, streams: [(streamId: String, mediaUrn: String, data: Data)]) {
         guard let req = try reader.read() else {
-            throw PluginHostError.receiveFailed("No REQ frame")
+            throw CartridgeHostError.receiveFailed("No REQ frame")
         }
         guard req.frameType == .req else {
-            throw PluginHostError.handshakeFailed("Expected REQ, got \(req.frameType)")
+            throw CartridgeHostError.handshakeFailed("Expected REQ, got \(req.frameType)")
         }
 
         let reqId = req.id
@@ -153,7 +153,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         while true {
             guard let frame = try reader.read() else {
-                throw PluginHostError.receiveFailed("Unexpected EOF reading request stream")
+                throw CartridgeHostError.receiveFailed("Unexpected EOF reading request stream")
             }
             switch frame.frameType {
             case .streamStart:
@@ -172,7 +172,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             case .end:
                 return (reqId, cap, contentType, streams)
             default:
-                throw PluginHostError.handshakeFailed("Unexpected frame type in request stream: \(frame.frameType)")
+                throw CartridgeHostError.handshakeFailed("Unexpected frame type in request stream: \(frame.frameType)")
             }
         }
     }
@@ -195,30 +195,30 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Handshake Tests (TEST231-232)
     // NOTE: TEST284 and TEST290 are tested at the protocol level in IntegrationTests.swift
 
-    // TEST232: attachPlugin fails when plugin HELLO is missing required manifest
-    func test232_attachPluginFailsOnMissingManifest() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST232: attachCartridge fails when cartridge HELLO is missing required manifest
+    func test232_attachCartridgeFailsOnMissingManifest() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading, limits: Limits())
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting, limits: Limits())
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading, limits: Limits())
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting, limits: Limits())
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else {
-                throw PluginHostError.receiveFailed("No HELLO")
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else {
+                throw CartridgeHostError.receiveFailed("No HELLO")
             }
             let limits = Limits(maxFrame: DEFAULT_MAX_FRAME, maxChunk: DEFAULT_MAX_CHUNK, maxReorderBuffer: DEFAULT_MAX_REORDER_BUFFER)
-            try pluginWriter.write(Frame.hello(limits: limits))
+            try cartridgeWriter.write(Frame.hello(limits: limits))
         }
 
-        let host = PluginHost()
+        let host = CartridgeHost()
         do {
-            try host.attachPlugin(
-                stdinHandle: hostToPlugin.fileHandleForWriting,
-                stdoutHandle: pluginToHost.fileHandleForReading
+            try host.attachCartridge(
+                stdinHandle: hostToCartridge.fileHandleForWriting,
+                stdoutHandle: cartridgeToHost.fileHandleForReading
             )
             XCTFail("Should have thrown handshake error due to missing manifest")
-        } catch let error as PluginHostError {
+        } catch let error as CartridgeHostError {
             if case .handshakeFailed(let msg) = error {
                 XCTAssertTrue(msg.contains("missing required manifest"), "Error should mention missing manifest: \(msg)")
             } else {
@@ -226,32 +226,32 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             }
         }
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
     }
 
-    // TEST231: attachPlugin fails when peer sends non-HELLO frame
-    func test231_attachPluginFailsOnWrongFrameType() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST231: attachCartridge fails when peer sends non-HELLO frame
+    func test231_attachCartridgeFailsOnWrongFrameType() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else {
-                throw PluginHostError.receiveFailed("No HELLO")
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else {
+                throw CartridgeHostError.receiveFailed("No HELLO")
             }
-            try pluginWriter.write(Frame.err(id: .uint(0), code: "WRONG", message: "Not a HELLO"))
+            try cartridgeWriter.write(Frame.err(id: .uint(0), code: "WRONG", message: "Not a HELLO"))
         }
 
-        let host = PluginHost()
+        let host = CartridgeHost()
         do {
-            try host.attachPlugin(
-                stdinHandle: hostToPlugin.fileHandleForWriting,
-                stdoutHandle: pluginToHost.fileHandleForReading
+            try host.attachCartridge(
+                stdinHandle: hostToCartridge.fileHandleForWriting,
+                stdoutHandle: cartridgeToHost.fileHandleForReading
             )
             XCTFail("Should have thrown handshake error")
-        } catch let error as PluginHostError {
+        } catch let error as CartridgeHostError {
             if case .handshakeFailed(let msg) = error {
                 XCTAssertTrue(msg.contains("Expected HELLO"))
             } else {
@@ -259,100 +259,100 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             }
         }
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
     }
 
-    // MARK: - Plugin Registration & Routing (TEST413-414, TEST425)
+    // MARK: - Cartridge Registration & Routing (TEST413-414, TEST425)
 
-    // TEST413: registerPlugin adds to cap_table and findPluginForCap resolves it
-    func test413_registerPluginAddsToCaptable() {
-        let host = PluginHost()
-        host.registerPlugin(path: "/usr/bin/test", knownCaps: ["cap:op=convert"])
-        XCTAssertNotNil(host.findPluginForCap("cap:op=convert"), "Registered cap must be found")
-        XCTAssertNil(host.findPluginForCap("cap:op=unknown"), "Unregistered cap must not be found")
+    // TEST413: registerCartridge adds to cap_table and findCartridgeForCap resolves it
+    func test413_registerCartridgeAddsToCaptable() {
+        let host = CartridgeHost()
+        host.registerCartridge(path: "/usr/bin/test", knownCaps: ["cap:op=convert"])
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=convert"), "Registered cap must be found")
+        XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"), "Unregistered cap must not be found")
     }
 
     // TEST414: capabilities returns empty initially
     func test414_capabilitiesEmptyInitially() {
-        let host = PluginHost()
-        // Capabilities are rebuilt from running plugins — no running plugins means empty
+        let host = CartridgeHost()
+        // Capabilities are rebuilt from running cartridges — no running cartridges means empty
         let caps = host.capabilities
         XCTAssertTrue(caps.isEmpty || String(data: caps, encoding: .utf8) == "[]",
             "Capabilities should be empty initially")
     }
 
-    // TEST425: findPluginForCap returns nil for unknown cap
-    func test425_findPluginForCapUnknown() {
-        let host = PluginHost()
-        host.registerPlugin(path: "/test", knownCaps: ["cap:op=known"])
-        XCTAssertNotNil(host.findPluginForCap("cap:op=known"))
-        XCTAssertNil(host.findPluginForCap("cap:op=unknown"))
+    // TEST425: findCartridgeForCap returns nil for unknown cap
+    func test425_findCartridgeForCapUnknown() {
+        let host = CartridgeHost()
+        host.registerCartridge(path: "/test", knownCaps: ["cap:op=known"])
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=known"))
+        XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"))
     }
 
     // MARK: - Full Path Tests (TEST416-420, TEST426)
 
-    // TEST416: attachPlugin extracts manifest and updates capabilities
-    func test416_attachPluginUpdatesCaps() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST416: attachCartridge extracts manifest and updates capabilities
+    func test416_attachCartridgeUpdatesCaps() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWithManifest())
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWithManifest())
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         // After attach, the cap should be registered
-        XCTAssertNotNil(host.findPluginForCap("cap:op=test"), "Attached plugin's cap must be found")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=test"), "Attached cartridge's cap must be found")
 
         // Capabilities should be non-empty
         let caps = host.capabilities
-        XCTAssertFalse(caps.isEmpty, "Capabilities should include attached plugin's caps")
+        XCTAssertFalse(caps.isEmpty, "Capabilities should include attached cartridge's caps")
 
-        try await pluginTask.value
+        try await cartridgeTask.value
     }
 
-    // TEST417 + TEST426: Full path - engine REQ -> relay -> host -> plugin -> response -> relay -> engine
+    // TEST417 + TEST426: Full path - engine REQ -> relay -> host -> cartridge -> response -> relay -> engine
     func test417_fullPathRequestResponse() async throws {
-        // Plugin pipes
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+        // Cartridge pipes
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
         // Relay pipes (engine <-> host)
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        // Plugin: handshake + identity verification + read REQ + write response
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWithManifest())
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+        // Cartridge: handshake + identity verification + read REQ + write response
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWithManifest())
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
             // Read REQ + streams + END from host
-            let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginReader)
-            guard cap == "cap:op=test" else { throw PluginHostError.protocolError("Expected cap:op=test, got \(cap)") }
+            let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
+            guard cap == "cap:op=test" else { throw CartridgeHostError.protocolError("Expected cap:op=test, got \(cap)") }
 
             // Write response
-            try CborRuntimeTests.writeResponse(writer: pluginWriter, reqId: reqId, payload: "hello-from-plugin".data(using: .utf8)!)
+            try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "hello-from-cartridge".data(using: .utf8)!)
         }
 
-        // Host: attach plugin + run
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        // Host: attach cartridge + run
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -378,7 +378,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try Self.writeWithXid(engineWriter, Frame.streamEnd(reqId: reqId, streamId: sid, chunkCount: 1), xid: xid)
         try Self.writeWithXid(engineWriter, Frame.end(id: reqId, finalPayload: nil), xid: xid)
 
-        // Read response from plugin (via host relay) — skip relayNotify
+        // Read response from cartridge (via host relay) — skip relayNotify
         var responseData = Data()
         while true {
             guard let frame = try Self.readProtocolFrame(engineReader) else { break }
@@ -391,46 +391,46 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // Close relay to let run() exit
         engineToHost.fileHandleForWriting.closeFile()
 
-        XCTAssertEqual(String(data: responseData, encoding: .utf8), "hello-from-plugin")
+        XCTAssertEqual(String(data: responseData, encoding: .utf8), "hello-from-cartridge")
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
         try? await hostTask.value
     }
 
-    // TEST419: Plugin HEARTBEAT handled locally (not forwarded to relay)
+    // TEST419: Cartridge HEARTBEAT handled locally (not forwarded to relay)
     func test419_heartbeatHandledLocally() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        // Plugin: handshake + identity verification, send heartbeat, then respond to REQ
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWithManifest())
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+        // Cartridge: handshake + identity verification, send heartbeat, then respond to REQ
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWithManifest())
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
             // Send a heartbeat to the host
             let hbId = MessageId.newUUID()
-            try pluginWriter.write(Frame.heartbeat(id: hbId))
+            try cartridgeWriter.write(Frame.heartbeat(id: hbId))
 
             // Read heartbeat response from host
-            guard let hbResp = try pluginReader.read() else { throw PluginHostError.receiveFailed("No heartbeat response") }
-            guard hbResp.frameType == .heartbeat else { throw PluginHostError.protocolError("Expected heartbeat, got \(hbResp.frameType)") }
-            guard hbResp.id == hbId else { throw PluginHostError.protocolError("Heartbeat ID mismatch") }
+            guard let hbResp = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("No heartbeat response") }
+            guard hbResp.frameType == .heartbeat else { throw CartridgeHostError.protocolError("Expected heartbeat, got \(hbResp.frameType)") }
+            guard hbResp.id == hbId else { throw CartridgeHostError.protocolError("Heartbeat ID mismatch") }
 
             // Read REQ and respond
-            let (reqId, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginReader)
-            try CborRuntimeTests.writeResponse(writer: pluginWriter, reqId: reqId, payload: "ok".data(using: .utf8)!)
+            let (reqId, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
+            try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "ok".data(using: .utf8)!)
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -470,51 +470,51 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(gotHeartbeat, "Heartbeat must NOT be forwarded to relay")
         XCTAssertEqual(String(data: responseData, encoding: .utf8), "ok")
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
         try? await hostTask.value
     }
 
-    // TEST423: Multiple plugins registered with distinct caps route independently
-    func test423_multiplePluginsRouteIndependently() async throws {
-        // Plugin A
-        let hostToPluginA = Pipe()
-        let pluginAToHost = Pipe()
-        // Plugin B
-        let hostToPluginB = Pipe()
-        let pluginBToHost = Pipe()
+    // TEST423: Multiple cartridges registered with distinct caps route independently
+    func test423_multipleCartridgesRouteIndependently() async throws {
+        // Cartridge A
+        let hostToCartridgeA = Pipe()
+        let cartridgeAToHost = Pipe()
+        // Cartridge B
+        let hostToCartridgeB = Pipe()
+        let cartridgeBToHost = Pipe()
         // Relay
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let manifestA = CborRuntimeTests.makeManifest(name: "PluginA", caps: ["cap:op=alpha"])
-        let manifestB = CborRuntimeTests.makeManifest(name: "PluginB", caps: ["cap:op=beta"])
+        let manifestA = CborRuntimeTests.makeManifest(name: "CartridgeA", caps: ["cap:op=alpha"])
+        let manifestB = CborRuntimeTests.makeManifest(name: "CartridgeB", caps: ["cap:op=beta"])
 
-        let pluginAReader = FrameReader(handle: hostToPluginA.fileHandleForReading)
-        let pluginAWriter = FrameWriter(handle: pluginAToHost.fileHandleForWriting)
-        let pluginBReader = FrameReader(handle: hostToPluginB.fileHandleForReading)
-        let pluginBWriter = FrameWriter(handle: pluginBToHost.fileHandleForWriting)
+        let cartridgeAReader = FrameReader(handle: hostToCartridgeA.fileHandleForReading)
+        let cartridgeAWriter = FrameWriter(handle: cartridgeAToHost.fileHandleForWriting)
+        let cartridgeBReader = FrameReader(handle: hostToCartridgeB.fileHandleForReading)
+        let cartridgeBWriter = FrameWriter(handle: cartridgeBToHost.fileHandleForWriting)
 
         let taskA = Task.detached { @Sendable [manifestA] in
-            guard let _ = try pluginAReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginAWriter.write(CborRuntimeTests.helloWith(manifest: manifestA))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginAReader, writer: pluginAWriter)
-            let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginAReader)
-            guard cap == "cap:op=alpha" else { throw PluginHostError.protocolError("Expected alpha, got \(cap)") }
-            try CborRuntimeTests.writeResponse(writer: pluginAWriter, reqId: reqId, payload: "from-A".data(using: .utf8)!)
+            guard let _ = try cartridgeAReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeAWriter.write(CborRuntimeTests.helloWith(manifest: manifestA))
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeAReader, writer: cartridgeAWriter)
+            let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeAReader)
+            guard cap == "cap:op=alpha" else { throw CartridgeHostError.protocolError("Expected alpha, got \(cap)") }
+            try CborRuntimeTests.writeResponse(writer: cartridgeAWriter, reqId: reqId, payload: "from-A".data(using: .utf8)!)
         }
 
         let taskB = Task.detached { @Sendable [manifestB] in
-            guard let _ = try pluginBReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginBWriter.write(CborRuntimeTests.helloWith(manifest: manifestB))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginBReader, writer: pluginBWriter)
-            let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginBReader)
-            guard cap == "cap:op=beta" else { throw PluginHostError.protocolError("Expected beta, got \(cap)") }
-            try CborRuntimeTests.writeResponse(writer: pluginBWriter, reqId: reqId, payload: "from-B".data(using: .utf8)!)
+            guard let _ = try cartridgeBReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeBWriter.write(CborRuntimeTests.helloWith(manifest: manifestB))
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeBReader, writer: cartridgeBWriter)
+            let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeBReader)
+            guard cap == "cap:op=beta" else { throw CartridgeHostError.protocolError("Expected beta, got \(cap)") }
+            try CborRuntimeTests.writeResponse(writer: cartridgeBWriter, reqId: reqId, payload: "from-B".data(using: .utf8)!)
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(stdinHandle: hostToPluginA.fileHandleForWriting, stdoutHandle: pluginAToHost.fileHandleForReading)
-        try host.attachPlugin(stdinHandle: hostToPluginB.fileHandleForWriting, stdoutHandle: pluginBToHost.fileHandleForReading)
+        let host = CartridgeHost()
+        try host.attachCartridge(stdinHandle: hostToCartridgeA.fileHandleForWriting, stdoutHandle: cartridgeAToHost.fileHandleForReading)
+        try host.attachCartridge(stdinHandle: hostToCartridgeB.fileHandleForWriting, stdoutHandle: cartridgeBToHost.fileHandleForReading)
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -568,8 +568,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         engineToHost.fileHandleForWriting.closeFile()
 
-        XCTAssertEqual(String(data: alphaData, encoding: .utf8), "from-A", "Alpha response from Plugin A")
-        XCTAssertEqual(String(data: betaData, encoding: .utf8), "from-B", "Beta response from Plugin B")
+        XCTAssertEqual(String(data: alphaData, encoding: .utf8), "from-A", "Alpha response from Cartridge A")
+        XCTAssertEqual(String(data: betaData, encoding: .utf8), "from-B", "Beta response from Cartridge B")
 
         try? await taskA.value
         try? await taskB.value
@@ -578,26 +578,26 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // TEST901: REQ for unknown cap returns ERR (NoHandler) — not fatal, just per-request error
     func test901_reqForUnknownCapReturnsErr() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWithManifest())
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
-            // Plugin just waits — no request should arrive for unknown cap
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWithManifest())
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
+            // Cartridge just waits — no request should arrive for unknown cap
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -623,15 +623,15 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         engineToHost.fileHandleForWriting.closeFile()
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
         try? await hostTask.value
     }
 
     // MARK: - Handler Registration (TEST293)
 
-    // TEST293: Test PluginRuntime Op registration and lookup by exact and non-existent cap URN
-    func test293_pluginRuntimeHandlerRegistration() throws {
-        let runtime = PluginRuntime(manifest: CborRuntimeTests.testManifestData)
+    // TEST293: Test CartridgeRuntime Op registration and lookup by exact and non-existent cap URN
+    func test293_cartridgeRuntimeHandlerRegistration() throws {
+        let runtime = CartridgeRuntime(manifest: CborRuntimeTests.testManifestData)
 
         runtime.register_op_type(capUrn: "cap:in=media:;out=media:", make: EchoAllBytesOp.init)
         runtime.register_op_type(capUrn: "cap:op=transform", make: TransformOp.init)
@@ -648,8 +648,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let host = PluginHost()
-        host.registerPlugin(path: "/nonexistent/plugin/binary/path", knownCaps: ["cap:op=spawn-test"])
+        let host = CartridgeHost()
+        host.registerCartridge(path: "/nonexistent/cartridge/binary/path", knownCaps: ["cap:op=spawn-test"])
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -676,52 +676,52 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // TEST418: Route STREAM_START/CHUNK/STREAM_END/END by req_id
     func test418_routeContinuationByReqId() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "ContPlugin", caps: ["cap:op=cont"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "ContCartridge", caps: ["cap:op=cont"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
             // Read REQ
-            guard let req = try pluginReader.read() else { throw PluginHostError.receiveFailed("No REQ") }
-            guard req.frameType == .req else { throw PluginHostError.protocolError("Expected REQ") }
+            guard let req = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("No REQ") }
+            guard req.frameType == .req else { throw CartridgeHostError.protocolError("Expected REQ") }
             let reqId = req.id
 
             // Read STREAM_START
-            guard let ss = try pluginReader.read() else { throw PluginHostError.receiveFailed("No STREAM_START") }
-            guard ss.frameType == .streamStart else { throw PluginHostError.protocolError("Expected STREAM_START, got \(ss.frameType)") }
-            guard ss.id == reqId else { throw PluginHostError.protocolError("STREAM_START req_id mismatch") }
+            guard let ss = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("No STREAM_START") }
+            guard ss.frameType == .streamStart else { throw CartridgeHostError.protocolError("Expected STREAM_START, got \(ss.frameType)") }
+            guard ss.id == reqId else { throw CartridgeHostError.protocolError("STREAM_START req_id mismatch") }
 
             // Read CHUNK
-            guard let chunk = try pluginReader.read() else { throw PluginHostError.receiveFailed("No CHUNK") }
-            guard chunk.frameType == .chunk else { throw PluginHostError.protocolError("Expected CHUNK, got \(chunk.frameType)") }
-            guard chunk.payload == "payload-data".data(using: .utf8) else { throw PluginHostError.protocolError("CHUNK payload mismatch") }
+            guard let chunk = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("No CHUNK") }
+            guard chunk.frameType == .chunk else { throw CartridgeHostError.protocolError("Expected CHUNK, got \(chunk.frameType)") }
+            guard chunk.payload == "payload-data".data(using: .utf8) else { throw CartridgeHostError.protocolError("CHUNK payload mismatch") }
 
             // Read STREAM_END
-            guard let se = try pluginReader.read() else { throw PluginHostError.receiveFailed("No STREAM_END") }
-            guard se.frameType == .streamEnd else { throw PluginHostError.protocolError("Expected STREAM_END, got \(se.frameType)") }
+            guard let se = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("No STREAM_END") }
+            guard se.frameType == .streamEnd else { throw CartridgeHostError.protocolError("Expected STREAM_END, got \(se.frameType)") }
 
             // Read END
-            guard let end = try pluginReader.read() else { throw PluginHostError.receiveFailed("No END") }
-            guard end.frameType == .end else { throw PluginHostError.protocolError("Expected END, got \(end.frameType)") }
+            guard let end = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("No END") }
+            guard end.frameType == .end else { throw CartridgeHostError.protocolError("Expected END, got \(end.frameType)") }
 
             // Respond
-            try CborRuntimeTests.writeResponse(writer: pluginWriter, reqId: reqId, payload: "ok".data(using: .utf8)!)
+            try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "ok".data(using: .utf8)!)
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -756,42 +756,42 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         XCTAssertEqual(String(data: responseData, encoding: .utf8), "ok", "Continuation frames must route correctly")
 
-        try await pluginTask.value
+        try await cartridgeTask.value
         try? await hostTask.value
     }
 
-    // TEST420: Plugin non-HELLO/non-HB frames forwarded to relay
-    func test420_pluginFramesForwardedToRelay() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST420: Cartridge non-HELLO/non-HB frames forwarded to relay
+    func test420_cartridgeFramesForwardedToRelay() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "FwdPlugin", caps: ["cap:op=fwd"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "FwdCartridge", caps: ["cap:op=fwd"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
-            let (reqId, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginReader)
+            let (reqId, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
 
             // Send diverse frame types back
-            try pluginWriter.write(Frame.log(id: reqId, level: "info", message: "processing"))
-            try pluginWriter.write(Frame.streamStart(reqId: reqId, streamId: "output", mediaUrn: "media:"))
+            try cartridgeWriter.write(Frame.log(id: reqId, level: "info", message: "processing"))
+            try cartridgeWriter.write(Frame.streamStart(reqId: reqId, streamId: "output", mediaUrn: "media:"))
             let payload = "data".data(using: .utf8)!
-            try pluginWriter.write(Frame.chunk(reqId: reqId, streamId: "output", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)))
-            try pluginWriter.write(Frame.streamEnd(reqId: reqId, streamId: "output", chunkCount: 1))
-            try pluginWriter.write(Frame.end(id: reqId, finalPayload: nil))
+            try cartridgeWriter.write(Frame.chunk(reqId: reqId, streamId: "output", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)))
+            try cartridgeWriter.write(Frame.streamEnd(reqId: reqId, streamId: "output", chunkCount: 1))
+            try cartridgeWriter.write(Frame.end(id: reqId, finalPayload: nil))
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -830,38 +830,38 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(typeSet.contains(.chunk), "CHUNK must be forwarded")
         XCTAssertTrue(typeSet.contains(.end), "END must be forwarded")
 
-        try await pluginTask.value
+        try await cartridgeTask.value
         try? await hostTask.value
     }
 
-    // TEST421: Plugin death updates capability list (removes dead plugin's caps)
-    func test421_pluginDeathUpdatesCaps() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST421: Cartridge death updates capability list (removes dead cartridge's caps)
+    func test421_cartridgeDeathUpdatesCaps() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "DiePlugin", caps: ["cap:op=die"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "DieCartridge", caps: ["cap:op=die"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             // Die immediately by closing write end
-            pluginToHost.fileHandleForWriting.closeFile()
+            cartridgeToHost.fileHandleForWriting.closeFile()
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         // Before death: cap should be present
-        XCTAssertNotNil(host.findPluginForCap("cap:op=die"), "Cap must be found before death")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=die"), "Cap must be found before death")
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -870,47 +870,47 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             ) { Data() }
         }
 
-        // Wait for plugin death to be processed
+        // Wait for cartridge death to be processed
         try await Task.sleep(nanoseconds: 500_000_000)
 
         // Close relay to let run() exit
         engineToHost.fileHandleForWriting.closeFile()
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
         try? await hostTask.value
 
-        // After death: capabilities should not include the dead plugin's caps
+        // After death: capabilities should not include the dead cartridge's caps
         let capsAfter = host.capabilities
         if !capsAfter.isEmpty, let capsStr = String(data: capsAfter, encoding: .utf8) {
-            XCTAssertFalse(capsStr.contains("cap:op=die"), "Dead plugin's caps must be removed")
+            XCTAssertFalse(capsStr.contains("cap:op=die"), "Dead cartridge's caps must be removed")
         }
     }
 
-    // TEST422: Plugin death sends ERR for all pending requests
-    func test422_pluginDeathSendsErr() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST422: Cartridge death sends ERR for all pending requests
+    func test422_cartridgeDeathSendsErr() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "DiePlugin", caps: ["cap:op=die"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "DieCartridge", caps: ["cap:op=die"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             // Read actual test REQ (first frame after identity), then die without responding
-            let _ = try pluginReader.read()
-            pluginToHost.fileHandleForWriting.closeFile()
+            let _ = try cartridgeReader.read()
+            cartridgeToHost.fileHandleForWriting.closeFile()
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -934,7 +934,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try Self.writeWithXid(engineWriter, Frame.streamEnd(reqId: reqId, streamId: "a0", chunkCount: 1), xid: xid)
         try Self.writeWithXid(engineWriter, Frame.end(id: reqId, finalPayload: nil), xid: xid)
 
-        // Should receive ERR with PLUGIN_DIED (skip relayNotify)
+        // Should receive ERR with CARTRIDGE_DIED (skip relayNotify)
         var errFrame: Frame?
         while true {
             guard let frame = try Self.readProtocolFrame(engineReader) else { break }
@@ -946,44 +946,44 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         engineToHost.fileHandleForWriting.closeFile()
 
-        XCTAssertNotNil(errFrame, "Must receive ERR when plugin dies with pending request")
-        XCTAssertEqual(errFrame!.errorCode, "PLUGIN_DIED", "Error code must be PLUGIN_DIED")
+        XCTAssertNotNil(errFrame, "Must receive ERR when cartridge dies with pending request")
+        XCTAssertEqual(errFrame!.errorCode, "CARTRIDGE_DIED", "Error code must be CARTRIDGE_DIED")
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
         try? await hostTask.value
     }
 
-    // TEST424: Concurrent requests to same plugin handled independently
-    func test424_concurrentRequestsSamePlugin() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST424: Concurrent requests to same cartridge handled independently
+    func test424_concurrentRequestsSameCartridge() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "ConcPlugin", caps: ["cap:op=conc"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "ConcCartridge", caps: ["cap:op=conc"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
             // Read first complete request
-            let (reqId0, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginReader)
+            let (reqId0, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
             // Read second complete request
-            let (reqId1, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: pluginReader)
+            let (reqId1, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
 
             // Respond to both
-            try CborRuntimeTests.writeResponse(writer: pluginWriter, reqId: reqId0, payload: "response-0".data(using: .utf8)!, streamId: "s0")
-            try CborRuntimeTests.writeResponse(writer: pluginWriter, reqId: reqId1, payload: "response-1".data(using: .utf8)!, streamId: "s1")
+            try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId0, payload: "response-0".data(using: .utf8)!, streamId: "s0")
+            try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId1, payload: "response-1".data(using: .utf8)!, streamId: "s1")
         }
 
-        let host = PluginHost()
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         let hostTask = Task.detached { @Sendable in
@@ -1038,7 +1038,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(String(data: data0, encoding: .utf8), "response-0", "First request must get response-0")
         XCTAssertEqual(String(data: data1, encoding: .utf8), "response-1", "Second request must get response-1")
 
-        try await pluginTask.value
+        try await cartridgeTask.value
         try? await hostTask.value
     }
 
@@ -1052,39 +1052,39 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             ResponseChunk(payload: "CCCC".data(using: .utf8)!, seq: 2, offset: nil, len: nil, isEof: true),
         ]
 
-        let response = PluginResponse.streaming(chunks)
+        let response = CartridgeResponse.streaming(chunks)
         XCTAssertEqual(String(data: response.concatenated(), encoding: .utf8), "AAAABBBBCCCC")
         XCTAssertEqual(String(data: response.finalPayload!, encoding: .utf8), "CCCC")
         XCTAssertNotEqual(response.concatenated(), response.finalPayload!,
             "concatenated and finalPayload must diverge for multi-chunk responses")
     }
 
-    // MARK: - Plugin Death and Known Caps Tests (TEST661-665)
+    // MARK: - Cartridge Death and Known Caps Tests (TEST661-665)
 
-    // TEST661: Plugin death keeps known_caps advertised for on-demand respawn
-    func test661_pluginDeathKeepsKnownCapsAdvertised() async throws {
-        let host = PluginHost()
+    // TEST661: Cartridge death keeps known_caps advertised for on-demand respawn
+    func test661_cartridgeDeathKeepsKnownCapsAdvertised() async throws {
+        let host = CartridgeHost()
 
-        // Register a plugin by path (not running, just known caps)
-        host.registerPlugin(path: "/nonexistent/plugin", knownCaps: ["cap:op=respawn-test"])
+        // Register a cartridge by path (not running, just known caps)
+        host.registerCartridge(path: "/nonexistent/cartridge", knownCaps: ["cap:op=respawn-test"])
 
-        // Should find the plugin by cap
-        XCTAssertNotNil(host.findPluginForCap("cap:op=respawn-test"), "Known caps must be findable before spawn")
+        // Should find the cartridge by cap
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=respawn-test"), "Known caps must be findable before spawn")
 
-        // The cap should be advertised (registered plugins are advertised)
+        // The cap should be advertised (registered cartridges are advertised)
         let caps = host.capabilities
         if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
             XCTAssertTrue(capsStr.contains("cap:op=respawn-test"), "Known caps must be in capabilities")
         }
     }
 
-    // TEST662: rebuild_capabilities includes non-running plugins' known_caps
-    func test662_rebuildCapabilitiesIncludesNonRunningPlugins() async throws {
-        let host = PluginHost()
+    // TEST662: rebuild_capabilities includes non-running cartridges' known_caps
+    func test662_rebuildCapabilitiesIncludesNonRunningCartridges() async throws {
+        let host = CartridgeHost()
 
-        // Register multiple plugins with different caps
-        host.registerPlugin(path: "/nonexistent/p1", knownCaps: ["cap:op=cap1"])
-        host.registerPlugin(path: "/nonexistent/p2", knownCaps: ["cap:op=cap2", "cap:op=cap3"])
+        // Register multiple cartridges with different caps
+        host.registerCartridge(path: "/nonexistent/p1", knownCaps: ["cap:op=cap1"])
+        host.registerCartridge(path: "/nonexistent/p2", knownCaps: ["cap:op=cap2", "cap:op=cap3"])
 
         let caps = host.capabilities
         if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
@@ -1094,15 +1094,15 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         }
     }
 
-    // TEST663: Plugin with hello_failed is permanently removed from capabilities
-    func test663_helloFailedPluginRemovedFromCapabilities() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST663: Cartridge with hello_failed is permanently removed from capabilities
+    func test663_helloFailedCartridgeRemovedFromCapabilities() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        // Plugin that sends invalid HELLO (no manifest)
+        // Cartridge that sends invalid HELLO (no manifest)
         DispatchQueue.global().async {
-            let reader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-            let writer = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+            let reader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+            let writer = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
             // Read host's HELLO
             _ = try? reader.read()
@@ -1112,153 +1112,153 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try? writer.write(badHello)
         }
 
-        let host = PluginHost()
+        let host = CartridgeHost()
 
         // Attempt to attach - should fail due to missing manifest
         do {
-            try host.attachPlugin(
-                stdinHandle: hostToPlugin.fileHandleForWriting,
-                stdoutHandle: pluginToHost.fileHandleForReading
+            try host.attachCartridge(
+                stdinHandle: hostToCartridge.fileHandleForWriting,
+                stdoutHandle: cartridgeToHost.fileHandleForReading
             )
-            XCTFail("attachPlugin should fail without manifest")
+            XCTFail("attachCartridge should fail without manifest")
         } catch {
-            // Expected - plugin HELLO without manifest should be rejected
-            XCTAssertTrue(error is PluginHostError)
+            // Expected - cartridge HELLO without manifest should be rejected
+            XCTAssertTrue(error is CartridgeHostError)
         }
 
-        // Failed plugin should not contribute to capabilities
+        // Failed cartridge should not contribute to capabilities
         let caps = host.capabilities
-        // Empty or no capabilities since the only plugin failed
+        // Empty or no capabilities since the only cartridge failed
         XCTAssertTrue(caps.isEmpty || String(data: caps, encoding: .utf8) == "[]",
-            "Failed plugin must not be in capabilities")
+            "Failed cartridge must not be in capabilities")
     }
 
-    // TEST664: Running plugin uses manifest caps, not known_caps
-    func test664_runningPluginUsesManifestCaps() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST664: Running cartridge uses manifest caps, not known_caps
+    func test664_runningCartridgeUsesManifestCaps() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            // Plugin advertises "cap:op=manifest-cap" in its manifest
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "ManifestPlugin", caps: ["cap:op=manifest-cap"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            // Cartridge advertises "cap:op=manifest-cap" in its manifest
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "ManifestCartridge", caps: ["cap:op=manifest-cap"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             // Keep connection alive
             try await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        let host = PluginHost()
+        let host = CartridgeHost()
 
-        // Register with known_caps, but plugin will advertise different caps via manifest
-        host.registerPlugin(path: "/fake/path", knownCaps: ["cap:op=known-cap"])
+        // Register with known_caps, but cartridge will advertise different caps via manifest
+        host.registerCartridge(path: "/fake/path", knownCaps: ["cap:op=known-cap"])
 
         // Before attach: known_cap should be findable
-        XCTAssertNotNil(host.findPluginForCap("cap:op=known-cap"), "Known cap must be findable before attach")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=known-cap"), "Known cap must be findable before attach")
 
-        // Attach the actual plugin
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        // Attach the actual cartridge
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         // After attach: manifest caps should take precedence
-        XCTAssertNotNil(host.findPluginForCap("cap:op=manifest-cap"), "Manifest cap must be findable after attach")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=manifest-cap"), "Manifest cap must be findable after attach")
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
     }
 
     // TEST665: Cap table uses manifest caps for running, known_caps for non-running
     func test665_capTableMixedRunningAndNonRunning() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
-            guard let _ = try pluginReader.read() else { throw PluginHostError.receiveFailed("") }
-            try pluginWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "RunningPlugin", caps: ["cap:op=running"])
+        let cartridgeTask = Task.detached { @Sendable in
+            guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(
+                manifest: CborRuntimeTests.makeManifest(name: "RunningCartridge", caps: ["cap:op=running"])
             ))
-            try CborRuntimeTests.handleIdentityVerification(reader: pluginReader, writer: pluginWriter)
+            try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             try await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        let host = PluginHost()
+        let host = CartridgeHost()
 
-        // Register a non-running plugin
-        host.registerPlugin(path: "/nonexistent/p1", knownCaps: ["cap:op=dormant"])
+        // Register a non-running cartridge
+        host.registerCartridge(path: "/nonexistent/p1", knownCaps: ["cap:op=dormant"])
 
-        // Attach a running plugin
-        try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        // Attach a running cartridge
+        try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
         // Both caps should be findable via cap table
-        // Running plugin: uses manifest caps (from HELLO)
-        // Dormant plugin: uses known_caps (from registerPlugin)
-        XCTAssertNotNil(host.findPluginForCap("cap:op=running"), "Running plugin cap must be findable")
-        XCTAssertNotNil(host.findPluginForCap("cap:op=dormant"), "Dormant plugin cap must be findable")
+        // Running cartridge: uses manifest caps (from HELLO)
+        // Dormant cartridge: uses known_caps (from registerCartridge)
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=running"), "Running cartridge cap must be findable")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=dormant"), "Dormant cartridge cap must be findable")
 
-        // Capabilities includes both running and non-running plugins
-        // (Note: running plugin's caps come from manifest, not known_caps)
+        // Capabilities includes both running and non-running cartridges
+        // (Note: running cartridge's caps come from manifest, not known_caps)
         let caps = host.capabilities
         let capsStr = String(data: caps, encoding: .utf8) ?? "[]"
 
         // At minimum, dormant caps should be present
-        XCTAssertTrue(capsStr.contains("cap:op=dormant"), "Dormant plugin cap must be in capabilities")
-        // Running plugin's manifest caps may or may not be merged into capabilities
+        XCTAssertTrue(capsStr.contains("cap:op=dormant"), "Dormant cartridge cap must be in capabilities")
+        // Running cartridge's manifest caps may or may not be merged into capabilities
         // depending on when capabilities is called relative to handshake completion
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
     }
 
     // MARK: - Error Type Tests (TEST244-247)
 
-    // TEST244: PluginHostError from FrameError converts correctly
-    func test244_pluginHostErrorFromFrameError() {
+    // TEST244: CartridgeHostError from FrameError converts correctly
+    func test244_cartridgeHostErrorFromFrameError() {
         // Verify error types have proper descriptions
-        let handshakeFailed = PluginHostError.handshakeFailed("test error")
+        let handshakeFailed = CartridgeHostError.handshakeFailed("test error")
         XCTAssertTrue(handshakeFailed.errorDescription?.contains("Handshake failed") ?? false)
 
-        let sendFailed = PluginHostError.sendFailed("send error")
+        let sendFailed = CartridgeHostError.sendFailed("send error")
         XCTAssertTrue(sendFailed.errorDescription?.contains("Send failed") ?? false)
 
-        let receiveFailed = PluginHostError.receiveFailed("receive error")
+        let receiveFailed = CartridgeHostError.receiveFailed("receive error")
         XCTAssertTrue(receiveFailed.errorDescription?.contains("Receive failed") ?? false)
 
-        let protocolError = PluginHostError.protocolError("protocol violation")
+        let protocolError = CartridgeHostError.protocolError("protocol violation")
         XCTAssertTrue(protocolError.errorDescription?.contains("Protocol error") ?? false)
     }
 
-    // TEST245: PluginHostError stores and retrieves error details
-    func test245_pluginHostErrorDetails() {
-        let pluginErr = PluginHostError.pluginError(code: "TEST_CODE", message: "Test message")
-        let desc = pluginErr.errorDescription ?? ""
+    // TEST245: CartridgeHostError stores and retrieves error details
+    func test245_cartridgeHostErrorDetails() {
+        let cartridgeErr = CartridgeHostError.cartridgeError(code: "TEST_CODE", message: "Test message")
+        let desc = cartridgeErr.errorDescription ?? ""
         XCTAssertTrue(desc.contains("TEST_CODE"), "Error description must contain code")
         XCTAssertTrue(desc.contains("Test message"), "Error description must contain message")
     }
 
-    // TEST246: PluginHostError variants are distinct
-    func test246_pluginHostErrorVariants() {
+    // TEST246: CartridgeHostError variants are distinct
+    func test246_cartridgeHostErrorVariants() {
         // Each error type is distinct
-        let errors: [PluginHostError] = [
+        let errors: [CartridgeHostError] = [
             .handshakeFailed("a"),
             .sendFailed("b"),
             .receiveFailed("c"),
-            .pluginError(code: "X", message: "Y"),
+            .cartridgeError(code: "X", message: "Y"),
             .unexpectedFrameType(.req),
             .protocolError("d"),
             .processExited,
             .closed,
             .noHandler("e"),
-            .pluginDied("f"),
+            .cartridgeDied("f"),
         ]
 
         for (i, err1) in errors.enumerated() {
@@ -1292,31 +1292,31 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Identity Verification Tests (TEST485, TEST486, TEST490)
 
-    // TEST485: attach_plugin completes identity verification with working plugin
-    func test485_attachPluginIdentityVerificationSucceeds() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST485: attach_cartridge completes identity verification with working cartridge
+    func test485_attachCartridgeIdentityVerificationSucceeds() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
+        let cartridgeTask = Task.detached { @Sendable in
             // Read host HELLO
-            guard let hostHello = try pluginReader.read() else {
-                throw PluginHostError.receiveFailed("No HELLO from host")
+            guard let hostHello = try cartridgeReader.read() else {
+                throw CartridgeHostError.receiveFailed("No HELLO from host")
             }
             XCTAssertEqual(hostHello.frameType, .hello)
 
-            // Send plugin HELLO with manifest
-            let manifest = CborRuntimeTests.makeManifest(name: "IdentityTestPlugin", caps: [
+            // Send cartridge HELLO with manifest
+            let manifest = CborRuntimeTests.makeManifest(name: "IdentityTestCartridge", caps: [
                 "cap:in=media:;out=media:",  // Identity cap
                 "cap:in=media:;op=test;out=media:"
             ])
-            try pluginWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
 
             // Handle identity verification - read streaming request, echo payload
-            guard let identityReq = try pluginReader.read() else {
-                throw PluginHostError.receiveFailed("No identity request")
+            guard let identityReq = try cartridgeReader.read() else {
+                throw CartridgeHostError.receiveFailed("No identity request")
             }
             XCTAssertEqual(identityReq.frameType, .req)
             XCTAssertEqual(identityReq.cap, CSCapIdentity)
@@ -1324,8 +1324,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             // Read streaming frames until END
             var identityPayload = Data()
             while true {
-                guard let frame = try pluginReader.read() else {
-                    throw PluginHostError.receiveFailed("Connection closed during identity request")
+                guard let frame = try cartridgeReader.read() else {
+                    throw CartridgeHostError.receiveFailed("Connection closed during identity request")
                 }
                 switch frame.frameType {
                 case .streamStart: break
@@ -1334,176 +1334,176 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
                 case .streamEnd: break
                 case .end: break
                 default:
-                    throw PluginHostError.protocolError("Unexpected frame during identity: \(frame.frameType)")
+                    throw CartridgeHostError.protocolError("Unexpected frame during identity: \(frame.frameType)")
                 }
                 if frame.frameType == .end { break }
             }
 
             // Echo the payload back (standard identity behavior)
             let streamId = UUID().uuidString
-            try pluginWriter.write(Frame.streamStart(reqId: identityReq.id, streamId: streamId, mediaUrn: "media:"))
+            try cartridgeWriter.write(Frame.streamStart(reqId: identityReq.id, streamId: streamId, mediaUrn: "media:"))
             if !identityPayload.isEmpty {
                 let checksum = Frame.computeChecksum(identityPayload)
-                try pluginWriter.write(Frame.chunk(reqId: identityReq.id, streamId: streamId, seq: 0, payload: identityPayload, chunkIndex: 0, checksum: checksum))
+                try cartridgeWriter.write(Frame.chunk(reqId: identityReq.id, streamId: streamId, seq: 0, payload: identityPayload, chunkIndex: 0, checksum: checksum))
             }
-            try pluginWriter.write(Frame.streamEnd(reqId: identityReq.id, streamId: streamId, chunkCount: identityPayload.isEmpty ? 0 : 1))
-            try pluginWriter.write(Frame.end(id: identityReq.id))
+            try cartridgeWriter.write(Frame.streamEnd(reqId: identityReq.id, streamId: streamId, chunkCount: identityPayload.isEmpty ? 0 : 1))
+            try cartridgeWriter.write(Frame.end(id: identityReq.id))
         }
 
-        let host = PluginHost()
-        let idx = try host.attachPlugin(
-            stdinHandle: hostToPlugin.fileHandleForWriting,
-            stdoutHandle: pluginToHost.fileHandleForReading
+        let host = CartridgeHost()
+        let idx = try host.attachCartridge(
+            stdinHandle: hostToCartridge.fileHandleForWriting,
+            stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
-        XCTAssertEqual(idx, 0, "First plugin must be index 0")
+        XCTAssertEqual(idx, 0, "First cartridge must be index 0")
 
-        // Verify plugin is registered and has caps
-        XCTAssertNotNil(host.findPluginForCap("cap:in=media:;out=media:"), "Must find identity cap")
-        XCTAssertNotNil(host.findPluginForCap("cap:in=media:;op=test;out=media:"), "Must find test cap")
+        // Verify cartridge is registered and has caps
+        XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;out=media:"), "Must find identity cap")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;op=test;out=media:"), "Must find test cap")
 
-        try await pluginTask.value
+        try await cartridgeTask.value
     }
 
-    // TEST486: attach_plugin rejects plugin that fails identity verification
-    func test486_attachPluginIdentityVerificationFails() async throws {
-        let hostToPlugin = Pipe()
-        let pluginToHost = Pipe()
+    // TEST486: attach_cartridge rejects cartridge that fails identity verification
+    func test486_attachCartridgeIdentityVerificationFails() async throws {
+        let hostToCartridge = Pipe()
+        let cartridgeToHost = Pipe()
 
-        let pluginReader = FrameReader(handle: hostToPlugin.fileHandleForReading)
-        let pluginWriter = FrameWriter(handle: pluginToHost.fileHandleForWriting)
+        let cartridgeReader = FrameReader(handle: hostToCartridge.fileHandleForReading)
+        let cartridgeWriter = FrameWriter(handle: cartridgeToHost.fileHandleForWriting)
 
-        let pluginTask = Task.detached { @Sendable in
+        let cartridgeTask = Task.detached { @Sendable in
             // Read host HELLO
-            guard let hostHello = try pluginReader.read() else {
-                throw PluginHostError.receiveFailed("No HELLO from host")
+            guard let hostHello = try cartridgeReader.read() else {
+                throw CartridgeHostError.receiveFailed("No HELLO from host")
             }
             XCTAssertEqual(hostHello.frameType, .hello)
 
-            // Send plugin HELLO with manifest
-            let manifest = CborRuntimeTests.makeManifest(name: "BrokenIdentityPlugin", caps: [
+            // Send cartridge HELLO with manifest
+            let manifest = CborRuntimeTests.makeManifest(name: "BrokenIdentityCartridge", caps: [
                 "cap:in=media:;out=media:"
             ])
-            try pluginWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
+            try cartridgeWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
 
             // Handle identity verification - return ERR instead of echoing
-            guard let identityReq = try pluginReader.read() else {
-                throw PluginHostError.receiveFailed("No identity request")
+            guard let identityReq = try cartridgeReader.read() else {
+                throw CartridgeHostError.receiveFailed("No identity request")
             }
             XCTAssertEqual(identityReq.frameType, .req)
 
             // Consume streaming frames until END
             while true {
-                guard let frame = try pluginReader.read() else { break }
+                guard let frame = try cartridgeReader.read() else { break }
                 if frame.frameType == .end { break }
             }
 
             // Return error - identity verification fails
-            try pluginWriter.write(Frame.err(id: identityReq.id, code: "IDENTITY_FAILED", message: "Broken plugin"))
+            try cartridgeWriter.write(Frame.err(id: identityReq.id, code: "IDENTITY_FAILED", message: "Broken cartridge"))
         }
 
-        let host = PluginHost()
+        let host = CartridgeHost()
 
-        // attach_plugin should fail due to identity verification failure
+        // attach_cartridge should fail due to identity verification failure
         do {
-            try host.attachPlugin(
-                stdinHandle: hostToPlugin.fileHandleForWriting,
-                stdoutHandle: pluginToHost.fileHandleForReading
+            try host.attachCartridge(
+                stdinHandle: hostToCartridge.fileHandleForWriting,
+                stdoutHandle: cartridgeToHost.fileHandleForReading
             )
-            XCTFail("attach_plugin should fail when identity verification fails")
+            XCTFail("attach_cartridge should fail when identity verification fails")
         } catch {
             // Expected - identity verification failed
-            XCTAssertTrue(error is PluginHostError, "Should be PluginHostError")
+            XCTAssertTrue(error is CartridgeHostError, "Should be CartridgeHostError")
         }
 
-        try? await pluginTask.value
+        try? await cartridgeTask.value
     }
 
-    // TEST490: Identity verification with multiple plugins through single relay
-    func test490_identityVerificationMultiplePlugins() async throws {
-        let host = PluginHost()
+    // TEST490: Identity verification with multiple cartridges through single relay
+    func test490_identityVerificationMultipleCartridges() async throws {
+        let host = CartridgeHost()
 
-        // Attach first plugin
-        let hostToPlugin1 = Pipe()
-        let plugin1ToHost = Pipe()
+        // Attach first cartridge
+        let hostToCartridge1 = Pipe()
+        let cartridge1ToHost = Pipe()
 
-        let plugin1Reader = FrameReader(handle: hostToPlugin1.fileHandleForReading)
-        let plugin1Writer = FrameWriter(handle: plugin1ToHost.fileHandleForWriting)
+        let cartridge1Reader = FrameReader(handle: hostToCartridge1.fileHandleForReading)
+        let cartridge1Writer = FrameWriter(handle: cartridge1ToHost.fileHandleForWriting)
 
-        let plugin1Task = Task.detached { @Sendable in
-            guard let _ = try plugin1Reader.read() else { throw PluginHostError.receiveFailed("") }
-            let manifest = CborRuntimeTests.makeManifest(name: "Plugin1", caps: ["cap:op=plugin1"])
-            try plugin1Writer.write(CborRuntimeTests.helloWith(manifest: manifest))
+        let cartridge1Task = Task.detached { @Sendable in
+            guard let _ = try cartridge1Reader.read() else { throw CartridgeHostError.receiveFailed("") }
+            let manifest = CborRuntimeTests.makeManifest(name: "Cartridge1", caps: ["cap:op=cartridge1"])
+            try cartridge1Writer.write(CborRuntimeTests.helloWith(manifest: manifest))
 
             // Handle identity verification - read streaming request
-            guard let identityReq = try plugin1Reader.read() else { throw PluginHostError.receiveFailed("") }
+            guard let identityReq = try cartridge1Reader.read() else { throw CartridgeHostError.receiveFailed("") }
             var identityPayload = Data()
             while true {
-                guard let frame = try plugin1Reader.read() else { break }
+                guard let frame = try cartridge1Reader.read() else { break }
                 if frame.frameType == .chunk, let p = frame.payload { identityPayload.append(p) }
                 if frame.frameType == .end { break }
             }
 
             // Echo payload back
             let streamId = "id1"
-            try plugin1Writer.write(Frame.streamStart(reqId: identityReq.id, streamId: streamId, mediaUrn: "media:"))
+            try cartridge1Writer.write(Frame.streamStart(reqId: identityReq.id, streamId: streamId, mediaUrn: "media:"))
             if !identityPayload.isEmpty {
                 let checksum = Frame.computeChecksum(identityPayload)
-                try plugin1Writer.write(Frame.chunk(reqId: identityReq.id, streamId: streamId, seq: 0, payload: identityPayload, chunkIndex: 0, checksum: checksum))
+                try cartridge1Writer.write(Frame.chunk(reqId: identityReq.id, streamId: streamId, seq: 0, payload: identityPayload, chunkIndex: 0, checksum: checksum))
             }
-            try plugin1Writer.write(Frame.streamEnd(reqId: identityReq.id, streamId: streamId, chunkCount: identityPayload.isEmpty ? 0 : 1))
-            try plugin1Writer.write(Frame.end(id: identityReq.id))
+            try cartridge1Writer.write(Frame.streamEnd(reqId: identityReq.id, streamId: streamId, chunkCount: identityPayload.isEmpty ? 0 : 1))
+            try cartridge1Writer.write(Frame.end(id: identityReq.id))
         }
 
-        let idx1 = try host.attachPlugin(
-            stdinHandle: hostToPlugin1.fileHandleForWriting,
-            stdoutHandle: plugin1ToHost.fileHandleForReading
+        let idx1 = try host.attachCartridge(
+            stdinHandle: hostToCartridge1.fileHandleForWriting,
+            stdoutHandle: cartridge1ToHost.fileHandleForReading
         )
         XCTAssertEqual(idx1, 0)
 
-        // Attach second plugin
-        let hostToPlugin2 = Pipe()
-        let plugin2ToHost = Pipe()
+        // Attach second cartridge
+        let hostToCartridge2 = Pipe()
+        let cartridge2ToHost = Pipe()
 
-        let plugin2Reader = FrameReader(handle: hostToPlugin2.fileHandleForReading)
-        let plugin2Writer = FrameWriter(handle: plugin2ToHost.fileHandleForWriting)
+        let cartridge2Reader = FrameReader(handle: hostToCartridge2.fileHandleForReading)
+        let cartridge2Writer = FrameWriter(handle: cartridge2ToHost.fileHandleForWriting)
 
-        let plugin2Task = Task.detached { @Sendable in
-            guard let _ = try plugin2Reader.read() else { throw PluginHostError.receiveFailed("") }
-            let manifest = CborRuntimeTests.makeManifest(name: "Plugin2", caps: ["cap:op=plugin2"])
-            try plugin2Writer.write(CborRuntimeTests.helloWith(manifest: manifest))
+        let cartridge2Task = Task.detached { @Sendable in
+            guard let _ = try cartridge2Reader.read() else { throw CartridgeHostError.receiveFailed("") }
+            let manifest = CborRuntimeTests.makeManifest(name: "Cartridge2", caps: ["cap:op=cartridge2"])
+            try cartridge2Writer.write(CborRuntimeTests.helloWith(manifest: manifest))
 
             // Handle identity verification - read streaming request
-            guard let identityReq = try plugin2Reader.read() else { throw PluginHostError.receiveFailed("") }
+            guard let identityReq = try cartridge2Reader.read() else { throw CartridgeHostError.receiveFailed("") }
             var identityPayload = Data()
             while true {
-                guard let frame = try plugin2Reader.read() else { break }
+                guard let frame = try cartridge2Reader.read() else { break }
                 if frame.frameType == .chunk, let p = frame.payload { identityPayload.append(p) }
                 if frame.frameType == .end { break }
             }
 
             // Echo payload back
             let streamId = "id2"
-            try plugin2Writer.write(Frame.streamStart(reqId: identityReq.id, streamId: streamId, mediaUrn: "media:"))
+            try cartridge2Writer.write(Frame.streamStart(reqId: identityReq.id, streamId: streamId, mediaUrn: "media:"))
             if !identityPayload.isEmpty {
                 let checksum = Frame.computeChecksum(identityPayload)
-                try plugin2Writer.write(Frame.chunk(reqId: identityReq.id, streamId: streamId, seq: 0, payload: identityPayload, chunkIndex: 0, checksum: checksum))
+                try cartridge2Writer.write(Frame.chunk(reqId: identityReq.id, streamId: streamId, seq: 0, payload: identityPayload, chunkIndex: 0, checksum: checksum))
             }
-            try plugin2Writer.write(Frame.streamEnd(reqId: identityReq.id, streamId: streamId, chunkCount: identityPayload.isEmpty ? 0 : 1))
-            try plugin2Writer.write(Frame.end(id: identityReq.id))
+            try cartridge2Writer.write(Frame.streamEnd(reqId: identityReq.id, streamId: streamId, chunkCount: identityPayload.isEmpty ? 0 : 1))
+            try cartridge2Writer.write(Frame.end(id: identityReq.id))
         }
 
-        let idx2 = try host.attachPlugin(
-            stdinHandle: hostToPlugin2.fileHandleForWriting,
-            stdoutHandle: plugin2ToHost.fileHandleForReading
+        let idx2 = try host.attachCartridge(
+            stdinHandle: hostToCartridge2.fileHandleForWriting,
+            stdoutHandle: cartridge2ToHost.fileHandleForReading
         )
-        XCTAssertEqual(idx2, 1, "Second plugin must be index 1")
+        XCTAssertEqual(idx2, 1, "Second cartridge must be index 1")
 
-        // Both plugins should be findable by their caps
-        XCTAssertNotNil(host.findPluginForCap("cap:op=plugin1"), "Plugin 1 cap must be findable")
-        XCTAssertNotNil(host.findPluginForCap("cap:op=plugin2"), "Plugin 2 cap must be findable")
+        // Both cartridges should be findable by their caps
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=cartridge1"), "Cartridge 1 cap must be findable")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:op=cartridge2"), "Cartridge 2 cap must be findable")
 
-        try await plugin1Task.value
-        try await plugin2Task.value
+        try await cartridge1Task.value
+        try await cartridge2Task.value
     }
 }

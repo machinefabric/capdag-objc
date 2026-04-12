@@ -1,9 +1,9 @@
 //
 //  CSCapValidator.h
-//  Cap schema validation for plugin interactions
+//  Cap schema validation for cartridge interactions
 //
 //  This provides strict validation of inputs and outputs against
-//  advertised cap schemas from plugins.
+//  advertised cap schemas from cartridges.
 //
 
 #import <Foundation/Foundation.h>

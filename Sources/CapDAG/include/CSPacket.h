@@ -1,8 +1,8 @@
 //
 //  CSPacket.h
-//  Binary Packet Framing for Plugin Communication
+//  Binary Packet Framing for Cartridge Communication
 //
-//  All plugin stdin/stdout communication uses length-prefixed binary packets.
+//  All cartridge stdin/stdout communication uses length-prefixed binary packets.
 //  This provides a clean transport layer that can carry any payload type.
 //
 //  Packet format:

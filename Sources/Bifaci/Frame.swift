@@ -186,7 +186,7 @@ public struct Frame: @unchecked Sendable {
     /// Whether the producer used emit_list_item (true) or write (false).
     /// Set on STREAM_START frames. nil means legacy producer that didn't set it.
     public var isSequence: Bool?
-    /// Whether Cancel should force-kill the plugin process (true) or cooperatively cancel (false).
+    /// Whether Cancel should force-kill the cartridge process (true) or cooperatively cancel (false).
     /// Present on Cancel frames only.
     public var forceKill: Bool?
 
@@ -209,9 +209,9 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
-    /// Create a HELLO frame for handshake with manifest (plugin side)
-    /// The manifest is JSON-encoded plugin metadata including name, version, and caps.
-    /// This is the ONLY way for plugins to communicate their capabilities.
+    /// Create a HELLO frame for handshake with manifest (cartridge side)
+    /// The manifest is JSON-encoded cartridge metadata including name, version, and caps.
+    /// This is the ONLY way for cartridges to communicate their capabilities.
     public static func helloWithManifest(limits: Limits, manifest: Data) -> Frame {
         var frame = Frame(frameType: .hello, id: .uint(0))
         frame.meta = [
@@ -409,7 +409,7 @@ public struct Frame: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - targetRid: The request ID to cancel
-    ///   - forceKill: If true, force-kill the plugin process. If false, cooperative cancel.
+    ///   - forceKill: If true, force-kill the cartridge process. If false, cooperative cancel.
     public static func cancel(targetRid: MessageId, forceKill: Bool) -> Frame {
         var frame = Frame(frameType: .cancel, id: targetRid)
         frame.forceKill = forceKill
@@ -517,9 +517,9 @@ public struct Frame: @unchecked Sendable {
         return Int(n)
     }
 
-    /// Extract manifest from HELLO metadata (plugin side sends this)
+    /// Extract manifest from HELLO metadata (cartridge side sends this)
     /// Returns nil if no manifest present (host HELLO) or not a HELLO frame.
-    /// The manifest is JSON-encoded plugin metadata.
+    /// The manifest is JSON-encoded cartridge metadata.
     public var helloManifest: Data? {
         guard frameType == .hello, let meta = meta, case .byteString(let bytes) = meta["manifest"] else {
             return nil

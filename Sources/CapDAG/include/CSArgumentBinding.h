@@ -64,10 +64,10 @@ typedef NS_ENUM(NSInteger, CSSourceEntityType) {
 /// Type of source entity
 @property (nonatomic, assign) CSSourceEntityType sourceType;
 
-/// Tracked file ID for file lifecycle management with plugins.
+/// Tracked file ID for file lifecycle management with cartridges.
 @property (nonatomic, copy, nullable) NSString *trackedFileId;
 
-/// Security bookmark for accessing the file from the sandboxed plugin (macOS only)
+/// Security bookmark for accessing the file from the sandboxed cartridge (macOS only)
 @property (nonatomic, strong, nullable) NSData *securityBookmark;
 
 /// Original file path before container path resolution.

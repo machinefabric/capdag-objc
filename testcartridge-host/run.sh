@@ -24,4 +24,4 @@ fi
 
 # Run
 cd "$SCRIPT_DIR"
-swift run testcartridge-host --plugin "$TESTCARTRIDGE" "$@"
+swift run testcartridge-host --cartridge "$TESTCARTRIDGE" "$@"

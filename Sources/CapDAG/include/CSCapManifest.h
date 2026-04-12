@@ -2,7 +2,7 @@
 //  CSCapManifest.h
 //  CapDAG
 //
-//  Unified cap-based manifest for components (providers and plugins)
+//  Unified cap-based manifest for components (providers and cartridges)
 //
 
 #import <Foundation/Foundation.h>

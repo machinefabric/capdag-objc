@@ -63,11 +63,11 @@
 }
 
 - (void)testCapBlockMoreSpecificWins {
-    // This is the key test: provider has less specific cap, plugin has more specific
+    // This is the key test: provider has less specific cap, cartridge has more specific
     // The more specific one should win regardless of registry order
 
     CSCapMatrix *providerRegistry = [CSCapMatrix registry];
-    CSCapMatrix *pluginRegistry = [CSCapMatrix registry];
+    CSCapMatrix *cartridgeRegistry = [CSCapMatrix registry];
 
     // Provider: less specific cap (no ext tag)
     MockCapSetForCube *providerHost = [[MockCapSetForCube alloc] initWithName:@"provider"];
@@ -75,18 +75,18 @@
                                        title:@"Provider Thumbnail Generator (generic)"];
     [providerRegistry registerCapSet:@"provider" host:providerHost capabilities:@[providerCap] error:nil];
 
-    // Plugin: more specific cap (has ext=pdf)
-    MockCapSetForCube *pluginHost = [[MockCapSetForCube alloc] initWithName:@"plugin"];
-    CSCap *pluginCap = [self makeCapWithUrn:@"cap:ext=pdf;in=media:;op=generate_thumbnail;out=media:binary"
-                                     title:@"Plugin PDF Thumbnail Generator (specific)"];
-    [pluginRegistry registerCapSet:@"plugin" host:pluginHost capabilities:@[pluginCap] error:nil];
+    // Cartridge: more specific cap (has ext=pdf)
+    MockCapSetForCube *cartridgeHost = [[MockCapSetForCube alloc] initWithName:@"cartridge"];
+    CSCap *cartridgeCap = [self makeCapWithUrn:@"cap:ext=pdf;in=media:;op=generate_thumbnail;out=media:binary"
+                                     title:@"Cartridge PDF Thumbnail Generator (specific)"];
+    [cartridgeRegistry registerCapSet:@"cartridge" host:cartridgeHost capabilities:@[cartridgeCap] error:nil];
 
     // Create composite with provider first (normally would have priority on ties)
     CSCapBlock *composite = [CSCapBlock cube];
     [composite addRegistry:@"providers" registry:providerRegistry];
-    [composite addRegistry:@"plugins" registry:pluginRegistry];
+    [composite addRegistry:@"cartridges" registry:cartridgeRegistry];
 
-    // Request for PDF thumbnails - plugin's more specific cap should win
+    // Request for PDF thumbnails - cartridge's more specific cap should win
     NSString *request = @"cap:ext=pdf;in=media:;op=generate_thumbnail;out=media:binary";
     NSError *error = nil;
     CSBestCapSetMatch *best = [composite findBestCapSet:request error:&error];
@@ -94,13 +94,13 @@
     XCTAssertNotNil(best, @"Should find best cap set");
     XCTAssertNil(error, @"Should not have error");
 
-    // Plugin registry has specificity 3 (ext=pdf, op, out=media:binary has 1 tag)
+    // Cartridge registry has specificity 3 (ext=pdf, op, out=media:binary has 1 tag)
     // Provider registry has specificity 2 (op, out=media:binary has 1 tag)
     // in=media: is wildcard (0), op contributes 1, out=media:binary contributes 1 (binary tag)
-    // Plugin should win even though providers were added first
-    XCTAssertEqualObjects(best.registryName, @"plugins", @"More specific plugin should win over less specific provider");
-    XCTAssertEqual(best.specificity, 3, @"Plugin cap has 3 specific tags (ext, op, out)");
-    XCTAssertEqualObjects(best.cap.title, @"Plugin PDF Thumbnail Generator (specific)", @"Should get plugin cap");
+    // Cartridge should win even though providers were added first
+    XCTAssertEqualObjects(best.registryName, @"cartridges", @"More specific cartridge should win over less specific provider");
+    XCTAssertEqual(best.specificity, 3, @"Cartridge cap has 3 specific tags (ext, op, out)");
+    XCTAssertEqualObjects(best.cap.title, @"Cartridge PDF Thumbnail Generator (specific)", @"Should get cartridge cap");
 }
 
 - (void)testCapBlockTieGoesToFirst {
@@ -192,12 +192,12 @@
 - (void)testCapBlockFallbackScenario {
     // Test the exact scenario from the user's issue:
     // Provider: generic fallback (can handle any file type)
-    // Plugin:   PDF-specific handler
+    // Cartridge:   PDF-specific handler
     // Request:  PDF thumbnail
-    // Expected: Plugin wins (more specific)
+    // Expected: Cartridge wins (more specific)
 
     CSCapMatrix *providerRegistry = [CSCapMatrix registry];
-    CSCapMatrix *pluginRegistry = [CSCapMatrix registry];
+    CSCapMatrix *cartridgeRegistry = [CSCapMatrix registry];
 
     // Provider with generic fallback (can handle any file type)
     MockCapSetForCube *providerHost = [[MockCapSetForCube alloc] initWithName:@"provider_fallback"];
@@ -205,16 +205,16 @@
                                        title:@"Generic Thumbnail Provider"];
     [providerRegistry registerCapSet:@"provider_fallback" host:providerHost capabilities:@[providerCap] error:nil];
 
-    // Plugin with PDF-specific handler
-    MockCapSetForCube *pluginHost = [[MockCapSetForCube alloc] initWithName:@"pdf_plugin"];
-    CSCap *pluginCap = [self makeCapWithUrn:@"cap:ext=pdf;in=media:;op=generate_thumbnail;out=media:binary"
-                                     title:@"PDF Thumbnail Plugin"];
-    [pluginRegistry registerCapSet:@"pdf_plugin" host:pluginHost capabilities:@[pluginCap] error:nil];
+    // Cartridge with PDF-specific handler
+    MockCapSetForCube *cartridgeHost = [[MockCapSetForCube alloc] initWithName:@"pdf_cartridge"];
+    CSCap *cartridgeCap = [self makeCapWithUrn:@"cap:ext=pdf;in=media:;op=generate_thumbnail;out=media:binary"
+                                     title:@"PDF Thumbnail Cartridge"];
+    [cartridgeRegistry registerCapSet:@"pdf_cartridge" host:cartridgeHost capabilities:@[cartridgeCap] error:nil];
 
     // Providers first (would win on tie)
     CSCapBlock *composite = [CSCapBlock cube];
     [composite addRegistry:@"providers" registry:providerRegistry];
-    [composite addRegistry:@"plugins" registry:pluginRegistry];
+    [composite addRegistry:@"cartridges" registry:cartridgeRegistry];
 
     // Request for PDF thumbnail
     NSString *request = @"cap:ext=pdf;in=media:;op=generate_thumbnail;out=media:binary";
@@ -224,10 +224,10 @@
     XCTAssertNotNil(best, @"Should find best cap set");
     XCTAssertNil(error, @"Should not have error");
 
-    // Plugin (specificity 3) should beat provider (specificity 2)
-    XCTAssertEqualObjects(best.registryName, @"plugins", @"Plugin should win");
-    XCTAssertEqualObjects(best.cap.title, @"PDF Thumbnail Plugin", @"Should get plugin cap");
-    XCTAssertEqual(best.specificity, 3, @"Plugin has specificity 3");
+    // Cartridge (specificity 3) should beat provider (specificity 2)
+    XCTAssertEqualObjects(best.registryName, @"cartridges", @"Cartridge should win");
+    XCTAssertEqualObjects(best.cap.title, @"PDF Thumbnail Cartridge", @"Should get cartridge cap");
+    XCTAssertEqual(best.specificity, 3, @"Cartridge has specificity 3");
 
     // Also test that for a different file type, provider wins
     NSString *requestWav = @"cap:ext=wav;in=media:;op=generate_thumbnail;out=media:binary";
@@ -236,7 +236,7 @@
     XCTAssertNotNil(bestWav, @"Should find best cap set for wav");
     XCTAssertNil(error, @"Should not have error for wav");
 
-    // Only provider matches (plugin doesn't match ext=wav)
+    // Only provider matches (cartridge doesn't match ext=wav)
     XCTAssertEqualObjects(bestWav.registryName, @"providers", @"Provider should win for wav");
     XCTAssertEqualObjects(bestWav.cap.title, @"Generic Thumbnail Provider", @"Should get provider cap");
 }

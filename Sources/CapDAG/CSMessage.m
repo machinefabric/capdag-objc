@@ -1,6 +1,6 @@
 //
 //  CSMessage.m
-//  Message Envelope Types for Plugin Communication
+//  Message Envelope Types for Cartridge Communication
 //
 
 #import "CSMessage.h"

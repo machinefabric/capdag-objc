@@ -1,31 +1,31 @@
 //
-//  PluginHost.swift
+//  CartridgeHost.swift
 //  Bifaci
 //
-//  Multi-plugin host runtime — manages N plugin binaries with frame routing.
+//  Multi-cartridge host runtime — manages N cartridge binaries with frame routing.
 //
-//  The PluginHost sits between the relay connection (to the engine) and
-//  individual plugin processes. It handles:
+//  The CartridgeHost sits between the relay connection (to the engine) and
+//  individual cartridge processes. It handles:
 //
-//  - HELLO handshake and limit negotiation per plugin
+//  - HELLO handshake and limit negotiation per cartridge
 //  - Cap-based routing (REQ by cap_urn, continuation frames by req_id)
-//  - Heartbeat health monitoring per plugin
-//  - Plugin death detection and ERR propagation
+//  - Heartbeat health monitoring per cartridge
+//  - Cartridge death detection and ERR propagation
 //  - Aggregate capability advertisement
 //
 //  Architecture:
 //
-//    Relay (engine) <-> PluginHost <-> Plugin A (stdin/stdout)
-//                                      <-> Plugin B (stdin/stdout)
-//                                      <-> Plugin C (stdin/stdout)
+//    Relay (engine) <-> CartridgeHost <-> Cartridge A (stdin/stdout)
+//                                      <-> Cartridge B (stdin/stdout)
+//                                      <-> Cartridge C (stdin/stdout)
 //
 //  Frame Routing:
 //
-//  Engine -> Plugin:
-//  - REQ: route by cap_urn to the plugin that handles it
-//  - STREAM_START/CHUNK/STREAM_END/END/ERR: route by req_id to the mapped plugin
+//  Engine -> Cartridge:
+//  - REQ: route by cap_urn to the cartridge that handles it
+//  - STREAM_START/CHUNK/STREAM_END/END/ERR: route by req_id to the mapped cartridge
 //
-//  Plugin -> Engine:
+//  Cartridge -> Engine:
 //  - HEARTBEAT: handled locally, never forwarded
 //  - REQ (peer invoke): registered in routing table, forwarded to relay
 //  - Everything else: forwarded to relay (pass-through)
@@ -36,7 +36,7 @@ import os
 @preconcurrency import SwiftCBOR
 import CapDAG
 
-private func parseInstalledPluginIdentity(_ name: String) -> (id: String, version: String)? {
+private func parseInstalledCartridgeIdentity(_ name: String) -> (id: String, version: String)? {
     let lowercase = name.lowercased()
     guard let dashIndex = lowercase.lastIndex(of: "-") else {
         return nil
@@ -64,7 +64,7 @@ private func sha256Hex(for data: Data) -> String {
 // MARK: - Activity Timeout Constants
 
 /// Default timeout (seconds) for inactivity during cap execution.
-/// If a plugin sends no frames for this duration, the cap is aborted.
+/// If a cartridge sends no frames for this duration, the cap is aborted.
 public let DEFAULT_ACTIVITY_TIMEOUT_SECS: UInt64 = 120
 
 /// Cap metadata key for per-cap activity timeout override.
@@ -73,18 +73,18 @@ public let ACTIVITY_TIMEOUT_METADATA_KEY: String = "activity_timeout_secs"
 
 // MARK: - Error Types
 
-/// Errors that can occur in the plugin host
-public enum PluginHostError: Error, LocalizedError, Sendable {
+/// Errors that can occur in the cartridge host
+public enum CartridgeHostError: Error, LocalizedError, Sendable {
     case handshakeFailed(String)
     case sendFailed(String)
     case receiveFailed(String)
-    case pluginError(code: String, message: String)
+    case cartridgeError(code: String, message: String)
     case unexpectedFrameType(FrameType)
     case protocolError(String)
     case processExited
     case closed
     case noHandler(String)
-    case pluginDied(String)
+    case cartridgeDied(String)
     case peerInvokeNotSupported(String)
     // Protocol violation errors (per-request)
     case duplicateStreamId(String)
@@ -98,13 +98,13 @@ public enum PluginHostError: Error, LocalizedError, Sendable {
         case .handshakeFailed(let msg): return "Handshake failed: \(msg)"
         case .sendFailed(let msg): return "Send failed: \(msg)"
         case .receiveFailed(let msg): return "Receive failed: \(msg)"
-        case .pluginError(let code, let message): return "Plugin error [\(code)]: \(message)"
+        case .cartridgeError(let code, let message): return "Cartridge error [\(code)]: \(message)"
         case .unexpectedFrameType(let t): return "Unexpected frame type: \(t)"
         case .protocolError(let msg): return "Protocol error: \(msg)"
-        case .processExited: return "Plugin process exited unexpectedly"
+        case .processExited: return "Cartridge process exited unexpectedly"
         case .closed: return "Host is closed"
         case .noHandler(let cap): return "No handler found for cap: \(cap)"
-        case .pluginDied(let msg): return "Plugin died: \(msg)"
+        case .cartridgeDied(let msg): return "Cartridge died: \(msg)"
         case .duplicateStreamId(let streamId): return "Duplicate stream ID: \(streamId)"
         case .chunkAfterStreamEnd(let streamId): return "Chunk after stream end: \(streamId)"
         case .unknownStreamId(let streamId): return "Unknown stream ID: \(streamId)"
@@ -115,7 +115,7 @@ public enum PluginHostError: Error, LocalizedError, Sendable {
     }
 }
 
-/// A response chunk from a plugin
+/// A response chunk from a cartridge
 public struct ResponseChunk: Sendable {
     public let payload: Data
     public let seq: UInt64
@@ -132,8 +132,8 @@ public struct ResponseChunk: Sendable {
     }
 }
 
-/// Response from a plugin request (for convenience call() method)
-public enum PluginResponse: Sendable {
+/// Response from a cartridge request (for convenience call() method)
+public enum CartridgeResponse: Sendable {
     case single(Data)
     case streaming([ResponseChunk])
 
@@ -157,35 +157,35 @@ public enum PluginResponse: Sendable {
     }
 }
 
-// MARK: - Plugin Process Info
+// MARK: - Cartridge Process Info
 
-/// Snapshot of a managed plugin process, used for external monitoring
+/// Snapshot of a managed cartridge process, used for external monitoring
 /// (e.g., memory pressure management).
-public struct PluginProcessInfo: Sendable {
-    /// Index of the plugin in the host's plugin list.
-    public let pluginIndex: Int
+public struct CartridgeProcessInfo: Sendable {
+    /// Index of the cartridge in the host's cartridge list.
+    public let cartridgeIndex: Int
     /// OS process ID.
     public let pid: pid_t
     /// Binary name (e.g. "ggufcartridge", "modelcartridge").
     public let name: String
-    /// Whether the plugin is currently running and responsive.
+    /// Whether the cartridge is currently running and responsive.
     public let running: Bool
-    /// Cap URN strings this plugin handles.
+    /// Cap URN strings this cartridge handles.
     public let caps: [String]
-    /// Physical memory footprint in MB (self-reported by plugin via heartbeat).
+    /// Physical memory footprint in MB (self-reported by cartridge via heartbeat).
     /// This is `ri_phys_footprint` — the metric macOS jetsam uses for kill decisions.
-    /// Updated every 30s when the plugin responds to a heartbeat probe.
+    /// Updated every 30s when the cartridge responds to a heartbeat probe.
     public let memoryFootprintMb: UInt64
-    /// Resident set size in MB (self-reported by plugin via heartbeat).
+    /// Resident set size in MB (self-reported by cartridge via heartbeat).
     public let memoryRssMb: UInt64
 }
 
 // MARK: - Internal Types
 
 /// Events from reader threads, delivered to the main run() loop.
-private enum PluginEvent {
-    case frame(pluginIdx: Int, frame: Frame)
-    case death(pluginIdx: Int)
+private enum CartridgeEvent {
+    case frame(cartridgeIdx: Int, frame: Frame)
+    case death(cartridgeIdx: Int)
     case relayFrame(Frame)
     case relayClosed
 }
@@ -203,14 +203,14 @@ private let HEARTBEAT_INTERVAL: TimeInterval = 30.0
 /// Maximum time to wait for a heartbeat response (seconds).
 private let HEARTBEAT_TIMEOUT: TimeInterval = 10.0
 
-/// A managed plugin binary.
+/// A managed cartridge binary.
 @available(macOS 10.15.4, iOS 13.4, *)
-/// Why a plugin was killed. Determines whether pending requests get ERR frames.
+/// Why a cartridge was killed. Determines whether pending requests get ERR frames.
 enum ShutdownReason {
-    /// App is exiting or plugin binary removed. No ERR frames — relay connection
+    /// App is exiting or cartridge binary removed. No ERR frames — relay connection
     /// is closing anyway and there are no callers left to notify.
     case appExit
-    /// OOM watchdog killed the plugin while it was actively processing requests.
+    /// OOM watchdog killed the cartridge while it was actively processing requests.
     /// Pending requests MUST get ERR frames with code "OOM_KILLED" so callers
     /// can fail fast instead of hanging forever.
     case oomKill
@@ -218,7 +218,7 @@ enum ShutdownReason {
     case cancelled
 }
 
-private class ManagedPlugin {
+private class ManagedCartridge {
     let path: String
     var pid: pid_t?
     var stdinHandle: FileHandle?
@@ -235,11 +235,11 @@ private class ManagedPlugin {
     var readerThread: Thread?
     var pendingHeartbeats: [MessageId: Date]
     /// Last death error message (includes stderr if available). Used for ERR frames
-    /// sent when attempting to write to a dead plugin.
+    /// sent when attempting to write to a dead cartridge.
     var lastDeathMessage: String?
     /// Set before calling killProcess() to signal why the death occurred.
-    /// `handlePluginDeath` checks this to determine ERR frame behavior:
-    /// - `nil` → unexpected crash → ERR "PLUGIN_DIED"
+    /// `handleCartridgeDeath` checks this to determine ERR frame behavior:
+    /// - `nil` → unexpected crash → ERR "CARTRIDGE_DIED"
     /// - `.oomKill` → OOM watchdog kill → ERR "OOM_KILLED"
     /// - `.appExit` → clean shutdown → no ERR frames
     var shutdownReason: ShutdownReason?
@@ -263,10 +263,10 @@ private class ManagedPlugin {
         self.memoryRssMb = 0
     }
 
-    func installedPluginIdentity() -> InstalledPluginIdentity? {
+    func installedCartridgeIdentity() -> InstalledCartridgeIdentity? {
         let url = URL(fileURLWithPath: path)
         let stem = url.deletingPathExtension().lastPathComponent
-        guard let parsed = parseInstalledPluginIdentity(stem) else {
+        guard let parsed = parseInstalledCartridgeIdentity(stem) else {
             return nil
         }
         let binaryURL = URL(fileURLWithPath: path)
@@ -274,25 +274,25 @@ private class ManagedPlugin {
         do {
             binaryData = try Data(contentsOf: binaryURL)
         } catch {
-            fatalError("Installed plugin binary must remain readable at \(path): \(error)")
+            fatalError("Installed cartridge binary must remain readable at \(path): \(error)")
         }
-        return InstalledPluginIdentity(
+        return InstalledCartridgeIdentity(
             id: parsed.id,
             version: parsed.version,
             sha256: sha256Hex(for: binaryData)
         )
     }
 
-    static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedPlugin {
-        let plugin = ManagedPlugin(path: "", knownCaps: caps)
-        plugin.manifest = manifest
-        plugin.limits = limits
-        plugin.caps = caps
-        plugin.running = true
-        return plugin
+    static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedCartridge {
+        let cartridge = ManagedCartridge(path: "", knownCaps: caps)
+        cartridge.manifest = manifest
+        cartridge.limits = limits
+        cartridge.caps = caps
+        cartridge.running = true
+        return cartridge
     }
 
-    /// Kill the plugin process if running. Waits for exit.
+    /// Kill the cartridge process if running. Waits for exit.
     func killProcess() {
         guard let p = pid else { return }
         kill(p, SIGTERM)
@@ -310,8 +310,8 @@ private class ManagedPlugin {
         pid = nil
     }
 
-    /// Write a frame to this plugin's stdin (thread-safe).
-    /// Returns false if the plugin is dead or write fails.
+    /// Write a frame to this cartridge's stdin (thread-safe).
+    /// Returns false if the cartridge is dead or write fails.
     @discardableResult
     func writeFrame(_ frame: Frame) -> Bool {
         writerLock.lock()
@@ -326,41 +326,41 @@ private class ManagedPlugin {
     }
 }
 
-// MARK: - PluginHost
+// MARK: - CartridgeHost
 
-/// Multi-plugin host runtime managing N plugin processes.
+/// Multi-cartridge host runtime managing N cartridge processes.
 ///
 /// Routes CBOR protocol frames between a relay connection (engine) and
-/// individual plugin processes. Handles HELLO handshake, heartbeat health
+/// individual cartridge processes. Handles HELLO handshake, heartbeat health
 /// monitoring, and capability advertisement.
 ///
 /// Usage:
 /// ```swift
-/// let host = PluginHost()
-/// try host.attachPlugin(stdinHandle: pluginStdin, stdoutHandle: pluginStdout)
+/// let host = CartridgeHost()
+/// try host.attachCartridge(stdinHandle: cartridgeStdin, stdoutHandle: cartridgeStdout)
 /// try host.run(relayRead: relayReadHandle, relayWrite: relayWriteHandle) { Data() }
 /// ```
 @available(macOS 10.15.4, iOS 13.4, *)
-public final class PluginHost: @unchecked Sendable {
+public final class CartridgeHost: @unchecked Sendable {
 
     // MARK: - Properties
 
-    private static let log = OSLog(subsystem: "com.machinefabric.bifaci", category: "PluginHost")
+    private static let log = OSLog(subsystem: "com.machinefabric.bifaci", category: "CartridgeHost")
 
-    /// Managed plugin binaries.
-    private var plugins: [ManagedPlugin] = []
+    /// Managed cartridge binaries.
+    private var cartridges: [ManagedCartridge] = []
 
-    /// Routing: cap_urn -> plugin index.
+    /// Routing: cap_urn -> cartridge index.
     private var capTable: [(String, Int)] = []
 
-    /// List 1: OUTGOING_RIDS — tracks peer requests sent BY plugins (RID → plugin_idx).
-    /// Used for death cleanup (ERR all pending peer requests when plugin dies).
-    /// Cleaned up only on plugin death, never on terminal frames.
+    /// List 1: OUTGOING_RIDS — tracks peer requests sent BY cartridges (RID → cartridge_idx).
+    /// Used for death cleanup (ERR all pending peer requests when cartridge dies).
+    /// Cleaned up only on cartridge death, never on terminal frames.
     private var outgoingRids: [MessageId: Int] = [:]
 
-    /// List 2: INCOMING_RXIDS — tracks incoming requests FROM relay ((XID, RID) → plugin_idx).
-    /// Routes continuation frames (STREAM_START/CHUNK/STREAM_END/END/ERR) to the correct plugin.
-    /// NEVER cleaned up on terminal frames — intentionally leaked until plugin death.
+    /// List 2: INCOMING_RXIDS — tracks incoming requests FROM relay ((XID, RID) → cartridge_idx).
+    /// Routes continuation frames (STREAM_START/CHUNK/STREAM_END/END/ERR) to the correct cartridge.
+    /// NEVER cleaned up on terminal frames — intentionally leaked until cartridge death.
     /// This avoids premature cleanup in self-loop peer request scenarios where the same RID
     /// appears in both outgoing and incoming maps.
     private var incomingRxids: [RxidKey: Int] = [:]
@@ -369,23 +369,23 @@ public final class PluginHost: @unchecked Sendable {
     /// Maps parent (xid, rid) → list of child peer RIDs. Used for cancel cascade.
     private var incomingToPeerRids: [RxidKey: [MessageId]] = [:]
 
-    /// Aggregate capabilities (serialized JSON manifest of all plugin caps).
+    /// Aggregate capabilities (serialized JSON manifest of all cartridge caps).
     private var _capabilities: Data = Data()
 
-    /// State lock — protects plugins, capTable, outgoingRids, incomingRxids, capabilities, closed.
+    /// State lock — protects cartridges, capTable, outgoingRids, incomingRxids, capabilities, closed.
     private let stateLock = NSLock()
 
     /// Outbound writer — writes frames to the relay (toward engine).
     private var outboundWriter: FrameWriter?
     private let outboundLock = NSLock()
 
-    /// Max-seen seq per flow for plugin-originated frames.
+    /// Max-seen seq per flow for cartridge-originated frames.
     /// Used to set seq on host-generated ERR frames (max_seen + 1).
     /// Protected by stateLock (same as outgoingRids/incomingRxids).
     private var outgoingMaxSeq: [FlowKey: UInt64] = [:]
 
-    /// Plugin events from reader threads.
-    private var eventQueue: [PluginEvent] = []
+    /// Cartridge events from reader threads.
+    private var eventQueue: [CartridgeEvent] = []
     private let eventLock = NSLock()
     private let eventSemaphore = DispatchSemaphore(value: 0)
 
@@ -394,27 +394,27 @@ public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Initialization
 
-    /// Create a new plugin host runtime.
+    /// Create a new cartridge host runtime.
     ///
-    /// After creation, register plugins with `registerPlugin()` or
-    /// attach pre-connected plugins with `attachPlugin()`, then call `run()`.
+    /// After creation, register cartridges with `registerCartridge()` or
+    /// attach pre-connected cartridges with `attachCartridge()`, then call `run()`.
     public init() {}
 
-    // MARK: - Plugin Management
+    // MARK: - Cartridge Management
 
-    /// Register a plugin binary for on-demand spawning.
+    /// Register a cartridge binary for on-demand spawning.
     ///
-    /// The plugin is NOT spawned immediately. It will be spawned on demand when
+    /// The cartridge is NOT spawned immediately. It will be spawned on demand when
     /// a REQ arrives for one of its known caps.
     ///
     /// - Parameters:
-    ///   - path: Path to plugin binary
-    ///   - knownCaps: Cap URNs this plugin is expected to handle
-    public func registerPlugin(path: String, knownCaps: [String]) {
+    ///   - path: Path to cartridge binary
+    ///   - knownCaps: Cap URNs this cartridge is expected to handle
+    public func registerCartridge(path: String, knownCaps: [String]) {
         stateLock.lock()
-        let plugin = ManagedPlugin(path: path, knownCaps: knownCaps)
-        let idx = plugins.count
-        plugins.append(plugin)
+        let cartridge = ManagedCartridge(path: path, knownCaps: knownCaps)
+        let idx = cartridges.count
+        cartridges.append(cartridge)
         for cap in knownCaps {
             capTable.append((cap, idx))
         }
@@ -422,11 +422,11 @@ public final class PluginHost: @unchecked Sendable {
         stateLock.unlock()
     }
 
-    /// Reconcile the host's plugin state with the current on-disk truth.
+    /// Reconcile the host's cartridge state with the current on-disk truth.
     ///
     /// After a rescan, the XPC service calls this instead of accumulating
-    /// registerPlugin() calls.  This ensures stale entries (old binary paths)
-    /// are removed so findPluginForCap() never routes to a dead binary.
+    /// registerCartridge() calls.  This ensures stale entries (old binary paths)
+    /// are removed so findCartridgeForCap() never routes to a dead binary.
     ///
     /// Semantics:
     /// - **Same path** (binary unchanged): no-op (caps updated if they changed).
@@ -455,61 +455,61 @@ public final class PluginHost: @unchecked Sendable {
 
         var matchedCurrentIndices = Set<Int>()
 
-        // Walk existing plugins and reconcile.
-        for plugin in plugins {
-            if let currentIdx = currentByPath[plugin.path] {
+        // Walk existing cartridges and reconcile.
+        for cartridge in cartridges {
+            if let currentIdx = currentByPath[cartridge.path] {
                 // Same binary path still on disk — keep it.
                 matchedCurrentIndices.insert(currentIdx)
                 let entry = current[currentIdx]
                 // Update knownCaps in case they changed (harmless if identical).
-                plugin.knownCaps = entry.knownCaps
-                // Clear helloFailed so the plugin can be respawned on demand.
+                cartridge.knownCaps = entry.knownCaps
+                // Clear helloFailed so the cartridge can be respawned on demand.
                 // A previous syncRegistrations (with broken cap-set matching) may
                 // have marked it helloFailed even though the binary is fine.
-                plugin.helloFailed = false
+                cartridge.helloFailed = false
             } else {
-                // Plugin path no longer on disk — removed or replaced by new version.
-                plugin.shutdownReason = .appExit
-                plugin.killProcess()
-                plugin.writerLock.lock()
-                plugin.writer = nil
-                plugin.writerLock.unlock()
-                plugin.stdinHandle = nil
-                plugin.stdoutHandle = nil
-                plugin.stderrHandle = nil
-                plugin.helloFailed = true  // Prevent on-demand spawn
-                plugin.knownCaps = []      // Remove from capTable rebuild
-                plugin.caps = []
+                // Cartridge path no longer on disk — removed or replaced by new version.
+                cartridge.shutdownReason = .appExit
+                cartridge.killProcess()
+                cartridge.writerLock.lock()
+                cartridge.writer = nil
+                cartridge.writerLock.unlock()
+                cartridge.stdinHandle = nil
+                cartridge.stdoutHandle = nil
+                cartridge.stderrHandle = nil
+                cartridge.helloFailed = true  // Prevent on-demand spawn
+                cartridge.knownCaps = []      // Remove from capTable rebuild
+                cartridge.caps = []
             }
         }
 
-        // Append genuinely new plugins (path not in host).
+        // Append genuinely new cartridges (path not in host).
         for (i, entry) in current.enumerated() where !matchedCurrentIndices.contains(i) {
-            let plugin = ManagedPlugin(path: entry.path, knownCaps: entry.knownCaps)
-            plugins.append(plugin)
+            let cartridge = ManagedCartridge(path: entry.path, knownCaps: entry.knownCaps)
+            cartridges.append(cartridge)
         }
 
-        // Rebuild capTable from scratch — covers new, updated, and removed plugins.
+        // Rebuild capTable from scratch — covers new, updated, and removed cartridges.
         capTable.removeAll()
-        for (idx, plugin) in plugins.enumerated() where !plugin.helloFailed {
-            for cap in plugin.knownCaps {
+        for (idx, cartridge) in cartridges.enumerated() where !cartridge.helloFailed {
+            for cap in cartridge.knownCaps {
                 capTable.append((cap, idx))
             }
         }
     }
 
-    /// Attach a pre-connected plugin (already running, ready for handshake).
+    /// Attach a pre-connected cartridge (already running, ready for handshake).
     ///
     /// Performs HELLO handshake synchronously. Extracts manifest and caps.
-    /// Starts a reader thread for this plugin.
+    /// Starts a reader thread for this cartridge.
     ///
     /// - Parameters:
-    ///   - stdinHandle: FileHandle to write to the plugin's stdin
-    ///   - stdoutHandle: FileHandle to read from the plugin's stdout
-    /// - Returns: Plugin index
-    /// - Throws: PluginHostError if handshake fails
+    ///   - stdinHandle: FileHandle to write to the cartridge's stdin
+    ///   - stdoutHandle: FileHandle to read from the cartridge's stdout
+    /// - Returns: Cartridge index
+    /// - Throws: CartridgeHostError if handshake fails
     @discardableResult
-    public func attachPlugin(stdinHandle: FileHandle, stdoutHandle: FileHandle) throws -> Int {
+    public func attachCartridge(stdinHandle: FileHandle, stdoutHandle: FileHandle) throws -> Int {
         let reader = FrameReader(handle: stdoutHandle)
         let writer = FrameWriter(handle: stdinHandle)
 
@@ -519,24 +519,24 @@ public final class PluginHost: @unchecked Sendable {
         try writer.write(ourHello)
 
         guard let theirHello = try reader.read() else {
-            throw PluginHostError.handshakeFailed("Plugin closed connection before HELLO")
+            throw CartridgeHostError.handshakeFailed("Cartridge closed connection before HELLO")
         }
         guard theirHello.frameType == .hello else {
-            throw PluginHostError.handshakeFailed("Expected HELLO, got \(theirHello.frameType)")
+            throw CartridgeHostError.handshakeFailed("Expected HELLO, got \(theirHello.frameType)")
         }
         guard let manifest = theirHello.helloManifest else {
-            throw PluginHostError.handshakeFailed("Plugin HELLO missing required manifest")
+            throw CartridgeHostError.handshakeFailed("Cartridge HELLO missing required manifest")
         }
 
         // Protocol v2: All three limit fields are REQUIRED
         guard let theirMaxFrame = theirHello.helloMaxFrame else {
-            throw PluginHostError.handshakeFailed("Protocol violation: HELLO missing max_frame")
+            throw CartridgeHostError.handshakeFailed("Protocol violation: HELLO missing max_frame")
         }
         guard let theirMaxChunk = theirHello.helloMaxChunk else {
-            throw PluginHostError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
+            throw CartridgeHostError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
         }
         guard let theirMaxReorderBuffer = theirHello.helloMaxReorderBuffer else {
-            throw PluginHostError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
+            throw CartridgeHostError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
         }
 
         let negotiatedLimits = Limits(
@@ -551,69 +551,69 @@ public final class PluginHost: @unchecked Sendable {
         let caps = try Self.extractCaps(from: manifest)
 
         // Perform identity verification - send nonce, expect echo
-        try Self.verifyPluginIdentity(reader: reader, writer: writer)
+        try Self.verifyCartridgeIdentity(reader: reader, writer: writer)
 
-        // Create managed plugin
-        let plugin = ManagedPlugin.attached(manifest: manifest, limits: negotiatedLimits, caps: caps)
-        plugin.stdinHandle = stdinHandle
-        plugin.stdoutHandle = stdoutHandle
-        plugin.writer = writer
+        // Create managed cartridge
+        let cartridge = ManagedCartridge.attached(manifest: manifest, limits: negotiatedLimits, caps: caps)
+        cartridge.stdinHandle = stdinHandle
+        cartridge.stdoutHandle = stdoutHandle
+        cartridge.writer = writer
 
         stateLock.lock()
-        let idx = plugins.count
-        plugins.append(plugin)
+        let idx = cartridges.count
+        cartridges.append(cartridge)
         for cap in caps {
             capTable.append((cap, idx))
         }
         rebuildCapabilities()
         stateLock.unlock()
 
-        // Start reader thread for this plugin
-        startPluginReaderThread(pluginIdx: idx, reader: reader)
+        // Start reader thread for this cartridge
+        startCartridgeReaderThread(cartridgeIdx: idx, reader: reader)
 
         return idx
     }
 
-    /// Get the aggregate capabilities manifest (JSON-encoded list of all plugin caps).
+    /// Get the aggregate capabilities manifest (JSON-encoded list of all cartridge caps).
     public var capabilities: Data {
         stateLock.lock()
         defer { stateLock.unlock() }
         return _capabilities
     }
 
-    /// Find which plugin handles a given cap URN.
+    /// Find which cartridge handles a given cap URN.
     ///
     /// Uses exact string match first, then URN-level accepts() for semantic matching.
     ///
     /// - Parameter capUrn: The cap URN to look up
-    /// - Returns: Plugin index, or nil if no plugin handles this cap
-    public func findPluginForCap(_ capUrn: String) -> Int? {
+    /// - Returns: Cartridge index, or nil if no cartridge handles this cap
+    public func findCartridgeForCap(_ capUrn: String) -> Int? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return findPluginForCapLocked(capUrn)
+        return findCartridgeForCapLocked(capUrn)
     }
 
-    /// Internal: find plugin for cap (must hold stateLock).
+    /// Internal: find cartridge for cap (must hold stateLock).
     ///
-    /// Uses `isDispatchable(provider, request)` to find plugins that can
+    /// Uses `isDispatchable(provider, request)` to find cartridges that can
     /// legally handle the request, then ranks by specificity.
     ///
     /// Ranking prefers:
     /// 1. Equivalent matches (distance 0)
     /// 2. More specific providers (positive distance) - refinements
     /// 3. More generic providers (negative distance) - fallbacks
-    private func findPluginForCapLocked(_ capUrn: String) -> Int? {
+    private func findCartridgeForCapLocked(_ capUrn: String) -> Int? {
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else { return nil }
 
         let requestSpecificity = Int(requestUrn.specificity())
-        var matches: [(pluginIdx: Int, signedDistance: Int)] = []
+        var matches: [(cartridgeIdx: Int, signedDistance: Int)] = []
 
-        for (registeredCap, pluginIdx) in capTable {
+        for (registeredCap, cartridgeIdx) in capTable {
             if let registeredUrn = try? CSCapUrn.fromString(registeredCap) {
                 if registeredUrn.isDispatchable(requestUrn) {
                     let specificity = Int(registeredUrn.specificity())
                     let signedDistance = specificity - requestSpecificity
-                    matches.append((pluginIdx, signedDistance))
+                    matches.append((cartridgeIdx, signedDistance))
                 }
             }
         }
@@ -629,13 +629,13 @@ public final class PluginHost: @unchecked Sendable {
             return abs(distA) < abs(distB)
         }
 
-        return matches.first?.pluginIdx
+        return matches.first?.cartridgeIdx
     }
 
     // MARK: - Main Run Loop
 
-    /// Main run loop. Reads frames from the relay, routes to plugins.
-    /// Plugin reader threads forward plugin frames to the relay.
+    /// Main run loop. Reads frames from the relay, routes to cartridges.
+    /// Cartridge reader threads forward cartridge frames to the relay.
     ///
     /// Blocks until the relay closes or a fatal error occurs.
     ///
@@ -643,7 +643,7 @@ public final class PluginHost: @unchecked Sendable {
     ///   - relayRead: FileHandle to read frames from (relay/engine side)
     ///   - relayWrite: FileHandle to write frames to (relay/engine side)
     ///   - resourceFn: Callback to get current system resource state
-    /// - Throws: PluginHostError on fatal errors
+    /// - Throws: CartridgeHostError on fatal errors
     public func run(
         relayRead: FileHandle,
         relayWrite: FileHandle,
@@ -653,13 +653,13 @@ public final class PluginHost: @unchecked Sendable {
         outboundWriter = FrameWriter(handle: relayWrite)
         outboundLock.unlock()
 
-        // Send initial RelayNotify with capabilities from any already-attached plugins.
-        // Plugins attached before run() was called won't have sent their RelayNotify yet.
+        // Send initial RelayNotify with capabilities from any already-attached cartridges.
+        // Cartridges attached before run() was called won't have sent their RelayNotify yet.
         stateLock.lock()
         rebuildCapabilities()
         stateLock.unlock()
 
-        // Start relay reader thread — feeds into the same event queue as plugin readers
+        // Start relay reader thread — feeds into the same event queue as cartridge readers
         let relayReader = FrameReader(handle: relayRead)
         let relayThread = Thread { [weak self] in
             while true {
@@ -675,10 +675,10 @@ public final class PluginHost: @unchecked Sendable {
                 }
             }
         }
-        relayThread.name = "PluginHost.relay"
+        relayThread.name = "CartridgeHost.relay"
         relayThread.start()
 
-        // Main loop: wait for events from any source (relay or plugins)
+        // Main loop: wait for events from any source (relay or cartridges)
         while true {
             eventSemaphore.wait()
 
@@ -699,21 +699,21 @@ public final class PluginHost: @unchecked Sendable {
                 closed = true
                 stateLock.unlock()
                 return
-            case .frame(let pluginIdx, let frame):
-                handlePluginFrame(pluginIdx: pluginIdx, frame: frame)
-            case .death(let pluginIdx):
-                handlePluginDeath(pluginIdx: pluginIdx)
+            case .frame(let cartridgeIdx, let frame):
+                handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+            case .death(let cartridgeIdx):
+                handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
             }
         }
     }
 
-    // MARK: - Relay Frame Handling (Engine -> Plugin)
+    // MARK: - Relay Frame Handling (Engine -> Cartridge)
 
     /// Handle a frame received from the relay (engine side).
     ///
     /// All relay frames MUST have XID (assigned by RelaySwitch).
-    /// Routes incoming REQs to plugins by cap URN, continuation frames by (XID, RID).
-    /// NEVER cleans up incomingRxids on terminal frames — intentionally leaked until plugin death.
+    /// Routes incoming REQs to cartridges by cap URN, continuation frames by (XID, RID).
+    /// NEVER cleans up incomingRxids on terminal frames — intentionally leaked until cartridge death.
     private func handleRelayFrame(_ frame: Frame) {
         if frame.frameType != .log {
             os_log(.debug, log: Self.log, "[handleRelayFrame] %{public}@ id=%{public}@ xid=%{public}@", String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
@@ -734,40 +734,40 @@ public final class PluginHost: @unchecked Sendable {
             }
 
             stateLock.lock()
-            guard let pluginIdx = findPluginForCapLocked(capUrn) else {
+            guard let cartridgeIdx = findCartridgeForCapLocked(capUrn) else {
                 stateLock.unlock()
-                var err = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No plugin handles cap: \(capUrn)")
+                var err = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No cartridge handles cap: \(capUrn)")
                 err.routingId = xid
                 sendToRelay(err)
                 return
             }
-            let needsSpawn = !plugins[pluginIdx].running && !plugins[pluginIdx].helloFailed
+            let needsSpawn = !cartridges[cartridgeIdx].running && !cartridges[cartridgeIdx].helloFailed
             stateLock.unlock()
 
             // Spawn on demand if registered but not running
             if needsSpawn {
                 do {
-                    try spawnPlugin(at: pluginIdx)
+                    try spawnCartridge(at: cartridgeIdx)
                 } catch {
-                    var err = Frame.err(id: frame.id, code: "SPAWN_FAILED", message: "Failed to spawn plugin: \(error.localizedDescription)")
+                    var err = Frame.err(id: frame.id, code: "SPAWN_FAILED", message: "Failed to spawn cartridge: \(error.localizedDescription)")
                     err.routingId = xid
                     sendToRelay(err)
                     return
                 }
             }
 
-            // Record in INCOMING_RXIDS: (XID, RID) → plugin_idx
+            // Record in INCOMING_RXIDS: (XID, RID) → cartridge_idx
             let key = RxidKey(xid: xid, rid: frame.id)
             stateLock.lock()
-            incomingRxids[key] = pluginIdx
-            let plugin = plugins[pluginIdx]
+            incomingRxids[key] = cartridgeIdx
+            let cartridge = cartridges[cartridgeIdx]
             stateLock.unlock()
 
-            os_log(.debug, log: Self.log, "[handleRelayFrame] REQ dispatched to plugin %d cap=%{public}@ xid=%{public}@ rid=%{public}@", pluginIdx, String(describing: frame.cap), String(describing: xid), String(describing: frame.id))
-            if !plugin.writeFrame(frame) {
-                // Plugin is dead — send ERR with XID and clean up
-                let deathMsg = plugin.lastDeathMessage ?? "Plugin exited while processing request"
-                var err = Frame.err(id: frame.id, code: "PLUGIN_DIED", message: deathMsg)
+            os_log(.debug, log: Self.log, "[handleRelayFrame] REQ dispatched to cartridge %d cap=%{public}@ xid=%{public}@ rid=%{public}@", cartridgeIdx, String(describing: frame.cap), String(describing: xid), String(describing: frame.id))
+            if !cartridge.writeFrame(frame) {
+                // Cartridge is dead — send ERR with XID and clean up
+                let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
+                var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", message: deathMsg)
                 err.routingId = xid
                 sendToRelay(err)
                 stateLock.lock()
@@ -778,38 +778,38 @@ public final class PluginHost: @unchecked Sendable {
         case .streamStart, .chunk, .streamEnd, .end, .err:
             // Continuation from relay MUST have XID
             guard let xid = frame.routingId else {
-                fputs("[PluginHost] Protocol error: continuation from relay missing XID\n", stderr)
+                fputs("[CartridgeHost] Protocol error: continuation from relay missing XID\n", stderr)
                 return
             }
 
             let key = RxidKey(xid: xid, rid: frame.id)
 
-            // Route by (XID, RID) to the mapped plugin
+            // Route by (XID, RID) to the mapped cartridge
             stateLock.lock()
-            var pluginIdx = incomingRxids[key]
-            if pluginIdx == nil {
+            var cartridgeIdx = incomingRxids[key]
+            if cartridgeIdx == nil {
                 // Not an incoming engine request — check if it's a peer response.
-                // outgoingRids[RID] tracks which plugin made a peer request with this RID.
-                pluginIdx = outgoingRids[frame.id]
+                // outgoingRids[RID] tracks which cartridge made a peer request with this RID.
+                cartridgeIdx = outgoingRids[frame.id]
             }
-            guard let resolvedIdx = pluginIdx else {
+            guard let resolvedIdx = cartridgeIdx else {
                 stateLock.unlock()
-                // Already cleaned up (e.g., plugin died, death handler sent ERR)
+                // Already cleaned up (e.g., cartridge died, death handler sent ERR)
                 return
             }
-            let plugin = plugins[resolvedIdx]
+            let cartridge = cartridges[resolvedIdx]
             stateLock.unlock()
 
-            // If the plugin is dead, send ERR to engine with XID and clean up
-            if !plugin.writeFrame(frame) {
+            // If the cartridge is dead, send ERR to engine with XID and clean up
+            if !cartridge.writeFrame(frame) {
                 let flowKey = FlowKey(rid: frame.id, xid: xid)
                 stateLock.lock()
                 let nextSeq = (outgoingMaxSeq.removeValue(forKey: flowKey) ?? 0) + 1
                 outgoingRids.removeValue(forKey: frame.id)
                 incomingRxids.removeValue(forKey: key)
                 stateLock.unlock()
-                let deathMsg = plugin.lastDeathMessage ?? "Plugin exited while processing request"
-                var err = Frame.err(id: frame.id, code: "PLUGIN_DIED", message: deathMsg)
+                let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
+                var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", message: deathMsg)
                 err.routingId = xid
                 err.seq = nextSeq
                 sendToRelay(err)
@@ -819,29 +819,29 @@ public final class PluginHost: @unchecked Sendable {
             // NOTE: Do NOT cleanup incomingRxids here!
             // Frames arrive asynchronously — END can arrive before StreamStart/Chunk.
             // We can't know when "all frames for (XID, RID) have arrived" without full stream tracking.
-            // Accept the leak: entries cleaned up on plugin death.
+            // Accept the leak: entries cleaned up on cartridge death.
 
         case .log:
-            // LOG frames from peer responses — route back to the plugin that
+            // LOG frames from peer responses — route back to the cartridge that
             // made the peer request. Identified by outgoingRids[RID].
             stateLock.lock()
-            let pluginIdx = outgoingRids[frame.id]
+            let cartridgeIdx = outgoingRids[frame.id]
             stateLock.unlock()
 
-            if let idx = pluginIdx {
-                let plugin = plugins[idx]
-                let _ = plugin.writeFrame(frame)
+            if let idx = cartridgeIdx {
+                let cartridge = cartridges[idx]
+                let _ = cartridge.writeFrame(frame)
             }
             // If not a peer response LOG, ignore silently (e.g., stale routing)
 
         case .hello, .heartbeat:
             // These should never arrive from the engine through the relay
-            fputs("[PluginHost] Protocol error: \(frame.frameType) from relay\n", stderr)
+            fputs("[CartridgeHost] Protocol error: \(frame.frameType) from relay\n", stderr)
 
         case .cancel:
-            // Cancel from relay — route to the plugin handling this request.
+            // Cancel from relay — route to the cartridge handling this request.
             guard let xid = frame.routingId else {
-                fputs("[PluginHost] Cancel frame missing XID — ignoring\n", stderr)
+                fputs("[CartridgeHost] Cancel frame missing XID — ignoring\n", stderr)
                 return
             }
             let rid = frame.id
@@ -849,34 +849,34 @@ public final class PluginHost: @unchecked Sendable {
             let forceKill = frame.forceKill ?? false
 
             stateLock.lock()
-            guard let pluginIdx = incomingRxids[key] else {
+            guard let cartridgeIdx = incomingRxids[key] else {
                 stateLock.unlock()
-                fputs("[PluginHost] Cancel for unknown request (\(xid), \(rid)) — ignoring\n", stderr)
+                fputs("[CartridgeHost] Cancel for unknown request (\(xid), \(rid)) — ignoring\n", stderr)
                 return
             }
 
             if forceKill {
                 // Force kill: set shutdown reason and kill the process
-                fputs("[PluginHost] Cancel force_kill=true for plugin \(pluginIdx) rid=\(rid)\n", stderr)
-                plugins[pluginIdx].shutdownReason = .cancelled
-                let pid = plugins[pluginIdx].pid
+                fputs("[CartridgeHost] Cancel force_kill=true for cartridge \(cartridgeIdx) rid=\(rid)\n", stderr)
+                cartridges[cartridgeIdx].shutdownReason = .cancelled
+                let pid = cartridges[cartridgeIdx].pid
                 stateLock.unlock()
                 if let pid = pid {
                     kill(pid, SIGKILL)
                 }
             } else {
-                // Cooperative cancel: forward Cancel frame to the plugin
-                fputs("[PluginHost] Cancel cooperative for plugin \(pluginIdx) rid=\(rid)\n", stderr)
-                let plugin = plugins[pluginIdx]
+                // Cooperative cancel: forward Cancel frame to the cartridge
+                fputs("[CartridgeHost] Cancel cooperative for cartridge \(cartridgeIdx) rid=\(rid)\n", stderr)
+                let cartridge = cartridges[cartridgeIdx]
                 stateLock.unlock()
-                let _ = plugin.writeFrame(frame)
+                let _ = cartridge.writeFrame(frame)
 
                 // Also cascade: send Cancel to relay for each peer call spawned by this request
                 stateLock.lock()
                 if let peerRids = incomingToPeerRids[key] {
                     stateLock.unlock()
                     for peerRid in peerRids {
-                        fputs("[PluginHost] Cascading Cancel to peer call rid=\(peerRid)\n", stderr)
+                        fputs("[CartridgeHost] Cascading Cancel to peer call rid=\(peerRid)\n", stderr)
                         let cancel = Frame.cancel(targetRid: peerRid, forceKill: false)
                         sendToRelay(cancel)
                     }
@@ -887,61 +887,61 @@ public final class PluginHost: @unchecked Sendable {
 
         case .relayNotify, .relayState:
             // Relay frames should be intercepted by the relay layer, never reach here
-            fputs("[PluginHost] Protocol error: relay frame \(frame.frameType) reached host\n", stderr)
+            fputs("[CartridgeHost] Protocol error: relay frame \(frame.frameType) reached host\n", stderr)
         }
     }
 
-    // MARK: - Plugin Frame Handling (Plugin -> Engine)
+    // MARK: - Cartridge Frame Handling (Cartridge -> Engine)
 
-    /// Handle a frame received from a plugin.
+    /// Handle a frame received from a cartridge.
     ///
     /// REQ frames register in outgoingRids (peer invoke tracking).
     /// All frames track max-seen seq per FlowKey for host-generated ERR frames.
     /// All other frames are forwarded to relay as-is — no routing decisions needed
     /// (there's only one relay destination).
-    private func handlePluginFrame(pluginIdx: Int, frame: Frame) {
+    private func handleCartridgeFrame(cartridgeIdx: Int, frame: Frame) {
         if frame.frameType != .log {
-            os_log(.debug, log: Self.log, "[handlePluginFrame] plugin=%d %{public}@ id=%{public}@ xid=%{public}@", pluginIdx, String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
+            os_log(.debug, log: Self.log, "[handleCartridgeFrame] cartridge=%d %{public}@ id=%{public}@ xid=%{public}@", cartridgeIdx, String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
         }
         switch frame.frameType {
         case .hello:
             // HELLO should be consumed during handshake, never during run
-            fputs("[PluginHost] Protocol error: HELLO from plugin \(pluginIdx) during run\n", stderr)
+            fputs("[CartridgeHost] Protocol error: HELLO from cartridge \(cartridgeIdx) during run\n", stderr)
 
         case .heartbeat:
             // Handle heartbeat locally, never forward
             stateLock.lock()
-            let plugin = plugins[pluginIdx]
-            let wasOurs = plugin.pendingHeartbeats.removeValue(forKey: frame.id) != nil
+            let cartridge = cartridges[cartridgeIdx]
+            let wasOurs = cartridge.pendingHeartbeats.removeValue(forKey: frame.id) != nil
 
             if wasOurs {
-                // Response to our health probe — plugin is alive.
+                // Response to our health probe — cartridge is alive.
                 // Extract self-reported memory from heartbeat response meta.
                 if let meta = frame.meta {
                     if case .unsignedInt(let v) = meta["footprint_mb"] {
-                        plugin.memoryFootprintMb = v
+                        cartridge.memoryFootprintMb = v
                     }
                     if case .unsignedInt(let v) = meta["rss_mb"] {
-                        plugin.memoryRssMb = v
+                        cartridge.memoryRssMb = v
                     }
                 }
             }
             stateLock.unlock()
 
             if !wasOurs {
-                // Plugin-initiated heartbeat — respond
-                plugin.writeFrame(Frame.heartbeat(id: frame.id))
+                // Cartridge-initiated heartbeat — respond
+                cartridge.writeFrame(Frame.heartbeat(id: frame.id))
             }
 
         case .relayNotify, .relayState:
-            // Plugins must never send relay frames
-            fputs("[PluginHost] Protocol error: relay frame \(frame.frameType) from plugin \(pluginIdx)\n", stderr)
+            // Cartridges must never send relay frames
+            fputs("[CartridgeHost] Protocol error: relay frame \(frame.frameType) from cartridge \(cartridgeIdx)\n", stderr)
 
         case .req:
-            // Plugin peer invoke — record in OUTGOING_RIDS and track max-seen seq.
-            // Plugins MUST NOT send XID (that's a relay-level concept).
+            // Cartridge peer invoke — record in OUTGOING_RIDS and track max-seen seq.
+            // Cartridges MUST NOT send XID (that's a relay-level concept).
             stateLock.lock()
-            outgoingRids[frame.id] = pluginIdx
+            outgoingRids[frame.id] = cartridgeIdx
             let flowKey = FlowKey.fromFrame(frame)
             outgoingMaxSeq[flowKey] = frame.seq
 
@@ -985,32 +985,32 @@ public final class PluginHost: @unchecked Sendable {
         }
     }
 
-    // MARK: - Plugin Death Handling
+    // MARK: - Cartridge Death Handling
 
-    /// Handle a plugin death (reader thread detected EOF/error).
+    /// Handle a cartridge death (reader thread detected EOF/error).
     ///
     /// Three cases based on `shutdownReason`:
-    /// 1. **`nil`** (unexpected death): Genuine crash. Send ERR "PLUGIN_DIED"
+    /// 1. **`nil`** (unexpected death): Genuine crash. Send ERR "CARTRIDGE_DIED"
     ///    for all pending requests, store death message.
-    /// 2. **`.oomKill`**: OOM watchdog killed the plugin while it was
+    /// 2. **`.oomKill`**: OOM watchdog killed the cartridge while it was
     ///    actively processing. Send ERR "OOM_KILLED" for all pending requests
     ///    so callers fail fast instead of hanging.
     /// 3. **`.appExit`**: Clean shutdown. No ERR frames — the relay
     ///    connection is closing anyway.
-    private func handlePluginDeath(pluginIdx: Int) {
+    private func handleCartridgeDeath(cartridgeIdx: Int) {
         stateLock.lock()
-        let plugin = plugins[pluginIdx]
-        plugin.running = false
-        plugin.writer = nil
-        let reason = plugin.shutdownReason
-        plugin.shutdownReason = nil  // Reset for potential respawn
+        let cartridge = cartridges[cartridgeIdx]
+        cartridge.running = false
+        cartridge.writer = nil
+        let reason = cartridge.shutdownReason
+        cartridge.shutdownReason = nil  // Reset for potential respawn
 
         // Check process status and kill if still running.
         // The reader thread got EOF on stdout, but the process may still be alive
         // (e.g. if a library closed stdout). We must kill before reading stderr,
         // because readToEnd blocks until the pipe's write end closes.
         var exitInfo = ""
-        if let p = plugin.pid {
+        if let p = cartridge.pid {
             var status: Int32 = 0
             var wpid = waitpid(p, &status, WNOHANG)
             if wpid == 0 {
@@ -1038,13 +1038,13 @@ public final class PluginHost: @unchecked Sendable {
             } else if wpid < 0 {
                 exitInfo = "waitpid failed (errno=\(errno))"
             }
-            plugin.pid = nil
+            cartridge.pid = nil
         }
 
         // Now that the process is dead, read stderr — readToEnd will get
         // EOF immediately since the write end is closed.
         var stderrContent = ""
-        if let stderrHandle = plugin.stderrHandle {
+        if let stderrHandle = cartridge.stderrHandle {
             var allData = Data()
             if let data = try? stderrHandle.readToEnd(), !data.isEmpty {
                 allData = data
@@ -1060,19 +1060,19 @@ public final class PluginHost: @unchecked Sendable {
                 }
             }
             try? stderrHandle.close()
-            plugin.stderrHandle = nil
+            cartridge.stderrHandle = nil
         }
 
-        if let stdinHandle = plugin.stdinHandle {
+        if let stdinHandle = cartridge.stdinHandle {
             try? stdinHandle.close()
-            plugin.stdinHandle = nil
+            cartridge.stdinHandle = nil
         }
 
         // Clean up routing tables regardless of death cause.
-        // outgoingRids: peer requests the plugin initiated
+        // outgoingRids: peer requests the cartridge initiated
         var failedOutgoing: [(rid: MessageId, nextSeq: UInt64)] = []
         for (rid, idx) in outgoingRids {
-            if idx == pluginIdx {
+            if idx == cartridgeIdx {
                 let flowKey = FlowKey(rid: rid, xid: nil)
                 let nextSeq = (outgoingMaxSeq.removeValue(forKey: flowKey) ?? 0) + 1
                 failedOutgoing.append((rid: rid, nextSeq: nextSeq))
@@ -1082,10 +1082,10 @@ public final class PluginHost: @unchecked Sendable {
             outgoingRids.removeValue(forKey: entry.rid)
         }
 
-        // incomingRxids: requests routed to this plugin (intentionally leaked)
+        // incomingRxids: requests routed to this cartridge (intentionally leaked)
         var failedIncoming: [(key: RxidKey, xid: MessageId, rid: MessageId, nextSeq: UInt64)] = []
         for (key, idx) in incomingRxids {
-            if idx == pluginIdx {
+            if idx == cartridgeIdx {
                 let flowKey = FlowKey(rid: key.rid, xid: key.xid)
                 let nextSeq = (outgoingMaxSeq.removeValue(forKey: flowKey) ?? 0) + 1
                 failedIncoming.append((key: key, xid: key.xid, rid: key.rid, nextSeq: nextSeq))
@@ -1099,7 +1099,7 @@ public final class PluginHost: @unchecked Sendable {
         // Determine error code and message based on shutdown reason.
         // Both unexpected deaths and OOM kills send ERR frames for pending work.
         // Only appExit suppresses ERR frames (relay is closing, no callers left).
-        let pluginPath = plugin.path
+        let cartridgePath = cartridge.path
 
         let errInfo: (code: String, message: String)?
         switch reason {
@@ -1107,34 +1107,34 @@ public final class PluginHost: @unchecked Sendable {
             // Unexpected death — genuine crash mid-flight
             let exitSuffix = exitInfo.isEmpty ? "" : " (\(exitInfo))"
             let msg = stderrContent.isEmpty
-                ? "Plugin \(pluginPath) exited unexpectedly\(exitSuffix)."
-                : "Plugin \(pluginPath) exited unexpectedly\(exitSuffix). stderr:\n\(stderrContent)"
-            errInfo = (code: "PLUGIN_DIED", message: msg)
-            plugin.lastDeathMessage = msg
+                ? "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix)."
+                : "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix). stderr:\n\(stderrContent)"
+            errInfo = (code: "CARTRIDGE_DIED", message: msg)
+            cartridge.lastDeathMessage = msg
         case .oomKill:
-            // OOM watchdog killed the plugin — callers must be notified
+            // OOM watchdog killed the cartridge — callers must be notified
             let exitSuffix = exitInfo.isEmpty ? "" : " (\(exitInfo))"
             let msg = stderrContent.isEmpty
-                ? "Plugin \(pluginPath) killed by OOM watchdog\(exitSuffix)."
-                : "Plugin \(pluginPath) killed by OOM watchdog\(exitSuffix). stderr:\n\(stderrContent)"
+                ? "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix)."
+                : "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix). stderr:\n\(stderrContent)"
             errInfo = (code: "OOM_KILLED", message: msg)
-            plugin.lastDeathMessage = msg
+            cartridge.lastDeathMessage = msg
         case .cancelled:
             // Cancel-triggered kill — ERR "CANCELLED" for all pending work
-            let msg = "Plugin \(pluginPath) killed by cancel request."
+            let msg = "Cartridge \(cartridgePath) killed by cancel request."
             errInfo = (code: "CANCELLED", message: msg)
-            plugin.lastDeathMessage = msg
+            cartridge.lastDeathMessage = msg
         case .appExit:
             // Clean shutdown — no ERR frames, relay is closing
             errInfo = nil
-            plugin.lastDeathMessage = nil
+            cartridge.lastDeathMessage = nil
         }
 
         // Rebuild capTable for on-demand respawn routing.
-        capTable.removeAll { $0.1 == pluginIdx }
-        if !plugin.helloFailed {
-            for cap in plugin.knownCaps {
-                capTable.append((cap, pluginIdx))
+        capTable.removeAll { $0.1 == cartridgeIdx }
+        if !cartridge.helloFailed {
+            for cap in cartridge.knownCaps {
+                capTable.append((cap, cartridgeIdx))
             }
         }
         rebuildCapabilities()
@@ -1156,30 +1156,30 @@ public final class PluginHost: @unchecked Sendable {
         }
     }
 
-    // MARK: - Plugin Reader Thread
+    // MARK: - Cartridge Reader Thread
 
-    /// Start a background reader thread for a plugin.
-    private func startPluginReaderThread(pluginIdx: Int, reader: FrameReader) {
+    /// Start a background reader thread for a cartridge.
+    private func startCartridgeReaderThread(cartridgeIdx: Int, reader: FrameReader) {
         let thread = Thread { [weak self] in
             while true {
                 do {
                     guard let frame = try reader.read() else {
-                        // EOF — plugin closed stdout
-                        self?.pushEvent(.death(pluginIdx: pluginIdx))
+                        // EOF — cartridge closed stdout
+                        self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
                         break
                     }
-                    self?.pushEvent(.frame(pluginIdx: pluginIdx, frame: frame))
+                    self?.pushEvent(.frame(cartridgeIdx: cartridgeIdx, frame: frame))
                 } catch {
                     // Read error — treat as death
-                    self?.pushEvent(.death(pluginIdx: pluginIdx))
+                    self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
                     break
                 }
             }
         }
-        thread.name = "PluginHost.plugin[\(pluginIdx)]"
+        thread.name = "CartridgeHost.cartridge[\(cartridgeIdx)]"
 
         stateLock.lock()
-        plugins[pluginIdx].readerThread = thread
+        cartridges[cartridgeIdx].readerThread = thread
         stateLock.unlock()
 
         thread.start()
@@ -1187,8 +1187,8 @@ public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Event Queue
 
-    /// Push an event from a plugin reader thread.
-    private func pushEvent(_ event: PluginEvent) {
+    /// Push an event from a cartridge reader thread.
+    private func pushEvent(_ event: CartridgeEvent) {
         eventLock.lock()
         eventQueue.append(event)
         eventLock.unlock()
@@ -1204,10 +1204,10 @@ public final class PluginHost: @unchecked Sendable {
 
         for event in events {
             switch event {
-            case .frame(let pluginIdx, let frame):
-                handlePluginFrame(pluginIdx: pluginIdx, frame: frame)
-            case .death(let pluginIdx):
-                handlePluginDeath(pluginIdx: pluginIdx)
+            case .frame(let cartridgeIdx, let frame):
+                handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+            case .death(let cartridgeIdx):
+                handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
             case .relayFrame(let frame):
                 handleRelayFrame(frame)
             case .relayClosed:
@@ -1219,7 +1219,7 @@ public final class PluginHost: @unchecked Sendable {
     // MARK: - Outbound Writing
 
     /// Write a frame to the relay (toward engine). Thread-safe.
-    /// Frames arrive with seq already assigned by PluginRuntime — no modification needed.
+    /// Frames arrive with seq already assigned by CartridgeRuntime — no modification needed.
     private func sendToRelay(_ frame: Frame) {
         if frame.frameType != .log {
             os_log(.debug, log: Self.log, "[sendToRelay] %{public}@ id=%{public}@ xid=%{public}@", String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
@@ -1235,26 +1235,26 @@ public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Internal Helpers
 
-    /// Rebuild aggregate capabilities from all known/discovered plugins.
+    /// Rebuild aggregate capabilities from all known/discovered cartridges.
     /// Must hold stateLock when calling.
     /// Creates a JSON array of URN strings (not objects).
     ///
-    /// Includes caps from ALL registered plugins that haven't permanently failed HELLO.
-    /// Running plugins use their actual manifest caps; non-running plugins use knownCaps.
+    /// Includes caps from ALL registered cartridges that haven't permanently failed HELLO.
+    /// Running cartridges use their actual manifest caps; non-running cartridges use knownCaps.
     /// This ensures the relay always advertises all caps that CAN be handled, regardless
-    /// of whether the plugin process is currently alive (on-demand spawn handles restarts).
+    /// of whether the cartridge process is currently alive (on-demand spawn handles restarts).
     ///
     /// If running in relay mode (outboundWriter is set), sends a RelayNotify frame
     /// to the relay interface with the updated capabilities.
     private func rebuildCapabilities() {
-        // CAP_IDENTITY is always present — structural, not plugin-dependent
+        // CAP_IDENTITY is always present — structural, not cartridge-dependent
         var capUrns: [String] = [CSCapIdentity]
 
-        for plugin in plugins where !plugin.helloFailed {
-            if plugin.running {
+        for cartridge in cartridges where !cartridge.helloFailed {
+            if cartridge.running {
                 // Running: use actual caps from manifest (verified via HELLO handshake)
-                if !plugin.manifest.isEmpty,
-                   let json = try? JSONSerialization.jsonObject(with: plugin.manifest) as? [String: Any],
+                if !cartridge.manifest.isEmpty,
+                   let json = try? JSONSerialization.jsonObject(with: cartridge.manifest) as? [String: Any],
                    let caps = json["caps"] as? [[String: Any]] {
                     for cap in caps {
                         if let urn = cap["urn"] as? String, urn != CSCapIdentity {
@@ -1264,18 +1264,18 @@ public final class PluginHost: @unchecked Sendable {
                 }
             } else {
                 // Not running: use knownCaps (from discovery, available for on-demand spawn)
-                for cap in plugin.knownCaps where cap != CSCapIdentity {
+                for cap in cartridge.knownCaps where cap != CSCapIdentity {
                     capUrns.append(cap)
                 }
             }
         }
 
-        let installedPlugins = plugins.compactMap { $0.installedPluginIdentity() }
+        let installedCartridges = cartridges.compactMap { $0.installedCartridgeIdentity() }
 
         let capsData: Data
         if let data = try? JSONSerialization.data(withJSONObject: [
             "caps": capUrns,
-            "installed_plugins": installedPlugins.map { [
+            "installed_cartridges": installedCartridges.map { [
                 "id": $0.id,
                 "version": $0.version,
                 "sha256": $0.sha256,
@@ -1297,16 +1297,16 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     /// Extract cap URN strings from a manifest JSON blob.
-    /// Validates that CAP_IDENTITY is present (mandatory for all plugins).
+    /// Validates that CAP_IDENTITY is present (mandatory for all cartridges).
     private static func extractCaps(from manifest: Data) throws -> [String] {
         guard let json = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any],
               let caps = json["caps"] as? [[String: Any]] else {
-            throw PluginHostError.handshakeFailed("Invalid manifest JSON or missing caps array")
+            throw CartridgeHostError.handshakeFailed("Invalid manifest JSON or missing caps array")
         }
 
         let capUrns = caps.compactMap { $0["urn"] as? String }
 
-        // Verify CAP_IDENTITY is declared — mandatory for every plugin
+        // Verify CAP_IDENTITY is declared — mandatory for every cartridge
         guard let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) else {
             fatalError("BUG: CAP_IDENTITY constant '\(CSCapIdentity)' is invalid")
         }
@@ -1317,8 +1317,8 @@ public final class PluginHost: @unchecked Sendable {
         }
 
         guard hasIdentity else {
-            throw PluginHostError.handshakeFailed(
-                "Plugin manifest missing required CAP_IDENTITY (\(CSCapIdentity))"
+            throw CartridgeHostError.handshakeFailed(
+                "Cartridge manifest missing required CAP_IDENTITY (\(CSCapIdentity))"
             )
         }
 
@@ -1330,16 +1330,16 @@ public final class PluginHost: @unchecked Sendable {
         return Data(CBOR.utf8String("bifaci").encode())
     }
 
-    /// Verify plugin identity by sending nonce and expecting echo response.
+    /// Verify cartridge identity by sending nonce and expecting echo response.
     ///
-    /// This proves the transport works end-to-end and the plugin correctly
+    /// This proves the transport works end-to-end and the cartridge correctly
     /// implements the identity capability (echo behavior).
     ///
     /// - Parameters:
-    ///   - reader: FrameReader for plugin stdout
-    ///   - writer: FrameWriter for plugin stdin
-    /// - Throws: PluginHostError if verification fails
-    private static func verifyPluginIdentity(reader: FrameReader, writer: FrameWriter) throws {
+    ///   - reader: FrameReader for cartridge stdout
+    ///   - writer: FrameWriter for cartridge stdin
+    /// - Throws: CartridgeHostError if verification fails
+    private static func verifyCartridgeIdentity(reader: FrameReader, writer: FrameWriter) throws {
         let nonce = identityNonce()
         let reqId = MessageId.newUUID()
         let streamId = "identity-verify"
@@ -1369,7 +1369,7 @@ public final class PluginHost: @unchecked Sendable {
         var accumulated = Data()
         while true {
             guard let frame = try reader.read() else {
-                throw PluginHostError.handshakeFailed("Plugin closed connection during identity verification")
+                throw CartridgeHostError.handshakeFailed("Cartridge closed connection during identity verification")
             }
 
             switch frame.frameType {
@@ -1384,49 +1384,49 @@ public final class PluginHost: @unchecked Sendable {
             case .end:
                 // Verify nonce matches
                 if accumulated != nonce {
-                    throw PluginHostError.handshakeFailed(
+                    throw CartridgeHostError.handshakeFailed(
                         "Identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))")
                 }
                 return // Success
             case .err:
                 let code = frame.errorCode ?? "UNKNOWN"
                 let msg = frame.errorMessage ?? "no message"
-                throw PluginHostError.handshakeFailed("Identity verification failed: [\(code)] \(msg)")
+                throw CartridgeHostError.handshakeFailed("Identity verification failed: [\(code)] \(msg)")
             default:
-                throw PluginHostError.handshakeFailed("Identity verification: unexpected frame type \(frame.frameType)")
+                throw CartridgeHostError.handshakeFailed("Identity verification: unexpected frame type \(frame.frameType)")
             }
         }
     }
 
     // MARK: - Spawn On Demand
 
-    /// Spawn a registered plugin binary on demand.
+    /// Spawn a registered cartridge binary on demand.
     ///
     /// Performs posix_spawn + HELLO handshake + starts reader thread.
     /// Does NOT hold stateLock during blocking operations (handshake).
     ///
-    /// - Parameter idx: Plugin index in the plugins array
-    /// - Throws: PluginHostError if spawn or handshake fails
-    private func spawnPlugin(at idx: Int) throws {
-        // Read plugin info without holding lock during blocking ops
+    /// - Parameter idx: Cartridge index in the cartridges array
+    /// - Throws: CartridgeHostError if spawn or handshake fails
+    private func spawnCartridge(at idx: Int) throws {
+        // Read cartridge info without holding lock during blocking ops
         stateLock.lock()
-        let path = plugins[idx].path
-        let alreadyRunning = plugins[idx].running
-        let alreadyFailed = plugins[idx].helloFailed
+        let path = cartridges[idx].path
+        let alreadyRunning = cartridges[idx].running
+        let alreadyFailed = cartridges[idx].helloFailed
         stateLock.unlock()
 
         guard !path.isEmpty else {
-            throw PluginHostError.handshakeFailed("No binary path for plugin \(idx)")
+            throw CartridgeHostError.handshakeFailed("No binary path for cartridge \(idx)")
         }
         guard !alreadyRunning else { return }
         guard !alreadyFailed else {
-            throw PluginHostError.handshakeFailed("Plugin previously failed HELLO — permanently removed")
+            throw CartridgeHostError.handshakeFailed("Cartridge previously failed HELLO — permanently removed")
         }
 
         // Setup pipes
-        let inputPipe = Pipe()   // host writes → plugin reads (stdin)
-        let outputPipe = Pipe()  // plugin writes → host reads (stdout)
-        let errorPipe = Pipe()   // plugin writes → host reads (stderr)
+        let inputPipe = Pipe()   // host writes → cartridge reads (stdin)
+        let outputPipe = Pipe()  // cartridge writes → host reads (stdout)
+        let errorPipe = Pipe()   // cartridge writes → host reads (stderr)
 
         var pid: pid_t = 0
 
@@ -1455,7 +1455,7 @@ public final class PluginHost: @unchecked Sendable {
         let spawnResult = posix_spawn(&pid, path, &fileActions, nil, argv, nil)
         guard spawnResult == 0 else {
             let desc = String(cString: strerror(spawnResult))
-            throw PluginHostError.handshakeFailed("posix_spawn failed for \(path): \(desc)")
+            throw CartridgeHostError.handshakeFailed("posix_spawn failed for \(path): \(desc)")
         }
 
         // Close child's ends in parent
@@ -1483,28 +1483,28 @@ public final class PluginHost: @unchecked Sendable {
             stderrHandle.closeFile()
 
             stateLock.lock()
-            plugins[idx].helloFailed = true
+            cartridges[idx].helloFailed = true
             capTable.removeAll { $0.1 == idx }
             rebuildCapabilities()
             stateLock.unlock()
 
-            throw PluginHostError.handshakeFailed("HELLO failed for \(path): \(error.localizedDescription)")
+            throw CartridgeHostError.handshakeFailed("HELLO failed for \(path): \(error.localizedDescription)")
         }
 
         let caps = try Self.extractCaps(from: handshakeResult.manifest ?? Data())
 
-        // Update plugin state under lock
+        // Update cartridge state under lock
         stateLock.lock()
-        let plugin = plugins[idx]
-        plugin.pid = pid
-        plugin.stdinHandle = stdinHandle
-        plugin.stdoutHandle = stdoutHandle
-        plugin.stderrHandle = stderrHandle
-        plugin.writer = writer
-        plugin.manifest = handshakeResult.manifest ?? Data()
-        plugin.limits = handshakeResult.limits
-        plugin.caps = caps
-        plugin.running = true
+        let cartridge = cartridges[idx]
+        cartridge.pid = pid
+        cartridge.stdinHandle = stdinHandle
+        cartridge.stdoutHandle = stdoutHandle
+        cartridge.stderrHandle = stderrHandle
+        cartridge.writer = writer
+        cartridge.manifest = handshakeResult.manifest ?? Data()
+        cartridge.limits = handshakeResult.limits
+        cartridge.caps = caps
+        cartridge.running = true
 
         // Update capTable with actual caps from manifest
         capTable.removeAll { $0.1 == idx }
@@ -1515,12 +1515,12 @@ public final class PluginHost: @unchecked Sendable {
         stateLock.unlock()
 
         // Start reader thread
-        startPluginReaderThread(pluginIdx: idx, reader: reader)
+        startCartridgeReaderThread(cartridgeIdx: idx, reader: reader)
     }
 
     // MARK: - Lifecycle
 
-    /// Close the host, killing all managed plugin processes.
+    /// Close the host, killing all managed cartridge processes.
     ///
     /// After close(), the run() loop will exit. Any pending requests get ERR frames.
     public func close() {
@@ -1531,23 +1531,23 @@ public final class PluginHost: @unchecked Sendable {
         }
         closed = true
 
-        // Kill all running plugins
-        for plugin in plugins {
-            plugin.writerLock.lock()
-            plugin.writer = nil
-            plugin.writerLock.unlock()
+        // Kill all running cartridges
+        for cartridge in cartridges {
+            cartridge.writerLock.lock()
+            cartridge.writer = nil
+            cartridge.writerLock.unlock()
 
-            if let stdin = plugin.stdinHandle {
+            if let stdin = cartridge.stdinHandle {
                 try? stdin.close()
-                plugin.stdinHandle = nil
+                cartridge.stdinHandle = nil
             }
-            if let stderr = plugin.stderrHandle {
+            if let stderr = cartridge.stderrHandle {
                 try? stderr.close()
-                plugin.stderrHandle = nil
+                cartridge.stderrHandle = nil
             }
-            plugin.shutdownReason = .appExit
-            plugin.killProcess()
-            plugin.running = false
+            cartridge.shutdownReason = .appExit
+            cartridge.killProcess()
+            cartridge.running = false
         }
         stateLock.unlock()
 
@@ -1555,44 +1555,44 @@ public final class PluginHost: @unchecked Sendable {
         pushEvent(.relayClosed)
     }
 
-    // MARK: - Plugin Process Monitoring
+    // MARK: - Cartridge Process Monitoring
 
-    /// Get a snapshot of all running plugin processes.
+    /// Get a snapshot of all running cartridge processes.
     /// Thread-safe — can be called from any thread while `run()` is active.
-    public func runningPlugins() -> [PluginProcessInfo] {
+    public func runningCartridges() -> [CartridgeProcessInfo] {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return plugins.enumerated().compactMap { (idx, plugin) in
-            guard let pid = plugin.pid, plugin.running else { return nil }
-            let name = (plugin.path as NSString).lastPathComponent
-            return PluginProcessInfo(
-                pluginIndex: idx,
+        return cartridges.enumerated().compactMap { (idx, cartridge) in
+            guard let pid = cartridge.pid, cartridge.running else { return nil }
+            let name = (cartridge.path as NSString).lastPathComponent
+            return CartridgeProcessInfo(
+                cartridgeIndex: idx,
                 pid: pid,
                 name: name,
-                running: plugin.running,
-                caps: plugin.caps,
-                memoryFootprintMb: plugin.memoryFootprintMb,
-                memoryRssMb: plugin.memoryRssMb
+                running: cartridge.running,
+                caps: cartridge.caps,
+                memoryFootprintMb: cartridge.memoryFootprintMb,
+                memoryRssMb: cartridge.memoryRssMb
             )
         }
     }
 
-    /// Kill a specific plugin process by PID for memory pressure.
+    /// Kill a specific cartridge process by PID for memory pressure.
     /// Sets `shutdownReason = .oomKill` so the death handler sends ERR frames
     /// with "OOM_KILLED" for all pending requests, allowing callers to fail
     /// fast instead of hanging forever.
     /// Thread-safe — can be called from any thread while `run()` is active.
-    /// Returns `true` if the plugin was found and killed.
+    /// Returns `true` if the cartridge was found and killed.
     @discardableResult
-    public func killPlugin(pid: pid_t) -> Bool {
+    public func killCartridge(pid: pid_t) -> Bool {
         stateLock.lock()
-        guard let plugin = plugins.first(where: { $0.pid == pid && $0.running }) else {
+        guard let cartridge = cartridges.first(where: { $0.pid == pid && $0.running }) else {
             stateLock.unlock()
             return false
         }
-        plugin.shutdownReason = .oomKill
+        cartridge.shutdownReason = .oomKill
         stateLock.unlock()
-        plugin.killProcess()
+        cartridge.killProcess()
         return true
     }
 }

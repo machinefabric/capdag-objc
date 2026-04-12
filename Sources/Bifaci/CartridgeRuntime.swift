@@ -1,11 +1,11 @@
 //
-//  PluginRuntime.swift
+//  CartridgeRuntime.swift
 //  Bifaci
 //
-//  Plugin-side runtime for CBOR-based plugin communication.
+//  Cartridge-side runtime for CBOR-based cartridge communication.
 //
-//  This is the ONLY supported way for a plugin to communicate with the host.
-//  Swift plugins use this runtime to:
+//  This is the ONLY supported way for a cartridge to communicate with the host.
+//  Swift cartridges use this runtime to:
 //  1. Perform HELLO handshake with the host
 //  2. Register handlers for caps they provide
 //  3. Process incoming REQ frames
@@ -15,7 +15,7 @@
 //
 //  Usage:
 //  ```swift
-//  let runtime = PluginRuntime(manifest: manifestData)
+//  let runtime = CartridgeRuntime(manifest: manifestData)
 //  runtime.register(capUrn: "cap:op=my_op") { payload, emitter, peer in
 //      emitter.emitStatus(operation: "processing", details: "Working...")
 //      // Optionally invoke host caps via peer.invoke()
@@ -34,8 +34,8 @@ import Ops
 
 // MARK: - Error Types
 
-/// Errors specific to PluginRuntime operations
-public enum PluginRuntimeError: Error, LocalizedError, @unchecked Sendable {
+/// Errors specific to CartridgeRuntime operations
+public enum CartridgeRuntimeError: Error, LocalizedError, @unchecked Sendable {
     case handshakeFailed(String)
     case noHandler(String)
     case handlerError(String)
@@ -386,7 +386,7 @@ public final class OutputStream: @unchecked Sendable {
         streamModeLock.unlock()
 
         if alreadyStarted {
-            throw PluginRuntimeError.handlerError("stream already started")
+            throw CartridgeRuntimeError.handlerError("stream already started")
         }
 
         var startFrame = Frame.streamStart(
@@ -405,14 +405,14 @@ public final class OutputStream: @unchecked Sendable {
         streamModeLock.unlock()
 
         guard let existing = mode else {
-            throw PluginRuntimeError.handlerError(
+            throw CartridgeRuntimeError.handlerError(
                 "stream not started: call start() before write/emitListItem"
             )
         }
         if existing != isSequence {
             let existingName = existing ? "sequence" : "write"
             let calledName = isSequence ? "sequence" : "write"
-            throw PluginRuntimeError.handlerError(
+            throw CartridgeRuntimeError.handlerError(
                 "stream mode conflict: started as \(existingName) but called with \(calledName)"
             )
         }
@@ -526,7 +526,7 @@ public final class OutputStream: @unchecked Sendable {
                     chunkSize -= 1
                 }
                 if chunkSize == 0 {
-                    throw PluginRuntimeError.handlerError("Cannot split text on character boundary")
+                    throw CartridgeRuntimeError.handlerError("Cannot split text on character boundary")
                 }
                 let chunkData = textBytes.subdata(in: offset..<(offset + chunkSize))
                 let chunkText = String(data: chunkData, encoding: .utf8)!
@@ -720,7 +720,7 @@ public final class PeerCall: @unchecked Sendable {
         lock.lock()
         guard let rx = responseRx else {
             lock.unlock()
-            throw PluginRuntimeError.peerRequestError("PeerCall already finished")
+            throw CartridgeRuntimeError.peerRequestError("PeerCall already finished")
         }
         responseRx = nil
         lock.unlock()
@@ -871,7 +871,7 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) -
 
 /// Demux multiple input streams from frame iterator into InputPackage.
 /// Groups frames by stream_id, yields InputStream for each stream.
-/// Used for incoming requests (plugin receiving from host).
+/// Used for incoming requests (cartridge receiving from host).
 internal func demuxMultiStream(frameIterator: AnyIterator<Frame>) -> InputPackage {
     // Track per-stream state
     class StreamState {
@@ -1010,7 +1010,7 @@ public struct CapArgumentValue: Sendable {
     /// Get the value as a UTF-8 string (fails for binary data)
     public func valueAsString() throws -> String {
         guard let str = String(data: value, encoding: .utf8) else {
-            throw PluginRuntimeError.deserializationError("Value is not valid UTF-8")
+            throw CartridgeRuntimeError.deserializationError("Value is not valid UTF-8")
         }
         return str
     }
@@ -1021,7 +1021,7 @@ public struct CapArgumentValue: Sendable {
 
 /// Allows handlers to invoke caps on the peer (host).
 ///
-/// This protocol enables bidirectional communication where a plugin handler can
+/// This protocol enables bidirectional communication where a cartridge handler can
 /// invoke caps on the host while processing a request.
 ///
 /// The `call` method starts a peer invocation and returns a `PeerCall`.
@@ -1058,7 +1058,7 @@ public struct NoPeerInvoker: PeerInvoker {
     public init() {}
 
     public func call(capUrn: String) throws -> PeerCall {
-        throw PluginRuntimeError.peerRequestError("Peer invocation not supported in this context")
+        throw CartridgeRuntimeError.peerRequestError("Peer invocation not supported in this context")
     }
 }
 
@@ -1101,7 +1101,7 @@ final class CliFrameSender: FrameSender, @unchecked Sendable {
 
         // Decode CBOR value from payload
         guard let value = try CBOR.decode([UInt8](payload)) else {
-            throw PluginRuntimeError.protocolError("Failed to decode CBOR chunk payload")
+            throw CartridgeRuntimeError.protocolError("Failed to decode CBOR chunk payload")
         }
 
         // Extract and write raw content
@@ -1135,12 +1135,12 @@ final class CliFrameSender: FrameSender, @unchecked Sendable {
                 try extractAndWrite(val, to: handle)
             } else {
                 // No value field - fail hard (no fallback)
-                throw PluginRuntimeError.handlerError("Map in CLI output has no 'value' field")
+                throw CartridgeRuntimeError.handlerError("Map in CLI output has no 'value' field")
             }
 
         default:
             // Unsupported type - fail hard (no fallback)
-            throw PluginRuntimeError.handlerError("CLI output does not support CBOR type")
+            throw CartridgeRuntimeError.handlerError("CLI output does not support CBOR type")
         }
     }
 }
@@ -1180,7 +1180,7 @@ func getOwnMemoryMb() -> (footprintMb: UInt64, rssMb: UInt64)? {
 ///   - contentType: Content-Type header from the REQ frame
 ///   - capUrn: The cap URN being invoked (used to determine expected input type)
 /// - Returns: The effective payload bytes
-/// - Throws: PluginRuntimeError if parsing fails or no matching argument found
+/// - Throws: CartridgeRuntimeError if parsing fails or no matching argument found
 func extractEffectivePayload(payload: Data, contentType: String?, capUrn: String) throws -> Data {
     // Check if this is CBOR arguments
     guard contentType == "application/cbor" else {
@@ -1193,7 +1193,7 @@ func extractEffectivePayload(payload: Data, contentType: String?, capUrn: String
     do {
         parsedUrn = try CSCapUrn.fromString(capUrn)
     } catch {
-        throw PluginRuntimeError.capUrnError("Failed to parse cap URN '\(capUrn)': \(error.localizedDescription)")
+        throw CartridgeRuntimeError.capUrnError("Failed to parse cap URN '\(capUrn)': \(error.localizedDescription)")
     }
     let expectedInput = parsedUrn.getInSpec()
 
@@ -1201,16 +1201,16 @@ func extractEffectivePayload(payload: Data, contentType: String?, capUrn: String
     let cborValue: CBOR
     do {
         guard let decoded = try CBOR.decode([UInt8](payload)) else {
-            throw PluginRuntimeError.deserializationError("Failed to decode CBOR payload")
+            throw CartridgeRuntimeError.deserializationError("Failed to decode CBOR payload")
         }
         cborValue = decoded
     } catch {
-        throw PluginRuntimeError.deserializationError("Failed to parse CBOR arguments: \(error)")
+        throw CartridgeRuntimeError.deserializationError("Failed to parse CBOR arguments: \(error)")
     }
 
     // Must be an array
     guard case .array(let arguments) = cborValue else {
-        throw PluginRuntimeError.deserializationError("CBOR arguments must be an array")
+        throw CartridgeRuntimeError.deserializationError("CBOR arguments must be an array")
     }
 
     // Parse the expected input as a tagged URN for proper matching
@@ -1257,7 +1257,7 @@ func extractEffectivePayload(payload: Data, contentType: String?, capUrn: String
     }
 
     // No matching argument found - this is an error, no fallbacks
-    throw PluginRuntimeError.deserializationError(
+    throw CartridgeRuntimeError.deserializationError(
         "No argument found matching expected input media type '\(expectedInput)' in CBOR arguments"
     )
 }
@@ -1299,7 +1299,7 @@ public final class CborRequest: @unchecked Sendable {
         _inputLock.lock()
         defer { _inputLock.unlock() }
         guard let pkg = _inputPackage else {
-            throw PluginRuntimeError.protocolError("Input already consumed")
+            throw CartridgeRuntimeError.protocolError("Input already consumed")
         }
         _inputPackage = nil
         return pkg
@@ -1388,7 +1388,7 @@ func dispatchOp(op: AnyOp<Void>, input: InputPackage, output: OutputStream, peer
 
 // MARK: - Internal: Pending Peer Request
 
-/// Internal struct to track pending peer requests (plugin invoking host caps).
+/// Internal struct to track pending peer requests (cartridge invoking host caps).
 /// Now uses AsyncStream continuation to forward frames instead of condition variables.
 private struct PendingPeerRequest {
     let continuation: AsyncStream<Frame>.Continuation
@@ -1451,7 +1451,7 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
     func call(capUrn: String) throws -> PeerCall {
         // Generate a new message ID for this request
         let requestId = MessageId.newUUID()
-        fputs("[PluginRuntime] PEER_CALL: cap='\(capUrn)' peer_rid=\(requestId)\n", stderr)
+        fputs("[CartridgeRuntime] PEER_CALL: cap='\(capUrn)' peer_rid=\(requestId)\n", stderr)
 
         // Create AsyncStream and continuation for response frames
         let (stream, continuation) = AsyncStream<Frame>.makeStream()
@@ -1488,7 +1488,7 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
             pendingRequests.removeObject(forKey: requestId)
             pendingRequestsLock.unlock()
             continuation.finish()
-            throw PluginRuntimeError.peerRequestError("Failed to send peer REQ: \(error)")
+            throw CartridgeRuntimeError.peerRequestError("Failed to send peer REQ: \(error)")
         }
         writerLock.unlock()
 
@@ -1681,7 +1681,7 @@ public struct CapDefinition: Codable, Sendable {
     }
 }
 
-/// Plugin manifest structure.
+/// Cartridge manifest structure.
 public struct Manifest: Codable, Sendable {
     public let name: String
     public let version: String
@@ -1696,18 +1696,18 @@ public struct Manifest: Codable, Sendable {
     }
 }
 
-// MARK: - PluginRuntime
+// MARK: - CartridgeRuntime
 
-/// Plugin-side runtime for CBOR protocol communication.
+/// Cartridge-side runtime for CBOR protocol communication.
 ///
-/// Plugins create a runtime, register handlers for their caps, then call `run()`.
+/// Cartridges create a runtime, register handlers for their caps, then call `run()`.
 /// The runtime handles all I/O mechanics:
 /// - HELLO handshake for limit negotiation (includes manifest in response)
 /// - Frame encoding/decoding
 /// - Request routing to handlers
 /// - Streaming response support
 /// - HEARTBEAT health monitoring
-/// - Bidirectional peer invocation (plugin can call host caps)
+/// - Bidirectional peer invocation (cartridge can call host caps)
 ///
 /// **Multiplexed execution**: Multiple requests can be processed concurrently.
 /// Each request handler runs in its own thread, allowing the runtime to:
@@ -1715,12 +1715,12 @@ public struct Manifest: Codable, Sendable {
 /// - Accept new requests while previous ones are still processing
 /// - Route response frames to handlers that invoked peer caps
 ///
-/// **This is the ONLY supported way for plugins to communicate with the host.**
-/// The manifest MUST be provided - plugins without a manifest will fail handshake.
+/// **This is the ONLY supported way for cartridges to communicate with the host.**
+/// The manifest MUST be provided - cartridges without a manifest will fail handshake.
 @available(macOS 10.15.4, iOS 13.4, *)
 /// Shared handle for dynamic concurrency capacity adjustment.
 ///
-/// Cartridges receive this via `PluginRuntime.capacityHandle()` and can call
+/// Cartridges receive this via `CartridgeRuntime.capacityHandle()` and can call
 /// `set(_:)` at any time to adjust how many concurrent requests the runtime
 /// will dispatch to handlers.
 public final class CapacityHandle: @unchecked Sendable {
@@ -1747,7 +1747,7 @@ public final class CapacityHandle: @unchecked Sendable {
     }
 }
 
-public final class PluginRuntime: @unchecked Sendable {
+public final class CartridgeRuntime: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -1756,8 +1756,8 @@ public final class PluginRuntime: @unchecked Sendable {
 
     private var limits = Limits()
 
-    /// Plugin manifest JSON data - sent in HELLO response.
-    /// This is REQUIRED - plugins must provide their manifest.
+    /// Cartridge manifest JSON data - sent in HELLO response.
+    /// This is REQUIRED - cartridges must provide their manifest.
     let manifestData: Data
 
     /// Parsed manifest for CLI mode support.
@@ -1769,16 +1769,16 @@ public final class PluginRuntime: @unchecked Sendable {
 
     // MARK: - Initialization
 
-    /// Create a plugin runtime with the required manifest.
+    /// Create a cartridge runtime with the required manifest.
     ///
-    /// The manifest is JSON-encoded plugin metadata including:
-    /// - name: Plugin name
-    /// - version: Plugin version
+    /// The manifest is JSON-encoded cartridge metadata including:
+    /// - name: Cartridge name
+    /// - version: Cartridge version
     /// - caps: Array of capability definitions with args and sources
     ///
     /// This manifest is sent in the HELLO response to the host (CBOR mode)
     /// and used for CLI argument parsing (CLI mode).
-    /// **Plugins MUST provide a manifest - there is no fallback.**
+    /// **Cartridges MUST provide a manifest - there is no fallback.**
     ///
     /// The runtime automatically registers:
     /// - CAP_IDENTITY handler (mandatory) - passes input through unchanged
@@ -1791,7 +1791,7 @@ public final class PluginRuntime: @unchecked Sendable {
         self.parsedManifest = try? JSONDecoder().decode(Manifest.self, from: manifest)
 
         // FAIL HARD if manifest doesn't declare CAP_IDENTITY
-        // Plugins MUST explicitly declare all caps they provide - no fallbacks
+        // Cartridges MUST explicitly declare all caps they provide - no fallbacks
         if let parsed = self.parsedManifest {
             // Check using URN conformance, not string equality
             // CAP_IDENTITY ("cap:") can be declared as "cap:" or "cap:in=media:;out=media:"
@@ -1806,14 +1806,14 @@ public final class PluginRuntime: @unchecked Sendable {
                     return false
                 }
             }
-            precondition(hasIdentity, "Manifest validation failed - plugin MUST declare CAP_IDENTITY (\(CSCapIdentity))")
+            precondition(hasIdentity, "Manifest validation failed - cartridge MUST declare CAP_IDENTITY (\(CSCapIdentity))")
         }
 
         // Auto-register standard capability handlers
         autoRegisterStandardCaps()
     }
 
-    /// Create a plugin runtime with manifest JSON string.
+    /// Create a cartridge runtime with manifest JSON string.
     /// - Parameter manifestJSON: JSON string of the manifest
     public convenience init(manifestJSON: String) {
         guard let data = manifestJSON.data(using: .utf8) else {
@@ -1928,10 +1928,10 @@ public final class PluginRuntime: @unchecked Sendable {
 
     // MARK: - Main Run Loop
 
-    /// Run the plugin runtime.
+    /// Run the cartridge runtime.
     ///
     /// **Mode Detection**:
-    /// - No CLI arguments: Plugin CBOR mode (stdin/stdout binary frames)
+    /// - No CLI arguments: Cartridge CBOR mode (stdin/stdout binary frames)
     /// - Any CLI arguments: CLI mode (parse args from cap definitions)
     ///
     /// **CLI Mode**:
@@ -1939,17 +1939,17 @@ public final class PluginRuntime: @unchecked Sendable {
     /// - `<command>` subcommand: find cap by command, parse args, invoke handler
     /// - `--help`: show available subcommands
     ///
-    /// **Plugin CBOR Mode** (no CLI args):
+    /// **Cartridge CBOR Mode** (no CLI args):
     /// 1. Receive HELLO from host
     /// 2. Send HELLO back with manifest (handshake)
     /// 3. Main loop reads frames, dispatches handlers
     /// 4. Exit when stdin closes
     ///
-    /// - Throws: PluginRuntimeError on fatal errors
+    /// - Throws: CartridgeRuntimeError on fatal errors
     public func run() throws {
         let args = CommandLine.arguments
 
-        // No CLI arguments at all → Plugin CBOR mode
+        // No CLI arguments at all → Cartridge CBOR mode
         if args.count == 1 {
             try runCborMode()
             return
@@ -2000,7 +2000,7 @@ public final class PluginRuntime: @unchecked Sendable {
         case .failure(let error):
             throw error
         case .none:
-            throw PluginRuntimeError.cliError("CLI mode failed to complete")
+            throw CartridgeRuntimeError.cliError("CLI mode failed to complete")
         }
     }
 
@@ -2009,7 +2009,7 @@ public final class PluginRuntime: @unchecked Sendable {
     /// Run in CLI mode - parse arguments and invoke handler.
     private func runCliMode(_ args: [String]) throws {
         guard let manifest = parsedManifest else {
-            throw PluginRuntimeError.manifestError("Failed to parse manifest for CLI mode")
+            throw CartridgeRuntimeError.manifestError("Failed to parse manifest for CLI mode")
         }
 
         // Handle --help at top level
@@ -2030,7 +2030,7 @@ public final class PluginRuntime: @unchecked Sendable {
 
         // Find cap by command name
         guard let cap = findCapByCommand(manifest: manifest, commandName: subcommand) else {
-            throw PluginRuntimeError.unknownSubcommand("Unknown command '\(subcommand)'. Run with --help to see available commands.")
+            throw CartridgeRuntimeError.unknownSubcommand("Unknown command '\(subcommand)'. Run with --help to see available commands.")
         }
 
         // Handle --help for specific command
@@ -2041,7 +2041,7 @@ public final class PluginRuntime: @unchecked Sendable {
 
         // Find Op factory
         guard let factory = findHandler(capUrn: cap.urn) else {
-            throw PluginRuntimeError.noHandler("No handler registered for cap '\(cap.urn)'")
+            throw CartridgeRuntimeError.noHandler("No handler registered for cap '\(cap.urn)'")
         }
 
         // Build payload from CLI arguments
@@ -2197,13 +2197,13 @@ public final class PluginRuntime: @unchecked Sendable {
     /// - Returns:
     ///   - For single file: Data containing raw file bytes
     ///   - For array: CBOR-encoded array of file bytes (each element is one file's contents)
-    /// - Throws: PluginRuntimeError.ioError if file cannot be read with clear error message
+    /// - Throws: CartridgeRuntimeError.ioError if file cannot be read with clear error message
     private func readFilePathToBytes(_ pathValue: String, isArray: Bool) throws -> Data {
         if isArray {
             // Parse JSON array of path patterns
             guard let pathData = pathValue.data(using: .utf8),
                   let pathPatterns = try? JSONSerialization.jsonObject(with: pathData) as? [String] else {
-                throw PluginRuntimeError.cliError(
+                throw CartridgeRuntimeError.cliError(
                     "Failed to parse file-path-array: expected JSON array of path patterns, got '\(pathValue)'"
                 )
             }
@@ -2220,7 +2220,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     // Literal path - verify it exists and is a file
                     let url = URL(fileURLWithPath: pattern)
                     if !fileManager.fileExists(atPath: pattern) {
-                        throw PluginRuntimeError.ioError(
+                        throw CartridgeRuntimeError.ioError(
                             "Failed to read file '\(pattern)' from file-path-array: No such file or directory"
                         )
                     }
@@ -2242,7 +2242,7 @@ public final class PluginRuntime: @unchecked Sendable {
                         }
                     }
                     if bracketDepth != 0 {
-                        throw PluginRuntimeError.cliError(
+                        throw CartridgeRuntimeError.cliError(
                             "Invalid glob pattern '\(pattern)': unclosed bracket"
                         )
                     }
@@ -2266,7 +2266,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     let bytes = try Data(contentsOf: url)
                     filesData.append(.byteString([UInt8](bytes)))
                 } catch {
-                    throw PluginRuntimeError.ioError(
+                    throw CartridgeRuntimeError.ioError(
                         "Failed to read file '\(url.path)' from file-path-array: \(error.localizedDescription)"
                     )
                 }
@@ -2281,7 +2281,7 @@ public final class PluginRuntime: @unchecked Sendable {
                 let url = URL(fileURLWithPath: pathValue)
                 return try Data(contentsOf: url)
             } catch {
-                throw PluginRuntimeError.ioError(
+                throw CartridgeRuntimeError.ioError(
                     "Failed to read file '\(pathValue)': \(error.localizedDescription)"
                 )
             }
@@ -2337,7 +2337,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     case .stdin(_): return "<stdin>"
                     }
                 }.joined(separator: " or ")
-                throw PluginRuntimeError.missingArgument("Required argument '\(argDef.mediaUrn)' not provided. Use: \(sources)")
+                throw CartridgeRuntimeError.missingArgument("Required argument '\(argDef.mediaUrn)' not provided. Use: \(sources)")
             }
         }
 
@@ -2381,7 +2381,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     let key = extractArgKey(from: arg.mediaUrn)
                     jsonObj[key] = str
                 } else {
-                    throw PluginRuntimeError.cliError("Binary data cannot be passed via CLI flags. Use stdin instead.")
+                    throw CartridgeRuntimeError.cliError("Binary data cannot be passed via CLI flags. Use stdin instead.")
                 }
             }
             return try JSONSerialization.data(withJSONObject: jsonObj)
@@ -2514,7 +2514,7 @@ public final class PluginRuntime: @unchecked Sendable {
         let pollResult = Darwin.poll(&pollfd, 1, 0)  // 0 timeout = non-blocking
 
         if pollResult < 0 {
-            throw PluginRuntimeError.ioError("poll() failed")
+            throw CartridgeRuntimeError.ioError("poll() failed")
         }
 
         // No data ready - return nil immediately without blocking
@@ -2551,7 +2551,7 @@ public final class PluginRuntime: @unchecked Sendable {
             var buffer = [UInt8](repeating: 0, count: maxChunk)
             let bytesRead = reader.read(&buffer, maxLength: maxChunk)
             if bytesRead < 0 {
-                throw PluginRuntimeError.ioError("Stream read error: \(reader.streamError?.localizedDescription ?? "unknown")")
+                throw CartridgeRuntimeError.ioError("Stream read error: \(reader.streamError?.localizedDescription ?? "unknown")")
             }
             if bytesRead == 0 {
                 break
@@ -2593,7 +2593,7 @@ public final class PluginRuntime: @unchecked Sendable {
         stderr.write(Data("USAGE:\n".utf8))
         stderr.write(Data("    \(manifest.name.lowercased()) <COMMAND> [OPTIONS]\n\n".utf8))
         stderr.write(Data("COMMANDS:\n".utf8))
-        stderr.write(Data("    manifest    Output the plugin manifest as JSON\n".utf8))
+        stderr.write(Data("    manifest    Output the cartridge manifest as JSON\n".utf8))
 
         for cap in manifest.caps {
             let desc = cap.capDescription ?? cap.title
@@ -2613,7 +2613,7 @@ public final class PluginRuntime: @unchecked Sendable {
             stderr.write(Data("\(desc)\n".utf8))
         }
         stderr.write(Data("\nUSAGE:\n".utf8))
-        stderr.write(Data("    plugin \(cap.command) [OPTIONS]\n\n".utf8))
+        stderr.write(Data("    cartridge \(cap.command) [OPTIONS]\n\n".utf8))
 
         if !cap.args.isEmpty {
             stderr.write(Data("OPTIONS:\n".utf8))
@@ -2653,7 +2653,7 @@ public final class PluginRuntime: @unchecked Sendable {
         // points to the same pipe but lives at a different descriptor number.
         let safeFd = dup(STDOUT_FILENO)
         guard safeFd >= 0 else {
-            throw PluginRuntimeError.ioError("dup(STDOUT_FILENO) failed: \(String(cString: strerror(errno)))")
+            throw CartridgeRuntimeError.ioError("dup(STDOUT_FILENO) failed: \(String(cString: strerror(errno)))")
         }
         // Redirect FD 1 → stderr so any stray stdout writes end up in the
         // log instead of injecting non-CBOR bytes into the frame pipe.
@@ -2672,17 +2672,17 @@ public final class PluginRuntime: @unchecked Sendable {
         // Applies SeqAssigner and cleans up flow tracking on terminal frames.
         let outputSender = ChannelFrameSender(writer: frameWriter, writerLock: writerLock, seqAssigner: seqAssigner)
 
-        // Track pending peer requests (plugin invoking host caps)
+        // Track pending peer requests (cartridge invoking host caps)
         // Maps request ID to AsyncStream.Continuation for forwarding response frames
         let pendingPeerRequests = NSMutableDictionary()
         let pendingPeerRequestsLock = NSLock()
 
-        // Track pending heartbeats (plugin-initiated health probes)
+        // Track pending heartbeats (cartridge-initiated health probes)
         // Prevents infinite ping-pong: only respond to heartbeats we didn't send
         let pendingHeartbeats = NSMutableSet()
         let pendingHeartbeatsLock = NSLock()
 
-        // Track pending incoming requests (host invoking plugin caps)
+        // Track pending incoming requests (host invoking cartridge caps)
         // Maps request ID to (capUrn, continuation) - forwards request frames to handler.
         // Created on REQ even for queued requests, so frames accumulate until
         // the handler thread is spawned and the demux drains them.
@@ -2754,7 +2754,7 @@ public final class PluginRuntime: @unchecked Sendable {
             eventQueue: BlockingQueue<LoopEvent>
         ) {
             Thread.detachNewThread {
-                fputs("[PluginRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
+                fputs("[CartridgeRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
                 let framesQueue = BlockingQueue<Frame>()
 
                 Task {
@@ -2794,12 +2794,12 @@ public final class PluginRuntime: @unchecked Sendable {
                     let op = factory()
                     try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
 
-                    fputs("[PluginRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
+                    fputs("[CartridgeRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
                     var endFrame = Frame.endOk(id: requestId, finalPayload: nil)
                     endFrame.routingId = routingId
                     try? outputSender.send(endFrame)
                 } catch {
-                    fputs("[PluginRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
+                    fputs("[CartridgeRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
                     var errFrame = Frame.err(id: requestId, code: "HANDLER_ERROR", message: "\(error)")
                     errFrame.routingId = routingId
                     try? outputSender.send(errFrame)
@@ -2820,7 +2820,7 @@ public final class PluginRuntime: @unchecked Sendable {
             while !requestQueue.isEmpty && (cap == 0 || runningHandlerCount < cap) {
                 let queued = requestQueue.removeFirst()
 
-                fputs("[PluginRuntime] dequeuing request: cap='\(queued.capUrn)' rid=\(queued.requestId) remaining_queue=\(requestQueue.count)\n", stderr)
+                fputs("[CartridgeRuntime] dequeuing request: cap='\(queued.capUrn)' rid=\(queued.requestId) remaining_queue=\(requestQueue.count)\n", stderr)
 
                 // Notify the caller that this request has been dequeued and is
                 // starting. The "dequeued" level is the counterpart to "queued":
@@ -2868,7 +2868,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     var err = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
                     err.routingId = routingId
                     try? outputSender.send(err)
-                    fputs("[PluginRuntime] Cancelled handler finished, sent ERR: rid=\(rid)\n", stderr)
+                    fputs("[CartridgeRuntime] Cancelled handler finished, sent ERR: rid=\(rid)\n", stderr)
                 }
                 continue
             case .frame(let f):
@@ -2876,7 +2876,7 @@ public final class PluginRuntime: @unchecked Sendable {
             case .eof:
                 break mainLoop
             case .readError(let error):
-                throw PluginRuntimeError.ioError("\(error)")
+                throw CartridgeRuntimeError.ioError("\(error)")
             }
 
             switch frame.frameType {
@@ -2953,7 +2953,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     logFrame.routingId = routingId
                     try? outputSender.send(logFrame)
 
-                    fputs("[PluginRuntime] request queued: cap='\(capUrn)' rid=\(requestId) queue_pos=\(queuePos)\n", stderr)
+                    fputs("[CartridgeRuntime] request queued: cap='\(capUrn)' rid=\(requestId) queue_pos=\(queuePos)\n", stderr)
 
                     requestQueue.append(QueuedRequest(
                         factory: factory,
@@ -3040,7 +3040,7 @@ public final class PluginRuntime: @unchecked Sendable {
                 // Check if this is the end of an incoming request
                 pendingIncomingLock.lock()
                 if let pendingReq = pendingIncoming.removeValue(forKey: frame.id) {
-                    fputs("[PluginRuntime] END routed to active_request rid=\(frame.id)\n", stderr)
+                    fputs("[CartridgeRuntime] END routed to active_request rid=\(frame.id)\n", stderr)
                     pendingReq.continuation.yield(frame)
                     pendingReq.continuation.finish()
                     pendingIncomingLock.unlock()
@@ -3051,18 +3051,18 @@ public final class PluginRuntime: @unchecked Sendable {
                 // Not an incoming request end - must be a peer response end
                 pendingPeerRequestsLock.lock()
                 if let pending = pendingPeerRequests[frame.id] as? PendingPeerRequest {
-                    fputs("[PluginRuntime] PEER_END received: peer_rid=\(frame.id)\n", stderr)
+                    fputs("[CartridgeRuntime] PEER_END received: peer_rid=\(frame.id)\n", stderr)
                     pending.continuation.yield(frame)
                     pending.continuation.finish()
                     pendingPeerRequests.removeObject(forKey: frame.id)
                 } else {
-                    fputs("[PluginRuntime] END for unknown rid=\(frame.id)\n", stderr)
+                    fputs("[CartridgeRuntime] END for unknown rid=\(frame.id)\n", stderr)
                 }
                 pendingPeerRequestsLock.unlock()
 
             case .err:
                 // Error frame from host - forward to pending peer request and finish stream
-                fputs("[PluginRuntime] ERR received: rid=\(frame.id) code=\(frame.errorCode ?? "?") msg=\(frame.errorMessage ?? "?")\n", stderr)
+                fputs("[CartridgeRuntime] ERR received: rid=\(frame.id) code=\(frame.errorCode ?? "?") msg=\(frame.errorMessage ?? "?")\n", stderr)
                 pendingPeerRequestsLock.lock()
                 if let pending = pendingPeerRequests[frame.id] as? PendingPeerRequest {
                     pending.continuation.yield(frame)
@@ -3120,7 +3120,7 @@ public final class PluginRuntime: @unchecked Sendable {
 
             case .cancel:
                 let targetRid = frame.id
-                fputs("[PluginRuntime] Cancel received: rid=\(targetRid) forceKill=\(frame.forceKill ?? false)\n", stderr)
+                fputs("[CartridgeRuntime] Cancel received: rid=\(targetRid) forceKill=\(frame.forceKill ?? false)\n", stderr)
 
                 // Skip if already cancelled
                 if cancelledRequests.contains(targetRid) {
@@ -3138,7 +3138,7 @@ public final class PluginRuntime: @unchecked Sendable {
                     var err = Frame.err(id: targetRid, code: "CANCELLED", message: "Request cancelled while queued")
                     err.routingId = queued.routingId
                     try? outputSender.send(err)
-                    fputs("[PluginRuntime] Cancelled queued request: rid=\(targetRid)\n", stderr)
+                    fputs("[CartridgeRuntime] Cancelled queued request: rid=\(targetRid)\n", stderr)
                     continue
                 }
 
@@ -3174,18 +3174,18 @@ public final class PluginRuntime: @unchecked Sendable {
                     }
                     pendingPeerRequestsLock.unlock()
 
-                    fputs("[PluginRuntime] Cancelled in-flight request (cooperative): rid=\(targetRid)\n", stderr)
+                    fputs("[CartridgeRuntime] Cancelled in-flight request (cooperative): rid=\(targetRid)\n", stderr)
                 } else {
                     pendingIncomingLock.unlock()
                     // Case 3: Unknown — ignore
-                    fputs("[PluginRuntime] Cancel for unknown rid=\(targetRid) — ignoring\n", stderr)
+                    fputs("[CartridgeRuntime] Cancel for unknown rid=\(targetRid) — ignoring\n", stderr)
                 }
 
             case .relayNotify, .relayState:
-                // Relay frame types should NEVER reach the plugin runtime — they are
+                // Relay frame types should NEVER reach the cartridge runtime — they are
                 // intercepted by the relay layer. If one arrives here, it's a
                 // protocol violation.
-                throw PluginRuntimeError.protocolError("Relay frame type \(frame.frameType) must not reach plugin runtime")
+                throw CartridgeRuntimeError.protocolError("Relay frame type \(frame.frameType) must not reach cartridge runtime")
             }
         }
 
@@ -3199,26 +3199,26 @@ public final class PluginRuntime: @unchecked Sendable {
         let theirFrame: Frame
         do {
             guard let f = try reader.read() else {
-                throw PluginRuntimeError.handshakeFailed("Connection closed before HELLO")
+                throw CartridgeRuntimeError.handshakeFailed("Connection closed before HELLO")
             }
             theirFrame = f
         } catch let error as FrameError {
-            throw PluginRuntimeError.handshakeFailed("\(error)")
+            throw CartridgeRuntimeError.handshakeFailed("\(error)")
         }
 
         guard theirFrame.frameType == .hello else {
-            throw PluginRuntimeError.handshakeFailed("Expected HELLO, got \(theirFrame.frameType)")
+            throw CartridgeRuntimeError.handshakeFailed("Expected HELLO, got \(theirFrame.frameType)")
         }
 
         // Protocol v2: All three limit fields are REQUIRED
         guard let theirMaxFrame = theirFrame.helloMaxFrame else {
-            throw PluginRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_frame")
+            throw CartridgeRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_frame")
         }
         guard let theirMaxChunk = theirFrame.helloMaxChunk else {
-            throw PluginRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
+            throw CartridgeRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
         }
         guard let theirMaxReorderBuffer = theirFrame.helloMaxReorderBuffer else {
-            throw PluginRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
+            throw CartridgeRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
         }
 
         // Negotiate minimum of both sides
@@ -3232,12 +3232,12 @@ public final class PluginRuntime: @unchecked Sendable {
         self.limits = negotiatedLimits
 
         // Send our HELLO with negotiated limits AND manifest
-        // The manifest is REQUIRED - this is the ONLY way to communicate plugin capabilities
+        // The manifest is REQUIRED - this is the ONLY way to communicate cartridge capabilities
         let ourHello = Frame.helloWithManifest(limits: negotiatedLimits, manifest: manifestData)
         do {
             try writer.write(ourHello)
         } catch {
-            throw PluginRuntimeError.handshakeFailed("Failed to send HELLO: \(error)")
+            throw CartridgeRuntimeError.handshakeFailed("Failed to send HELLO: \(error)")
         }
 
         // Update reader/writer limits

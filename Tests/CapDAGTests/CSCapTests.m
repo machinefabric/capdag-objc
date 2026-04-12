@@ -697,10 +697,10 @@
                             output:nil
                       metadataJSON:nil];
 
-    // Create manifest similar to what a plugin would have
-    CSCapManifest *pluginStyleManifest = [CSCapManifest manifestWithName:@"PluginComponent"
+    // Create manifest similar to what a cartridge would have
+    CSCapManifest *cartridgeStyleManifest = [CSCapManifest manifestWithName:@"CartridgeComponent"
                                                                                 version:@"0.1.0"
-                                                                            description:@"Plugin-style component"
+                                                                            description:@"Cartridge-style component"
                                                                            caps:@[cap]];
 
     // Create manifest similar to what a provider would have
@@ -710,10 +710,10 @@
                                                                              caps:@[cap]];
 
     // Both should have the same structure
-    XCTAssertNotNil(pluginStyleManifest.name);
-    XCTAssertNotNil(pluginStyleManifest.version);
-    XCTAssertNotNil(pluginStyleManifest.manifestDescription);
-    XCTAssertNotNil(pluginStyleManifest.caps);
+    XCTAssertNotNil(cartridgeStyleManifest.name);
+    XCTAssertNotNil(cartridgeStyleManifest.version);
+    XCTAssertNotNil(cartridgeStyleManifest.manifestDescription);
+    XCTAssertNotNil(cartridgeStyleManifest.caps);
 
     XCTAssertNotNil(providerStyleManifest.name);
     XCTAssertNotNil(providerStyleManifest.version);
@@ -721,8 +721,8 @@
     XCTAssertNotNil(providerStyleManifest.caps);
 
     // Same cap structure
-    XCTAssertEqual(pluginStyleManifest.caps.count, providerStyleManifest.caps.count);
-    XCTAssertEqualObjects([pluginStyleManifest.caps.firstObject urnString],
+    XCTAssertEqual(cartridgeStyleManifest.caps.count, providerStyleManifest.caps.count);
+    XCTAssertEqualObjects([cartridgeStyleManifest.caps.firstObject urnString],
                          [providerStyleManifest.caps.firstObject urnString]);
 }
 

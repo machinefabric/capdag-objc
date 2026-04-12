@@ -21,52 +21,52 @@ import TaggedUrn
 @preconcurrency import SwiftCBOR
 import Foundation
 
-// Test manifest JSON - plugins MUST include manifest in HELLO response (including mandatory CAP_IDENTITY)
+// Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY)
 private let testManifest = """
-{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
+{"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
 """.data(using: .utf8)!
 
 final class CborIntegrationTests: XCTestCase {
 
     /// Helper: create Unix socket pairs for bidirectional communication
-    func createSocketPairs() -> (hostWrite: FileHandle, pluginRead: FileHandle,
-                                   pluginWrite: FileHandle, hostRead: FileHandle) {
+    func createSocketPairs() -> (hostWrite: FileHandle, cartridgeRead: FileHandle,
+                                   cartridgeWrite: FileHandle, hostRead: FileHandle) {
         var hostWritePair: [Int32] = [0, 0]
-        var pluginWritePair: [Int32] = [0, 0]
+        var cartridgeWritePair: [Int32] = [0, 0]
 
         socketpair(AF_UNIX, SOCK_STREAM, 0, &hostWritePair)
-        socketpair(AF_UNIX, SOCK_STREAM, 0, &pluginWritePair)
+        socketpair(AF_UNIX, SOCK_STREAM, 0, &cartridgeWritePair)
 
         let hostWrite = FileHandle(fileDescriptor: hostWritePair[0], closeOnDealloc: true)
-        let pluginRead = FileHandle(fileDescriptor: hostWritePair[1], closeOnDealloc: true)
-        let pluginWrite = FileHandle(fileDescriptor: pluginWritePair[0], closeOnDealloc: true)
-        let hostRead = FileHandle(fileDescriptor: pluginWritePair[1], closeOnDealloc: true)
+        let cartridgeRead = FileHandle(fileDescriptor: hostWritePair[1], closeOnDealloc: true)
+        let cartridgeWrite = FileHandle(fileDescriptor: cartridgeWritePair[0], closeOnDealloc: true)
+        let hostRead = FileHandle(fileDescriptor: cartridgeWritePair[1], closeOnDealloc: true)
 
-        return (hostWrite, pluginRead, pluginWrite, hostRead)
+        return (hostWrite, cartridgeRead, cartridgeWrite, hostRead)
     }
 
     // TEST284: Handshake exchanges HELLO frames, negotiates limits
-    func test284_handshakeHostPlugin() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+    func test284_handshakeHostCartridge() throws {
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        var pluginLimits: Limits?
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        var cartridgeLimits: Limits?
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
-                pluginLimits = limits
+                cartridgeLimits = limits
                 XCTAssert(limits.maxFrame > 0)
                 XCTAssert(limits.maxChunk > 0)
             } catch {
-                XCTFail("Plugin handshake failed: \(error)")
+                XCTFail("Cartridge handshake failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -79,23 +79,23 @@ final class CborIntegrationTests: XCTestCase {
 
         XCTAssertEqual(receivedManifest, testManifest)
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
-        XCTAssertEqual(hostLimits.maxFrame, pluginLimits!.maxFrame)
-        XCTAssertEqual(hostLimits.maxChunk, pluginLimits!.maxChunk)
+        XCTAssertEqual(hostLimits.maxFrame, cartridgeLimits!.maxFrame)
+        XCTAssertEqual(hostLimits.maxChunk, cartridgeLimits!.maxChunk)
     }
 
     // TEST285: Simple request-response flow (REQ → END with payload)
     func test285_requestResponseSimple() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -109,9 +109,9 @@ final class CborIntegrationTests: XCTestCase {
 
                 try writer.write(Frame.end(id: frame.id, finalPayload: "hello back".data(using: .utf8)))
             } catch {
-                XCTFail("Plugin thread failed: \(error)")
+                XCTFail("Cartridge thread failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -132,20 +132,20 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(response.frameType, .end)
         XCTAssertEqual(response.payload, "hello back".data(using: .utf8))
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
     }
 
     // TEST286: Streaming response with multiple CHUNK frames
     func test286_streamingChunks() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -165,9 +165,9 @@ final class CborIntegrationTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: requestId, streamId: sid, chunkCount: UInt64(chunks.count)))
                 try writer.write(Frame.end(id: requestId, finalPayload: nil))
             } catch {
-                XCTFail("Plugin thread failed: \(error)")
+                XCTFail("Cartridge thread failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -198,20 +198,20 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(chunks[1], Data("chunk2".utf8))
         XCTAssertEqual(chunks[2], Data("chunk3".utf8))
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
     }
 
     // TEST287: Host-initiated heartbeat handling
     func test287_heartbeatFromHost() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -223,9 +223,9 @@ final class CborIntegrationTests: XCTestCase {
 
                 try writer.write(Frame.heartbeat(id: frame.id))
             } catch {
-                XCTFail("Plugin thread failed: \(error)")
+                XCTFail("Cartridge thread failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -244,27 +244,27 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(response.frameType, .heartbeat)
         XCTAssertEqual(response.id, heartbeatId)
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
     }
 
     // TEST290: Limit negotiation picks minimum values
     func test290_limitsNegotiation() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        var pluginLimits: Limits?
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        var cartridgeLimits: Limits?
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
-                pluginLimits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
+                cartridgeLimits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
             } catch {
-                XCTFail("Plugin handshake failed: \(error)")
+                XCTFail("Cartridge handshake failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -274,27 +274,27 @@ final class CborIntegrationTests: XCTestCase {
         let result = try performHandshakeWithManifest(reader: reader, writer: writer)
         let hostLimits = result.limits
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
-        XCTAssertEqual(hostLimits.maxFrame, pluginLimits!.maxFrame)
-        XCTAssertEqual(hostLimits.maxChunk, pluginLimits!.maxChunk)
+        XCTAssertEqual(hostLimits.maxFrame, cartridgeLimits!.maxFrame)
+        XCTAssertEqual(hostLimits.maxChunk, cartridgeLimits!.maxChunk)
         XCTAssert(hostLimits.maxFrame > 0)
         XCTAssert(hostLimits.maxChunk > 0)
     }
 
     // TEST291: Binary payload roundtrip (all 256 byte values)
     func test291_binaryPayloadRoundtrip() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         let binaryData = Data((0...255).map { UInt8($0) })
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -311,9 +311,9 @@ final class CborIntegrationTests: XCTestCase {
 
                 try writer.write(Frame.end(id: frame.id, finalPayload: payload))
             } catch {
-                XCTFail("Plugin thread failed: \(error)")
+                XCTFail("Cartridge thread failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -338,21 +338,21 @@ final class CborIntegrationTests: XCTestCase {
             XCTAssertEqual(byte, UInt8(i), "Response byte mismatch at position \(i)")
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
     }
 
     // TEST292: Sequential requests get distinct MessageIds
     func test292_messageIdUniqueness() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         var receivedIds: [MessageId] = []
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -365,9 +365,9 @@ final class CborIntegrationTests: XCTestCase {
                     try writer.write(Frame.end(id: frame.id, finalPayload: Data("ok".utf8)))
                 }
             } catch {
-                XCTFail("Plugin thread failed: \(error)")
+                XCTFail("Cartridge thread failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -384,7 +384,7 @@ final class CborIntegrationTests: XCTestCase {
             _ = try reader.read()
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(receivedIds.count, 3)
         for i in 0..<receivedIds.count {
@@ -396,15 +396,15 @@ final class CborIntegrationTests: XCTestCase {
 
     // TEST299: Empty payload request/response roundtrip
     func test299_emptyPayloadRoundtrip() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin thread
+        // Cartridge thread
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -416,9 +416,9 @@ final class CborIntegrationTests: XCTestCase {
 
                 try writer.write(Frame.end(id: frame.id, finalPayload: Data()))
             } catch {
-                XCTFail("Plugin thread failed: \(error)")
+                XCTFail("Cartridge thread failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -438,7 +438,7 @@ final class CborIntegrationTests: XCTestCase {
         }
         XCTAssert(response.payload == nil || response.payload!.isEmpty)
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
     }
 
     // NOTE: TEST461 and TEST472 are tested in FlowOrderingTests.swift
@@ -447,28 +447,28 @@ final class CborIntegrationTests: XCTestCase {
 
     // TEST230: sync_handshake exchanges HELLO frames and negotiates minimum limits
     func test230_syncHandshake() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
-        var pluginLimits: Limits?
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
+        var cartridgeLimits: Limits?
 
-        // Plugin thread with smaller limits
+        // Cartridge thread with smaller limits
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
-                // Plugin has smaller limits
+                // Cartridge has smaller limits
                 let smallLimits = Limits(maxFrame: 1_000_000, maxChunk: 50_000, maxReorderBuffer: 16)
                 reader.setLimits(smallLimits)
                 writer.setLimits(smallLimits)
 
                 let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
-                pluginLimits = limits
+                cartridgeLimits = limits
             } catch {
-                XCTFail("Plugin handshake failed: \(error)")
+                XCTFail("Cartridge handshake failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side with default (larger) limits
@@ -477,32 +477,32 @@ final class CborIntegrationTests: XCTestCase {
 
         let result = try performHandshakeWithManifest(reader: reader, writer: writer)
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         // Both sides should negotiate to minimum
         XCTAssertEqual(result.limits.maxFrame, 1_000_000, "maxFrame should be minimum")
         XCTAssertEqual(result.limits.maxChunk, 50_000, "maxChunk should be minimum")
         XCTAssertEqual(result.limits.maxReorderBuffer, 16, "maxReorderBuffer should be minimum")
 
-        XCTAssertNotNil(pluginLimits)
-        XCTAssertEqual(pluginLimits!.maxFrame, 1_000_000)
-        XCTAssertEqual(pluginLimits!.maxChunk, 50_000)
-        XCTAssertEqual(pluginLimits!.maxReorderBuffer, 16)
+        XCTAssertNotNil(cartridgeLimits)
+        XCTAssertEqual(cartridgeLimits!.maxFrame, 1_000_000)
+        XCTAssertEqual(cartridgeLimits!.maxChunk, 50_000)
+        XCTAssertEqual(cartridgeLimits!.maxReorderBuffer, 16)
     }
 
     // MARK: - Identity Verification Tests (TEST481-483)
 
     // TEST481: verify_identity succeeds with standard identity echo handler
     func test481_verifyIdentitySucceeds() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin that echoes identity requests
+        // Cartridge that echoes identity requests
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -525,9 +525,9 @@ final class CborIntegrationTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: req.id, streamId: streamId, chunkCount: req.payload?.isEmpty == false ? 1 : 0))
                 try writer.write(Frame.end(id: req.id))
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side - perform handshake and send identity verification
@@ -571,7 +571,7 @@ final class CborIntegrationTests: XCTestCase {
             }
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertTrue(gotStreamStart, "Should receive STREAM_START")
         XCTAssertTrue(gotStreamEnd, "Should receive STREAM_END")
@@ -579,17 +579,17 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(receivedPayload, testPayload, "Identity should echo payload unchanged")
     }
 
-    // TEST482: verify_identity fails when plugin returns ERR
+    // TEST482: verify_identity fails when cartridge returns ERR
     func test482_verifyIdentityFailsOnErr() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin that returns ERR for identity requests
+        // Cartridge that returns ERR for identity requests
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -602,9 +602,9 @@ final class CborIntegrationTests: XCTestCase {
                 // Return error instead of echoing
                 try writer.write(Frame.err(id: req.id, code: "IDENTITY_FAILED", message: "Identity verification rejected"))
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -623,7 +623,7 @@ final class CborIntegrationTests: XCTestCase {
             return
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(response.frameType, .err, "Should receive ERR frame")
         XCTAssertEqual(response.errorCode, "IDENTITY_FAILED")
@@ -631,18 +631,18 @@ final class CborIntegrationTests: XCTestCase {
 
     // MARK: - Full Path Integration Tests (TEST896-907)
 
-    // TEST896: Full path: engine REQ → runtime → plugin → response back through relay
-    func test896_fullPathEngineReqToPluginResponse() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+    // TEST896: Full path: engine REQ → runtime → cartridge → response back through relay
+    func test896_fullPathEngineReqToCartridgeResponse() throws {
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
         var responsePayload: Data?
 
-        // Plugin that processes REQ and sends response
+        // Cartridge that processes REQ and sends response
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -663,9 +663,9 @@ final class CborIntegrationTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: req.id, streamId: streamId, chunkCount: 1))
                 try writer.write(Frame.end(id: req.id))
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host/Engine side
@@ -693,31 +693,31 @@ final class CborIntegrationTests: XCTestCase {
             }
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(String(data: accumulated, encoding: .utf8), "full-path-response")
     }
 
-    // TEST897: Plugin ERR frame flows back to engine through relay
-    func test897_pluginErrorFlowsToEngine() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+    // TEST897: Cartridge ERR frame flows back to engine through relay
+    func test897_cartridgeErrorFlowsToEngine() throws {
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin that returns ERR
+        // Cartridge that returns ERR
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
                 guard let req = try reader.read() else { return }
-                try writer.write(Frame.err(id: req.id, code: "PLUGIN_ERROR", message: "Something went wrong"))
+                try writer.write(Frame.err(id: req.id, code: "CARTRIDGE_ERROR", message: "Something went wrong"))
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         let reader = FrameReader(handle: hostRead)
@@ -733,18 +733,18 @@ final class CborIntegrationTests: XCTestCase {
             return
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(response.frameType, .err, "Should receive ERR frame")
-        XCTAssertEqual(response.errorCode, "PLUGIN_ERROR")
+        XCTAssertEqual(response.errorCode, "CARTRIDGE_ERROR")
         XCTAssertEqual(response.errorMessage, "Something went wrong")
     }
 
     // TEST898: Binary data integrity through full relay path
     func test898_binaryIntegrityThroughRelay() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
         // Create binary test data with all 256 byte values
         var testData = Data()
@@ -753,11 +753,11 @@ final class CborIntegrationTests: XCTestCase {
         }
         testData.append(255)
 
-        // Plugin that echoes binary data
+        // Cartridge that echoes binary data
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -772,9 +772,9 @@ final class CborIntegrationTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: req.id, streamId: streamId, chunkCount: 1))
                 try writer.write(Frame.end(id: req.id))
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         let reader = FrameReader(handle: hostRead)
@@ -792,7 +792,7 @@ final class CborIntegrationTests: XCTestCase {
             if frame.frameType == .end { break }
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(received, testData, "Binary data must be preserved through full path")
         XCTAssertEqual(received.count, 256)
@@ -800,15 +800,15 @@ final class CborIntegrationTests: XCTestCase {
 
     // TEST899: Streaming chunks flow through relay without accumulation
     func test899_streamingChunksThroughRelay() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin that sends multiple chunks
+        // Cartridge that sends multiple chunks
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -827,9 +827,9 @@ final class CborIntegrationTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: req.id, streamId: streamId, chunkCount: 5))
                 try writer.write(Frame.end(id: req.id))
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         let reader = FrameReader(handle: hostRead)
@@ -849,26 +849,26 @@ final class CborIntegrationTests: XCTestCase {
             if frame.frameType == .end { break }
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(chunkCount, 5, "All 5 chunks must flow through")
         XCTAssertTrue(gotStreamEnd, "STREAM_END must be received")
     }
 
-    // TEST900: Two plugins routed independently by cap_urn
-    func test900_twoPluginsRoutedIndependently() throws {
-        // This test validates that when multiple plugins are registered,
-        // requests are routed to the correct plugin based on cap_urn
-        // For simplicity, we test the routing logic without actual multiple plugins
+    // TEST900: Two cartridges routed independently by cap_urn
+    func test900_twoCartridgesRoutedIndependently() throws {
+        // This test validates that when multiple cartridges are registered,
+        // requests are routed to the correct cartridge based on cap_urn
+        // For simplicity, we test the routing logic without actual multiple cartridges
 
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin that handles requests
+        // Cartridge that handles requests
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
@@ -884,9 +884,9 @@ final class CborIntegrationTests: XCTestCase {
                     try writer.write(Frame.end(id: req.id))
                 }
             } catch {
-                XCTFail("Plugin failed: \(error)")
+                XCTFail("Cartridge failed: \(error)")
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         let reader = FrameReader(handle: hostRead)
@@ -916,7 +916,7 @@ final class CborIntegrationTests: XCTestCase {
             if frame.frameType == .end { break }
         }
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertEqual(String(data: data1, encoding: .utf8), "response-for-cap:op=op1")
         XCTAssertEqual(String(data: data2, encoding: .utf8), "response-for-cap:op=op2")
@@ -924,24 +924,24 @@ final class CborIntegrationTests: XCTestCase {
 
     // TEST483: verify_identity fails when connection closes
     func test483_verifyIdentityFailsOnClose() throws {
-        let (hostWrite, pluginRead, pluginWrite, hostRead) = createSocketPairs()
+        let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
-        let pluginSemaphore = DispatchSemaphore(value: 0)
+        let cartridgeSemaphore = DispatchSemaphore(value: 0)
 
-        // Plugin that closes connection after handshake
+        // Cartridge that closes connection after handshake
         DispatchQueue.global().async {
             do {
-                let reader = FrameReader(handle: pluginRead)
-                let writer = FrameWriter(handle: pluginWrite)
+                let reader = FrameReader(handle: cartridgeRead)
+                let writer = FrameWriter(handle: cartridgeWrite)
 
                 _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest)
 
                 // Close connection without responding to identity
-                pluginWrite.closeFile()
+                cartridgeWrite.closeFile()
             } catch {
                 // Expected - connection closes
             }
-            pluginSemaphore.signal()
+            cartridgeSemaphore.signal()
         }
 
         // Host side
@@ -961,7 +961,7 @@ final class CborIntegrationTests: XCTestCase {
         // Read response - should be nil (connection closed)
         let response = try reader.read()
 
-        pluginSemaphore.wait()
+        cartridgeSemaphore.wait()
 
         XCTAssertNil(response, "Should get nil when connection closes")
     }

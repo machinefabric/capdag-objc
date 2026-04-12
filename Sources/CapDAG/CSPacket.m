@@ -1,6 +1,6 @@
 //
 //  CSPacket.m
-//  Binary Packet Framing for Plugin Communication
+//  Binary Packet Framing for Cartridge Communication
 //
 
 #import "CSPacket.h"

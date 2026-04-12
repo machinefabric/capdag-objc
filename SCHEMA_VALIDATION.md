@@ -143,9 +143,9 @@ BOOL inputValid = [CSInputValidator validateArguments:@[userData] cap:cap error:
 BOOL outputValid = [CSOutputValidator validateOutput:resultData cap:cap error:&error];
 ```
 
-## Plugin SDK Integration
+## Cartridge SDK Integration
 
-The MachineFabric Plugin SDK provides convenience methods for common document processing schemas:
+The MachineFabric Cartridge SDK provides convenience methods for common document processing schemas:
 
 ```objc
 // Standard document metadata schema
@@ -158,7 +158,7 @@ CSCapArgument *metadataArg = [CSCapArgument documentMetadataArgumentWithName:@"m
 CSCapOutput *pagesOutput = [CSCapOutput disboundPagesOutputWithSchema:[MachFabSchemaValidationHelper standardDisboundPagesSchema]
                                                           description:@"Extracted file chips"];
 
-// Validate plugin manifest schemas
+// Validate cartridge manifest schemas
 NSError *error = nil;
 BOOL manifestValid = [MachFabSchemaValidationHelper validatePluginManifest:manifest error:&error];
 ```

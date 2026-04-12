@@ -1,6 +1,6 @@
 //
-//  InProcessPluginHostTests.swift
-//  Tests for InProcessPluginHost
+//  InProcessCartridgeHostTests.swift
+//  Tests for InProcessCartridgeHost
 //
 //  Mirrors Rust tests from capdag/src/bifaci/in_process_host.rs exactly
 //  Tests numbered TEST654-TEST660
@@ -13,15 +13,15 @@ import SwiftCBOR
 
 private struct RelayNotifyCapabilitiesPayload: Decodable {
     let caps: [String]
-    let installedPlugins: [InstalledPluginIdentity]
+    let installedCartridges: [InstalledCartridgeIdentity]
 
     enum CodingKeys: String, CodingKey {
         case caps
-        case installedPlugins = "installed_plugins"
+        case installedCartridges = "installed_cartridges"
     }
 }
 
-final class InProcessPluginHostTests: XCTestCase {
+final class InProcessCartridgeHostTests: XCTestCase {
 
     // MARK: - Test Helpers
 
@@ -110,7 +110,7 @@ final class InProcessPluginHostTests: XCTestCase {
         }
     }
 
-    // MARK: - TEST654: InProcessPluginHost routes REQ to matching handler and returns response
+    // MARK: - TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response
 
     func test654_routesReqToHandler() throws {
         let capUrn = "cap:in=\"media:text\";op=echo;out=\"media:text\""
@@ -119,7 +119,7 @@ final class InProcessPluginHostTests: XCTestCase {
             ("echo", [cap], EchoHandler())
         ]
 
-        let host = InProcessPluginHost(handlers: handlers)
+        let host = InProcessCartridgeHost(handlers: handlers)
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -140,7 +140,7 @@ final class InProcessPluginHostTests: XCTestCase {
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         XCTAssertTrue(payload.caps.count >= 2) // identity + echo cap
         XCTAssertEqual(payload.caps[0], CSCapIdentity)
-        XCTAssertEqual(payload.installedPlugins, [])
+        XCTAssertEqual(payload.installedCartridges, [])
 
         // Send a REQ + STREAM_START + CHUNK (CBOR-encoded) + STREAM_END + END
         let rid = MessageId.newUUID()
@@ -186,10 +186,10 @@ final class InProcessPluginHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST655: InProcessPluginHost handles identity verification (echo nonce)
+    // MARK: - TEST655: InProcessCartridgeHost handles identity verification (echo nonce)
 
     func test655_identityVerification() throws {
-        let host = InProcessPluginHost(handlers: [])
+        let host = InProcessCartridgeHost(handlers: [])
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -245,10 +245,10 @@ final class InProcessPluginHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST656: InProcessPluginHost returns NO_HANDLER for unregistered cap
+    // MARK: - TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
 
     func test656_noHandlerReturnsErr() throws {
-        let host = InProcessPluginHost(handlers: [])
+        let host = InProcessCartridgeHost(handlers: [])
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -285,12 +285,12 @@ final class InProcessPluginHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST657: InProcessPluginHost manifest includes identity cap and handler caps
+    // MARK: - TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps
 
     func test657_manifestIncludesAllCaps() throws {
         let capUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
         let cap = makeTestCap(capUrn)
-        let host = InProcessPluginHost(handlers: [
+        let host = InProcessCartridgeHost(handlers: [
             ("thumb", [cap], EchoHandler())
         ])
 
@@ -298,13 +298,13 @@ final class InProcessPluginHostTests: XCTestCase {
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         XCTAssertEqual(payload.caps[0], CSCapIdentity)
         XCTAssertTrue(payload.caps.contains { $0.contains("thumbnail") })
-        XCTAssertEqual(payload.installedPlugins, [])
+        XCTAssertEqual(payload.installedCartridges, [])
     }
 
-    // MARK: - TEST658: InProcessPluginHost handles heartbeat by echoing same ID
+    // MARK: - TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID
 
     func test658_heartbeatResponse() throws {
-        let host = InProcessPluginHost(handlers: [])
+        let host = InProcessCartridgeHost(handlers: [])
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -333,12 +333,12 @@ final class InProcessPluginHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST659: InProcessPluginHost handler error returns ERR frame
+    // MARK: - TEST659: InProcessCartridgeHost handler error returns ERR frame
 
     func test659_handlerErrorReturnsErrFrame() throws {
         let capUrn = "cap:in=\"media:void\";op=fail;out=\"media:void\""
         let cap = makeTestCap(capUrn)
-        let host = InProcessPluginHost(handlers: [
+        let host = InProcessCartridgeHost(handlers: [
             ("fail", [cap], FailHandler())
         ])
 
@@ -377,7 +377,7 @@ final class InProcessPluginHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST660: InProcessPluginHost closest-specificity routing prefers specific over generic
+    // MARK: - TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over generic
 
     func test660_closestSpecificityRouting() throws {
         let specificUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
@@ -391,7 +391,7 @@ final class InProcessPluginHostTests: XCTestCase {
             ("specific", [specificCap], TaggedHandler(tag: "specific")),
         ]
 
-        let host = InProcessPluginHost(handlers: handlers)
+        let host = InProcessCartridgeHost(handlers: handlers)
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()

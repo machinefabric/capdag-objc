@@ -3,7 +3,7 @@
 //  CapDAG
 //
 //  Represents the source for stdin data - either raw bytes or a file reference.
-//  For plugins (via gRPC/XPC), using file references avoids size limits
+//  For cartridges (via gRPC/XPC), using file references avoids size limits
 //  by letting the receiving side read the file locally.
 //
 
@@ -17,7 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
 typedef NS_ENUM(NSInteger, CSStdinSourceKind) {
     /// Raw byte data for stdin
     CSStdinSourceKindData,
-    /// File reference for stdin - used for plugins to read files locally
+    /// File reference for stdin - used for cartridges to read files locally
     CSStdinSourceKindFileReference
 };
 

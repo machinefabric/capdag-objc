@@ -79,7 +79,7 @@ final class FlowOrderingTests: XCTestCase {
         let rid = MessageId.newUUID()
         let xid = MessageId.newUUID()
 
-        // Flow 1: (rid, nil) — plugin peer invoke
+        // Flow 1: (rid, nil) — cartridge peer invoke
         var f0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
         var f1 = Frame.end(id: rid, finalPayload: nil)
         assigner.assign(&f0)
@@ -455,16 +455,16 @@ final class FlowOrderingTests: XCTestCase {
     // TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides)
     @available(macOS 10.15.4, iOS 13.4, *)
     func test472_handshakeNegotiatesReorderBuffer() throws {
-        // Simulate plugin sending HELLO with max_reorder_buffer=32
-        let pluginLimits = Limits(maxFrame: DEFAULT_MAX_FRAME, maxChunk: DEFAULT_MAX_CHUNK, maxReorderBuffer: 32)
+        // Simulate cartridge sending HELLO with max_reorder_buffer=32
+        let cartridgeLimits = Limits(maxFrame: DEFAULT_MAX_FRAME, maxChunk: DEFAULT_MAX_CHUNK, maxReorderBuffer: 32)
         let manifestJSON = "{\"name\":\"test\",\"version\":\"1.0\",\"caps\":[]}"
         let manifestData = manifestJSON.data(using: .utf8)!
 
-        // Write plugin's HELLO with manifest to a pipe
+        // Write cartridge's HELLO with manifest to a pipe
         let pipe1 = Pipe()
-        let pluginHello = Frame.helloWithManifest(limits: pluginLimits, manifest: manifestData)
+        let cartridgeHello = Frame.helloWithManifest(limits: cartridgeLimits, manifest: manifestData)
         var buffer1 = Data()
-        try writeFrame(pluginHello, to: pipe1.fileHandleForWriting, limits: pluginLimits, buffer: &buffer1)
+        try writeFrame(cartridgeHello, to: pipe1.fileHandleForWriting, limits: cartridgeLimits, buffer: &buffer1)
         if !buffer1.isEmpty {
             try pipe1.fileHandleForWriting.write(contentsOf: buffer1)
         }
@@ -481,7 +481,7 @@ final class FlowOrderingTests: XCTestCase {
         }
         pipe2.fileHandleForWriting.closeFile()
 
-        // Host reads plugin's HELLO
+        // Host reads cartridge's HELLO
         let theirFrame = try readFrame(from: pipe1.fileHandleForReading, limits: Limits())
         XCTAssertNotNil(theirFrame)
         let theirReorder = theirFrame!.helloMaxReorderBuffer!
@@ -489,7 +489,7 @@ final class FlowOrderingTests: XCTestCase {
         let negotiated = min(DEFAULT_MAX_REORDER_BUFFER, theirReorder)
         XCTAssertEqual(negotiated, 32, "Must pick minimum (32 < 64)")
 
-        // Plugin reads host's HELLO
+        // Cartridge reads host's HELLO
         let hostFrame = try readFrame(from: pipe2.fileHandleForReading, limits: Limits())
         XCTAssertNotNil(hostFrame)
         let hostReorder = hostFrame!.helloMaxReorderBuffer!
