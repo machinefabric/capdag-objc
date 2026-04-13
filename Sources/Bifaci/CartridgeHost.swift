@@ -36,29 +36,57 @@ import os
 @preconcurrency import SwiftCBOR
 import CapDAG
 
-private func parseInstalledCartridgeIdentity(_ name: String) -> (id: String, version: String)? {
-    let lowercase = name.lowercased()
-    guard let dashIndex = lowercase.lastIndex(of: "-") else {
-        return nil
-    }
-    let candidate = String(lowercase[..<dashIndex])
-    let suffixStart = lowercase.index(after: dashIndex)
-    let suffix = String(lowercase[suffixStart...])
-    guard !candidate.isEmpty,
-          !suffix.isEmpty,
-          suffix.allSatisfy({ $0.isNumber || $0 == "." }),
-          suffix.contains(where: { $0.isNumber }) else {
-        return nil
-    }
-    return (candidate, suffix)
-}
-
 private func sha256Hex(for data: Data) -> String {
     var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
     data.withUnsafeBytes { bytes in
         _ = CC_SHA256(bytes.baseAddress, CC_LONG(data.count), &digest)
     }
     return digest.map { String(format: "%02x", $0) }.joined()
+}
+
+/// Compute a deterministic SHA256 hash of a cartridge directory tree.
+/// Walks all files recursively, sorts by relative path, hashes (path + content).
+/// Excludes cartridge.json (install-time metadata that varies between installs).
+private func computeCartridgeDirectoryHash(atPath dirPath: String) -> String? {
+    let fileManager = FileManager.default
+    guard let enumerator = fileManager.enumerator(atPath: dirPath) else { return nil }
+
+    var files: [(relativePath: String, fullPath: String)] = []
+
+    while let relativePath = enumerator.nextObject() as? String {
+        let fullPath = (dirPath as NSString).appendingPathComponent(relativePath)
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir),
+              !isDir.boolValue else {
+            continue
+        }
+        if relativePath == "cartridge.json" {
+            continue
+        }
+        files.append((relativePath: relativePath, fullPath: fullPath))
+    }
+
+    files.sort { $0.relativePath < $1.relativePath }
+
+    var context = CC_SHA256_CTX()
+    CC_SHA256_Init(&context)
+
+    for file in files {
+        if let pathData = file.relativePath.data(using: .utf8) {
+            pathData.withUnsafeBytes { bytes in
+                CC_SHA256_Update(&context, bytes.baseAddress, CC_LONG(pathData.count))
+            }
+        }
+        guard let data = fileManager.contents(atPath: file.fullPath) else { return nil }
+        data.withUnsafeBytes { bytes in
+            CC_SHA256_Update(&context, bytes.baseAddress, CC_LONG(data.count))
+        }
+    }
+
+    var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+    CC_SHA256_Final(&hash, &context)
+
+    return hash.map { String(format: "%02x", $0) }.joined()
 }
 
 // MARK: - Activity Timeout Constants
@@ -219,7 +247,11 @@ enum ShutdownReason {
 }
 
 private class ManagedCartridge {
+    /// Absolute path to the entry point binary (resolved from cartridge.json).
     let path: String
+    /// Absolute path to the version directory containing cartridge.json.
+    /// This is the anchor — the entry point is relative to this directory.
+    let cartridgeDir: String
     var pid: pid_t?
     var stdinHandle: FileHandle?
     var stdoutHandle: FileHandle?
@@ -248,8 +280,9 @@ private class ManagedCartridge {
     /// Resident set size in MB (self-reported via heartbeat response meta).
     var memoryRssMb: UInt64
 
-    init(path: String, knownCaps: [String]) {
+    init(path: String, cartridgeDir: String, knownCaps: [String]) {
         self.path = path
+        self.cartridgeDir = cartridgeDir
         self.manifest = Data()
         self.limits = Limits()
         self.caps = []
@@ -264,27 +297,31 @@ private class ManagedCartridge {
     }
 
     func installedCartridgeIdentity() -> InstalledCartridgeIdentity? {
-        let url = URL(fileURLWithPath: path)
-        let stem = url.deletingPathExtension().lastPathComponent
-        guard let parsed = parseInstalledCartridgeIdentity(stem) else {
+        guard !cartridgeDir.isEmpty else { return nil }
+
+        // Read cartridge.json from the version directory (the anchor)
+        let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
+        guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = json["name"] as? String,
+              let version = json["version"] as? String else {
             return nil
         }
-        let binaryURL = URL(fileURLWithPath: path)
-        let binaryData: Data
-        do {
-            binaryData = try Data(contentsOf: binaryURL)
-        } catch {
-            fatalError("Installed cartridge binary must remain readable at \(path): \(error)")
+
+        // Hash the directory tree (excluding cartridge.json)
+        guard let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) else {
+            fatalError("Installed cartridge directory must remain readable at \(cartridgeDir)")
         }
+
         return InstalledCartridgeIdentity(
-            id: parsed.id,
-            version: parsed.version,
-            sha256: sha256Hex(for: binaryData)
+            id: name.lowercased(),
+            version: version,
+            sha256: sha256
         )
     }
 
     static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedCartridge {
-        let cartridge = ManagedCartridge(path: "", knownCaps: caps)
+        let cartridge = ManagedCartridge(path: "", cartridgeDir: "", knownCaps: caps)
         cartridge.manifest = manifest
         cartridge.limits = limits
         cartridge.caps = caps
@@ -402,17 +439,18 @@ public final class CartridgeHost: @unchecked Sendable {
 
     // MARK: - Cartridge Management
 
-    /// Register a cartridge binary for on-demand spawning.
+    /// Register a cartridge for on-demand spawning.
     ///
     /// The cartridge is NOT spawned immediately. It will be spawned on demand when
     /// a REQ arrives for one of its known caps.
     ///
     /// - Parameters:
-    ///   - path: Path to cartridge binary
+    ///   - path: Path to the entry point binary (resolved from cartridge.json)
+    ///   - cartridgeDir: Path to the version directory containing cartridge.json
     ///   - knownCaps: Cap URNs this cartridge is expected to handle
-    public func registerCartridge(path: String, knownCaps: [String]) {
+    public func registerCartridge(path: String, cartridgeDir: String, knownCaps: [String]) {
         stateLock.lock()
-        let cartridge = ManagedCartridge(path: path, knownCaps: knownCaps)
+        let cartridge = ManagedCartridge(path: path, cartridgeDir: cartridgeDir, knownCaps: knownCaps)
         let idx = cartridges.count
         cartridges.append(cartridge)
         for cap in knownCaps {
@@ -437,7 +475,7 @@ public final class CartridgeHost: @unchecked Sendable {
     /// rescans (quoting and tag order may differ), but the binary path is.
     ///
     /// - Parameter current: The ground-truth list of `(binaryPath, capURNs)` from disk.
-    public func syncRegistrations(_ current: [(path: String, knownCaps: [String])]) {
+    public func syncRegistrations(_ current: [(path: String, cartridgeDir: String, knownCaps: [String])]) {
         stateLock.lock()
         defer {
             rebuildCapabilities()
@@ -458,14 +496,12 @@ public final class CartridgeHost: @unchecked Sendable {
         // Walk existing cartridges and reconcile.
         for cartridge in cartridges {
             if let currentIdx = currentByPath[cartridge.path] {
-                // Same binary path still on disk — keep it.
+                // Same entry point path still on disk — keep it.
                 matchedCurrentIndices.insert(currentIdx)
                 let entry = current[currentIdx]
                 // Update knownCaps in case they changed (harmless if identical).
                 cartridge.knownCaps = entry.knownCaps
                 // Clear helloFailed so the cartridge can be respawned on demand.
-                // A previous syncRegistrations (with broken cap-set matching) may
-                // have marked it helloFailed even though the binary is fine.
                 cartridge.helloFailed = false
             } else {
                 // Cartridge path no longer on disk — removed or replaced by new version.
@@ -485,7 +521,7 @@ public final class CartridgeHost: @unchecked Sendable {
 
         // Append genuinely new cartridges (path not in host).
         for (i, entry) in current.enumerated() where !matchedCurrentIndices.contains(i) {
-            let cartridge = ManagedCartridge(path: entry.path, knownCaps: entry.knownCaps)
+            let cartridge = ManagedCartridge(path: entry.path, cartridgeDir: entry.cartridgeDir, knownCaps: entry.knownCaps)
             cartridges.append(cartridge)
         }
 

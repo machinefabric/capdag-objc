@@ -525,7 +525,7 @@ let toHostPipe = Pipe()
 let fromHostPipe = Pipe()
 
 let host = CartridgeHost()
-host.registerCartridge(path: cartridgePath, knownCaps: [memoryHogCapUrn])
+host.registerCartridge(path: cartridgePath, cartridgeDir: "", knownCaps: [memoryHogCapUrn])
 
 let hostThread = Thread {
     do {
