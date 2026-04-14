@@ -2705,7 +2705,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         var requestQueue: [QueuedRequest] = []
         var runningHandlerCount = 0
         var cancelledRequests = Set<MessageId>()
-        var cancelledRoutingIds: [MessageId: MessageId?] = [:]
+        var handlerRoutingIds: [MessageId: MessageId?] = [:]
 
         // Event queue: both incoming frames and handler-done signals arrive here.
         // This unblocks the main loop when a handler finishes even if no frames
@@ -2850,6 +2850,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     maxChunk: self.limits.maxChunk,
                     eventQueue: eventQueue
                 )
+                handlerRoutingIds[queued.requestId] = queued.routingId
                 runningHandlerCount += 1
             }
 
@@ -2861,14 +2862,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
             switch event {
             case .handlerDone(let rid):
                 runningHandlerCount -= 1
-                // If this handler was cancelled, send ERR "CANCELLED" now
-                if cancelledRequests.contains(rid) {
-                    cancelledRequests.remove(rid)
-                    let routingId = cancelledRoutingIds.removeValue(forKey: rid) ?? nil
+                if cancelledRequests.remove(rid) != nil {
+                    let routingId = handlerRoutingIds.removeValue(forKey: rid) ?? nil
                     var err = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
                     err.routingId = routingId
                     try? outputSender.send(err)
                     fputs("[CartridgeRuntime] Cancelled handler finished, sent ERR: rid=\(rid)\n", stderr)
+                } else {
+                    handlerRoutingIds.removeValue(forKey: rid)
                 }
                 continue
             case .frame(let f):
@@ -2981,6 +2982,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         maxChunk: self.limits.maxChunk,
                         eventQueue: eventQueue
                     )
+                    handlerRoutingIds[requestId] = routingId
                     runningHandlerCount += 1
                 }
                 continue
@@ -3149,11 +3151,6 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     // Finishing the continuation ends the handler's frame iterator → handler exits
                     pending.continuation.finish()
                     cancelledRequests.insert(targetRid)
-                    // Store routing ID to stamp on ERR when handlerDone arrives
-                    // Look it up from the QueuedRequest or the REQ frame's routingId
-                    // Since pendingIncoming doesn't store routingId, we check if there's
-                    // a way — actually, we need to track it. Use frame.routingId from Cancel.
-                    cancelledRoutingIds[targetRid] = frame.routingId
 
                     // Cancel peer calls originating from this request
                     pendingPeerRequestsLock.lock()

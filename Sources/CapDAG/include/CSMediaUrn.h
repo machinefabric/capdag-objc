@@ -125,6 +125,14 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn is_json(&self) -> bool
 - (BOOL)isJson;
 
+/// Check if this represents YAML representation (yaml marker tag present).
+/// Mirrors Rust: pub fn is_yaml(&self) -> bool
+- (BOOL)isYaml;
+
+/// Check if this represents CSV representation (csv marker tag present).
+/// Mirrors Rust: pub fn is_csv(&self) -> bool
+- (BOOL)isCsv;
+
 /// Check if this represents text data (textable marker tag present).
 /// Mirrors Rust: pub fn is_text(&self) -> bool
 - (BOOL)isText;

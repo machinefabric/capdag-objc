@@ -151,7 +151,7 @@
     // Without record marker
     XCTAssertFalse([[CSMediaUrn fromString:@"media:textable" error:&e] isRecord]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isRecord]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringArray error:&e] isRecord]);
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isRecord]);
 }
 
 // TEST063: is_scalar
@@ -164,16 +164,16 @@
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaObject error:&e] isScalar]);
     XCTAssertTrue([[CSMediaUrn fromString:@"media:textable" error:&e] isScalar]);
     // With list marker
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringArray error:&e] isScalar]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectArray error:&e] isScalar]);
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isScalar]);
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectList error:&e] isScalar]);
 }
 
 // TEST064: is_list
 - (void)test064_is_list {
     NSError *e;
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaStringArray error:&e] isList]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaIntegerArray error:&e] isList]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaObjectArray error:&e] isList]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaStringList error:&e] isList]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaIntegerList error:&e] isList]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaObjectList error:&e] isList]);
     XCTAssertTrue([[CSMediaUrn fromString:@"media:custom;list" error:&e] isList]);
     // Without list marker
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isList]);
@@ -184,13 +184,13 @@
 - (void)test065_is_opaque {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaString error:&e] isOpaque]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaStringArray error:&e] isOpaque]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaStringList error:&e] isOpaque]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaPdf error:&e] isOpaque]);
     XCTAssertTrue([[CSMediaUrn fromString:@"media:textable" error:&e] isOpaque]);
     // With record marker
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObject error:&e] isOpaque]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaJson error:&e] isOpaque]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectArray error:&e] isOpaque]);
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectList error:&e] isOpaque]);
 }
 
 // TEST066: is_json
@@ -225,7 +225,7 @@
 - (void)test546_is_image {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaPng error:&e] isImage]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaImageThumbnail error:&e] isImage]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:image;jpg" error:&e] isImage]);
     XCTAssertTrue([[CSMediaUrn fromString:@"media:image;jpg" error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaPdf error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isImage]);
@@ -259,8 +259,8 @@
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaInteger error:&e] isNumeric]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaNumber error:&e] isNumeric]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaIntegerArray error:&e] isNumeric]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaNumberArray error:&e] isNumeric]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaIntegerList error:&e] isNumeric]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaNumberList error:&e] isNumeric]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isNumeric]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaBoolean error:&e] isNumeric]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isNumeric]);
@@ -270,7 +270,7 @@
 - (void)test550_is_bool {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaBoolean error:&e] isBool]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaBooleanArray error:&e] isBool]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaBooleanList error:&e] isBool]);
     // CSMediaDecision is now a JSON record, not a bool type
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaDecision error:&e] isBool]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isBool]);
@@ -293,7 +293,7 @@
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePathArray error:&e] isFilePathArray]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaFilePath error:&e] isFilePathArray]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringArray error:&e] isFilePathArray]);
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isFilePathArray]);
 }
 
 // TEST553: is_any_file_path
@@ -302,7 +302,7 @@
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePath error:&e] isAnyFilePath]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePathArray error:&e] isAnyFilePath]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isAnyFilePath]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringArray error:&e] isAnyFilePath]);
+    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isAnyFilePath]);
 }
 
 // TEST555: with_tag and without_tag
@@ -379,11 +379,13 @@
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaBoolean error:&e]);
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaObject error:&e]);
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaIdentity error:&e]);
-    XCTAssertNotNil([CSMediaUrn fromString:CSMediaStringArray error:&e]);
-    XCTAssertNotNil([CSMediaUrn fromString:CSMediaIntegerArray error:&e]);
-    XCTAssertNotNil([CSMediaUrn fromString:CSMediaNumberArray error:&e]);
-    XCTAssertNotNil([CSMediaUrn fromString:CSMediaBooleanArray error:&e]);
-    XCTAssertNotNil([CSMediaUrn fromString:CSMediaObjectArray error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaList error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaTextableList error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaStringList error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaIntegerList error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaNumberList error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaBooleanList error:&e]);
+    XCTAssertNotNil([CSMediaUrn fromString:CSMediaObjectList error:&e]);
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaPng error:&e]);
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaAudio error:&e]);
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaVideo error:&e]);

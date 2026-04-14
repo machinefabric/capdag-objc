@@ -40,11 +40,13 @@ FOUNDATION_EXPORT NSString * const CSMediaInteger;      // media:integer;textabl
 FOUNDATION_EXPORT NSString * const CSMediaNumber;       // media:textable;numeric
 FOUNDATION_EXPORT NSString * const CSMediaBoolean;      // media:bool;textable
 FOUNDATION_EXPORT NSString * const CSMediaObject;       // media:record
-FOUNDATION_EXPORT NSString * const CSMediaStringArray;  // media:list;textable
-FOUNDATION_EXPORT NSString * const CSMediaIntegerArray; // media:integer;list;textable;numeric
-FOUNDATION_EXPORT NSString * const CSMediaNumberArray;  // media:list;textable;numeric
-FOUNDATION_EXPORT NSString * const CSMediaBooleanArray; // media:bool;list;textable
-FOUNDATION_EXPORT NSString * const CSMediaObjectArray;  // media:list;record
+FOUNDATION_EXPORT NSString * const CSMediaList;          // media:list
+FOUNDATION_EXPORT NSString * const CSMediaTextableList;  // media:list;textable
+FOUNDATION_EXPORT NSString * const CSMediaStringList;    // media:list;textable
+FOUNDATION_EXPORT NSString * const CSMediaIntegerList;   // media:integer;list;textable;numeric
+FOUNDATION_EXPORT NSString * const CSMediaNumberList;    // media:list;numeric;textable
+FOUNDATION_EXPORT NSString * const CSMediaBooleanList;   // media:bool;list;textable
+FOUNDATION_EXPORT NSString * const CSMediaObjectList;    // media:list;record
 FOUNDATION_EXPORT NSString * const CSMediaIdentity;       // media:
 FOUNDATION_EXPORT NSString * const CSMediaVoid;         // media:void
 // Semantic content types
@@ -54,7 +56,7 @@ FOUNDATION_EXPORT NSString * const CSMediaAudio;        // media:wav;audio
 FOUNDATION_EXPORT NSString * const CSMediaVideo;        // media:video
 // Semantic AI input types
 FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;wav;speech
-FOUNDATION_EXPORT NSString * const CSMediaImageThumbnail;        // media:image;png;thumbnail
+FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:textable;page
 // Document types (PRIMARY naming - type IS the format)
 FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:pdf
 FOUNDATION_EXPORT NSString * const CSMediaEpub;         // media:epub
@@ -98,12 +100,20 @@ FOUNDATION_EXPORT NSString * const CSMediaAvailabilityOutput; // media:model-ava
 FOUNDATION_EXPORT NSString * const CSMediaPathOutput;      // media:model-path;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaEmbeddingVector; // media:embedding-vector;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaLlmInferenceOutput; // media:generated-text;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaFileMetadata;    // media:file-metadata;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaDocumentOutline; // media:document-outline;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaDisboundPage;    // media:disbound-page;textable
 FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:image-caption;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;textable;transcription
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
+// Format-specific variants for JSON, YAML, CSV
+FOUNDATION_EXPORT NSString * const CSMediaJsonValue;       // media:json;textable
+FOUNDATION_EXPORT NSString * const CSMediaJsonRecord;      // media:json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaJsonList;        // media:json;list;textable
+FOUNDATION_EXPORT NSString * const CSMediaJsonListRecord;  // media:json;list;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaYamlValue;       // media:textable;yaml
+FOUNDATION_EXPORT NSString * const CSMediaYamlRecord;      // media:record;textable;yaml
+FOUNDATION_EXPORT NSString * const CSMediaYamlList;        // media:list;textable;yaml
+FOUNDATION_EXPORT NSString * const CSMediaYamlListRecord;  // media:list;record;textable;yaml
+FOUNDATION_EXPORT NSString * const CSMediaCsv;             // media:csv;list;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;textable
 
 // ============================================================================
 // STANDARD CAP URN CONSTANTS

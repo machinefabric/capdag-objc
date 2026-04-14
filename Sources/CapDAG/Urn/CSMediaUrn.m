@@ -149,6 +149,14 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return [self getTag:@"json"] != nil;
 }
 
+- (BOOL)isYaml {
+    return [self hasMarkerTag:@"yaml"];
+}
+
+- (BOOL)isCsv {
+    return [self hasMarkerTag:@"csv"];
+}
+
 - (BOOL)isText {
     return [self getTag:@"textable"] != nil;
 }

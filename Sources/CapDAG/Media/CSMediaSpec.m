@@ -20,11 +20,13 @@ NSString * const CSMediaInteger = @"media:integer;textable;numeric";
 NSString * const CSMediaNumber = @"media:textable;numeric";
 NSString * const CSMediaBoolean = @"media:bool;textable";
 NSString * const CSMediaObject = @"media:record";
-NSString * const CSMediaStringArray = @"media:list;textable";
-NSString * const CSMediaIntegerArray = @"media:integer;list;textable;numeric";
-NSString * const CSMediaNumberArray = @"media:list;textable;numeric";
-NSString * const CSMediaBooleanArray = @"media:bool;list;textable";
-NSString * const CSMediaObjectArray = @"media:list;record";
+NSString * const CSMediaList = @"media:list";
+NSString * const CSMediaTextableList = @"media:list;textable";
+NSString * const CSMediaStringList = @"media:list;textable";
+NSString * const CSMediaIntegerList = @"media:integer;list;textable;numeric";
+NSString * const CSMediaNumberList = @"media:list;numeric;textable";
+NSString * const CSMediaBooleanList = @"media:bool;list;textable";
+NSString * const CSMediaObjectList = @"media:list;record";
 NSString * const CSMediaIdentity = @"media:";
 NSString * const CSMediaVoid = @"media:void";
 // Semantic content types
@@ -34,7 +36,7 @@ NSString * const CSMediaAudio = @"media:wav;audio";
 NSString * const CSMediaVideo = @"media:video";
 // Semantic AI input types
 NSString * const CSMediaAudioSpeech = @"media:audio;wav;speech";
-NSString * const CSMediaImageThumbnail = @"media:image;png;thumbnail";
+NSString * const CSMediaTextablePage = @"media:textable;page";
 // Document types (PRIMARY naming - type IS the format)
 NSString * const CSMediaPdf = @"media:pdf";
 NSString * const CSMediaEpub = @"media:epub";
@@ -78,12 +80,20 @@ NSString * const CSMediaAvailabilityOutput = @"media:model-availability;record;t
 NSString * const CSMediaPathOutput = @"media:model-path;record;textable";
 NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;record;textable";
 NSString * const CSMediaLlmInferenceOutput = @"media:generated-text;record;textable";
-NSString * const CSMediaFileMetadata = @"media:file-metadata;record;textable";
-NSString * const CSMediaDocumentOutline = @"media:document-outline;record;textable";
-NSString * const CSMediaDisboundPage = @"media:disbound-page;textable";
 NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
 NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
 NSString * const CSMediaDecision = @"media:decision;json;record;textable";
+// Format-specific variants for JSON, YAML, CSV
+NSString * const CSMediaJsonValue = @"media:json;textable";
+NSString * const CSMediaJsonRecord = @"media:json;record;textable";
+NSString * const CSMediaJsonList = @"media:json;list;textable";
+NSString * const CSMediaJsonListRecord = @"media:json;list;record;textable";
+NSString * const CSMediaYamlValue = @"media:textable;yaml";
+NSString * const CSMediaYamlRecord = @"media:record;textable;yaml";
+NSString * const CSMediaYamlList = @"media:list;textable;yaml";
+NSString * const CSMediaYamlListRecord = @"media:list;record;textable;yaml";
+NSString * const CSMediaCsv = @"media:csv;list;record;textable";
+NSString * const CSMediaCsvList = @"media:csv;list;textable";
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION
