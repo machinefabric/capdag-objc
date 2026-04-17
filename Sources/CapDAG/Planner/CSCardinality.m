@@ -119,7 +119,9 @@ NSString *CSInputStructureApplyToUrn(CSInputStructure structure, NSString *baseU
 
 + (instancetype)fromMediaUrn:(NSString *)urn {
     CSMediaShape *shape = [[CSMediaShape alloc] init];
-    shape->_cardinality = CSInputCardinalityFromMediaUrn(urn);
+    // Cardinality defaults to Single — it comes from context (is_sequence),
+    // not from URN tags. Only structure (Opaque vs Record) is derived from the URN.
+    shape->_cardinality = CSInputCardinalitySingle;
     shape->_structure = CSInputStructureFromMediaUrn(urn);
     return shape;
 }
@@ -299,8 +301,22 @@ BOOL CSCardinalityPatternRequiresVector(CSCardinalityPattern pattern) {
 
 + (instancetype)fromCapUrn:(NSString *)capUrn inSpec:(NSString *)inSpec outSpec:(NSString *)outSpec {
     CSCapCardinalityInfo *info = [[CSCapCardinalityInfo alloc] init];
-    info->_input = CSInputCardinalityFromMediaUrn(inSpec);
-    info->_output = CSInputCardinalityFromMediaUrn(outSpec);
+    // Cardinality defaults to Single — it comes from is_sequence on the cap args,
+    // not from URN tags.
+    info->_input = CSInputCardinalitySingle;
+    info->_output = CSInputCardinalitySingle;
+    info->_capUrn = [capUrn copy];
+    return info;
+}
+
++ (instancetype)fromCapUrn:(NSString *)capUrn
+                    inSpec:(NSString *)inSpec
+                   outSpec:(NSString *)outSpec
+          inputIsSequence:(BOOL)inputIsSequence
+         outputIsSequence:(BOOL)outputIsSequence {
+    CSCapCardinalityInfo *info = [[CSCapCardinalityInfo alloc] init];
+    info->_input = inputIsSequence ? CSInputCardinalitySequence : CSInputCardinalitySingle;
+    info->_output = outputIsSequence ? CSInputCardinalitySequence : CSInputCardinalitySingle;
     info->_capUrn = [capUrn copy];
     return info;
 }

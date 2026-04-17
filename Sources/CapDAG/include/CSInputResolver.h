@@ -98,15 +98,16 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// All resolved files
 @property (nonatomic, copy, readonly) NSArray<CSResolvedFile *> *files;
 
-/// Aggregate cardinality of the input set
-@property (nonatomic, readonly) CSInputCardinality cardinality;
+/// Whether the input is a sequence (multiple files).
+/// Determined solely by file count — content structure is irrelevant.
+@property (nonatomic, readonly) BOOL isSequence;
 
 /// Common media type if all files share the same base type, nil otherwise
 @property (nonatomic, copy, readonly, nullable) NSString *commonMedia;
 
 /// Create a resolved input set
 + (instancetype)setWithFiles:(NSArray<CSResolvedFile *> *)files
-                 cardinality:(CSInputCardinality)cardinality
+                  isSequence:(BOOL)isSequence
                  commonMedia:(nullable NSString *)commonMedia;
 
 /// Check if all files share the same media type

@@ -535,7 +535,7 @@
     XCTAssertNil(error);
     XCTAssertNotNil(result);
     XCTAssertEqual(result.files.count, 2);
-    XCTAssertEqual(result.cardinality, CSInputCardinalitySequence);
+    XCTAssertTrue(result.isSequence, @"directory with 2 files must be isSequence=YES");
 }
 
 - (void)test1010_duplicate_paths {
@@ -564,7 +564,7 @@
 #pragma mark - Aggregate Cardinality Tests (TEST1090-TEST1099)
 
 - (void)test1090_single_file_scalar {
-    // TEST1090: Single file with scalar content should be Single
+    // TEST1090: Single file → isSequence=NO
     NSString *path = [self createTestFile:@"test.pdf" content:@"%PDF-1.4"];
     NSError *error;
 
@@ -572,11 +572,13 @@
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
-    XCTAssertEqual(result.cardinality, CSInputCardinalitySingle);
+    XCTAssertFalse(result.isSequence, @"single file must be isSequence=NO");
 }
 
 - (void)test1091_single_file_list_content {
-    // TEST1091: Single file with list content should be Sequence
+    // TEST1091: Single file with list content → isSequence=NO.
+    // Content structure is ListRecord (tabular data), but isSequence is NO
+    // because there is only one file. Content structure ≠ input cardinality.
     NSString *path = [self createTestFile:@"test.csv" content:@"a,b\n1,2\n3,4"];
     NSError *error;
 
@@ -584,11 +586,11 @@
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
-    XCTAssertEqual(result.cardinality, CSInputCardinalitySequence);
+    XCTAssertFalse(result.isSequence, @"single file must be isSequence=NO regardless of content structure");
 }
 
 - (void)test1092_two_files {
-    // TEST1092: Two files should be Sequence
+    // TEST1092: Two files → isSequence=YES
     [self createTestFile:@"file1.txt" content:@"one"];
     NSString *path2 = [self createTestFile:@"file2.txt" content:@"two"];
     NSString *path1 = [self.testDir stringByAppendingPathComponent:@"file1.txt"];
@@ -599,11 +601,11 @@
     XCTAssertNil(error);
     XCTAssertNotNil(result);
     XCTAssertEqual(result.files.count, 2);
-    XCTAssertEqual(result.cardinality, CSInputCardinalitySequence);
+    XCTAssertTrue(result.isSequence, @"multiple files must be isSequence=YES");
 }
 
 - (void)test1093_dir_single_file {
-    // TEST1093: Directory with 1 file should be Single
+    // TEST1093: Directory with 1 file → isSequence=NO
     NSString *dir = [self createTestDir:@"single"];
     [self createTestFile:@"single/only.pdf" content:@"%PDF"];
     NSError *error;
@@ -613,11 +615,11 @@
     XCTAssertNil(error);
     XCTAssertNotNil(result);
     XCTAssertEqual(result.files.count, 1);
-    XCTAssertEqual(result.cardinality, CSInputCardinalitySingle);
+    XCTAssertFalse(result.isSequence, @"directory with single file must be isSequence=NO");
 }
 
 - (void)test1094_dir_multiple_files {
-    // TEST1094: Directory with 3 files should be Sequence
+    // TEST1094: Directory with 3 files → isSequence=YES
     NSString *dir = [self createTestDir:@"multi"];
     [self createTestFile:@"multi/a.txt" content:@"a"];
     [self createTestFile:@"multi/b.txt" content:@"b"];
@@ -629,7 +631,7 @@
     XCTAssertNil(error);
     XCTAssertNotNil(result);
     XCTAssertEqual(result.files.count, 3);
-    XCTAssertEqual(result.cardinality, CSInputCardinalitySequence);
+    XCTAssertTrue(result.isSequence, @"directory with multiple files must be isSequence=YES");
 }
 
 - (void)test1098_common_media {
@@ -710,7 +712,7 @@
                                         contentStructure:CSContentStructureScalarOpaque];
 
     CSResolvedInputSet *set = [CSResolvedInputSet setWithFiles:@[file1, file2]
-                                                   cardinality:CSInputCardinalitySequence
+                                                    isSequence:YES
                                                    commonMedia:@"media:txt"];
 
     XCTAssertEqual([set totalSize], 300);

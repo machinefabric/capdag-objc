@@ -355,7 +355,20 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
             if (cap) {
                 NSString *inSpec = [[cap capUrn] inSpec];
                 NSString *outSpec = [[cap capUrn] outSpec];
-                info.cardinality = [CSCapCardinalityInfo fromCapUrn:urn inSpec:inSpec outSpec:outSpec];
+                // Get is_sequence from cap args/output, not from URN tags
+                BOOL inputIsSeq = NO;
+                for (CSCapArg *arg in cap.args) {
+                    if ([arg hasStdinSource]) {
+                        inputIsSeq = arg.isSequence;
+                        break;
+                    }
+                }
+                BOOL outputIsSeq = cap.output ? cap.output.isSequence : NO;
+                info.cardinality = [CSCapCardinalityInfo fromCapUrn:urn
+                                                             inSpec:inSpec
+                                                            outSpec:outSpec
+                                                   inputIsSequence:inputIsSeq
+                                                  outputIsSequence:outputIsSeq];
                 info.filePathArgName = [CSMachinePlanBuilder findFilePathArg:cap];
                 info.filePathIsStdinChainable = [CSMachinePlanBuilder isFilePathStdinChainable:cap];
             } else {

@@ -195,9 +195,18 @@ CSShapeCompatibility CSMediaShapeIsCompatibleWith(CSMediaShape *target, CSMediaS
 /// Cap URN this applies to
 @property (nonatomic, copy, readonly) NSString *capUrn;
 
-/// Create cardinality info by parsing a cap's input and output specs
+/// Create cardinality info — cardinality defaults to Single (from URN, no sequence flags).
+/// Use fromCapUrn:inSpec:outSpec:inputIsSequence:outputIsSequence: when flags are known.
 /// Mirrors Rust: pub fn from_cap_specs
 + (instancetype)fromCapUrn:(NSString *)capUrn inSpec:(NSString *)inSpec outSpec:(NSString *)outSpec;
+
+/// Create cardinality info with explicit is_sequence flags from cap definition.
+/// Mirrors Rust: pub fn from_cap_specs_with_sequence
++ (instancetype)fromCapUrn:(NSString *)capUrn
+                    inSpec:(NSString *)inSpec
+                   outSpec:(NSString *)outSpec
+          inputIsSequence:(BOOL)inputIsSequence
+         outputIsSequence:(BOOL)outputIsSequence;
 
 /// Describe the cardinality transformation pattern
 /// Mirrors Rust: pub fn pattern(&self) -> CardinalityPattern

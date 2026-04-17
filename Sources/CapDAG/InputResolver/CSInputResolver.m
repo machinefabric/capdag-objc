@@ -9,6 +9,7 @@
 
 #import "CSInputResolver.h"
 #import "CSMediaAdapters.h"
+#import "CSMediaUrn.h"
 #import "CSMediaUrnRegistry.h"
 #import <glob.h>
 
@@ -54,12 +55,12 @@ NSErrorDomain const CSInputResolverErrorDomain = @"CSInputResolverErrorDomain";
 @implementation CSResolvedInputSet
 
 + (instancetype)setWithFiles:(NSArray<CSResolvedFile *> *)files
-                 cardinality:(CSInputCardinality)cardinality
+                  isSequence:(BOOL)isSequence
                  commonMedia:(nullable NSString *)commonMedia {
     CSResolvedInputSet *set = [[CSResolvedInputSet alloc] init];
     if (set) {
         set->_files = [files copy];
-        set->_cardinality = cardinality;
+        set->_isSequence = isSequence;
         set->_commonMedia = [commonMedia copy];
     }
     return set;
@@ -78,9 +79,9 @@ NSErrorDomain const CSInputResolverErrorDomain = @"CSInputResolverErrorDomain";
 }
 
 - (NSString *)description {
-    return [NSString stringWithFormat:@"<CSResolvedInputSet: %lu files, %@, common=%@>",
+    return [NSString stringWithFormat:@"<CSResolvedInputSet: %lu files, isSequence=%@, common=%@>",
             (unsigned long)_files.count,
-            _cardinality == CSInputCardinalitySingle ? @"Single" : @"Sequence",
+            _isSequence ? @"YES" : @"NO",
             _commonMedia ?: @"(none)"];
 }
 
@@ -758,7 +759,7 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
     CSMediaAdapterRegistry *registry = [CSMediaAdapterRegistry shared];
     NSFileManager *fm = [NSFileManager defaultManager];
 
-    NSMutableSet<NSString *> *baseMediaTypes = [NSMutableSet set];
+    NSMutableSet<NSString *> *fileMediaUrns = [NSMutableSet set];
 
     for (NSString *filePath in filePaths) {
         // Get file size
@@ -780,10 +781,8 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
             return nil;
         }
 
-        // Extract base media type for homogeneity check
-        // Base type is everything before any marker tags (list, record, textable, etc.)
-        NSString *baseType = [mediaUrn componentsSeparatedByString:@";"][0];
-        [baseMediaTypes addObject:baseType];
+        // Track media URN for homogeneity check (proper URN equivalence, not string splitting)
+        [fileMediaUrns addObject:mediaUrn];
 
         CSResolvedFile *resolved = [CSResolvedFile fileWithPath:filePath
                                                        mediaUrn:mediaUrn
@@ -792,24 +791,33 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
         [resolvedFiles addObject:resolved];
     }
 
-    // Determine aggregate cardinality from file count alone.
-    // Content structure (list/record) is a media type concern, not a cardinality concern.
-    // Cardinality is purely about how many items are in the input — is_sequence on the wire.
-    CSInputCardinality cardinality;
-    if (resolvedFiles.count == 1) {
-        cardinality = CSInputCardinalitySingle;
-    } else {
-        cardinality = CSInputCardinalitySequence;
-    }
+    // is_sequence is determined solely by file count.
+    // Content structure (list/record) describes what's inside a file, not cardinality.
+    BOOL isSequence = resolvedFiles.count > 1;
 
-    // Determine common media type
+    // Determine common media type via proper URN equivalence.
+    // If all files resolve to equivalent URNs, they share a common media type.
     NSString *commonMedia = nil;
-    if (baseMediaTypes.count == 1) {
-        commonMedia = [baseMediaTypes anyObject];
+    if (fileMediaUrns.count == 1) {
+        commonMedia = [fileMediaUrns anyObject];
+    } else if (fileMediaUrns.count > 1) {
+        // Check all URNs for equivalence using CSMediaUrn
+        NSArray<NSString *> *allUrns = [fileMediaUrns allObjects];
+        CSMediaUrn *first = [CSMediaUrn fromString:allUrns[0] error:nil];
+        BOOL allEquivalent = (first != nil);
+        for (NSUInteger i = 1; i < allUrns.count && allEquivalent; i++) {
+            CSMediaUrn *other = [CSMediaUrn fromString:allUrns[i] error:nil];
+            if (!other || ![first isEquivalentTo:other]) {
+                allEquivalent = NO;
+            }
+        }
+        if (allEquivalent) {
+            commonMedia = allUrns[0];
+        }
     }
 
     return [CSResolvedInputSet setWithFiles:resolvedFiles
-                                cardinality:cardinality
+                                 isSequence:isSequence
                                 commonMedia:commonMedia];
 }
 

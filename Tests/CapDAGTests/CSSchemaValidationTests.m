@@ -43,7 +43,7 @@
 #pragma mark - Argument Schema Validation Tests
 
 // TEST051: Test input validation succeeds with valid positional argument
-- (void)testArgumentWithEmbeddedSchemaValidationSuccess {
+- (void)test051_inputValidationSuccess {
     // Create argument with spec ID that has embedded schema in mediaSpecs
     NSDictionary *schema = @{
         @"type": @"object",
@@ -84,7 +84,7 @@
 }
 
 // TEST052: Test input validation fails with MissingRequiredArgument when required arg missing
-- (void)testArgumentWithEmbeddedSchemaValidationFailure {
+- (void)test052_inputValidationMissingRequired {
     // Create argument with spec ID that has embedded schema in mediaSpecs
     NSDictionary *schema = @{
         @"type": @"object",
@@ -128,7 +128,7 @@
 }
 
 // TEST053: Test input validation fails with InvalidArgumentType when wrong type provided
-- (void)testArgumentWithUnresolvableSpecIdFailsHard {
+- (void)test053_inputValidationWrongType {
     // Create argument with non-existent spec ID
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"unknown:spec.v1"
                                              required:YES
@@ -771,7 +771,7 @@
 #pragma mark - XV5 Validation Tests
 
 // TEST054: XV5 - Test inline media spec redefinition of existing registry spec is detected and rejected
-- (void)testXV5InlineSpecRedefinitionDetected {
+- (void)test054_xv5InlineSpecRedefinitionDetected {
     // Try to redefine CSMediaString which exists in the registry
     // CSMediaString = @"media:textable"
     NSArray<NSDictionary *> *mediaSpecs = @[
@@ -798,7 +798,7 @@
 }
 
 // TEST055: XV5 - Test new inline media spec (not in registry) is allowed
-- (void)testXV5NewInlineSpecAllowed {
+- (void)test055_xv5NewInlineSpecAllowed {
     // Define a completely new media spec that doesn't exist in registry
     NSArray<NSDictionary *> *mediaSpecs = @[
         @{
@@ -822,7 +822,7 @@
 }
 
 // TEST056: XV5 - Test empty media_specs (no inline specs) passes XV5 validation
-- (void)testXV5EmptyMediaSpecsAllowed {
+- (void)test056_xv5EmptyMediaSpecsAllowed {
     // Empty media_specs should pass (with or without registry lookup)
     CSXV5ValidationResult *result = [CSXV5Validator validateNoInlineMediaSpecRedefinition:@[]
                                                                         existsInRegistry:nil];
