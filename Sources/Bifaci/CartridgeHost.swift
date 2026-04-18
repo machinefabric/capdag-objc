@@ -769,13 +769,48 @@ public final class CartridgeHost: @unchecked Sendable {
                 return
             }
 
+            // Check for target_cartridge in meta — if present, route directly
+            let targetCartridgeId: String? = frame.meta.flatMap { meta in
+                if case let .utf8String(s) = meta["target_cartridge"] {
+                    return s
+                }
+                return nil
+            }
+
             stateLock.lock()
-            guard let cartridgeIdx = findCartridgeForCapLocked(capUrn) else {
-                stateLock.unlock()
-                var err = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No cartridge handles cap: \(capUrn)")
-                err.routingId = xid
-                sendToRelay(err)
-                return
+            let cartridgeIdx: Int
+            if let targetId = targetCartridgeId {
+                // Direct routing by cartridge identity
+                if let foundIdx = cartridges.firstIndex(where: {
+                    $0.installedCartridgeIdentity()?.id == targetId
+                }) {
+                    if cartridges[foundIdx].helloFailed {
+                        stateLock.unlock()
+                        var err = Frame.err(id: frame.id, code: "CARTRIDGE_UNAVAILABLE",
+                                           message: "Cartridge '\(targetId)' failed handshake and cannot be spawned")
+                        err.routingId = xid
+                        sendToRelay(err)
+                        return
+                    }
+                    cartridgeIdx = foundIdx
+                } else {
+                    stateLock.unlock()
+                    var err = Frame.err(id: frame.id, code: "CARTRIDGE_NOT_FOUND",
+                                       message: "Cartridge '\(targetId)' not found on this host")
+                    err.routingId = xid
+                    sendToRelay(err)
+                    return
+                }
+            } else {
+                // Standard cap-based dispatch
+                guard let foundIdx = findCartridgeForCapLocked(capUrn) else {
+                    stateLock.unlock()
+                    var err = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No cartridge handles cap: \(capUrn)")
+                    err.routingId = xid
+                    sendToRelay(err)
+                    return
+                }
+                cartridgeIdx = foundIdx
             }
             let needsSpawn = !cartridges[cartridgeIdx].running && !cartridges[cartridgeIdx].helloFailed
             stateLock.unlock()
@@ -1290,11 +1325,17 @@ public final class CartridgeHost: @unchecked Sendable {
             if cartridge.running {
                 // Running: use actual caps from manifest (verified via HELLO handshake)
                 if !cartridge.manifest.isEmpty,
-                   let json = try? JSONSerialization.jsonObject(with: cartridge.manifest) as? [String: Any],
-                   let caps = json["caps"] as? [[String: Any]] {
-                    for cap in caps {
-                        if let urn = cap["urn"] as? String, urn != CSCapIdentity {
-                            capUrns.append(urn)
+                   let json = try? JSONSerialization.jsonObject(with: cartridge.manifest) as? [String: Any] {
+                    // Extract caps from cap_groups
+                    if let capGroups = json["cap_groups"] as? [[String: Any]] {
+                        for group in capGroups {
+                            if let groupCaps = group["caps"] as? [[String: Any]] {
+                                for cap in groupCaps {
+                                    if let urn = cap["urn"] as? String, urn != CSCapIdentity {
+                                        capUrns.append(urn)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1336,11 +1377,17 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Validates that CAP_IDENTITY is present (mandatory for all cartridges).
     private static func extractCaps(from manifest: Data) throws -> [String] {
         guard let json = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any],
-              let caps = json["caps"] as? [[String: Any]] else {
-            throw CartridgeHostError.handshakeFailed("Invalid manifest JSON or missing caps array")
+              let capGroups = json["cap_groups"] as? [[String: Any]] else {
+            throw CartridgeHostError.handshakeFailed("Invalid manifest JSON or missing cap_groups array")
         }
 
-        let capUrns = caps.compactMap { $0["urn"] as? String }
+        // Collect URNs from all cap groups
+        var capUrns: [String] = []
+        for group in capGroups {
+            if let groupCaps = group["caps"] as? [[String: Any]] {
+                capUrns.append(contentsOf: groupCaps.compactMap { $0["urn"] as? String })
+            }
+        }
 
         // Verify CAP_IDENTITY is declared — mandatory for every cartridge
         guard let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) else {

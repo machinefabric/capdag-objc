@@ -28,4 +28,13 @@ extern NSString * const CSCapIdentity;
  */
 extern NSString * const CSCapDiscard;
 
+/**
+ * Adapter selection capability — content inspection for file type detection.
+ * Standard, NOT mandatory. Every cartridge gets a default implementation that
+ * returns empty END (no match). Cartridges that inspect file content override
+ * this with a handler that returns {"media_urns": [...]}.
+ * URN: cap:in="media:";out="media:adapter-selection;json;record"
+ */
+extern NSString * const CSCapAdapterSelection;
+
 NS_ASSUME_NONNULL_END

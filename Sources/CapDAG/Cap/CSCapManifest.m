@@ -10,18 +10,79 @@
 #import "CSCapUrn.h"
 #import "CSStandardCaps.h"
 
+// MARK: - CSCapGroup
+
+@implementation CSCapGroup
+
+- (instancetype)initWithName:(NSString *)name
+                        caps:(NSArray<CSCap *> *)caps
+                 adapterUrns:(NSArray<NSString *> *)adapterUrns {
+    self = [super init];
+    if (self) {
+        _name = [name copy];
+        _caps = [caps copy];
+        _adapterUrns = [adapterUrns copy];
+    }
+    return self;
+}
+
++ (nullable instancetype)groupWithDictionary:(NSDictionary *)dictionary
+                                       error:(NSError * _Nullable * _Nullable)error {
+    NSString *name = dictionary[@"name"];
+    if (!name) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSCapManifestError"
+                                         code:1020
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Cap group missing required 'name' field"}];
+        }
+        return nil;
+    }
+
+    NSArray *capsArray = dictionary[@"caps"];
+    NSMutableArray<CSCap *> *caps = [[NSMutableArray alloc] init];
+    if (capsArray && [capsArray isKindOfClass:[NSArray class]]) {
+        for (NSDictionary *capDict in capsArray) {
+            if (![capDict isKindOfClass:[NSDictionary class]]) {
+                if (error) {
+                    *error = [NSError errorWithDomain:@"CSCapManifestError"
+                                                 code:1021
+                                             userInfo:@{NSLocalizedDescriptionKey: @"Invalid cap format in cap group caps array"}];
+                }
+                return nil;
+            }
+            CSCap *cap = [CSCap capWithDictionary:capDict error:error];
+            if (!cap) {
+                return nil;
+            }
+            [caps addObject:cap];
+        }
+    }
+
+    NSArray *adapterUrnsArray = dictionary[@"adapter_urns"];
+    NSArray<NSString *> *adapterUrns = @[];
+    if (adapterUrnsArray && [adapterUrnsArray isKindOfClass:[NSArray class]]) {
+        adapterUrns = adapterUrnsArray;
+    }
+
+    return [[self alloc] initWithName:name caps:[caps copy] adapterUrns:adapterUrns];
+}
+
+@end
+
+// MARK: - CSCapManifest
+
 @implementation CSCapManifest
 
-- (instancetype)initWithName:(NSString *)name 
-                     version:(NSString *)version 
-          manifestDescription:(NSString *)manifestDescription 
-                caps:(NSArray<CSCap *> *)caps {
+- (instancetype)initWithName:(NSString *)name
+                     version:(NSString *)version
+          manifestDescription:(NSString *)manifestDescription
+               capGroups:(NSArray<CSCapGroup *> *)capGroups {
     self = [super init];
     if (self) {
         _name = [name copy];
         _version = [version copy];
         _manifestDescription = [manifestDescription copy];
-        _caps = [caps copy];
+        _capGroups = [capGroups copy];
     }
     return self;
 }
@@ -29,53 +90,51 @@
 + (instancetype)manifestWithName:(NSString *)name
                          version:(NSString *)version
                      description:(NSString *)description
-                    caps:(NSArray<CSCap *> *)caps {
+                       capGroups:(NSArray<CSCapGroup *> *)capGroups {
     return [[self alloc] initWithName:name
                               version:version
                    manifestDescription:description
-                         caps:caps];
+                         capGroups:capGroups];
 }
 
 + (instancetype)manifestWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
     NSString *name = dictionary[@"name"];
     NSString *version = dictionary[@"version"];
     NSString *description = dictionary[@"description"];
-    NSArray *capsArray = dictionary[@"caps"];
-    
-    if (!name || !version || !description || !capsArray) {
+    NSArray *capGroupsArray = dictionary[@"cap_groups"];
+
+    if (!name || !version || !description || !capGroupsArray) {
         if (error) {
             *error = [NSError errorWithDomain:@"CSCapManifestError"
                                          code:1007
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Missing required manifest fields: name, version, description, or caps"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Missing required manifest fields: name, version, description, or cap_groups"}];
         }
         return nil;
     }
-    
-    // Parse caps array
-    NSMutableArray<CSCap *> *caps = [[NSMutableArray alloc] init];
-    for (NSDictionary *capDict in capsArray) {
-        if (![capDict isKindOfClass:[NSDictionary class]]) {
+
+    // Parse cap_groups array
+    NSMutableArray<CSCapGroup *> *groups = [[NSMutableArray alloc] init];
+    for (NSDictionary *groupDict in capGroupsArray) {
+        if (![groupDict isKindOfClass:[NSDictionary class]]) {
             if (error) {
                 *error = [NSError errorWithDomain:@"CSCapManifestError"
-                                             code:1008
-                                         userInfo:@{NSLocalizedDescriptionKey: @"Invalid cap format in caps array"}];
+                                             code:1022
+                                         userInfo:@{NSLocalizedDescriptionKey: @"Invalid cap_group format"}];
             }
             return nil;
         }
-        
-        CSCap *cap = [CSCap capWithDictionary:capDict error:error];
-        if (!cap) {
+        CSCapGroup *group = [CSCapGroup groupWithDictionary:groupDict error:error];
+        if (!group) {
             return nil;
         }
-        
-        [caps addObject:cap];
+        [groups addObject:group];
     }
-    
+
     CSCapManifest *manifest = [[self alloc] initWithName:name
-                                                        version:version
-                                             manifestDescription:description
-                                                   caps:[caps copy]];
-    
+                                                version:version
+                                     manifestDescription:description
+                                              capGroups:[groups copy]];
+
     // Optional fields
     NSString *author = dictionary[@"author"];
     if (author) {
@@ -100,12 +159,19 @@
     return self;
 }
 
+- (NSArray<CSCap *> *)allCaps {
+    NSMutableArray<CSCap *> *result = [[NSMutableArray alloc] init];
+    for (CSCapGroup *group in self.capGroups) {
+        [result addObjectsFromArray:group.caps];
+    }
+    return [result copy];
+}
+
 - (BOOL)validate:(NSError **)error {
     // Parse CAP_IDENTITY URN
     NSError *parseError = nil;
     CSCapUrn *identityUrn = [CSCapUrn fromString:CSCapIdentity error:&parseError];
     if (!identityUrn) {
-        // This should never happen - CSCapIdentity is a constant and should always be valid
         if (error) {
             *error = [NSError errorWithDomain:@"CSCapManifestError"
                                          code:1009
@@ -114,10 +180,9 @@
         return NO;
     }
 
-    // Check if any cap in the manifest accepts the identity URN
-    // identity_urn.conforms_to(&cap.urn) in Rust = cap.urn.accepts(identity_urn)
+    // Check all caps (including cap groups) for identity
     BOOL hasIdentity = NO;
-    for (CSCap *cap in self.caps) {
+    for (CSCap *cap in [self allCaps]) {
         if ([identityUrn conformsTo:cap.capUrn]) {
             hasIdentity = YES;
             break;
@@ -140,15 +205,13 @@
     // Parse CAP_IDENTITY URN
     CSCapUrn *identityUrn = [CSCapUrn fromString:CSCapIdentity error:nil];
     if (!identityUrn) {
-        // This should never happen - CSCapIdentity is a constant
         NSAssert(NO, @"BUG: CAP_IDENTITY constant is invalid");
         return self;
     }
 
-    // Check if identity is already present
-    // identity_urn.conforms_to(&cap.urn) in Rust = cap.urn.accepts(identity_urn)
+    // Check if identity is already present (in all caps including groups)
     BOOL hasIdentity = NO;
-    for (CSCap *cap in self.caps) {
+    for (CSCap *cap in [self allCaps]) {
         if ([identityUrn conformsTo:cap.capUrn]) {
             hasIdentity = YES;
             break;
@@ -156,21 +219,35 @@
     }
 
     if (hasIdentity) {
-        return self;  // Already present, return unchanged
+        return self;
     }
 
-    // Add identity cap using minimal constructor
+    // Add identity cap to the first cap group (or create one)
     CSCap *identityCap = [CSCap capWithUrn:identityUrn
                                      title:@"Identity"
                                    command:@"identity"];
-    NSMutableArray *newCaps = [self.caps mutableCopy];
-    [newCaps addObject:identityCap];
 
-    // Return new manifest with identity added
+    NSMutableArray<CSCapGroup *> *newGroups = [self.capGroups mutableCopy];
+    if (newGroups.count > 0) {
+        // Add to first group
+        CSCapGroup *firstGroup = newGroups[0];
+        NSMutableArray *groupCaps = [firstGroup.caps mutableCopy];
+        [groupCaps addObject:identityCap];
+        newGroups[0] = [[CSCapGroup alloc] initWithName:firstGroup.name
+                                                   caps:[groupCaps copy]
+                                            adapterUrns:firstGroup.adapterUrns];
+    } else {
+        // Create a default group
+        CSCapGroup *defaultGroup = [[CSCapGroup alloc] initWithName:@"default"
+                                                              caps:@[identityCap]
+                                                       adapterUrns:@[]];
+        [newGroups addObject:defaultGroup];
+    }
+
     return [CSCapManifest manifestWithName:self.name
                                    version:self.version
                                description:self.manifestDescription
-                                      caps:[newCaps copy]];
+                                 capGroups:[newGroups copy]];
 }
 
 @end

@@ -1356,6 +1356,35 @@ public struct DiscardOp: Op, Sendable {
     }
 }
 
+/// Default adapter selection handler — returns empty END (no match).
+///
+/// This is the standard default for cartridges that do not inspect file content.
+/// Cartridges that provide content inspection override this by registering their
+/// own handler for CSCapAdapterSelection.
+///
+/// The empty END frame (exit code 0, no stream output) is the ONLY valid "no match"
+/// response. The orchestrator treats any stream output that isn't valid
+/// {"media_urns": [...]} as a runtime error.
+public struct AdapterSelectionOp: Op, Sendable {
+    public typealias Output = Void
+    public init() {}
+    public func perform(dry: DryContext, wet: WetContext) async throws {
+        let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
+        let input = try req.takeInput()
+        // Drain all input — we don't inspect it in the default handler
+        for streamResult in input {
+            let stream = try streamResult.get()
+            for chunkResult in stream {
+                _ = try chunkResult.get()
+            }
+        }
+        // Return without starting output — produces empty END frame
+    }
+    public func metadata() -> OpMetadata {
+        OpMetadata.builder("AdapterSelectionOp").description("Default adapter selection — returns empty END (no match)").build()
+    }
+}
+
 /// Dispatch an AnyOp<Void> with a CborRequest via WetContext.
 /// Bridges sync handler threads to async Op.perform via DispatchSemaphore + Task.
 /// Closes the output stream on success (sends STREAM_END if stream was started).
@@ -1682,17 +1711,53 @@ public struct CapDefinition: Codable, Sendable {
 }
 
 /// Cartridge manifest structure.
+/// A cap group bundles caps and adapter URNs as an atomic registration unit.
+public struct CapGroup: Codable, Sendable {
+    public let name: String
+    public let caps: [CapDefinition]
+    public let adapterUrns: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case caps
+        case adapterUrns = "adapter_urns"
+    }
+
+    public init(name: String, caps: [CapDefinition], adapterUrns: [String] = []) {
+        self.name = name
+        self.caps = caps
+        self.adapterUrns = adapterUrns
+    }
+}
+
 public struct Manifest: Codable, Sendable {
     public let name: String
     public let version: String
     public let description: String
-    public let caps: [CapDefinition]
+    /// All caps must be in cap groups. Groups without adapter URNs are valid.
+    public let capGroups: [CapGroup]
 
-    public init(name: String, version: String, description: String, caps: [CapDefinition]) {
+    enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case description
+        case capGroups = "cap_groups"
+    }
+
+    public init(name: String, version: String, description: String, capGroups: [CapGroup]) {
         self.name = name
         self.version = version
         self.description = description
-        self.caps = caps
+        self.capGroups = capGroups
+    }
+
+    /// Returns all caps from all cap groups.
+    public func allCaps() -> [CapDefinition] {
+        var result: [CapDefinition] = []
+        for group in capGroups {
+            result.append(contentsOf: group.caps)
+        }
+        return result
     }
 }
 
@@ -1797,7 +1862,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
             // CAP_IDENTITY ("cap:") can be declared as "cap:" or "cap:in=media:;out=media:"
             var hasIdentity = false
             if let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) {
-                hasIdentity = parsed.caps.contains { cap in
+                hasIdentity = parsed.allCaps().contains { cap in
                     if let capUrn = try? CSCapUrn.fromString(cap.urn) {
                         // Check if the cap URN conforms to CAP_IDENTITY (is identity or more specific)
                         return (try? capUrn.conforms(to: identityUrn)) == true ||
@@ -1832,6 +1897,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // CAP_DISCARD: "cap:in=media:;out=media:void" (standard, optional)
         if findHandler(capUrn: CSCapDiscard) == nil {
             register_op_type(capUrn: CSCapDiscard, make: DiscardOp.init)
+        }
+        // CAP_ADAPTER_SELECTION: content inspection adapter (standard, optional)
+        if findHandler(capUrn: CSCapAdapterSelection) == nil {
+            register_op_type(capUrn: CSCapAdapterSelection, make: AdapterSelectionOp.init)
         }
     }
 
@@ -2182,7 +2251,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
     /// Find a cap by its command name (the CLI subcommand).
     private func findCapByCommand(manifest: Manifest, commandName: String) -> CapDefinition? {
-        return manifest.caps.first { $0.command == commandName }
+        return manifest.allCaps().first { $0.command == commandName }
     }
 
     /// Read file(s) for file-path arguments and return bytes.
@@ -2595,7 +2664,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         stderr.write(Data("COMMANDS:\n".utf8))
         stderr.write(Data("    manifest    Output the cartridge manifest as JSON\n".utf8))
 
-        for cap in manifest.caps {
+        for cap in manifest.allCaps() {
             let desc = cap.capDescription ?? cap.title
             let paddedCommand = cap.command.padding(toLength: 12, withPad: " ", startingAt: 0)
             let line = "    \(paddedCommand)\(desc)\n"

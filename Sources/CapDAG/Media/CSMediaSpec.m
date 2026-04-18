@@ -83,6 +83,7 @@ NSString * const CSMediaLlmInferenceOutput = @"media:generated-text;record;texta
 NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
 NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
 NSString * const CSMediaDecision = @"media:decision;json;record;textable";
+NSString * const CSMediaAdapterSelection = @"media:adapter-selection;json;record";
 // Format-specific variants for JSON, YAML, CSV
 NSString * const CSMediaJsonValue = @"media:json;textable";
 NSString * const CSMediaJsonRecord = @"media:json;record;textable";

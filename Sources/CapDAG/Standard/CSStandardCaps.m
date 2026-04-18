@@ -23,3 +23,11 @@ NSString * const CSCapIdentity = @"cap:";
  * Accepts any media type as input and produces void output.
  */
 NSString * const CSCapDiscard = @"cap:in=media:;out=media:void";
+
+/**
+ * Adapter selection capability — content inspection for file type detection.
+ * Standard, NOT mandatory. Every cartridge gets a default implementation that
+ * returns empty END (no match). Cartridges that inspect file content override
+ * this with a handler that returns {"media_urns": [...]}.
+ */
+NSString * const CSCapAdapterSelection = @"cap:in=\"media:\";out=\"media:adapter-selection;json;record\"";

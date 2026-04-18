@@ -103,6 +103,7 @@ FOUNDATION_EXPORT NSString * const CSMediaLlmInferenceOutput; // media:generated
 FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:image-caption;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;textable;transcription
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;json;record
 // Format-specific variants for JSON, YAML, CSV
 FOUNDATION_EXPORT NSString * const CSMediaJsonValue;       // media:json;textable
 FOUNDATION_EXPORT NSString * const CSMediaJsonRecord;      // media:json;record;textable

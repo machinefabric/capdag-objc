@@ -628,8 +628,42 @@ public final class RelaySwitch: @unchecked Sendable {
 
         switch frame.frameType {
         case .req:
-            guard let cap = frame.cap, let destIdx = findMasterForCap(cap, preferredCap: preferredCap) else {
-                throw RelaySwitchError.noHandler(frame.cap ?? "nil")
+            guard let cap = frame.cap else {
+                throw RelaySwitchError.noHandler("nil")
+            }
+
+            // Check for target_cartridge in meta — if present, route to that
+            // cartridge's master directly instead of using cap-based dispatch
+            let targetCartridgeId: String? = frame.meta.flatMap { meta in
+                if case let .utf8String(s) = meta["target_cartridge"] {
+                    return s
+                }
+                return nil
+            }
+
+            let destIdx: Int
+            if let cartridgeId = targetCartridgeId {
+                // Direct routing by cartridge ID
+                var found: Int? = nil
+                for (idx, master) in masters.enumerated() {
+                    if master.installedCartridges.contains(where: { $0.id == cartridgeId }) {
+                        found = idx
+                        break
+                    }
+                }
+                guard let foundIdx = found else {
+                    throw RelaySwitchError.protocolError("Unknown cartridge '\(cartridgeId)': not reported by any master")
+                }
+                guard masters[foundIdx].healthy else {
+                    throw RelaySwitchError.protocolError("Master for cartridge '\(cartridgeId)' is unhealthy")
+                }
+                destIdx = foundIdx
+            } else {
+                // Standard cap-based dispatch
+                guard let foundIdx = findMasterForCap(cap, preferredCap: preferredCap) else {
+                    throw RelaySwitchError.noHandler(cap)
+                }
+                destIdx = foundIdx
             }
 
             // Assign XID if absent (engine frames arrive without XID)

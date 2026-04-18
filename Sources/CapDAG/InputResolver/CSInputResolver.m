@@ -269,289 +269,52 @@ NSArray<NSString *> * _Nullable CSInputResolverExpandGlob(NSString *pattern, NSE
     return paths;
 }
 
-#pragma mark - Media Adapter Registry
+// CSMediaAdapterRegistry implementation has been moved to CSMediaAdapters.m.
+// The registry now tracks cartridge-provided adapters via cap group registration.
 
-@implementation CSMediaAdapterRegistry {
-    NSArray<id<CSMediaAdapter>> *_adapters;
-}
+// The following placeholder keeps the file structure intact while the old
+// implementation block has been removed — see CSMediaAdapters.m
 
-+ (CSMediaAdapterRegistry *)shared {
-    static CSMediaAdapterRegistry *instance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        instance = [[CSMediaAdapterRegistry alloc] init];
-    });
-    return instance;
-}
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        [self _registerAllAdapters];
-    }
-    return self;
-}
-
-- (void)_registerAllAdapters {
-    // Build the list of all adapters in priority order
-    // Document adapters first, then images, audio, video, data, code, etc.
-    _adapters = @[
-        // Documents
-        [[CSPdfAdapter alloc] init],
-        [[CSEpubAdapter alloc] init],
-        [[CSDocxAdapter alloc] init],
-        [[CSXlsxAdapter alloc] init],
-        [[CSPptxAdapter alloc] init],
-        [[CSOdtAdapter alloc] init],
-        [[CSRtfAdapter alloc] init],
-
-        // Images
-        [[CSPngAdapter alloc] init],
-        [[CSJpegAdapter alloc] init],
-        [[CSGifAdapter alloc] init],
-        [[CSWebpAdapter alloc] init],
-        [[CSSvgAdapter alloc] init],
-        [[CSTiffAdapter alloc] init],
-        [[CSBmpAdapter alloc] init],
-        [[CSHeicAdapter alloc] init],
-        [[CSAvifAdapter alloc] init],
-        [[CSIcoAdapter alloc] init],
-        [[CSPsdAdapter alloc] init],
-        [[CSRawImageAdapter alloc] init],
-
-        // Audio
-        [[CSWavAdapter alloc] init],
-        [[CSMp3Adapter alloc] init],
-        [[CSFlacAdapter alloc] init],
-        [[CSAacAdapter alloc] init],
-        [[CSOggAdapter alloc] init],
-        [[CSAiffAdapter alloc] init],
-        [[CSM4aAdapter alloc] init],
-        [[CSOpusAdapter alloc] init],
-        [[CSMidiAdapter alloc] init],
-        [[CSCafAdapter alloc] init],
-        [[CSWmaAdapter alloc] init],
-
-        // Video
-        [[CSMp4Adapter alloc] init],
-        [[CSWebmAdapter alloc] init],
-        [[CSMkvAdapter alloc] init],
-        [[CSMovAdapter alloc] init],
-        [[CSAviAdapter alloc] init],
-        [[CSMpegAdapter alloc] init],
-        [[CSTsAdapter alloc] init],
-        [[CSFlvAdapter alloc] init],
-        [[CSWmvAdapter alloc] init],
-        [[CSOgvAdapter alloc] init],
-        [[CS3gpAdapter alloc] init],
-
-        // Data interchange (require content inspection)
-        [[CSJsonAdapter alloc] init],
-        [[CSNdjsonAdapter alloc] init],
-        [[CSCsvAdapter alloc] init],
-        [[CSTsvAdapter alloc] init],
-        [[CSYamlAdapter alloc] init],
-        [[CSTomlAdapter alloc] init],
-        [[CSIniAdapter alloc] init],
-        [[CSXmlAdapter alloc] init],
-        [[CSPlistAdapter alloc] init],
-
-        // Plain text
-        [[CSPlainTextAdapter alloc] init],
-        [[CSMarkdownAdapter alloc] init],
-        [[CSLogAdapter alloc] init],
-        [[CSRstAdapter alloc] init],
-        [[CSLatexAdapter alloc] init],
-        [[CSOrgAdapter alloc] init],
-        [[CSHtmlAdapter alloc] init],
-        [[CSCssAdapter alloc] init],
-
-        // Source code
-        [[CSRustAdapter alloc] init],
-        [[CSPythonAdapter alloc] init],
-        [[CSJavaScriptAdapter alloc] init],
-        [[CSTypeScriptAdapter alloc] init],
-        [[CSGoAdapter alloc] init],
-        [[CSJavaAdapter alloc] init],
-        [[CSCAdapter alloc] init],
-        [[CSCppAdapter alloc] init],
-        [[CSSwiftAdapter alloc] init],
-        [[CSObjCAdapter alloc] init],
-        [[CSRubyAdapter alloc] init],
-        [[CSPhpAdapter alloc] init],
-        [[CSShellAdapter alloc] init],
-        [[CSSqlAdapter alloc] init],
-        [[CSKotlinAdapter alloc] init],
-        [[CSScalaAdapter alloc] init],
-        [[CSCSharpAdapter alloc] init],
-        [[CSHaskellAdapter alloc] init],
-        [[CSElixirAdapter alloc] init],
-        [[CSLuaAdapter alloc] init],
-        [[CSPerlAdapter alloc] init],
-        [[CSRLangAdapter alloc] init],
-        [[CSJuliaAdapter alloc] init],
-        [[CSZigAdapter alloc] init],
-        [[CSNimAdapter alloc] init],
-        [[CSDartAdapter alloc] init],
-        [[CSVueAdapter alloc] init],
-        [[CSSvelteAdapter alloc] init],
-        [[CSMakefileAdapter alloc] init],
-        [[CSDockerfileAdapter alloc] init],
-        [[CSIgnoreFileAdapter alloc] init],
-        [[CSRequirementsAdapter alloc] init],
-
-        // Archives
-        [[CSZipAdapter alloc] init],
-        [[CSTarAdapter alloc] init],
-        [[CSGzipAdapter alloc] init],
-        [[CSBzip2Adapter alloc] init],
-        [[CSXzAdapter alloc] init],
-        [[CSZstdAdapter alloc] init],
-        [[CS7zAdapter alloc] init],
-        [[CSRarAdapter alloc] init],
-        [[CSJarAdapter alloc] init],
-        [[CSDmgAdapter alloc] init],
-        [[CSIsoAdapter alloc] init],
-
-        // Other
-        [[CSFontAdapter alloc] init],
-        [[CSModel3DAdapter alloc] init],
-        [[CSMlModelAdapter alloc] init],
-        [[CSDatabaseAdapter alloc] init],
-        [[CSColumnarDataAdapter alloc] init],
-        [[CSCertificateAdapter alloc] init],
-        [[CSGeoAdapter alloc] init],
-        [[CSSubtitleAdapter alloc] init],
-        [[CSEmailAdapter alloc] init],
-        [[CSJupyterAdapter alloc] init],
-        [[CSWasmAdapter alloc] init],
-        [[CSDotAdapter alloc] init],
-
-        // Fallback (must be last)
-        [[CSFallbackAdapter alloc] init]
-    ];
-}
-
-- (NSArray<id<CSMediaAdapter>> *)adapters {
-    return _adapters;
-}
-
-- (nullable id<CSMediaAdapter>)adapterForExtension:(NSString *)extension {
-    NSString *ext = [extension lowercaseString];
-    for (id<CSMediaAdapter> adapter in _adapters) {
-        if ([adapter matchesExtension:ext]) {
-            return adapter;
-        }
-    }
-    return nil;
-}
-
-- (nullable id<CSMediaAdapter>)adapterForMagicBytes:(NSData *)bytes {
-    for (id<CSMediaAdapter> adapter in _adapters) {
-        if ([adapter matchesMagicBytes:bytes]) {
-            return adapter;
-        }
-    }
-    return nil;
-}
-
-- (nullable NSString *)detectMediaUrn:(NSString *)path
-                              content:(NSData *)content
-                            structure:(CSContentStructure *)structure
-                                error:(NSError **)error {
-    // Get extension
+// OLD CSMediaAdapterRegistry implementation removed — see CSMediaAdapters.m
+// The following is the remainder of the file starting at Path Resolution.
+// Extension-based detection helper (sync, for preliminary UI queries)
+static NSString * _Nullable _detectMediaUrnByExtension(NSString *path, CSContentStructure *structure) {
     NSString *ext = [[path pathExtension] lowercaseString];
-
-    // Step 1: Get base URN from MediaUrnRegistry
-    CSMediaUrnRegistry *registry = [CSMediaUrnRegistry shared];
-    NSString *baseUrn = [registry primaryMediaUrnForExtension:ext];
-
-    if (!baseUrn && content.length >= 4) {
-        // No extension match, try magic bytes
-        id<CSMediaAdapter> adapter = [self adapterForMagicBytes:content];
-        if (adapter) {
-            return [adapter detectMediaUrn:path content:content structure:structure error:error];
-        }
-    }
-
-    if (!baseUrn) {
-        // Unknown extension, return generic
-        if (structure) {
-            *structure = CSContentStructureScalarOpaque;
-        }
+    if (ext.length == 0) {
+        if (structure) *structure = CSContentStructureScalarOpaque;
         return @"media:";
     }
 
-    // Step 2: Extract base type and find adapter for content inspection
-    NSString *baseType = [self _extractBaseType:baseUrn];
-    id<CSMediaAdapter> adapter = [self _adapterForBaseType:baseType];
-
-    if (adapter) {
-        // Adapter will inspect content and determine structure
-        return [adapter detectMediaUrn:path content:content structure:structure error:error];
+    CSMediaUrnRegistry *registry = [CSMediaUrnRegistry shared];
+    NSString *primaryUrn = [registry primaryMediaUrnForExtension:ext];
+    if (!primaryUrn) {
+        if (structure) *structure = CSContentStructureScalarOpaque;
+        return @"media:";
     }
 
-    // Step 3: No adapter needed - determine structure from URN markers
+    // Derive structure from URN marker tags
     if (structure) {
-        *structure = [self _structureFromUrn:baseUrn];
-    }
-    return baseUrn;
-}
-
-/// Extract base type from URN (e.g., "media:json;textable" -> "media:json")
-- (NSString *)_extractBaseType:(NSString *)urn {
-    NSRange semicolon = [urn rangeOfString:@";"];
-    if (semicolon.location != NSNotFound) {
-        return [urn substringToIndex:semicolon.location];
-    }
-    return urn;
-}
-
-/// Get adapter for a base type (for content inspection)
-- (nullable id<CSMediaAdapter>)_adapterForBaseType:(NSString *)baseType {
-    // Adapters that do content inspection
-    static NSDictionary<NSString *, Class> *inspectionAdapters = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        inspectionAdapters = @{
-            @"media:json": [CSJsonAdapter class],
-            @"media:ndjson": [CSNdjsonAdapter class],
-            @"media:csv": [CSCsvAdapter class],
-            @"media:tsv": [CSTsvAdapter class],
-            @"media:yaml": [CSYamlAdapter class],
-            @"media:xml": [CSXmlAdapter class],
-            @"media:txt": [CSPlainTextAdapter class],
-        };
-    });
-
-    Class adapterClass = inspectionAdapters[baseType];
-    if (adapterClass) {
-        // Find the existing adapter instance
-        for (id<CSMediaAdapter> adapter in _adapters) {
-            if ([adapter isKindOfClass:adapterClass]) {
-                return adapter;
+        NSError *parseError = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:primaryUrn error:&parseError];
+        if (urn) {
+            BOOL hasList = [urn isList];
+            BOOL hasRecord = [urn isRecord];
+            if (hasList && hasRecord) {
+                *structure = CSContentStructureListRecord;
+            } else if (hasList) {
+                *structure = CSContentStructureListOpaque;
+            } else if (hasRecord) {
+                *structure = CSContentStructureScalarRecord;
+            } else {
+                *structure = CSContentStructureScalarOpaque;
             }
+        } else {
+            *structure = CSContentStructureScalarOpaque;
         }
     }
-    return nil;
+
+    return primaryUrn;
 }
-
-/// Determine structure from URN markers
-- (CSContentStructure)_structureFromUrn:(NSString *)urn {
-    BOOL hasList = [urn containsString:@";list"];
-    BOOL hasRecord = [urn containsString:@";record"];
-
-    if (hasList && hasRecord) {
-        return CSContentStructureListRecord;
-    } else if (hasList) {
-        return CSContentStructureListOpaque;
-    } else if (hasRecord) {
-        return CSContentStructureScalarRecord;
-    }
-    return CSContentStructureScalarOpaque;
-}
-
-@end
 
 #pragma mark - Path Resolution
 
@@ -754,9 +517,8 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
         return nil;
     }
 
-    // Detect media type for each file
+    // Detect media type for each file (extension-based, preliminary)
     NSMutableArray<CSResolvedFile *> *resolvedFiles = [NSMutableArray array];
-    CSMediaAdapterRegistry *registry = [CSMediaAdapterRegistry shared];
     NSFileManager *fm = [NSFileManager defaultManager];
 
     NSMutableSet<NSString *> *fileMediaUrns = [NSMutableSet set];
@@ -766,17 +528,9 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
         NSDictionary *attrs = [fm attributesOfItemAtPath:filePath error:nil];
         uint64_t fileSize = [attrs[NSFileSize] unsignedLongLongValue];
 
-        // Read content for inspection
-        NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:filePath];
-        NSData *content = [handle readDataOfLength:kInspectionBufferSize];
-        [handle closeFile];
-
-        // Detect media type
+        // Detect media type by extension (preliminary, no content inspection)
         CSContentStructure structure = CSContentStructureScalarOpaque;
-        NSString *mediaUrn = [registry detectMediaUrn:filePath
-                                              content:content ?: [NSData data]
-                                            structure:&structure
-                                                error:error];
+        NSString *mediaUrn = _detectMediaUrnByExtension(filePath, &structure);
         if (!mediaUrn) {
             return nil;
         }
@@ -850,13 +604,6 @@ NSString * _Nullable CSInputResolverDetectFile(NSString *path, CSContentStructur
 
     // Read content for inspection
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
-    NSData *content = [handle readDataOfLength:kInspectionBufferSize];
-    [handle closeFile];
-
-    // Detect media type
-    CSMediaAdapterRegistry *registry = [CSMediaAdapterRegistry shared];
-    return [registry detectMediaUrn:path
-                            content:content ?: [NSData data]
-                          structure:structure
-                              error:error];
+    // Detect media type by extension (preliminary, no content inspection)
+    return _detectMediaUrnByExtension(path, structure);
 }

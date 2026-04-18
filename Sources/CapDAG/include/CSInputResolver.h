@@ -13,6 +13,8 @@
 #import <Foundation/Foundation.h>
 #import "CSCardinality.h"
 
+@class CSMediaUrnRegistry;
+
 NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Error Domain
@@ -118,69 +120,36 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 
 @end
 
-#pragma mark - Media Adapter Protocol
-
-/// Protocol for media type detection adapters
-/// Each adapter handles a specific file type or family of types
-/// Mirrors Rust: MediaAdapter trait
-@protocol CSMediaAdapter <NSObject>
-
-@required
-
-/// Adapter name for debugging
-@property (nonatomic, readonly) NSString *name;
-
-/// Check if this adapter matches the file by extension
-/// Returns YES if this adapter should handle the file
-- (BOOL)matchesExtension:(NSString *)extension;
-
-/// Check if this adapter matches the file by magic bytes
-/// Returns YES if this adapter should handle the file
-/// Default implementation returns NO
-- (BOOL)matchesMagicBytes:(NSData *)bytes;
-
-/// Detect media type and structure from file content
-/// Called only if matches returned YES
-/// @param path File path for context
-/// @param content File content (may be partial for large files)
-/// @param structure Output: detected content structure
-/// @param error Output: error if detection fails
-/// @return Media URN string with appropriate markers, or nil on error
-- (nullable NSString *)detectMediaUrn:(NSString *)path
-                              content:(NSData *)content
-                            structure:(CSContentStructure *)structure
-                                error:(NSError **)error;
-
-@end
-
 #pragma mark - Media Adapter Registry
 
-/// Registry of all media adapters
-/// Mirrors Rust: MediaAdapterRegistry
+/// Registry of cartridge-provided content inspection adapters.
+///
+/// Tracks which cartridges have registered adapter URNs for content inspection,
+/// detects ambiguity at registration time (rejecting entire cap groups),
+/// and maps file extensions to the cartridges that can inspect them.
 @interface CSMediaAdapterRegistry : NSObject
 
-/// Shared singleton instance
-@property (class, nonatomic, readonly) CSMediaAdapterRegistry *shared;
+/// Create a new empty registry with the given media URN registry.
+/// No adapters are registered by default — cartridges register them
+/// via registerCapGroup:adapterUrns:cartridgeId:error:.
+- (instancetype)initWithMediaUrnRegistry:(CSMediaUrnRegistry *)mediaUrnRegistry;
 
-/// All registered adapters
-@property (nonatomic, readonly) NSArray<id<CSMediaAdapter>> *adapters;
+/// Register a cap group's adapter URNs.
+/// Checks each new adapter URN against ALL existing registered URNs.
+/// If any pair has a conforms_to relationship in either direction,
+/// the entire group is rejected.
+/// @return YES on success, NO on conflict (error describes the conflict)
+- (BOOL)registerCapGroup:(NSString *)groupName
+             adapterUrns:(NSArray<NSString *> *)adapterUrns
+             cartridgeId:(NSString *)cartridgeId
+                   error:(NSError **)error;
 
-/// Find adapter that matches the given extension
-- (nullable id<CSMediaAdapter>)adapterForExtension:(NSString *)extension;
+/// Find adapters that can handle candidate URNs for a given file extension.
+/// Returns array of cartridge IDs that have registered adapters matching.
+- (NSArray<NSString *> *)cartridgeIdsForExtension:(NSString *)extension;
 
-/// Find adapter that matches the given magic bytes
-- (nullable id<CSMediaAdapter>)adapterForMagicBytes:(NSData *)bytes;
-
-/// Detect media type for a file
-/// @param path File path
-/// @param content File content
-/// @param structure Output: detected content structure
-/// @param error Output: error if detection fails
-/// @return Media URN string with appropriate markers, or nil on error
-- (nullable NSString *)detectMediaUrn:(NSString *)path
-                              content:(NSData *)content
-                            structure:(CSContentStructure *)structure
-                                error:(NSError **)error;
+/// Quick check: does any registered adapter handle this extension?
+- (BOOL)hasAdapterForExtension:(NSString *)extension;
 
 @end
 
