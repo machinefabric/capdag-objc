@@ -422,8 +422,8 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(outErr[0].seq, 1, "ERR must have seq=1")
     }
 
-    // TEST461: write_chunked produces frames with seq=0; SeqAssigner assigns at output stage
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST461: write_chunked produces frames with seq=0; SeqAssigner assigns at output stage
     func test461_writeChunkedSeqZero() throws {
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 5, maxReorderBuffer: 64)
         let pipe = Pipe()
@@ -452,8 +452,8 @@ final class FlowOrderingTests: XCTestCase {
         }
     }
 
-    // TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides)
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides)
     func test472_handshakeNegotiatesReorderBuffer() throws {
         // Simulate cartridge sending HELLO with max_reorder_buffer=32
         let cartridgeLimits = Limits(maxFrame: DEFAULT_MAX_FRAME, maxChunk: DEFAULT_MAX_CHUNK, maxReorderBuffer: 32)

@@ -384,8 +384,6 @@ final class CborSequenceTests: XCTestCase {
     }
 
     // TEST962: assemble rejects invalid CBOR item
-    // Mirrors Rust: valid item first, then garbage — exactly as Rust does
-    // Uses truncated CBOR: 0x5A = byte string with 4-byte length, but only 1 byte of content
     func test962_assembleInvalidItem() {
         let valid = Data(CBOR.unsignedInt(1).encode())
         let garbage = Data([0x5A, 0x00, 0x00, 0x00, 0x0A, 0x01]) // claims 10 bytes, has 1
@@ -536,8 +534,6 @@ final class CborSequenceTests: XCTestCase {
     }
 
     // TEST972: assemble_cbor_sequence rejects invalid CBOR item
-    // Mirrors Rust: valid item first, then garbage — exactly as Rust does
-    // Uses truncated CBOR: 0x5A = byte string with 4-byte length, but only 1 byte of content
     func test972_assembleSequenceInvalidItem() {
         let valid = Data(CBOR.unsignedInt(1).encode())
         let garbage = Data([0x5A, 0x00, 0x00, 0x00, 0x0A, 0x01]) // claims 10 bytes, has 1

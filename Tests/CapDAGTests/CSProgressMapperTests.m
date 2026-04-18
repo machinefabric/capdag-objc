@@ -128,7 +128,7 @@
     XCTAssertEqualWithAccuracy(reported[1].floatValue, 0.8f, 0.001f, @"Sub end maps to 0.8");
 }
 
-// TEST915: Per-group subdivision produces monotonic, bounded progress for N groups  Uses pre-computed boundaries (same pattern as production code) to guarantee monotonicity regardless of f32 rounding.
+// TEST915: Per-group subdivision produces monotonic, bounded progress for N groups Uses pre-computed boundaries (same pattern as production code) to guarantee monotonicity regardless of f32 rounding.
 - (void)test915_per_group_subdivision_monotonic_bounded {
     NSMutableArray<NSNumber *> *allProgress = [NSMutableArray array];
 

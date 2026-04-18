@@ -132,7 +132,6 @@
 }
 
 // TEST698: CapShapeInfo cardinality is always Single when derived from URN Cardinality comes from context (is_sequence), not from URN tags. The list tag is a semantic type property, not a cardinality indicator.
-// Verifies Single input and Sequence output result in OneToMany pattern
 - (void)test698_cap_shape_info_one_to_many {
     CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:pdf" outSpec:@"media:list;png"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
@@ -141,7 +140,6 @@
 }
 
 // TEST699: CapShapeInfo cardinality from URN is always Single; ManyToOne requires is_sequence
-// Verifies Sequence input and Single output result in ManyToOne pattern
 - (void)test699_cap_shape_info_many_to_one {
     CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:list;pdf" outSpec:@"media:pdf"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySequence);
@@ -185,7 +183,6 @@
 }
 
 // TEST712: Tests shape chain analysis detects fan-out points in capability chains Fan-out requires is_sequence=true on the cap's output, not a "list" URN tag
-// Verifies chains with one-to-many transitions are marked for transformation
 - (void)test712_strand_shape_analysis_with_fan_out {
     NSArray *infos = @[
         [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:pdf" outSpec:@"media:list;png"],

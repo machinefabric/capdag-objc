@@ -1259,8 +1259,8 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(filesArray.count, 0, "Empty array should produce empty result")
     }
 
-    // TEST352: file permission denied error is clear (Unix-specific)
     #if os(macOS) || os(Linux)
+    // TEST352: file permission denied error is clear (Unix-specific)
     func test352_file_permission_denied_clear_error() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test352_noperm.txt")
@@ -1530,8 +1530,8 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    // TEST357: Symlinks are followed when reading files
     #if os(macOS) || os(Linux)
+    // TEST357: Symlinks are followed when reading files
     func test357_symlinks_followed() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test357")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -1866,14 +1866,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST362: CLI mode with binary piped in - pipe binary data via stdin  This test simulates real-world conditions: - Pure binary data piped to stdin (NOT CBOR) - CLI mode detected (command arg present) - Cap accepts stdin source - Binary is chunked on-the-fly and accumulated - Handler receives complete CBOR payload
-    //
-    // This test simulates real-world conditions:
-    // - Pure binary data piped to stdin (NOT CBOR)
-    // - CLI mode detected (command arg present)
-    // - Cap accepts stdin source
-    // - Binary is chunked on-the-fly and accumulated
-    // - Handler receives complete CBOR payload
+    // TEST362: CLI mode with binary piped in - pipe binary data via stdin This test simulates real-world conditions: - Pure binary data piped to stdin (NOT CBOR) - CLI mode detected (command arg present) - Cap accepts stdin source - Binary is chunked on-the-fly and accumulated - Handler receives complete CBOR payload
     func test362_cli_mode_piped_binary() throws {
         // Simulate large binary being piped (1MB PDF)
         let pdfContent = Data(repeating: 0xAB, count: 1_000_000)

@@ -520,8 +520,8 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - Wire Format I/O Tests (TEST214-223)
 
-    // TEST214: Test write_frame/read_frame IO roundtrip through length-prefixed wire format
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST214: Test write_frame/read_frame IO roundtrip through length-prefixed wire format
     func test214_frameIORoundtrip() throws {
         let pipe = Pipe()
         let limits = Limits()
@@ -542,8 +542,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(decoded!.payload, original.payload)
     }
 
-    // TEST215: Test reading multiple sequential frames from a single buffer
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST215: Test reading multiple sequential frames from a single buffer
     func test215_multipleFrames() throws {
         let pipe = Pipe()
         let limits = Limits()
@@ -584,8 +584,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertNil(eof)
     }
 
-    // TEST216: Test write_frame rejects frames exceeding max_frame limit
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST216: Test write_frame rejects frames exceeding max_frame limit
     func test216_frameTooLarge() throws {
         let pipe = Pipe()
         let limits = Limits(maxFrame: 100, maxChunk: 50)
@@ -603,8 +603,8 @@ final class CborFrameTests: XCTestCase {
         }
     }
 
-    // TEST217: Test read_frame rejects incoming frames exceeding the negotiated max_frame limit
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST217: Test read_frame rejects incoming frames exceeding the negotiated max_frame limit
     func test217_readFrameTooLarge() throws {
         let pipe = Pipe()
         let writeLimits = Limits(maxFrame: 10_000_000, maxChunk: 1_000_000)
@@ -629,8 +629,8 @@ final class CborFrameTests: XCTestCase {
         }
     }
 
-    // TEST218: Test write_chunked splits data into chunks respecting max_chunk and reconstructs correctly Chunks from write_chunked have seq=0. SeqAssigner at the output stage assigns final seq. Chunk ordering within a stream is tracked by chunk_index (chunk_index field).
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST218: Test write_chunked splits data into chunks respecting max_chunk and reconstructs correctly Chunks from write_chunked have seq=0. SeqAssigner at the output stage assigns final seq. Chunk ordering within a stream is tracked by chunk_index (chunk_index field).
     func test218_writeChunked() throws {
         let pipe = Pipe()
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 10) // Very small for testing
@@ -680,8 +680,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertTrue(firstChunkHadContentType, "first chunk must carry content_type")
     }
 
-    // TEST219: Test write_chunked with empty data produces a single EOF chunk
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST219: Test write_chunked with empty data produces a single EOF chunk
     func test219_writeChunkedEmptyData() throws {
         let pipe = Pipe()
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100)
@@ -700,8 +700,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame!.len, 0, "empty payload must report len=0")
     }
 
-    // TEST220: Test write_chunked with data exactly equal to max_chunk produces exactly one chunk
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST220: Test write_chunked with data exactly equal to max_chunk produces exactly one chunk
     func test220_writeChunkedExactFit() throws {
         let pipe = Pipe()
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 10)
@@ -734,8 +734,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertNil(result)
     }
 
-    // TEST222: Test read_frame handles truncated length prefix (fewer than 4 bytes available)
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST222: Test read_frame handles truncated length prefix (fewer than 4 bytes available)
     func test222_truncatedLengthPrefix() throws {
         let pipe = Pipe()
         // Write only 2 bytes (need 4 for length prefix)
@@ -754,8 +754,8 @@ final class CborFrameTests: XCTestCase {
         }
     }
 
-    // TEST223: Test read_frame returns error on truncated frame body (length prefix says more bytes than available)
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST223: Test read_frame returns error on truncated frame body (length prefix says more bytes than available)
     func test223_truncatedFrameBody() throws {
         let pipe = Pipe()
         // Write length prefix claiming 100 bytes, but only provide 5
@@ -858,8 +858,8 @@ final class CborFrameTests: XCTestCase {
         }
     }
 
-    // TEST229: Test FrameReader/FrameWriter set_limits updates the negotiated limits
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST229: Test FrameReader/FrameWriter set_limits updates the negotiated limits
     func test229_frameReaderWriterSetLimits() {
         let pipe = Pipe()
         let reader = FrameReader(handle: pipe.fileHandleForReading)
@@ -1011,8 +1011,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(result[2999], 0xBB)
     }
 
-    // TEST243: Test AsyncHostError variants display correct error messages
     @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST243: Test AsyncHostError variants display correct error messages
     func test243_cartridgeHostErrorDisplay() {
         let errors: [(CartridgeHostError, String)] = [
             (.handshakeFailed("timeout"), "timeout"),

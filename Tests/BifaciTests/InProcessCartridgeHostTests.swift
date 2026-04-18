@@ -110,8 +110,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         }
     }
 
-    // MARK: - TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response
-
+    // TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response
     func test654_routesReqToHandler() throws {
         let capUrn = "cap:in=\"media:text\";op=echo;out=\"media:text\""
         let cap = makeTestCap(capUrn)
@@ -186,8 +185,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST655: InProcessCartridgeHost handles identity verification (echo nonce)
-
+    // TEST655: InProcessCartridgeHost handles identity verification (echo nonce)
     func test655_identityVerification() throws {
         let host = InProcessCartridgeHost(handlers: [])
 
@@ -245,8 +243,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
-
+    // TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
     func test656_noHandlerReturnsErr() throws {
         let host = InProcessCartridgeHost(handlers: [])
 
@@ -285,8 +282,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps
-
+    // TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps
     func test657_manifestIncludesAllCaps() throws {
         let capUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
         let cap = makeTestCap(capUrn)
@@ -301,8 +297,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         XCTAssertEqual(payload.installedCartridges, [])
     }
 
-    // MARK: - TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID
-
+    // TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID
     func test658_heartbeatResponse() throws {
         let host = InProcessCartridgeHost(handlers: [])
 
@@ -333,8 +328,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST659: InProcessCartridgeHost handler error returns ERR frame
-
+    // TEST659: InProcessCartridgeHost handler error returns ERR frame
     func test659_handlerErrorReturnsErrFrame() throws {
         let capUrn = "cap:in=\"media:void\";op=fail;out=\"media:void\""
         let cap = makeTestCap(capUrn)
@@ -377,8 +371,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // MARK: - TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over generic
-
+    // TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity
     func test660_closestSpecificityRouting() throws {
         let specificUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
         let genericUrn = "cap:in=\"media:image\";op=thumbnail;out=\"media:image;png\""

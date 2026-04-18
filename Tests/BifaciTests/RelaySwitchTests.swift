@@ -618,8 +618,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
     // MARK: - Preferred Cap Routing Tests (TEST437-439)
 
-    // TEST437: find_master_for_cap with preferred_cap routes to generic handler  With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates
-    // NOTE: The Swift implementation requires exact cap URN match or conforms check
+    // TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates
     func test437_preferredCapRoutesToExactMatch() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
@@ -699,7 +698,7 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists)  With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists.
+    // TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists) With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists.
     func test439_specificRequestNoMatchingHandler() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()

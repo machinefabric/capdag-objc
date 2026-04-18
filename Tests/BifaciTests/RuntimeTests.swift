@@ -321,7 +321,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try await cartridgeTask.value
     }
 
-    // TEST417 + TEST426: Full path - engine REQ -> relay -> host -> cartridge -> response -> relay -> engine
+    // TEST417: Route REQ to correct cartridge by cap_urn (with two attached cartridges)
     func test417_fullPathRequestResponse() async throws {
         // Cartridge pipes
         let hostToCartridge = Pipe()
@@ -1419,7 +1419,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await cartridgeTask.value
     }
 
-    // TEST490: Identity verification with multiple cartridges through single relay  Both cartridges must pass identity verification independently before any real requests are routed.
+    // TEST490: Identity verification with multiple cartridges through single relay Both cartridges must pass identity verification independently before any real requests are routed.
     func test490_identityVerificationMultipleCartridges() async throws {
         let host = CartridgeHost()
 
