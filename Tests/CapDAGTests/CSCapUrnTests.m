@@ -110,7 +110,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorInvalidFormat);
 }
 
-// TEST031: Test wildcard rejected in keys but accepted in values (variant: solo tags as wildcards)
+// TEST031: Test wildcard rejected in keys but accepted in values
 - (void)testValuelessTagParsing {
     NSError *error;
     // Value-less tags are now valid (parsed as wildcards)
@@ -130,7 +130,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getTag:@"flag"], @"*");
 }
 
-// TEST003: Invalid format/character test
+// TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
 - (void)testInvalidCharacters {
     NSError *error;
     CSCapUrn *capUrn = [CSCapUrn fromString:@"cap:in=media:void;type@invalid=value;out=\"media:record;textable\"" error:&error];
@@ -153,7 +153,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getOutSpec], @"media:record;textable");
 }
 
-// TEST002: Missing 'out' defaults to media:
+// TEST002: Test that missing 'in' or 'out' defaults to media: wildcard
 - (void)testMissingOutSpecDefaultsToWildcard {
     NSError *error = nil;
     // Missing 'out' defaults to media:
@@ -214,7 +214,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap3 accepts:cap4]);
 }
 
-// TEST003: Direction wildcard matching
+// TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
 - (void)testDirectionWildcardMatches {
     NSError *error = nil;
     // Wildcard inSpec matches any
@@ -234,7 +234,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Tag Matching Tests
 
-// TEST017: Test tag matching: exact match, routing direction, wildcard match, value mismatch
+// TEST017: Test tag matching: exact match, subset match, wildcard match, value mismatch
 - (void)test017_tagMatching {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"op=generate;ext=pdf;target=thumbnail") error:&error];
@@ -280,7 +280,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap2 accepts:request2]);
 }
 
-// TEST020: Test specificity calculation (in/out base, wildcards don't count)
+// TEST020: Test specificity calculation (direction specs use MediaUrn tag count, wildcards don't count)
 - (void)test020_specificity {
     NSError *error;
     // Specificity now includes in and out (if not wildcards)
@@ -357,7 +357,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:in=media:void;op=generate;out=\"media:record;textable\"");
 }
 
-// TEST036: with_tag ignores in/out (use with_in_spec/with_out_spec instead)
+// TEST036: Test with_tag preserves value case
 - (void)testWithTagIgnoresInOut {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -370,7 +370,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(original, sameOut); // Same object
 }
 
-// TEST036: Test with_in_spec sets input direction
+// TEST036: Test with_tag preserves value case
 - (void)testWithInSpec {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -380,7 +380,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original getInSpec], @"media:void"); // Original unchanged
 }
 
-// TEST036: Test with_out_spec sets output direction
+// TEST036: Test with_tag preserves value case
 - (void)testWithOutSpec {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -390,7 +390,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original getOutSpec], @"media:record;textable"); // Original unchanged
 }
 
-// TEST036: Test without_tag removes tag
+// TEST036: Test with_tag preserves value case
 - (void)testWithoutTag {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate;ext=pdf") error:&error];
@@ -402,7 +402,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:ext=pdf;in=media:void;op=generate;out=\"media:record;textable\"");
 }
 
-// TEST036: without_tag ignores in/out
+// TEST036: Test with_tag preserves value case
 - (void)testWithoutTagIgnoresInOut {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -429,7 +429,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([wildcarded accepts:request]);
 }
 
-// TEST027: with_wildcard_tag for in/out direction
+// TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out
 - (void)testWildcardTagDirection {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -453,7 +453,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([subset toString], @"cap:ext=pdf;in=media:void;out=\"media:record;textable\"");
 }
 
-// TEST026: Test merge
+// TEST026: Test merge combines tags from both caps, subset keeps only specified tags
 - (void)testMerge {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:@"cap:in=media:void;op=generate;out=\"media:record;textable\"" error:&error];
@@ -469,7 +469,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([merged getTag:@"output"], @"binary");
 }
 
-// TEST016: Test equality and hashing
+// TEST016: Test that trailing semicolon is equivalent (same hash, same string, matches)
 - (void)testEquality {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -1113,7 +1113,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([provider isDispatchable:request], @"Provider accepting any input should dispatch request with specific pdf input");
 }
 
-// TEST825: is_dispatchable — request with unconstrained input dispatches to specific provider
+// TEST825: is_dispatchable — request with unconstrained input dispatches to specific provider media: on the request input axis means "unconstrained" — vacuously true
 // media: on the request input axis means "unconstrained" — vacuously true
 - (void)test825_isDispatchable_unconstrainedInput {
     NSError *error;

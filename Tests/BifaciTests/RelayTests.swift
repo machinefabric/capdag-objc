@@ -231,7 +231,7 @@ class CborRelayTests: XCTestCase {
 
     // MARK: - TEST410: Master receives updated RelayNotify
 
-    // TEST410: Master receives updated RelayNotify (cap change callback via readFrame)
+    // TEST410: Master receives updated RelayNotify (cap change callback via read_frame)
     func test410_masterReceivesUpdatedRelayNotify() throws {
         let socketPipe = createPipe()
         let socketWriter = FrameWriter(handle: socketPipe.write)

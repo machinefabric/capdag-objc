@@ -49,59 +49,59 @@
 #pragma mark - OS File Filter Tests (TEST1020-TEST1029)
 
 - (void)test1020_macos_ds_store {
-    // TEST1020: macOS .DS_Store should be excluded
+    // TEST1020: macOS .DS_Store is excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/.DS_Store"));
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@".DS_Store"));
 }
 
 - (void)test1021_windows_thumbs_db {
-    // TEST1021: Windows Thumbs.db should be excluded
+    // TEST1021: Windows Thumbs.db is excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/Thumbs.db"));
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"Thumbs.db"));
 }
 
 - (void)test1022_macos_resource_fork {
-    // TEST1022: macOS resource fork (._*) should be excluded
+    // TEST1022: macOS resource fork files are excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/._file"));
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"._document.pdf"));
 }
 
 - (void)test1023_office_lock_file {
-    // TEST1023: Office lock file (~$*) should be excluded
+    // TEST1023: Office lock files are excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/~$document.docx"));
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"~$file.xlsx"));
 }
 
 - (void)test1024_git_directory {
-    // TEST1024: .git directory should be excluded
+    // TEST1024: .git directory is excluded
     XCTAssertTrue(CSInputResolverShouldExcludeDirectory(@"/path/.git"));
     XCTAssertTrue(CSInputResolverShouldExcludeDirectory(@".git"));
 }
 
 - (void)test1025_macosx_archive {
-    // TEST1025: __MACOSX archive artifact should be excluded
+    // TEST1025: __MACOSX archive artifact is excluded
     XCTAssertTrue(CSInputResolverShouldExcludeDirectory(@"/path/__MACOSX"));
     XCTAssertTrue(CSInputResolverShouldExcludeDirectory(@"__MACOSX"));
 }
 
 - (void)test1026_temp_files {
-    // TEST1026: Temp files should be excluded
+    // TEST1026: Temp files are excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/file.tmp"));
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"document.temp"));
 }
 
 - (void)test1027_localized {
-    // TEST1027: .localized should be excluded
+    // TEST1027: .localized is excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/.localized"));
 }
 
 - (void)test1028_desktop_ini {
-    // TEST1028: desktop.ini should be excluded
+    // TEST1028: desktop.ini is excluded
     XCTAssertTrue(CSInputResolverShouldExcludeFile(@"/path/desktop.ini"));
 }
 
 - (void)test1029_content_files_not_excluded {
-    // TEST1029: Content files should NOT be excluded
+    // TEST1029: Normal files are NOT excluded
     XCTAssertFalse(CSInputResolverShouldExcludeFile(@"/path/file.json"));
     XCTAssertFalse(CSInputResolverShouldExcludeFile(@"/path/file.txt"));
     XCTAssertFalse(CSInputResolverShouldExcludeFile(@"/path/file.pdf"));
@@ -112,7 +112,7 @@
 #pragma mark - JSON Detection Tests (TEST1030-TEST1044)
 
 - (void)test1030_json_empty_object {
-    // TEST1030: Empty object should be ScalarRecord
+    // JSON tests
     NSString *path = [self createTestFile:@"test.json" content:@"{}"];
     CSContentStructure structure;
     NSError *error;
@@ -125,7 +125,7 @@
 }
 
 - (void)test1031_json_simple_object {
-    // TEST1031: Simple object should be ScalarRecord
+    // TEST986: Unknown extension returns generic media URN
     NSString *path = [self createTestFile:@"test.json" content:@"{\"a\":1}"];
     CSContentStructure structure;
     NSError *error;
@@ -151,7 +151,7 @@
 }
 
 - (void)test1034_json_array_of_primitives {
-    // TEST1034: Array of primitives should be ListOpaque
+    // TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
     NSString *path = [self createTestFile:@"test.json" content:@"[1,2,3]"];
     CSContentStructure structure;
     NSError *error;
@@ -164,7 +164,7 @@
 }
 
 - (void)test1035_json_array_of_strings {
-    // TEST1035: Array of strings should be ListOpaque
+    // TEST025: All 4 modelcartridge inspection ops on a single model spec
     NSString *path = [self createTestFile:@"test.json" content:@"[\"a\",\"b\"]"];
     CSContentStructure structure;
     NSError *error;
@@ -190,7 +190,7 @@
 }
 
 - (void)test1038_json_string_primitive {
-    // TEST1038: String primitive should be ScalarOpaque
+    // TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis
     NSString *path = [self createTestFile:@"test.json" content:@"\"hello\""];
     CSContentStructure structure;
     NSError *error;
@@ -216,7 +216,7 @@
 }
 
 - (void)test1040_json_boolean_true {
-    // TEST1040: Boolean true should be ScalarOpaque
+    // TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
     NSString *path = [self createTestFile:@"test.json" content:@"true"];
     CSContentStructure structure;
     NSError *error;
@@ -229,7 +229,7 @@
 }
 
 - (void)test1042_json_null {
-    // TEST1042: Null should be ScalarOpaque
+    // TEST030: RST document fan-out produces metadata, outline (with headers), and thumbnail
     NSString *path = [self createTestFile:@"test.json" content:@"null"];
     CSContentStructure structure;
     NSError *error;
@@ -244,7 +244,7 @@
 #pragma mark - NDJSON Detection Tests (TEST1045-TEST1054)
 
 - (void)test1045_ndjson_objects_only {
-    // TEST1045: NDJSON with objects should be ListRecord
+    // NDJSON tests
     NSString *path = [self createTestFile:@"test.ndjson" content:@"{\"a\":1}\n{\"b\":2}"];
     CSContentStructure structure;
     NSError *error;
@@ -257,7 +257,7 @@
 }
 
 - (void)test1046_ndjson_single_object {
-    // TEST1046: Single object NDJSON should be ListRecord
+    // TEST033: List all locally cached models via modelcartridge
     NSString *path = [self createTestFile:@"test.ndjson" content:@"{\"a\":1}"];
     CSContentStructure structure;
     NSError *error;
@@ -285,7 +285,7 @@
 #pragma mark - CSV Detection Tests (TEST1055-TEST1064)
 
 - (void)test1055_csv_multi_column {
-    // TEST1055: Multi-column CSV should be ListRecord
+    // CSV tests
     NSString *path = [self createTestFile:@"test.csv" content:@"a,b\n1,2"];
     CSContentStructure structure;
     NSError *error;
@@ -313,7 +313,7 @@
 #pragma mark - YAML Detection Tests (TEST1065-TEST1074)
 
 - (void)test1065_yaml_simple_mapping {
-    // TEST1065: Simple YAML mapping should be ScalarRecord
+    // YAML tests
     NSString *path = [self createTestFile:@"test.yaml" content:@"a: 1"];
     CSContentStructure structure;
     NSError *error;
@@ -487,7 +487,7 @@
 #pragma mark - Path Resolution Tests (TEST1000-TEST1019)
 
 - (void)test1000_single_existing_file {
-    // TEST1000: Single existing file should resolve
+    // TEST1000: Single existing file
     NSString *path = [self createTestFile:@"test.txt" content:@"hello"];
     NSError *error;
 
@@ -500,7 +500,7 @@
 }
 
 - (void)test1001_single_nonexistent_file {
-    // TEST1001: Non-existent file should error
+    // TEST1001: Single non-existent file
     NSString *path = [self.testDir stringByAppendingPathComponent:@"missing.txt"];
     NSError *error;
 
@@ -512,7 +512,7 @@
 }
 
 - (void)test1002_empty_directory {
-    // TEST1002: Empty directory should error with NoFilesResolved
+    // TEST1002: Empty directory
     NSString *dir = [self createTestDir:@"empty"];
     NSError *error;
 
@@ -524,7 +524,7 @@
 }
 
 - (void)test1003_directory_with_files {
-    // TEST1003: Directory with files should resolve
+    // TEST1003: Directory with files
     NSString *dir = [self createTestDir:@"docs"];
     [self createTestFile:@"docs/file1.txt" content:@"one"];
     [self createTestFile:@"docs/file2.txt" content:@"two"];
@@ -539,7 +539,7 @@
 }
 
 - (void)test1010_duplicate_paths {
-    // TEST1010: Duplicate paths should be deduplicated
+    // TEST1010: Duplicate paths are deduplicated
     NSString *path = [self createTestFile:@"test.txt" content:@"hello"];
     NSError *error;
 
@@ -551,7 +551,7 @@
 }
 
 - (void)test1013_empty_input_array {
-    // TEST1013: Empty input should error
+    // TEST1013: Empty input array
     NSError *error;
 
     CSResolvedInputSet *result = CSInputResolverResolvePaths(@[], &error);
@@ -564,7 +564,7 @@
 #pragma mark - Aggregate Cardinality Tests (TEST1090-TEST1099)
 
 - (void)test1090_single_file_scalar {
-    // TEST1090: Single file → isSequence=NO
+    // TEST1090: 1 file scalar content → is_sequence=false (one file)
     NSString *path = [self createTestFile:@"test.pdf" content:@"%PDF-1.4"];
     NSError *error;
 
@@ -576,7 +576,7 @@
 }
 
 - (void)test1091_single_file_list_content {
-    // TEST1091: Single file with list content → isSequence=NO.
+    // TEST1091: 1 file with list content (CSV) → is_sequence=false. Content structure is ListRecord (the file contains tabular data), but is_sequence is false because there is only one file. Content structure ≠ input cardinality.
     // Content structure is ListRecord (tabular data), but isSequence is NO
     // because there is only one file. Content structure ≠ input cardinality.
     NSString *path = [self createTestFile:@"test.csv" content:@"a,b\n1,2\n3,4"];
@@ -590,7 +590,7 @@
 }
 
 - (void)test1092_two_files {
-    // TEST1092: Two files → isSequence=YES
+    // TEST1092: 2 files → is_sequence=true
     [self createTestFile:@"file1.txt" content:@"one"];
     NSString *path2 = [self createTestFile:@"file2.txt" content:@"two"];
     NSString *path1 = [self.testDir stringByAppendingPathComponent:@"file1.txt"];
@@ -605,7 +605,7 @@
 }
 
 - (void)test1093_dir_single_file {
-    // TEST1093: Directory with 1 file → isSequence=NO
+    // TEST1093: 1 dir with 1 file → is_sequence=false
     NSString *dir = [self createTestDir:@"single"];
     [self createTestFile:@"single/only.pdf" content:@"%PDF"];
     NSError *error;
@@ -619,7 +619,7 @@
 }
 
 - (void)test1094_dir_multiple_files {
-    // TEST1094: Directory with 3 files → isSequence=YES
+    // TEST1094: 1 dir with 3 files → is_sequence=true
     NSString *dir = [self createTestDir:@"multi"];
     [self createTestFile:@"multi/a.txt" content:@"a"];
     [self createTestFile:@"multi/b.txt" content:@"b"];
@@ -635,7 +635,7 @@
 }
 
 - (void)test1098_common_media {
-    // TEST1098: All same media type should have commonMedia
+    // TEST1098: Common media (all same type)
     NSString *dir = [self createTestDir:@"pdfs"];
     [self createTestFile:@"pdfs/a.pdf" content:@"%PDF"];
     [self createTestFile:@"pdfs/b.pdf" content:@"%PDF"];
@@ -650,7 +650,7 @@
 }
 
 - (void)test1099_heterogeneous {
-    // TEST1099: Mixed media types should not have commonMedia
+    // TEST1099: Heterogeneous (mixed types)
     NSString *dir = [self createTestDir:@"mixed"];
     [self createTestFile:@"mixed/doc.pdf" content:@"%PDF"];
     [self createTestFile:@"mixed/image.png" content:@""];

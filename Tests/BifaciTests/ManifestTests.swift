@@ -30,7 +30,7 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(manifest.caps[0].urn, "cap:in=media:;out=media:")
     }
 
-    // TEST149: Test cap manifest with author field (via CSCapManifest which has author)
+    // TEST149: Test cap manifest with author field sets author correctly
     func test149_capManifestWithAuthor() throws {
         let csManifest = CSCapManifest(
             name: "test-cartridge",
@@ -148,7 +148,7 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(decoded.caps.count, 0)
     }
 
-    // TEST154: Test cap manifest optional author field (using CSCapManifest)
+    // TEST154: Test cap manifest optional author field skipped in serialization when None
     func test154_capManifestOptionalAuthorField() throws {
         // Without author
         let manifestNoAuthor = CSCapManifest(
@@ -164,7 +164,7 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(manifestWithAuthor.author, "Author Name")
     }
 
-    // TEST155: Test ComponentMetadata provides manifest and caps accessor methods
+    // TEST155: Test ComponentMetadata trait provides manifest and caps accessor methods
     func test155_componentMetadataAccessors() throws {
         // CSCapManifest provides accessor methods for manifest data
         let capUrn = try CSCapUrn.fromString("cap:in=media:;out=media:")

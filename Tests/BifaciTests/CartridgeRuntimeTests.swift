@@ -11,7 +11,7 @@ import Ops
 // in the reference Rust implementation.
 //
 // N/A tests (Rust-specific traits):
-//   TEST253: handler_is_send_sync (Swift uses @Sendable instead of Arc+Send+Sync)
+// TEST253: Test OpFactory can be cloned via Arc and sent across tasks (Send + Sync)
 //   TEST279: cap_argument_value_clone (Swift structs are value types, always copied)
 //   TEST280: cap_argument_value_debug (Rust Debug trait has no Swift equivalent)
 //   TEST281: cap_argument_value_into_string (Rust Into trait - Swift uses String directly)
@@ -143,12 +143,12 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(String(data: collector.getData(), encoding: .utf8), "echo this", "raw handler must echo payload")
     }
 
-    // TEST250: REMOVED - Typed handler API removed; handlers now work with InputPackage/OutputStream directly
+    // TEST250: Test Op handler collects input and processes it
     // Handlers manually deserialize JSON from input bytes if needed - no automatic deserialization
 
-    // TEST251: REMOVED - Typed handler API removed; handlers handle their own deserialization errors
+    // TEST251: Test Op handler propagates errors through RuntimeError::Handler
 
-    // TEST252: find_handler returns None for unregistered cap URNs
+    // TEST252: Test find_handler returns None for unregistered cap URNs
     func test252_findHandlerUnknownCap() {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
         XCTAssertNil(runtime.findHandler(capUrn: "cap:op=nonexistent"),
@@ -204,7 +204,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // MARK: - NoPeerInvoker Tests (TEST254-255)
 
-    // TEST254: NoPeerInvoker always returns error regardless of arguments
+    // TEST254: Test NoPeerInvoker always returns PeerRequest error
     func test254_noPeerInvoker() {
         let noPeer = NoPeerInvoker()
 
@@ -219,7 +219,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         }
     }
 
-    // TEST255: NoPeerInvoker returns error even with valid arguments
+    // TEST255: Test NoPeerInvoker call_with_bytes also returns error
     func test255_noPeerInvokerWithArguments() {
         let noPeer = NoPeerInvoker()
 
@@ -229,21 +229,21 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // MARK: - Runtime Creation Tests (TEST256-258)
 
-    // TEST256: CartridgeRuntime with manifest JSON stores manifest data and parses when valid
+    // TEST256: Test CartridgeRuntime::with_manifest_json stores manifest data and parses when valid
     func test256_withManifestJson() {
         let runtime = CartridgeRuntime(manifestJSON: Self.testManifestJSON)
         XCTAssertFalse(runtime.manifestData.isEmpty, "manifestData must be populated")
         // Note: "cap:op=test" may or may not parse as valid Manifest depending on validation
     }
 
-    // TEST257: CartridgeRuntime with invalid JSON still creates runtime
+    // TEST257: Test CartridgeRuntime::new with invalid JSON still creates runtime (manifest is None)
     func test257_newWithInvalidJson() {
         let runtime = CartridgeRuntime(manifest: "not json".data(using: .utf8)!)
         XCTAssertFalse(runtime.manifestData.isEmpty, "manifestData should store raw bytes")
         XCTAssertNil(runtime.parsedManifest, "invalid JSON should leave parsedManifest as nil")
     }
 
-    // TEST258: CartridgeRuntime with valid manifest data creates runtime with parsed manifest
+    // TEST258: Test CartridgeRuntime::with_manifest creates runtime with valid manifest data
     func test258_withManifestStruct() {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
         XCTAssertFalse(runtime.manifestData.isEmpty)
@@ -253,21 +253,21 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // MARK: - Extract Effective Payload Tests (TEST259-265, TEST272-273)
 
-    // TEST259: extract_effective_payload with non-CBOR content_type returns raw payload unchanged
+    // TEST259: Test extract_effective_payload with non-CBOR content_type returns raw payload unchanged
     func test259_extractEffectivePayloadNonCbor() throws {
         let payload = "raw data".data(using: .utf8)!
         let result = try extractEffectivePayload(payload: payload, contentType: "application/json", capUrn: "cap:op=test")
         XCTAssertEqual(result, payload, "non-CBOR must return raw payload")
     }
 
-    // TEST260: extract_effective_payload with None content_type returns raw payload unchanged
+    // TEST260: Test extract_effective_payload with None content_type returns raw payload unchanged
     func test260_extractEffectivePayloadNoContentType() throws {
         let payload = "raw data".data(using: .utf8)!
         let result = try extractEffectivePayload(payload: payload, contentType: nil, capUrn: "cap:op=test")
         XCTAssertEqual(result, payload)
     }
 
-    // TEST261: extract_effective_payload with CBOR content extracts matching argument value
+    // TEST261: Test extract_effective_payload with CBOR content extracts matching argument value
     func test261_extractEffectivePayloadCborMatch() throws {
         // Build CBOR: [{media_urn: "media:string;textable", value: bytes("hello")}]
         let cborArray: CBOR = .array([
@@ -286,7 +286,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(String(data: result, encoding: .utf8), "hello")
     }
 
-    // TEST262: extract_effective_payload with CBOR content fails when no argument matches
+    // TEST262: Test extract_effective_payload with CBOR content fails when no argument matches expected input
     func test262_extractEffectivePayloadCborNoMatch() {
         let cborArray: CBOR = .array([
             .map([
@@ -308,7 +308,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         }
     }
 
-    // TEST263: extract_effective_payload with invalid CBOR bytes returns deserialization error
+    // TEST263: Test extract_effective_payload with invalid CBOR bytes returns deserialization error
     func test263_extractEffectivePayloadInvalidCbor() {
         XCTAssertThrowsError(try extractEffectivePayload(
             payload: "not cbor".data(using: .utf8)!,
@@ -317,7 +317,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         ))
     }
 
-    // TEST264: extract_effective_payload with CBOR non-array returns error
+    // TEST264: Test extract_effective_payload with CBOR non-array (e.g. map) returns error
     func test264_extractEffectivePayloadCborNotArray() {
         let cborMap: CBOR = .map([:])
         let payload = Data(cborMap.encode())
@@ -358,7 +358,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         }
     }
 
-    // TEST272: extract_effective_payload CBOR with multiple arguments selects the correct one
+    // TEST272: Test extract_effective_payload CBOR with multiple arguments selects the correct one
     func test272_extractEffectivePayloadMultipleArgs() throws {
         let cborArray: CBOR = .array([
             .map([
@@ -380,7 +380,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(String(data: result, encoding: .utf8), "correct")
     }
 
-    // TEST273: extract_effective_payload with binary data in CBOR value
+    // TEST273: Test extract_effective_payload with binary data in CBOR value (not just text)
     func test273_extractEffectivePayloadBinaryValue() throws {
         var binaryData = [UInt8]()
         for i: UInt8 in 0...255 { binaryData.append(i) }
@@ -402,12 +402,12 @@ final class CartridgeRuntimeTests: XCTestCase {
     }
 
     // MARK: - CliStreamEmitter Tests (TEST266-267)
-    // TEST266: REMOVED - CliStreamEmitter removed in favor of OutputStream with CliFrameSender
+    // TEST266: Test CliFrameSender wraps CliStreamEmitter correctly (basic construction)
     // TEST267: REMOVED - CliStreamEmitter removed
 
     // MARK: - RuntimeError Display Tests (TEST268)
 
-    // TEST268: RuntimeError variants display correct messages
+    // TEST268: Test RuntimeError variants display correct messages
     func test268_runtimeErrorDisplay() {
         let err1 = CartridgeRuntimeError.noHandler("cap:op=missing")
         XCTAssertTrue((err1.errorDescription ?? "").contains("cap:op=missing"))
@@ -430,7 +430,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // MARK: - Typed Handler Tests (TEST250-251, 253, 266)
 
-    // TEST250: Op handler can be registered and invoked
+    // TEST250: Test Op handler collects input and processes it
     func test250_typedHandlerRegistration() throws {
         // Verify Op handlers can be constructed and registered
         // Op protocol requires: typealias Output, perform(dry:wet:), metadata()
@@ -448,7 +448,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertNotNil(anyOp)
     }
 
-    // TEST251: Op handler errors propagate through RuntimeError::Handler
+    // TEST251: Test Op handler propagates errors through RuntimeError::Handler
     func test251_typedHandlerErrorPropagation() {
         // Verify that errors thrown from handlers are wrapped correctly
         let error = CartridgeRuntimeError.handlerError("test handler error")
@@ -460,7 +460,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertNotEqual(handlerErr.errorDescription, protocolErr.errorDescription)
     }
 
-    // TEST253: Op handler can be used across threads (Send + Sync equivalent)
+    // TEST253: Test OpFactory can be cloned via Arc and sent across tasks (Send + Sync)
     func test253_handlerIsSendable() async throws {
         // Verify AnyOp is Sendable (can be sent across actor boundaries)
         // EchoAllBytesOp is marked @unchecked Sendable
@@ -476,7 +476,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertNotNil(result)
     }
 
-    // TEST266: CliFrameSender construction with ndjson mode (matching Rust)
+    // TEST266: Test CliFrameSender wraps CliStreamEmitter correctly (basic construction)
     func test266_cliFrameSenderConstruction() {
         // Default CLI sender uses NDJSON mode
         let sender = CliFrameSender()
@@ -502,7 +502,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
 final class CapArgumentValueTests: XCTestCase {
 
-    // TEST274: CapArgumentValue stores media_urn and raw byte value
+    // TEST274: Test CapArgumentValue::new stores media_urn and raw byte value
     func test274_capArgumentValueNew() {
         let arg = CapArgumentValue(
             mediaUrn: "media:model-spec;textable",
@@ -512,39 +512,39 @@ final class CapArgumentValueTests: XCTestCase {
         XCTAssertEqual(arg.value, "gpt-4".data(using: .utf8)!)
     }
 
-    // TEST275: CapArgumentValue.fromString converts string to UTF-8 bytes
+    // TEST275: Test CapArgumentValue::from_str converts string to UTF-8 bytes
     func test275_capArgumentValueFromStr() {
         let arg = CapArgumentValue.fromString(mediaUrn: "media:string;textable", value: "hello world")
         XCTAssertEqual(arg.mediaUrn, "media:string;textable")
         XCTAssertEqual(arg.value, "hello world".data(using: .utf8)!)
     }
 
-    // TEST276: CapArgumentValue.valueAsString succeeds for UTF-8 data
+    // TEST276: Test CapArgumentValue::value_as_str succeeds for UTF-8 data
     func test276_capArgumentValueAsStrValid() throws {
         let arg = CapArgumentValue.fromString(mediaUrn: "media:string", value: "test")
         XCTAssertEqual(try arg.valueAsString(), "test")
     }
 
-    // TEST277: CapArgumentValue.valueAsString fails for non-UTF-8 binary data
+    // TEST277: Test CapArgumentValue::value_as_str fails for non-UTF-8 binary data
     func test277_capArgumentValueAsStrInvalidUtf8() {
         let arg = CapArgumentValue(mediaUrn: "media:pdf", value: Data([0xFF, 0xFE, 0x80]))
         XCTAssertThrowsError(try arg.valueAsString(), "non-UTF-8 data must fail")
     }
 
-    // TEST278: CapArgumentValue with empty value stores empty Data
+    // TEST278: Test CapArgumentValue::new with empty value stores empty vec
     func test278_capArgumentValueEmpty() throws {
         let arg = CapArgumentValue(mediaUrn: "media:void", value: Data())
         XCTAssertTrue(arg.value.isEmpty)
         XCTAssertEqual(try arg.valueAsString(), "")
     }
 
-    // TEST282: CapArgumentValue.fromString with Unicode string preserves all characters
+    // TEST282: Test CapArgumentValue::from_str with Unicode string preserves all characters
     func test282_capArgumentValueUnicode() throws {
         let arg = CapArgumentValue.fromString(mediaUrn: "media:string", value: "hello 世界 🌍")
         XCTAssertEqual(try arg.valueAsString(), "hello 世界 🌍")
     }
 
-    // TEST283: CapArgumentValue with large binary payload preserves all bytes
+    // TEST283: Test CapArgumentValue with large binary payload preserves all bytes
     func test283_capArgumentValueLargeBinary() {
         var data = Data()
         for _ in 0..<40 {  // 40 * 256 = 10240 > 10000
@@ -944,7 +944,7 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(valueStr, "mlx-community/Llama-3.2-3B-Instruct-4bit")
     }
 
-    // TEST344: file-path-array with invalid JSON fails clearly
+    // TEST344: file-path-array with nonexistent path fails clearly
     func test344_file_path_array_invalid_json_fails() {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
@@ -973,7 +973,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST345: file-path-array with one file failing stops and reports error
+    // TEST345: file-path-array with literal nonexistent path fails hard
     func test345_file_path_array_one_file_missing_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let file1 = tempDir.appendingPathComponent("test345_exists.txt")
@@ -1222,7 +1222,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST351: file-path-array with empty array succeeds
+    // TEST351: file-path array with empty CBOR array returns empty (CBOR mode)
     func test351_file_path_array_empty_array() throws {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
@@ -1361,7 +1361,7 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(bytes, [UInt8]("test value".utf8))
     }
 
-    // TEST354: Glob pattern with no matches produces empty array
+    // TEST354: Glob pattern with no matches fails hard (NO FALLBACK)
     func test354_glob_pattern_no_matches_empty_array() throws {
         let tempDir = FileManager.default.temporaryDirectory
 
@@ -1807,7 +1807,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST398: IO error from reader propagates as error
+    // TEST398: IO error from reader propagates as RuntimeError::Io
     func test398_build_payload_io_error() {
         let cap = CapDefinition(
             urn: "cap:in=\"media:\";op=process;out=\"media:void\"",
@@ -1866,7 +1866,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST362: CLI mode with binary piped in - pipe binary data via stdin
+    // TEST362: CLI mode with binary piped in - pipe binary data via stdin  This test simulates real-world conditions: - Pure binary data piped to stdin (NOT CBOR) - CLI mode detected (command arg present) - Cap accepts stdin source - Binary is chunked on-the-fly and accumulated - Handler receives complete CBOR payload
     //
     // This test simulates real-world conditions:
     // - Pure binary data piped to stdin (NOT CBOR)

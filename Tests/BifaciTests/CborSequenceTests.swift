@@ -22,7 +22,7 @@ final class CborSequenceTests: XCTestCase {
         return result
     }
 
-    // TEST810: splitCborSequence splits concatenated CBOR Bytes values
+    // TEST810: Tests EdgeType::JsonPath extracts values using nested path expressions Verifies that JsonPath edge type correctly navigates through multiple levels like "data.nested.value"
     func test810_splitSequenceBytes() throws {
         let page1: [UInt8] = Array("page1 json data".utf8)
         let page2: [UInt8] = Array("page2 json data".utf8)
@@ -46,7 +46,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d2, .byteString(page3))
     }
 
-    // TEST811: splitCborSequence splits concatenated CBOR Text values
+    // TEST811: Tests EdgeType::Iteration preserves array values for iterative processing Verifies that Iteration edge type passes through arrays unchanged to enable ForEach patterns
     func test811_splitSequenceText() throws {
         let seq = buildCborSequence([
             .utf8String("hello"),
@@ -62,7 +62,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d1, .utf8String("world"))
     }
 
-    // TEST812: splitCborSequence handles mixed types
+    // TEST812: Tests EdgeType::Collection preserves collected values without transformation Verifies that Collection edge type maintains structure for aggregation patterns
     func test812_splitSequenceMixed() throws {
         let seq = buildCborSequence([
             .byteString([1, 2, 3]),
@@ -80,7 +80,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d3, .unsignedInt(99))
     }
 
-    // TEST813: splitCborSequence single-item sequence
+    // TEST813: Tests JSON path extraction through deeply nested object hierarchies (4+ levels) Verifies that paths can traverse multiple nested levels like "level1.level2.level3.level4.value"
     func test813_splitSequenceSingle() throws {
         let seq = buildCborSequence([
             .byteString([0xDE, 0xAD]),
@@ -92,7 +92,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d0, .byteString([0xDE, 0xAD]))
     }
 
-    // TEST814: roundtrip — assemble then split preserves items
+    // TEST814: Tests error handling when array index exceeds available elements Verifies that out-of-bounds array access returns a descriptive error message
     func test814_roundtripAssembleSplitSequence() throws {
         let itemValues: [CBOR] = [
             .byteString(Array("first".utf8)),
@@ -110,7 +110,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(splitBack[2], items[2])
     }
 
-    // TEST815: roundtrip — split then assemble preserves byte-for-byte
+    // TEST815: Tests JSON path extraction with single-level paths (no nesting) Verifies that simple field names without dots correctly extract top-level values
     func test815_roundtripSplitAssembleSequence() throws {
         let seq = buildCborSequence([
             .byteString(Array("alpha".utf8)),
@@ -123,7 +123,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(reassembled, seq, "split then assemble must preserve bytes exactly")
     }
 
-    // TEST816: splitCborSequence rejects empty data
+    // TEST816: Tests JSON path extraction preserves special characters in string values Verifies that quotes, backslashes, and other special characters are correctly maintained
     func test816_splitSequenceEmpty() {
         XCTAssertThrowsError(try splitCborSequence(Data())) { error in
             guard let seqError = error as? CborSequenceError else {
@@ -138,7 +138,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST817: splitCborSequence rejects truncated CBOR
+    // TEST817: Tests JSON path extraction correctly handles explicit null values Verifies that null is returned as serde_json::Value::Null rather than an error
     func test817_splitSequenceTruncated() {
         // Build a valid CBOR Bytes value, then append a truncated item
         var seq = buildCborSequence([
@@ -161,7 +161,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST818: assembleCborSequence rejects invalid CBOR item
+    // TEST818: Tests JSON path extraction correctly returns empty arrays Verifies that zero-length arrays are extracted as valid empty array values
     func test818_assembleSequenceInvalidItem() {
         // Use a truncated CBOR bytestring: header says 10 bytes, but only 2 provided
         let items: [Data] = [
@@ -182,13 +182,13 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST819: assembleCborSequence with empty items list produces empty bytes
+    // TEST819: Tests JSON path extraction handles various numeric types correctly Verifies extraction of integers, floats, negative numbers, and zero
     func test819_assembleSequenceEmpty() throws {
         let assembled = try assembleCborSequence([])
         XCTAssertTrue(assembled.isEmpty, "empty sequence must produce empty bytes")
     }
 
-    // TEST820: single CBOR value is a valid sequence of 1 item
+    // TEST820: Tests JSON path extraction correctly handles boolean values Verifies that true and false are extracted as proper boolean JSON values
     func test820_singleValueSequence() throws {
         let single = Data(CBOR.byteString(Array("solo".utf8)).encode())
 
@@ -198,7 +198,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d0, .byteString(Array("solo".utf8)))
     }
 
-    // TEST821: collectCborSequence on InputStream preserves CBOR structure
+    // TEST821: Tests JSON path extraction with multi-dimensional arrays (matrix access) Verifies that nested array structures like "matrix[1]" correctly extract inner arrays
     func test821_inputStreamCollectCborSequence() throws {
         let page1 = CBOR.byteString(Array("page1".utf8))
         let page2 = CBOR.byteString(Array("page2".utf8))
@@ -232,7 +232,7 @@ final class CborSequenceTests: XCTestCase {
     // MARK: - CBOR Array Tests (splitCborArray / assembleCborArray)
     // Mirrors Rust tests 780-786, 955-956 in cbor_util.rs
 
-    // TEST780: splitCborArray splits integer array
+    // TEST780: split_cbor_array splits a simple array of integers
     func test780_splitIntegerArray() throws {
         let array = CBOR.array([.unsignedInt(1), .unsignedInt(2), .unsignedInt(3)])
         let data = Data(array.encode())
@@ -246,7 +246,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST955: splitCborArray with nested maps
+    // TEST955: split_cbor_array with nested maps
     func test955_splitMapArray() throws {
         let map1 = CBOR.map([.utf8String("name"): .utf8String("Alice")])
         let map2 = CBOR.map([.utf8String("name"): .utf8String("Bob")])
@@ -262,7 +262,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(decoded2, map2)
     }
 
-    // TEST782: splitCborArray rejects non-array input
+    // TEST782: split_cbor_array rejects non-array input
     func test782_splitNonArray() {
         let text = CBOR.utf8String("not an array")
         let data = Data(text.encode())
@@ -280,7 +280,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST783: splitCborArray rejects empty array
+    // TEST783: split_cbor_array rejects empty array
     func test783_splitEmptyArray() {
         let array = CBOR.array([])
         let data = Data(array.encode())
@@ -298,7 +298,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST784: splitCborArray rejects invalid CBOR bytes
+    // TEST784: split_cbor_array rejects invalid CBOR bytes
     func test784_splitInvalidCbor() {
         // 0xFF 0xFE 0xFD is garbage — SwiftCBOR may decode it as a non-array
         // value rather than failing outright, so accept either error variant.
@@ -317,7 +317,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST785: assembleCborArray creates array from individual items
+    // TEST785: assemble_cbor_array creates array from individual items
     func test785_assembleIntegerArray() throws {
         let items: [Data] = [
             Data(CBOR.unsignedInt(10).encode()),
@@ -373,7 +373,7 @@ final class CborSequenceTests: XCTestCase {
 
     // MARK: - CBOR Array Extended Tests (TEST961-963)
 
-    // TEST961: assembleCborArray with empty list produces empty CBOR array
+    // TEST961: assemble empty list produces empty CBOR array
     func test961_assembleEmpty() throws {
         let result = try assembleCborArray([])
         let decoded = try CBOR.decode([UInt8](result))
@@ -383,7 +383,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(items.count, 0, "Empty input should produce empty array")
     }
 
-    // TEST962: assembleCborArray rejects invalid CBOR item
+    // TEST962: assemble rejects invalid CBOR item
     // Mirrors Rust: valid item first, then garbage — exactly as Rust does
     // Uses truncated CBOR: 0x5A = byte string with 4-byte length, but only 1 byte of content
     func test962_assembleInvalidItem() {
@@ -401,7 +401,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST963: splitCborArray preserves CBOR byte strings (binary data)
+    // TEST963: split preserves CBOR byte strings (binary data — the common case in bifaci)
     func test963_splitBinaryItems() throws {
         let bin1: [UInt8] = [0xDE, 0xAD]
         let bin2: [UInt8] = [0xBE, 0xEF]
@@ -419,7 +419,7 @@ final class CborSequenceTests: XCTestCase {
 
     // MARK: - CBOR Sequence Extended Tests (TEST964-975)
 
-    // TEST964: splitCborSequence on concatenated Bytes values
+    // TEST964: split_cbor_sequence splits concatenated CBOR Bytes values
     func test964_splitSequenceBytes() throws {
         let b1 = CBOR.byteString([0x01, 0x02])
         let b2 = CBOR.byteString([0x03, 0x04])
@@ -434,7 +434,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d1, b2)
     }
 
-    // TEST965: splitCborSequence on concatenated Text values
+    // TEST965: split_cbor_sequence splits concatenated CBOR Text values
     func test965_splitSequenceText() throws {
         let t1 = CBOR.utf8String("hello")
         let t2 = CBOR.utf8String("world")
@@ -449,7 +449,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(d1, t2)
     }
 
-    // TEST966: splitCborSequence handles mixed types
+    // TEST966: split_cbor_sequence handles mixed types
     func test966_splitSequenceMixed() throws {
         let values: [CBOR] = [
             .byteString([0xCA, 0xFE]),
@@ -468,7 +468,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST967: splitCborSequence on single-item sequence
+    // TEST967: split_cbor_sequence single-item sequence
     func test967_splitSequenceSingle() throws {
         let single = CBOR.utf8String("only one")
         let seq = buildCborSequence([single])
@@ -479,7 +479,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(decoded, single)
     }
 
-    // TEST968: assemble then split roundtrip preserves items (sequence)
+    // TEST968: roundtrip — assemble then split preserves items
     func test968_roundtripAssembleSplitSequence() throws {
         let items: [Data] = [
             Data(CBOR.utf8String("a").encode()),
@@ -496,7 +496,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST969: split then assemble roundtrip preserves bytes exactly (sequence)
+    // TEST969: roundtrip — split then assemble preserves byte-for-byte
     func test969_roundtripSplitAssembleSequence() throws {
         let values: [CBOR] = [
             .utf8String("x"),
@@ -510,7 +510,7 @@ final class CborSequenceTests: XCTestCase {
         XCTAssertEqual(reassembled, original, "Roundtrip must preserve bytes exactly")
     }
 
-    // TEST970: splitCborSequence rejects empty data
+    // TEST970: split_cbor_sequence rejects empty data
     func test970_splitSequenceEmpty() {
         XCTAssertThrowsError(try splitCborSequence(Data())) { error in
             guard let seqError = error as? CborSequenceError else {
@@ -524,7 +524,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST971: splitCborSequence rejects truncated CBOR
+    // TEST971: split_cbor_sequence rejects truncated CBOR
     func test971_splitSequenceTruncated() {
         // Start of a text string header but truncated mid-value
         let truncated = Data([0x78, 0x20]) // text(32) but no actual bytes follow
@@ -535,7 +535,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST972: assembleCborSequence rejects invalid item
+    // TEST972: assemble_cbor_sequence rejects invalid CBOR item
     // Mirrors Rust: valid item first, then garbage — exactly as Rust does
     // Uses truncated CBOR: 0x5A = byte string with 4-byte length, but only 1 byte of content
     func test972_assembleSequenceInvalidItem() {
@@ -548,13 +548,13 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST973: assembleCborSequence with empty items produces empty bytes
+    // TEST973: assemble_cbor_sequence with empty items list produces empty bytes
     func test973_assembleSequenceEmpty() throws {
         let result = try assembleCborSequence([])
         XCTAssertEqual(result.count, 0, "Empty items should produce empty bytes")
     }
 
-    // TEST974: CBOR sequence is NOT a CBOR array — splitCborArray rejects it
+    // TEST974: CBOR sequence is NOT a CBOR array — split_cbor_array rejects a sequence
     func test974_sequenceIsNotArray() {
         let seq = buildCborSequence([.unsignedInt(1), .unsignedInt(2)])
         // A sequence is just concatenated values, not wrapped in array
@@ -571,7 +571,7 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST975: single CBOR value is both valid sequence and valid value
+    // TEST975: split_cbor_sequence works on data that is also a valid CBOR array (single top-level value)
     func test975_singleValueSequence() throws {
         let single = CBOR.utf8String("standalone")
         let data = Data(single.encode())
@@ -589,7 +589,7 @@ final class CborSequenceTests: XCTestCase {
 
     // MARK: - Stream Tests
 
-    // TEST822: collectBytes vs collectCborSequence produce different results for same input
+    // TEST822: Tests error handling for non-numeric array indices Verifies that invalid indices like "items[abc]" return a descriptive parse error
     func test822_collectBytesVsSequence() throws {
         // With byteString chunks, collectBytes extracts inner bytes while
         // collectCborSequence preserves CBOR encoding

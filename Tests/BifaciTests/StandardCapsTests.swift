@@ -10,7 +10,7 @@ final class StandardCapsTests: XCTestCase {
 
     // MARK: - CAP_DISCARD Tests (TEST473-474)
 
-    // TEST473: CAP_DISCARD parses as valid CapUrn
+    // TEST473: CAP_DISCARD parses as valid CapUrn with in=media: and out=media:void
     func test473_capDiscardParsesAsValidCapUrn() throws {
         let discardUrn = try CSCapUrn.fromString(CSCapDiscard)
 
@@ -19,7 +19,7 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertEqual(discardUrn.outSpec, "media:void", "CAP_DISCARD output must be media:void")
     }
 
-    // TEST474: CAP_DISCARD accepts specific void-output caps
+    // TEST474: CAP_DISCARD accepts specific-input/void-output caps
     func test474_capDiscardAcceptsVoidOutputCaps() throws {
         let discardPattern = try CSCapUrn.fromString(CSCapDiscard)
 
@@ -37,7 +37,7 @@ final class StandardCapsTests: XCTestCase {
 
     // MARK: - Manifest Validation Tests (TEST475-477)
 
-    // TEST475: Manifest.validate() passes with CAP_IDENTITY present
+    // TEST475: CapManifest::validate() passes when CAP_IDENTITY is present
     func test475_manifestValidatePassesWithIdentity() throws {
         let identityUrn = try CSCapUrn.fromString(CSCapIdentity)
         let identityCap = CSCap(urn: identityUrn, title: "Identity", command: "identity")
@@ -49,7 +49,7 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertNoThrow(try manifest.validate(), "Manifest with CAP_IDENTITY must validate successfully")
     }
 
-    // TEST476: Manifest.validate() fails without CAP_IDENTITY
+    // TEST476: CapManifest::validate() fails when CAP_IDENTITY is missing
     func test476_manifestValidateFailsWithoutIdentity() throws {
         let otherUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
         let otherCap = CSCap(urn: otherUrn, title: "Test", command: "test")
@@ -82,7 +82,7 @@ final class StandardCapsTests: XCTestCase {
 
     // MARK: - Auto-Registration Tests (TEST478-480)
 
-    // TEST478: CartridgeRuntime auto-registers CAP_IDENTITY handler
+    // TEST478: CartridgeRuntime auto-registers identity and discard handlers on construction
     func test478_cartridgeRuntimeAutoRegistersIdentity() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","description":"Test","caps":[
@@ -97,7 +97,7 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertNotNil(identityHandler, "CartridgeRuntime must auto-register CAP_IDENTITY handler")
     }
 
-    // TEST479: CAP_IDENTITY handler echoes input unchanged
+    // TEST479: Custom identity Op overrides auto-registered default
     func test479_identityHandlerEchoesInput() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","description":"Test","caps":[
@@ -165,7 +165,7 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertEqual(collector.getData(), testData, "Identity handler must echo input unchanged")
     }
 
-    // TEST480: CAP_DISCARD handler consumes input and produces void
+    // TEST480: parse_caps_from_manifest rejects manifest without CAP_IDENTITY
     func test480_discardHandlerConsumesInput() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","description":"Test","caps":[

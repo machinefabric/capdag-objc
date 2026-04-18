@@ -221,7 +221,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:@"media:string" error:&e] isVoid]);
 }
 
-// TEST546: is_image
+// TEST546: is_image returns true only when image marker tag is present
 - (void)test546_is_image {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaPng error:&e] isImage]);
@@ -233,7 +233,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaVideo error:&e] isImage]);
 }
 
-// TEST547: is_audio
+// TEST547: is_audio returns true only when audio marker tag is present
 - (void)test547_is_audio {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaAudio error:&e] isAudio]);
@@ -244,7 +244,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isAudio]);
 }
 
-// TEST548: is_video
+// TEST548: is_video returns true only when video marker tag is present
 - (void)test548_is_video {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaVideo error:&e] isVideo]);
@@ -254,7 +254,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isVideo]);
 }
 
-// TEST549: is_numeric
+// TEST549: is_numeric returns true only when numeric marker tag is present
 - (void)test549_is_numeric {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaInteger error:&e] isNumeric]);
@@ -266,7 +266,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isNumeric]);
 }
 
-// TEST550: is_bool
+// TEST550: is_bool returns true only when bool marker tag is present
 - (void)test550_is_bool {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaBoolean error:&e] isBool]);
@@ -278,7 +278,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isBool]);
 }
 
-// TEST551: is_file_path
+// TEST551: is_file_path returns true for scalar file-path, false for array
 - (void)test551_is_file_path {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePath error:&e] isFilePath]);
@@ -288,7 +288,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isFilePath]);
 }
 
-// TEST552: is_file_path_array
+// TEST552: is_file_path_array returns true for list file-path, false for scalar
 - (void)test552_is_file_path_array {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePathArray error:&e] isFilePathArray]);
@@ -296,7 +296,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isFilePathArray]);
 }
 
-// TEST553: is_any_file_path
+// TEST553: is_any_file_path returns true for both scalar and array file-path
 - (void)test553_is_any_file_path {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePath error:&e] isAnyFilePath]);
@@ -305,7 +305,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isAnyFilePath]);
 }
 
-// TEST555: with_tag and without_tag
+// TEST555: with_tag adds a tag and without_tag removes it
 - (void)test555_with_tag_and_without_tag {
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:@"media:string" error:&e];
@@ -323,7 +323,7 @@
     XCTAssertTrue([same isEquivalentTo:urn]);
 }
 
-// TEST558: predicate/constant consistency
+// TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates
 - (void)test558_predicate_constant_consistency {
     NSError *e;
     CSMediaUrn *intUrn = [CSMediaUrn fromString:CSMediaInteger error:&e];
@@ -455,7 +455,7 @@
         @"MEDIA_OBJECT should NOT conform to MEDIA_STRING (missing textable)");
 }
 
-// TEST304: MEDIA_AVAILABILITY_OUTPUT constant
+// TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags
 - (void)test304_media_availability_output_constant {
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaAvailabilityOutput error:&e];
@@ -467,7 +467,7 @@
     XCTAssertTrue([urn conformsTo:reparsed], @"roundtrip must conform to original");
 }
 
-// TEST305: MEDIA_PATH_OUTPUT constant
+// TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags
 - (void)test305_media_path_output_constant {
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaPathOutput error:&e];
@@ -479,7 +479,7 @@
     XCTAssertTrue([urn conformsTo:reparsed], @"roundtrip must conform to original");
 }
 
-// TEST306: availability and path output are distinct
+// TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs
 - (void)test306_availability_and_path_output_distinct {
     NSError *e;
     XCTAssertFalse([CSMediaAvailabilityOutput isEqualToString:CSMediaPathOutput],

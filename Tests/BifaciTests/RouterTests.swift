@@ -10,7 +10,7 @@ import XCTest
 
 final class RouterTests: XCTestCase {
 
-    // TEST638: NoPeerRouter rejects all requests with PeerInvokeNotSupported
+    // TEST638: Verify NoPeerRouter rejects all requests with PeerInvokeNotSupported
     func test638_noPeerRouterRejectsAll() throws {
         let router = NoPeerRouter()
 

@@ -195,7 +195,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Handshake Tests (TEST231-232)
     // NOTE: TEST284 and TEST290 are tested at the protocol level in IntegrationTests.swift
 
-    // TEST232: attachCartridge fails when cartridge HELLO is missing required manifest
+    // TEST232: Test handshake fails when cartridge HELLO is missing required manifest
     func test232_attachCartridgeFailsOnMissingManifest() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -229,7 +229,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await cartridgeTask.value
     }
 
-    // TEST231: attachCartridge fails when peer sends non-HELLO frame
+    // TEST231: Test handshake fails when peer sends non-HELLO frame
     func test231_attachCartridgeFailsOnWrongFrameType() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -264,7 +264,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Cartridge Registration & Routing (TEST413-414, TEST425)
 
-    // TEST413: registerCartridge adds to cap_table and findCartridgeForCap resolves it
+    // TEST413: Register cartridge adds entries to cap_table
     func test413_registerCartridgeAddsToCaptable() {
         let host = CartridgeHost()
         host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", knownCaps: ["cap:op=convert"])
@@ -272,7 +272,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"), "Unregistered cap must not be found")
     }
 
-    // TEST414: capabilities returns empty initially
+    // TEST414: capabilities() returns empty JSON initially (no running cartridges)
     func test414_capabilitiesEmptyInitially() {
         let host = CartridgeHost()
         // Capabilities are rebuilt from running cartridges — no running cartridges means empty
@@ -281,7 +281,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             "Capabilities should be empty initially")
     }
 
-    // TEST425: findCartridgeForCap returns nil for unknown cap
+    // TEST425: find_cartridge_for_cap returns None for unregistered cap
     func test425_findCartridgeForCapUnknown() {
         let host = CartridgeHost()
         host.registerCartridge(path: "/test", cartridgeDir: "", knownCaps: ["cap:op=known"])
@@ -291,7 +291,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Full Path Tests (TEST416-420, TEST426)
 
-    // TEST416: attachCartridge extracts manifest and updates capabilities
+    // TEST416: Attach cartridge performs HELLO handshake, extracts manifest, updates capabilities
     func test416_attachCartridgeUpdatesCaps() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -576,7 +576,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await hostTask.value
     }
 
-    // TEST901: REQ for unknown cap returns ERR (NoHandler) — not fatal, just per-request error
+    // TEST901: REQ for unknown cap returns ERR frame (not fatal)
     func test901_reqForUnknownCapReturnsErr() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -643,7 +643,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Gap Tests (TEST415, TEST418, TEST420-422, TEST424)
 
-    // TEST415: REQ for known cap triggers spawn (expect error for non-existent binary)
+    // TEST415: REQ for known cap triggers spawn attempt (verified by expected spawn error for non-existent binary)
     func test415_reqTriggersSpawnError() async throws {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
@@ -674,7 +674,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await hostTask.value
     }
 
-    // TEST418: Route STREAM_START/CHUNK/STREAM_END/END by req_id
+    // TEST418: Route STREAM_START/CHUNK/STREAM_END/END by req_id (not cap_urn) Verifies that after the initial REQ→cartridge routing, all subsequent continuation frames with the same req_id are routed to the same cartridge — even though no cap_urn is present on those frames.
     func test418_routeContinuationByReqId() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -760,7 +760,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await hostTask.value
     }
 
-    // TEST420: Cartridge non-HELLO/non-HB frames forwarded to relay
+    // TEST420: Cartridge non-HELLO/non-HB frames forwarded to relay (pass-through)
     func test420_cartridgeFramesForwardedToRelay() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -834,7 +834,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await hostTask.value
     }
 
-    // TEST421: Cartridge death updates capability list (removes dead cartridge's caps)
+    // TEST421: Cartridge death updates capability list (caps removed)
     func test421_cartridgeDeathUpdatesCaps() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -886,7 +886,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         }
     }
 
-    // TEST422: Cartridge death sends ERR for all pending requests
+    // TEST422: Cartridge death sends ERR for all pending requests via relay
     func test422_cartridgeDeathSendsErr() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -953,7 +953,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await hostTask.value
     }
 
-    // TEST424: Concurrent requests to same cartridge handled independently
+    // TEST424: Concurrent requests to the same cartridge are handled independently
     func test424_concurrentRequestsSameCartridge() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -1221,7 +1221,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Error Type Tests (TEST244-247)
 
-    // TEST244: CartridgeHostError from FrameError converts correctly
+    // TEST244: Test AsyncHostError::from converts CborError to Cbor variant
     func test244_cartridgeHostErrorFromFrameError() {
         // Verify error types have proper descriptions
         let handshakeFailed = CartridgeHostError.handshakeFailed("test error")
@@ -1237,7 +1237,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(protocolError.errorDescription?.contains("Protocol error") ?? false)
     }
 
-    // TEST245: CartridgeHostError stores and retrieves error details
+    // TEST245: Test AsyncHostError::from converts io::Error to Io variant
     func test245_cartridgeHostErrorDetails() {
         let cartridgeErr = CartridgeHostError.cartridgeError(code: "TEST_CODE", message: "Test message")
         let desc = cartridgeErr.errorDescription ?? ""
@@ -1245,7 +1245,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(desc.contains("Test message"), "Error description must contain message")
     }
 
-    // TEST246: CartridgeHostError variants are distinct
+    // TEST246: Test AsyncHostError Clone implementation produces equal values
     func test246_cartridgeHostErrorVariants() {
         // Each error type is distinct
         let errors: [CartridgeHostError] = [
@@ -1272,7 +1272,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         }
     }
 
-    // TEST247: ResponseChunk stores and retrieves data correctly
+    // TEST247: Test ResponseChunk Clone produces independent copy with same data
     func test247_responseChunkStorage() {
         let payload = Data([1, 2, 3, 4, 5])
         let chunk = ResponseChunk(payload: payload, seq: 42, offset: 100, len: 1000, isEof: true)
@@ -1419,7 +1419,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await cartridgeTask.value
     }
 
-    // TEST490: Identity verification with multiple cartridges through single relay
+    // TEST490: Identity verification with multiple cartridges through single relay  Both cartridges must pass identity verification independently before any real requests are routed.
     func test490_identityVerificationMultipleCartridges() async throws {
         let host = CartridgeHost()
 

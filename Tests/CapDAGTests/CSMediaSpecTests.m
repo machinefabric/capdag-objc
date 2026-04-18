@@ -258,7 +258,7 @@
 
 #pragma mark - ResolvedMediaSpec predicate tests
 
-// TEST099: ResolvedMediaSpec is_binary (textable absent)
+// TEST099: Test ResolvedMediaSpec is_binary returns true when textable tag is absent
 - (void)test099_resolved_is_binary {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:",
@@ -273,7 +273,7 @@
     XCTAssertFalse([resolved isJSON]);
 }
 
-// TEST100: ResolvedMediaSpec is_record (record marker present)
+// TEST100: Test ResolvedMediaSpec is_record returns true when record marker is present
 - (void)test100_resolved_is_record {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:record;textable",
@@ -289,7 +289,7 @@
     XCTAssertFalse([resolved isList]);
 }
 
-// TEST101: ResolvedMediaSpec is_scalar (list marker absent)
+// TEST101: Test ResolvedMediaSpec is_scalar returns true when list marker is absent
 - (void)test101_resolved_is_scalar {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:textable",
@@ -304,7 +304,7 @@
     XCTAssertFalse([resolved isList]);
 }
 
-// TEST102: ResolvedMediaSpec is_list (list marker present)
+// TEST102: Test ResolvedMediaSpec is_list returns true when list marker is present
 - (void)test102_resolved_is_list {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:list;textable",
@@ -319,7 +319,7 @@
     XCTAssertFalse([resolved isScalar]);
 }
 
-// TEST103: ResolvedMediaSpec is_json (json tag present)
+// TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present
 - (void)test103_resolved_is_json {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:json;record;textable",
@@ -334,7 +334,7 @@
     XCTAssertFalse([resolved isBinary]);
 }
 
-// TEST104: ResolvedMediaSpec is_text (textable present)
+// TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present
 - (void)test104_resolved_is_text {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:textable",
@@ -351,7 +351,7 @@
 
 #pragma mark - Resolve with local overrides
 
-// TEST091: Resolve custom media URN from local media_specs
+// TEST091: Test resolving custom media URN from local media_specs takes precedence over registry
 - (void)test091_resolve_custom_media_spec {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:custom-spec;json",
@@ -369,7 +369,7 @@
     XCTAssertNil(resolved.schema);
 }
 
-// TEST092: Resolve custom record media spec with schema
+// TEST092: Test resolving custom record media spec with schema from local media_specs
 - (void)test092_resolve_custom_with_schema {
     NSDictionary *schema = @{
         @"type": @"object",
@@ -394,7 +394,7 @@
     XCTAssertEqualObjects(resolved.schema[@"type"], @"object");
 }
 
-// TEST094: Local media_specs overrides registry definition
+// TEST094: Test local media_specs definition overrides registry definition for same URN
 - (void)test094_local_overrides_registry {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:textable",

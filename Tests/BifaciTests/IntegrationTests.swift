@@ -201,7 +201,7 @@ final class CborIntegrationTests: XCTestCase {
         cartridgeSemaphore.wait()
     }
 
-    // TEST287: Host-initiated heartbeat handling
+    // TEST287: Host-initiated heartbeat
     func test287_heartbeatFromHost() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -247,7 +247,7 @@ final class CborIntegrationTests: XCTestCase {
         cartridgeSemaphore.wait()
     }
 
-    // TEST290: Limit negotiation picks minimum values
+    // TEST290: Limit negotiation picks minimum
     func test290_limitsNegotiation() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -445,7 +445,7 @@ final class CborIntegrationTests: XCTestCase {
 
     // MARK: - Sync Handshake Tests (TEST230)
 
-    // TEST230: sync_handshake exchanges HELLO frames and negotiates minimum limits
+    // TEST230: Test async handshake exchanges HELLO frames and negotiates minimum limits
     func test230_syncHandshake() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -579,7 +579,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(receivedPayload, testPayload, "Identity should echo payload unchanged")
     }
 
-    // TEST482: verify_identity fails when cartridge returns ERR
+    // TEST482: verify_identity fails when cartridge returns ERR on identity call
     func test482_verifyIdentityFailsOnErr() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -631,7 +631,7 @@ final class CborIntegrationTests: XCTestCase {
 
     // MARK: - Full Path Integration Tests (TEST896-907)
 
-    // TEST896: Full path: engine REQ → runtime → cartridge → response back through relay
+    // TEST896: All cap input media specs that represent user files must have extensions. These are the entry points — the file types users can right-click on.
     func test896_fullPathEngineReqToCartridgeResponse() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -698,7 +698,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(String(data: accumulated, encoding: .utf8), "full-path-response")
     }
 
-    // TEST897: Cartridge ERR frame flows back to engine through relay
+    // TEST897: Verify that specific cap output URNs resolve to the correct extension. This catches misconfigurations where a spec exists but has the wrong extension.
     func test897_cartridgeErrorFlowsToEngine() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -740,7 +740,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(response.errorMessage, "Something went wrong")
     }
 
-    // TEST898: Binary data integrity through full relay path
+    // TEST898: Binary data integrity through full relay path (256 byte values)
     func test898_binaryIntegrityThroughRelay() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
@@ -922,7 +922,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(String(data: data2, encoding: .utf8), "response-for-cap:op=op2")
     }
 
-    // TEST483: verify_identity fails when connection closes
+    // TEST483: verify_identity fails when connection closes before response
     func test483_verifyIdentityFailsOnClose() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 

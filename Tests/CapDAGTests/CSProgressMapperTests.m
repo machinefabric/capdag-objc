@@ -13,7 +13,7 @@
 
 @implementation CSProgressMapperTests
 
-// TEST908: map_progress basic mapping — identity, subdivision, clamping
+// TEST908: Cached caps remain accessible when offline
 - (void)test908_map_progress_basic_mapping {
     // Identity mapping: base=0, weight=1
     XCTAssertEqualWithAccuracy(CSMapProgress(0.0f, 0.0f, 1.0f), 0.0f, 0.001f);
@@ -30,7 +30,7 @@
     XCTAssertEqualWithAccuracy(CSMapProgress(1.5f, 0.2f, 0.6f), 0.8f, 0.001f);
 }
 
-// TEST909: map_progress is deterministic — identical inputs produce identical outputs
+// TEST909: set_offline(false) restores fetch ability (would fail with HTTP error, not NetworkBlocked)
 - (void)test909_map_progress_deterministic {
     for (int i = 0; i <= 100; i++) {
         float p = (float)i / 100.0f;
@@ -66,7 +66,7 @@
     }
 }
 
-// TEST912: ProgressMapper correctly maps through parent callback
+// TEST912: ProgressMapper correctly maps through a CapProgressFn
 - (void)test912_progress_mapper_reports_through_parent {
     NSMutableArray<NSNumber *> *reported = [NSMutableArray array];
 
@@ -85,7 +85,7 @@
     XCTAssertEqualWithAccuracy(reported[2].floatValue, 0.8f, 0.001f, @"100%% maps to base+weight=0.8");
 }
 
-// TEST913: ProgressMapper conversion to CapProgressFn preserves mapping
+// TEST913: ProgressMapper.as_cap_progress_fn produces same mapping
 - (void)test913_progress_mapper_as_cap_progress_fn {
     NSMutableArray<NSNumber *> *reported = [NSMutableArray array];
 
@@ -106,7 +106,7 @@
     XCTAssertEqualWithAccuracy(reported[2].floatValue, 0.4f, 0.001f);
 }
 
-// TEST914: ProgressMapper sub_mapper chains correctly
+// TEST914: ProgressMapper.sub_mapper chains correctly
 - (void)test914_progress_mapper_sub_mapper {
     NSMutableArray<NSNumber *> *reported = [NSMutableArray array];
 
@@ -128,7 +128,7 @@
     XCTAssertEqualWithAccuracy(reported[1].floatValue, 0.8f, 0.001f, @"Sub end maps to 0.8");
 }
 
-// TEST915: Per-group subdivision is monotonic and bounded for N groups
+// TEST915: Per-group subdivision produces monotonic, bounded progress for N groups  Uses pre-computed boundaries (same pattern as production code) to guarantee monotonicity regardless of f32 rounding.
 - (void)test915_per_group_subdivision_monotonic_bounded {
     NSMutableArray<NSNumber *> *allProgress = [NSMutableArray array];
 
@@ -166,7 +166,7 @@
     }
 }
 
-// TEST917: High-frequency progress updates stay bounded
+// TEST917: High-frequency progress emission does not violate bounds (Regression test for the deadlock scenario — verifies computation stays bounded)
 - (void)test917_high_frequency_progress_bounded {
     __block NSUInteger count = 0;
     __block float maxVal = -FLT_MAX;

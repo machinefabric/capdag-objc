@@ -16,7 +16,7 @@ final class StreamingAPITests: XCTestCase {
 
     // MARK: - InputStream Tests (TEST529-534)
 
-    // TEST529: InputStream iterator yields chunks in order
+    // TEST529: InputStream recv yields chunks in order
     func test529_inputStreamIteratorOrder() throws {
         // Create an InputStream with ordered chunks
         let chunks: [Result<CBOR, StreamError>] = [
@@ -152,7 +152,7 @@ final class StreamingAPITests: XCTestCase {
 
     // MARK: - InputPackage Tests (TEST535-538)
 
-    // TEST535: InputPackage iterator yields streams
+    // TEST535: InputPackage recv yields streams
     func test535_inputPackageIteration() throws {
         // Create InputPackage with multiple streams
         let stream1Chunks: [Result<CBOR, StreamError>] = [.success(.byteString([1, 2]))]
@@ -285,7 +285,7 @@ final class StreamingAPITests: XCTestCase {
 
     // MARK: - OutputStream Tests (TEST539-542)
 
-    // TEST539: OutputStream.start() sends STREAM_START with isSequence
+    // TEST539: OutputStream sends STREAM_START on first write
     func test539_outputStreamSendsStreamStart() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
@@ -381,7 +381,7 @@ final class StreamingAPITests: XCTestCase {
         }
     }
 
-    // TEST542: OutputStream close without start is a no-op (no frames sent)
+    // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
     func test542_outputStreamCloseWithoutStartIsNoop() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
@@ -587,7 +587,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(String(data: found!, encoding: .utf8), "data")
     }
 
-    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict
+    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:llm-generation-request;json;record".
     func test679_findStreamBaseUrnDoesNotMatchFullUrn() throws {
         let streams: [(mediaUrn: String, bytes: Data)] = [
             ("media:llm-generation-request;json;record", Data("data".utf8)),
@@ -641,7 +641,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(result, "Hello, World!")
     }
 
-    // TEST683: find_stream returns nil for invalid media URN string (not a parse error — just nil)
+    // TEST683: find_stream returns None for invalid media URN string (not a parse error — just None)
     func test683_findStreamInvalidUrnReturnsNone() throws {
         let streams: [(mediaUrn: String, bytes: Data)] = [
             ("media:text", Data("data".utf8)),
@@ -658,7 +658,7 @@ final class StreamingAPITests: XCTestCase {
 
     // MARK: - PeerResponse Tests (TEST839-841)
 
-    // TEST839: LOG frames arriving BEFORE StreamStart are delivered immediately
+    // TEST839: LOG frames arriving BEFORE StreamStart are delivered immediately  This tests the critical fix: during a peer call, the peer (e.g., modelcartridge) sends LOG frames for minutes during model download BEFORE sending any data (StreamStart + Chunk). The handler must receive these LOGs in real-time so it can re-emit progress and keep the engine's activity timer alive.  Previously, demux_single_stream blocked on awaiting StreamStart before returning PeerResponse, which meant the handler couldn't call recv() until data arrived — causing 120s activity timeouts during long downloads.
     func test839_peerResponseDeliversLogsBeforeStreamStart() throws {
         let reqId = MessageId.newUUID()
 
@@ -729,7 +729,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertNil(response.recv(), "stream must end after STREAM_END")
     }
 
-    // TEST840: PeerResponse.collectBytes() discards LOG frames
+    // TEST840: PeerResponse::collect_bytes discards LOG frames
     func test840_peerResponseCollectBytesDiscardsLogs() throws {
         let reqId = MessageId.newUUID()
 
@@ -759,7 +759,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(bytes, Data("hello".utf8), "collectBytes must return only data, discarding all LOG frames")
     }
 
-    // TEST841: PeerResponse.collectValue() discards LOG frames
+    // TEST841: PeerResponse::collect_value discards LOG frames
     func test841_peerResponseCollectValueDiscardsLogs() throws {
         let reqId = MessageId.newUUID()
 
@@ -790,7 +790,7 @@ final class StreamingAPITests: XCTestCase {
 
     // MARK: - Keepalive Tests (TEST842-844)
 
-    // TEST842: runWithKeepalive returns closure result (fast operation, no keepalive frames)
+    // TEST842: run_with_keepalive returns closure result (fast operation, no keepalive frames)
     func test842_runWithKeepaliveReturnsResult() async throws {
         let captured = CaptureFrameSender()
         let stream = Bifaci.OutputStream(
@@ -813,7 +813,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(progressFrames.count, 0, "No keepalive frame for instant operation")
     }
 
-    // TEST843: runWithKeepalive returns Ok/Err from closure
+    // TEST843: run_with_keepalive returns Ok/Err from closure
     func test843_runWithKeepaliveReturnsResultType() async throws {
         let captured = CaptureFrameSender()
         let stream = Bifaci.OutputStream(
@@ -831,7 +831,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(result, "model_loaded")
     }
 
-    // TEST844: runWithKeepalive propagates error from closure
+    // TEST844: run_with_keepalive propagates errors from closure
     func test844_runWithKeepalivePropagatesError() async throws {
         let captured = CaptureFrameSender()
         let stream = Bifaci.OutputStream(

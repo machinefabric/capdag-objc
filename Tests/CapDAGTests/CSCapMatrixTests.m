@@ -260,7 +260,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual([self.registry getHostNames].count, 0);
 }
 
-// TEST571: getAllCapabilities returns caps from all hosts
+// TEST571: get_all_capabilities returns caps from all hosts
 - (void)test571_get_all_capabilities {
     MockCapSet *host1 = [[MockCapSet alloc] initWithName:@"h1"];
     MockCapSet *host2 = [[MockCapSet alloc] initWithName:@"h2"];
@@ -273,7 +273,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual(all.count, 3);
 }
 
-// TEST127: CapGraph basic construction
+// TEST127: Test CapGraph adds nodes and edges from capability definitions
 - (void)test127_cap_graph_basic_construction {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap = makeCap(@"cap:in=\"media:\";op=extract_text;out=\"media:textable\"", @"Text Extractor");
@@ -283,7 +283,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertTrue([graph hasDirectEdge:@"media:" toSpec:@"media:textable"]);
 }
 
-// TEST128: CapGraph outgoing/incoming edges
+// TEST128: Test CapGraph tracks outgoing and incoming edges for spec conversions
 - (void)test128_cap_graph_outgoing_incoming {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap1 = makeCap(@"cap:in=\"media:binary\";op=extract_text;out=\"media:textable\"", @"Text Extractor");
@@ -301,7 +301,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual(incomingObj.count, 1);
 }
 
-// TEST129: CapGraph can_convert (direct, indirect, no-path)
+// TEST129: Test CapGraph detects direct and indirect conversion paths between specs
 - (void)test129_cap_graph_can_convert {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap1 = makeCap(@"cap:in=\"media:binary\";op=extract;out=\"media:textable\"", @"Binary to Str");
@@ -316,7 +316,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertFalse([graph canConvert:@"media:record;textable" toSpec:@"media:binary"]); // no path
 }
 
-// TEST130: CapGraph find_path (shortest path)
+// TEST130: Test CapGraph finds shortest path for spec conversion chain
 - (void)test130_cap_graph_find_path {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap1 = makeCap(@"cap:in=\"media:binary\";op=extract;out=\"media:string\"", @"Binary to Str");
@@ -343,7 +343,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual(same.count, 0);
 }
 
-// TEST131: CapGraph find_all_paths sorted by length
+// TEST131: Test CapGraph finds all conversion paths sorted by length
 - (void)test131_cap_graph_find_all_paths {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap1 = makeCap(@"cap:in=\"media:binary\";op=step1;out=\"media:string\"", @"A to B");
@@ -359,7 +359,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual(allPaths[1].count, 2); // Through intermediate
 }
 
-// TEST132: CapGraph get_direct_edges sorted by specificity
+// TEST132: Test CapGraph returns direct edges sorted by specificity
 - (void)test132_cap_graph_get_direct_edges_sorted {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap1 = makeCap(@"cap:in=\"media:binary\";op=generic;out=\"media:string\"", @"Generic");
@@ -373,7 +373,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqualObjects(edges[1].cap.title, @"Generic"); // Lower specificity
 }
 
-// TEST134: CapGraph stats
+// TEST134: Test CapGraph stats provides counts of nodes and edges
 - (void)test134_cap_graph_stats {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap1 = makeCap(@"cap:in=\"media:binary\";op=a;out=\"media:string\"", @"Cap 1");
@@ -388,7 +388,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual(stats.outputSpecCount, 2);
 }
 
-// TEST976: CapGraph find_best_path (highest specificity over shortest)
+// TEST976: CapGraph::find_best_path returns highest-specificity path over shortest
 - (void)test976_cap_graph_find_best_path {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *capDirect = makeCap(@"cap:in=\"media:binary\";op=direct;out=\"media:object\"", @"Direct Low Spec");
@@ -408,7 +408,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertEqual(best.count, 2);
 }
 
-// TEST577: CapGraph input/output specs
+// TEST577: CapGraph::get_input_specs and get_output_specs return correct sets
 - (void)test577_cap_graph_input_output_specs {
     CSCapGraph *graph = [CSCapGraph graph];
     CSCap *cap = makeCap(@"cap:in=\"media:binary\";op=x;out=\"media:string\"", @"X");
@@ -424,7 +424,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertFalse([inputs containsObject:@"media:string"]);
 }
 
-// TEST124: CapBlock no match returns error
+// TEST124: Test CapBlock returns error when no registries match the request
 - (void)test124_cap_block_no_match {
     CSCapBlock *block = [CSCapBlock cube];
     CSCapMatrix *emptyReg = [CSCapMatrix registry];
@@ -436,7 +436,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertNotNil(error);
 }
 
-// TEST574: CapBlock remove_registry
+// TEST574: CapBlock::remove_registry removes by name, returns Arc
 - (void)test574_cap_block_remove_registry {
     CSCapMatrix *reg = [CSCapMatrix registry];
     MockCapSet *host = [[MockCapSet alloc] initWithName:@"h1"];
@@ -452,7 +452,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertNil([block removeRegistry:@"nonexistent"]);
 }
 
-// TEST575: CapBlock get_registry
+// TEST575: CapBlock::get_registry returns Arc clone by name
 - (void)test575_cap_block_get_registry {
     CSCapMatrix *reg = [CSCapMatrix registry];
     CSCapBlock *block = [CSCapBlock cube];
@@ -461,7 +461,7 @@ static NSString* testMatrixUrn(NSString *tags) {
     XCTAssertNil([block getRegistry:@"nonexistent"]);
 }
 
-// TEST576: CapBlock get_registry_names in insertion order
+// TEST576: CapBlock::get_registry_names returns names in insertion order
 - (void)test576_cap_block_get_registry_names {
     CSCapBlock *block = [CSCapBlock cube];
     [block addRegistry:@"alpha" registry:[CSCapMatrix registry]];

@@ -73,7 +73,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(state.seq, 0, "RelayState seq must stay 0 (non-flow frame)")
     }
 
-    // TEST445: SeqAssigner.remove with FlowKey(rid, nil) resets that flow; FlowKey(rid, Some(xid)) is unaffected
+    // TEST445: SeqAssigner.remove with FlowKey(rid, None) resets that flow; FlowKey(rid, Some(xid)) is unaffected
     func test445_seqAssignerRemoveByFlowKey() {
         var assigner = SeqAssigner()
         let rid = MessageId.newUUID()
@@ -593,7 +593,7 @@ final class FlowOrderingTests: XCTestCase {
         }
     }
 
-    // TEST511: ReorderBuffer rejects seq < expected (stale frame)
+    // TEST511: ReorderBuffer cleanup with buffered frames discards them
     func test511_reorderBufferRejectsStaleSeq() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 10)
         let rid = MessageId.newUUID()
@@ -616,7 +616,7 @@ final class FlowOrderingTests: XCTestCase {
         }
     }
 
-    // TEST512: ReorderBuffer non-flow frames bypass reordering
+    // TEST512: ReorderBuffer delivers burst of consecutive buffered frames
     func test512_reorderBufferNonFlowFramesBypass() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 10)
 
@@ -637,7 +637,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(out4.count, 1)
     }
 
-    // TEST513: ReorderBuffer cleanup removes flow state
+    // TEST513: ReorderBuffer different frame types in same flow maintain order
     func test513_reorderBufferCleanup() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 10)
         let rid = MessageId.newUUID()
@@ -655,7 +655,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(out.count, 1, "After cleanup, flow should restart from seq 0")
     }
 
-    // TEST514: ReorderBuffer respects maxBufferPerFlow
+    // TEST514: ReorderBuffer with XID cleanup doesn't affect different XID
     func test514_reorderBufferRespectsMaxBuffer() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 3) // Small buffer
         let rid = MessageId.newUUID()
@@ -680,7 +680,7 @@ final class FlowOrderingTests: XCTestCase {
         }
     }
 
-    // TEST515: SeqAssigner removes flow by FlowKey
+    // TEST515: ReorderBuffer overflow error includes diagnostic information
     func test515_seqAssignerRemoveByFlowKey() {
         let assigner = SeqAssigner()
         let rid = MessageId.newUUID()
@@ -703,7 +703,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(f2.seq, 0, "After remove, seq should restart from 0")
     }
 
-    // TEST516: SeqAssigner independent flows by XID
+    // TEST516: ReorderBuffer stale error includes diagnostic information
     func test516_seqAssignerIndependentFlowsByXid() {
         let assigner = SeqAssigner()
         let rid = MessageId.newUUID()
@@ -735,7 +735,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(f2_1.seq, 1, "Flow 2 should continue at seq=1")
     }
 
-    // TEST517: FlowKey with nil XID is separate from FlowKey with XID
+    // TEST517: FlowKey with None XID differs from Some(xid)
     func test517_flowKeyNilXidSeparate() {
         let assigner = SeqAssigner()
         let rid = MessageId.newUUID()
@@ -766,7 +766,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(f_xid2.seq, 1)
     }
 
-    // TEST518: ReorderBuffer flow cleanup after END
+    // TEST518: ReorderBuffer handles zero-length ready vec correctly
     func test518_reorderBufferFlowCleanupAfterEnd() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 10)
         let rid = MessageId.newUUID()
@@ -788,7 +788,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(out.count, 1)
     }
 
-    // TEST519: ReorderBuffer handles frames from multiple RIDs
+    // TEST519: ReorderBuffer state persists across accept calls
     func test519_reorderBufferMultipleRids() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 10)
         let rid1 = MessageId.newUUID()
@@ -810,7 +810,7 @@ final class FlowOrderingTests: XCTestCase {
         XCTAssertEqual(out4.count, 1)
     }
 
-    // TEST520: ReorderBuffer drains buffered frames when gap is filled
+    // TEST520: ReorderBuffer max_buffer_per_flow is per-flow not global
     func test520_reorderBufferDrainsBufferedFrames() throws {
         var buffer = ReorderBuffer(maxBufferPerFlow: 10)
         let rid = MessageId.newUUID()
