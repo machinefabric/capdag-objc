@@ -42,8 +42,8 @@
 
 #pragma mark - Argument Schema Validation Tests
 
-// TEST051: Test input validation succeeds with valid positional argument
-- (void)test051_inputValidationSuccess {
+// TEST163: Test argument schema validation succeeds with valid JSON matching schema
+- (void)test163_argumentSchemaValidationSuccess {
     // Create argument with spec ID that has embedded schema in mediaSpecs
     NSDictionary *schema = @{
         @"type": @"object",
@@ -83,8 +83,8 @@
     XCTAssertNil(error, @"Error should be nil for valid data");
 }
 
-// TEST052: Test input validation fails with MissingRequiredArgument when required arg missing
-- (void)test052_inputValidationMissingRequired {
+// TEST164: Test argument schema validation fails with JSON missing required fields
+- (void)test164_argumentSchemaValidationFailure {
     // Create argument with spec ID that has embedded schema in mediaSpecs
     NSDictionary *schema = @{
         @"type": @"object",
@@ -127,8 +127,8 @@
     XCTAssertEqualObjects(schemaError.argumentName, @"my:user-data.v1;textable;record");
 }
 
-// TEST053: Test input validation fails with InvalidArgumentType when wrong type provided
-- (void)test053_inputValidationWrongType {
+// Obj-C specific: unresolved spec ID fails hard during schema validation
+- (void)testArgumentValidationWithUnknownSpecFails {
     // Create argument with non-existent spec ID
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"unknown:spec.v1"
                                              required:YES
@@ -175,8 +175,8 @@
 
 #pragma mark - Output Schema Validation Tests
 
-// Obj-C specific: Output validation tests
-- (void)testOutputWithEmbeddedSchemaValidationSuccess {
+// TEST165: Test output schema validation succeeds with valid JSON matching schema
+- (void)test165_outputSchemaValidationSuccess {
     NSDictionary *schema = @{
         @"type": @"object",
         @"properties": @{

@@ -353,8 +353,8 @@
 
 #pragma mark - Extension Mapping Tests (TEST1080-TEST1089)
 
-- (void)test1080_pdf_extension {
-    // TEST1080: PDF extension should map to media:pdf
+- (void)testpdf_extension {
+    // Mirror-specific coverage: PDF extension should map to media:pdf
     // Create minimal PDF-like file (we can't test magic bytes easily in CI)
     NSString *path = [self createTestFile:@"test.pdf" content:@"%PDF-1.4"];
     CSContentStructure structure;
@@ -367,8 +367,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1081_png_extension {
-    // TEST1081: PNG extension should map to media:png;image
+- (void)testpng_extension {
+    // Mirror-specific coverage: PNG extension should map to media:png;image
     NSString *path = [self createTestFile:@"test.png" content:@""];
     CSContentStructure structure;
     NSError *error;
@@ -380,8 +380,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1082_mp3_extension {
-    // TEST1082: MP3 extension should map to media:mp3;audio
+- (void)testmp3_extension {
+    // Mirror-specific coverage: MP3 extension should map to media:mp3;audio
     NSString *path = [self createTestFile:@"test.mp3" content:@""];
     CSContentStructure structure;
     NSError *error;
@@ -393,8 +393,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1083_mp4_extension {
-    // TEST1083: MP4 extension should map to media:mp4;video
+- (void)testmp4_extension {
+    // Mirror-specific coverage: MP4 extension should map to media:mp4;video
     NSString *path = [self createTestFile:@"test.mp4" content:@""];
     CSContentStructure structure;
     NSError *error;
@@ -406,8 +406,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1084_rust_extension {
-    // TEST1084: Rust extension should map to media:rust;textable;code
+- (void)testrust_extension {
+    // Mirror-specific coverage: Rust extension should map to media:rust;textable;code
     NSString *path = [self createTestFile:@"test.rs" content:@"fn main() {}"];
     CSContentStructure structure;
     NSError *error;
@@ -419,8 +419,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1085_python_extension {
-    // TEST1085: Python extension should map to media:python;textable;code
+- (void)testpython_extension {
+    // Mirror-specific coverage: Python extension should map to media:python;textable;code
     NSString *path = [self createTestFile:@"test.py" content:@"print('hello')"];
     CSContentStructure structure;
     NSError *error;
@@ -432,8 +432,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1086_markdown_extension {
-    // TEST1086: Markdown extension should map to media:md;textable
+- (void)testmarkdown_extension {
+    // Mirror-specific coverage: Markdown extension should map to media:md;textable
     NSString *path = [self createTestFile:@"test.md" content:@"# Hello"];
     CSContentStructure structure;
     NSError *error;
@@ -445,8 +445,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-- (void)test1087_toml_always_record {
-    // TEST1087: TOML is always record
+- (void)testtoml_always_record {
+    // Mirror-specific coverage: TOML is always record
     NSString *path = [self createTestFile:@"test.toml" content:@"key = \"value\""];
     CSContentStructure structure;
     NSError *error;
@@ -458,8 +458,8 @@
     XCTAssertEqual(structure, CSContentStructureScalarRecord);
 }
 
-- (void)test1088_log_file_is_list {
-    // TEST1088: Log file is always list
+- (void)testlog_file_is_list {
+    // Mirror-specific coverage: Log file is always list
     NSString *path = [self createTestFile:@"test.log" content:@"line1\nline2"];
     CSContentStructure structure;
     NSError *error;
@@ -471,8 +471,8 @@
     XCTAssertEqual(structure, CSContentStructureListOpaque);
 }
 
-- (void)test1089_unknown_extension {
-    // TEST1089: Unknown extension should fallback
+- (void)testunknown_extension {
+    // Mirror-specific coverage: Unknown extension should fallback
     NSString *path = [self createTestFile:@"test.xyz" content:@"unknown content"];
     CSContentStructure structure;
     NSError *error;

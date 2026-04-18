@@ -61,8 +61,8 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertThrowsError(try manifest.validate(), "Manifest without CAP_IDENTITY must fail validation")
     }
 
-    // TEST477: Manifest.ensureIdentity() adds if missing, idempotent if present
-    func test477_manifestEnsureIdentityIdempotent() throws {
+    // Mirror-specific coverage: Manifest.ensureIdentity() adds if missing, idempotent if present
+    func testmanifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
         let testUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
         let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")

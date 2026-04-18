@@ -134,8 +134,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["C"], "media:node3;textable")
     }
 
-    // TEST940: Parse fan-in pattern
-    func test940_parseFanInPattern() async throws {
+    // Mirror-specific coverage: Parse fan-in pattern
+    func testparseFanInPattern() async throws {
         let registry = TestcartridgeRegistry()
 
         // Two parallel paths that merge
@@ -159,8 +159,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["E"], "media:node3;textable")
     }
 
-    // TEST941: Validate that cycles are rejected
-    func test941_rejectCycles() async throws {
+    // Mirror-specific coverage: Validate that cycles are rejected
+    func testrejectCycles() async throws {
         let registry = TestcartridgeRegistry()
 
         // Create a self-loop using identity cap

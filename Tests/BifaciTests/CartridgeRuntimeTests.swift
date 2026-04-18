@@ -334,8 +334,8 @@ final class CartridgeRuntimeTests: XCTestCase {
         }
     }
 
-    // TEST265: extract_effective_payload with invalid cap URN returns CapUrn error
-    func test265_extractEffectivePayloadInvalidCapUrn() {
+    // Mirror-specific coverage: extract_effective_payload with invalid cap URN returns CapUrn error
+    func testextractEffectivePayloadInvalidCapUrn() {
         let cborArray: CBOR = .array([
             .map([
                 .utf8String("media_urn"): .utf8String("media:anything"),

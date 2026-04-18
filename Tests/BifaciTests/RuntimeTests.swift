@@ -1044,8 +1044,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Response Types (TEST316)
 
-    // TEST316: concatenated() returns full payload while finalPayload returns only last chunk
-    func test316_concatenatedVsFinalPayloadDivergence() {
+    // Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk
+    func testconcatenatedVsFinalPayloadDivergence() {
         let chunks = [
             ResponseChunk(payload: "AAAA".data(using: .utf8)!, seq: 0, offset: nil, len: nil, isEof: false),
             ResponseChunk(payload: "BBBB".data(using: .utf8)!, seq: 1, offset: nil, len: nil, isEof: false),

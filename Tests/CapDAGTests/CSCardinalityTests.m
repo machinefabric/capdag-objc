@@ -15,9 +15,9 @@
 
 // ==================== InputCardinality Tests ====================
 
-// TEST684: Tests InputCardinality correctly identifies single-value media URNs
+// Mirror-specific coverage: Tests InputCardinality correctly identifies single-value media URNs
 // Verifies that URNs without list marker are parsed as Single cardinality
-- (void)test684_from_media_urn_single {
+- (void)testfrom_media_urn_single {
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:pdf"), CSInputCardinalitySingle);
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:textable"), CSInputCardinalitySingle);
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:integer"), CSInputCardinalitySingle);
@@ -25,9 +25,9 @@
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:record;textable"), CSInputCardinalitySingle);
 }
 
-// TEST685: Tests InputCardinality correctly identifies list/vector media URNs
+// Mirror-specific coverage: Tests InputCardinality correctly identifies list/vector media URNs
 // Verifies that URNs with list marker tag are parsed as Sequence cardinality
-- (void)test685_from_media_urn_vector {
+- (void)testfrom_media_urn_vector {
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:pdf;list"), CSInputCardinalitySequence);
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:list;png"), CSInputCardinalitySequence);
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:disbound-pages;list;textable"), CSInputCardinalitySequence);
@@ -35,16 +35,16 @@
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:json;list;record;textable"), CSInputCardinalitySequence);
 }
 
-// TEST686: Tests that list marker tag position doesn't affect vector detection
+// Mirror-specific coverage: Tests that list marker tag position doesn't affect vector detection
 // Verifies cardinality parsing is independent of tag order in URN
-- (void)test686_from_media_urn_vector_tag_position {
+- (void)testfrom_media_urn_vector_tag_position {
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:pdf;list"), CSInputCardinalitySequence);
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:list;pdf"), CSInputCardinalitySequence);
 }
 
-// TEST687: Tests that URN content doesn't cause false positive vector detection
+// Mirror-specific coverage: Tests that URN content doesn't cause false positive vector detection
 // Verifies that "list" in media type name doesn't trigger Sequence cardinality
-- (void)test687_from_media_urn_no_false_positives {
+- (void)testfrom_media_urn_no_false_positives {
     // "list-data" is a tag with value "data", not a marker
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:list-data=something"), CSInputCardinalitySingle);
     XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:sequence-data"), CSInputCardinalitySingle);
@@ -98,24 +98,24 @@
 
 // ==================== URN Manipulation Tests ====================
 
-// TEST694: Tests applying Sequence cardinality adds list marker to URN
+// Mirror-specific coverage: Tests applying Sequence cardinality adds list marker to URN
 // Verifies that apply_to_urn correctly modifies URN to indicate list
-- (void)test694_apply_to_urn_add_vector {
+- (void)testapply_to_urn_add_vector {
     NSString *result = CSInputCardinalityApplyToUrn(CSInputCardinalitySequence, @"media:pdf");
     // URN tags are alphabetized, so list comes first
     XCTAssertEqualObjects(result, @"media:list;pdf");
 }
 
-// TEST695: Tests applying Single cardinality removes list marker from URN
+// Mirror-specific coverage: Tests applying Single cardinality removes list marker from URN
 // Verifies that apply_to_urn correctly strips list marker
-- (void)test695_apply_to_urn_remove_vector {
+- (void)testapply_to_urn_remove_vector {
     NSString *result = CSInputCardinalityApplyToUrn(CSInputCardinalitySingle, @"media:list;pdf");
     XCTAssertEqualObjects(result, @"media:pdf");
 }
 
-// TEST696: Tests apply_to_urn is idempotent when URN already matches cardinality
+// Mirror-specific coverage: Tests apply_to_urn is idempotent when URN already matches cardinality
 // Verifies that URN remains unchanged when cardinality already matches desired
-- (void)test696_apply_to_urn_no_change_needed {
+- (void)testapply_to_urn_no_change_needed {
     XCTAssertEqualObjects(CSInputCardinalityApplyToUrn(CSInputCardinalitySingle, @"media:pdf"), @"media:pdf");
     XCTAssertEqualObjects(CSInputCardinalityApplyToUrn(CSInputCardinalitySequence, @"media:list;pdf"), @"media:list;pdf");
 }
