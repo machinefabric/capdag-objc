@@ -54,7 +54,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             allCaps.append("{\"urn\":\"\(capWithDirs)\",\"title\":\"\(name)\",\"command\":\"\(name.lowercased())\"}")
         }
         let capsJson = allCaps.joined(separator: ",")
-        return "{\"name\":\"\(name)\",\"version\":\"1.0\",\"caps\":[\(capsJson)]}".data(using: .utf8)!
+        // Manifest uses cap_groups format — all caps in a single default group
+        return "{\"name\":\"\(name)\",\"version\":\"1.0\",\"description\":\"\(name)\",\"cap_groups\":[{\"name\":\"default\",\"caps\":[\(capsJson)],\"adapter_urns\":[]}]}".data(using: .utf8)!
     }
 
     nonisolated static func helloWith(manifest: Data, maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
