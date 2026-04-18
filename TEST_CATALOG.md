@@ -1,10 +1,10 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 1092
+**Total Tests:** 797
 
 **Numbered Tests:** 618
 
-**Unnumbered Tests:** 474
+**Unnumbered Tests:** 179
 
 All numbered test numbers are unique.
 
@@ -664,24 +664,8 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `test936HasForeach` | TEST936: hasForeach | Tests/CapDAGTests/CSPlanDecompositionTests.m:100 |
 | unnumbered | `test937ExtractPrefixTo` | TEST937: extractPrefixTo extracts input_slot → cap_0 as standalone plan | Tests/CapDAGTests/CSPlanDecompositionTests.m:112 |
 | unnumbered | `testAddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapGraphTests.m:32 |
-| unnumbered | `testAnyRecursive` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:342 |
-| unnumbered | `testAnyRecursive` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:342 |
-| unnumbered | `testAnyRecursive` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:342 |
 | unnumbered | `testArgumentCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:729 |
-| unnumbered | `testArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:157 |
-| unnumbered | `testArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:157 |
-| unnumbered | `testArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:157 |
-| unnumbered | `testBadgeClearingAfterCompletion` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:432 |
-| unnumbered | `testBadgeStateTransitions` | / Test badge state transitions | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:448 |
-| unnumbered | `testBadgeStatusPolling_EmptyState` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:266 |
-| unnumbered | `testBadgeStatusPolling_WithActiveTransform` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:293 |
 | unnumbered | `testBestCapSetSelection` |  | Tests/CapDAGTests/CSCapMatrixTests.m:101 |
-| unnumbered | `testBools` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:62 |
-| unnumbered | `testBools` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:62 |
-| unnumbered | `testBools` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:62 |
-| unnumbered | `testBraces` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:68 |
-| unnumbered | `testBraces` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:68 |
-| unnumbered | `testBraces` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:68 |
 | unnumbered | `testBuilderBasicConstruction` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:16 |
 | unnumbered | `testBuilderComplex` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:173 |
 | unnumbered | `testBuilderCustomTags` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:70 |
@@ -739,98 +723,11 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testClear570` | TEST570: clear | Tests/CapDAGTests/CSCapMatrixTests.m:253 |
 | unnumbered | `testCoding` | Obj-C specific: NSCoding support | Tests/CapDAGTests/CSCapUrnTests.m:487 |
 | unnumbered | `testCompleteCapDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:275 |
-| unnumbered | `testCompleteFinderSyncFlow` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:480 |
 | unnumbered | `testComplexNestedSchema` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:404 |
-| unnumbered | `testContextMenuPopulation_MultipleFiles` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:147 |
-| unnumbered | `testContextMenuPopulation_NonExistentFile` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:244 |
-| unnumbered | `testContextMenuPopulation_SinglePDF` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:101 |
-| unnumbered | `testContextMenuPopulation_Timeout` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:175 |
-| unnumbered | `testContextMenuPopulation_UnsupportedFileType` |  | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:214 |
 | unnumbered | `testCopying` | Obj-C specific: NSCopying support | Tests/CapDAGTests/CSCapUrnTests.m:509 |
 | unnumbered | `testDataSourceWithBinaryContent` |  | Tests/CapDAGTests/CSStdinSourceTests.m:61 |
 | unnumbered | `testDataSourceWithEmptyData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:51 |
-| unnumbered | `testDecodeArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:64 |
-| unnumbered | `testDecodeArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:92 |
-| unnumbered | `testDecodeArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:64 |
-| unnumbered | `testDecodeArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:92 |
-| unnumbered | `testDecodeArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:64 |
-| unnumbered | `testDecodeArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:92 |
-| unnumbered | `testDecodeBools` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:10 |
-| unnumbered | `testDecodeBools` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:10 |
-| unnumbered | `testDecodeBools` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:10 |
-| unnumbered | `testDecodeByteStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:29 |
-| unnumbered | `testDecodeByteStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:85 |
-| unnumbered | `testDecodeByteStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:29 |
-| unnumbered | `testDecodeByteStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:85 |
-| unnumbered | `testDecodeByteStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:29 |
-| unnumbered | `testDecodeByteStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:85 |
-| unnumbered | `testDecodeData` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:41 |
-| unnumbered | `testDecodeData` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:41 |
-| unnumbered | `testDecodeData` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:41 |
-| unnumbered | `testDecodeDates` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:106 |
-| unnumbered | `testDecodeDates` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:120 |
-| unnumbered | `testDecodeDates` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:106 |
-| unnumbered | `testDecodeDates` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:120 |
-| unnumbered | `testDecodeDates` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:106 |
-| unnumbered | `testDecodeDates` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:120 |
-| unnumbered | `testDecodeFailsForExtremelyDeepStructures` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:172 |
-| unnumbered | `testDecodeFailsForExtremelyDeepStructures` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:172 |
-| unnumbered | `testDecodeFailsForExtremelyDeepStructures` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:172 |
-| unnumbered | `testDecodeFailsForSillyMaximumDepths` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:183 |
-| unnumbered | `testDecodeFailsForSillyMaximumDepths` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:183 |
-| unnumbered | `testDecodeFailsForSillyMaximumDepths` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:183 |
-| unnumbered | `testDecodeFloats` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:98 |
-| unnumbered | `testDecodeFloats` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:98 |
-| unnumbered | `testDecodeFloats` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:98 |
-| unnumbered | `testDecodeFromIssue78` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:141 |
-| unnumbered | `testDecodeFromIssue78` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:141 |
-| unnumbered | `testDecodeFromIssue78` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:141 |
-| unnumbered | `testDecodeInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:17 |
-| unnumbered | `testDecodeInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:17 |
-| unnumbered | `testDecodeInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:17 |
-| unnumbered | `testDecodeMapFromIssue29` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:124 |
-| unnumbered | `testDecodeMapFromIssue29` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:124 |
-| unnumbered | `testDecodeMapFromIssue29` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:124 |
-| unnumbered | `testDecodeMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:73 |
-| unnumbered | `testDecodeMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:107 |
-| unnumbered | `testDecodeMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:73 |
-| unnumbered | `testDecodeMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:107 |
-| unnumbered | `testDecodeMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:73 |
-| unnumbered | `testDecodeMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:107 |
-| unnumbered | `testDecodeNegativeInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:51 |
-| unnumbered | `testDecodeNegativeInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:51 |
-| unnumbered | `testDecodeNegativeInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:51 |
-| unnumbered | `testDecodeNull` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:5 |
-| unnumbered | `testDecodeNull` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:5 |
-| unnumbered | `testDecodeNull` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:5 |
-| unnumbered | `testDecodeNumbers` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:5 |
-| unnumbered | `testDecodeNumbers` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:5 |
-| unnumbered | `testDecodeNumbers` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:5 |
-| unnumbered | `testDecodeOfStructContainingNestedIndefiniteMapsAndArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:159 |
-| unnumbered | `testDecodeOfStructContainingNestedIndefiniteMapsAndArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:159 |
-| unnumbered | `testDecodeOfStructContainingNestedIndefiniteMapsAndArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:159 |
-| unnumbered | `testDecodePerformance` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:113 |
-| unnumbered | `testDecodePerformance` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:113 |
-| unnumbered | `testDecodePerformance` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:113 |
-| unnumbered | `testDecodeSimple` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:88 |
-| unnumbered | `testDecodeSimple` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:88 |
-| unnumbered | `testDecodeSimple` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:88 |
-| unnumbered | `testDecodeStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:71 |
-| unnumbered | `testDecodeStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:71 |
-| unnumbered | `testDecodeStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:71 |
-| unnumbered | `testDecodeSucceedsForAllowedDeepStructures` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:190 |
-| unnumbered | `testDecodeSucceedsForAllowedDeepStructures` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:190 |
-| unnumbered | `testDecodeSucceedsForAllowedDeepStructures` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:190 |
-| unnumbered | `testDecodeTagged` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:81 |
-| unnumbered | `testDecodeTagged` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:81 |
-| unnumbered | `testDecodeTagged` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:81 |
-| unnumbered | `testDecodeUtf8Strings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:53 |
-| unnumbered | `testDecodeUtf8Strings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:53 |
-| unnumbered | `testDecodeUtf8Strings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:53 |
 | unnumbered | `testDeterministicOrdering` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:100 |
-| unnumbered | `testDirectAccess` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:88 |
-| unnumbered | `testDirectAccess` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:88 |
-| unnumbered | `testDirectAccess` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:88 |
 | unnumbered | `testDirectionSemanticMatching` | TEST051: Semantic direction matching - generic provider matches specific request | Tests/CapDAGTests/CSCapUrnTests.m:915 |
 | unnumbered | `testDirectionSemanticSpecificity` | TEST052: Semantic direction specificity - more media URN tags = higher specificity | Tests/CapDAGTests/CSCapUrnTests.m:962 |
 | unnumbered | `testDirectionWildcardMatches` | TEST003: Direction wildcard matching | Tests/CapDAGTests/CSCapUrnTests.m:218 |
@@ -840,148 +737,19 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testDotParserNodeWithAttributes` | TEST: Parse node with attributes | Tests/BifaciTests/OrchestratorTests.swift:364 |
 | unnumbered | `testDotParserQuotedIdentifiers` | TEST: Parse quoted identifiers | Tests/BifaciTests/OrchestratorTests.swift:381 |
 | unnumbered | `testDotParserSimpleDigraph` | TEST: Parse simple digraph | Tests/BifaciTests/OrchestratorTests.swift:330 |
-| unnumbered | `testDoubleGlobstarBashV3` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:142 |
-| unnumbered | `testDoubleGlobstarBashV3` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:142 |
-| unnumbered | `testDoubleGlobstarBashV3` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:142 |
-| unnumbered | `testDoubleGlobstarBashV4` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:194 |
-| unnumbered | `testDoubleGlobstarBashV4` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:194 |
-| unnumbered | `testDoubleGlobstarBashV4` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:194 |
-| unnumbered | `testDoubleGlobstarGradle` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:259 |
-| unnumbered | `testDoubleGlobstarGradle` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:259 |
-| unnumbered | `testDoubleGlobstarGradle` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:259 |
-| unnumbered | `testEncodeAny` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:331 |
-| unnumbered | `testEncodeAny` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:331 |
-| unnumbered | `testEncodeAny` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:331 |
-| unnumbered | `testEncodeArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:72 |
-| unnumbered | `testEncodeArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:89 |
-| unnumbered | `testEncodeArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:72 |
-| unnumbered | `testEncodeArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:89 |
-| unnumbered | `testEncodeArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:72 |
-| unnumbered | `testEncodeArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:89 |
-| unnumbered | `testEncodeBools` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:10 |
-| unnumbered | `testEncodeBools` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:10 |
-| unnumbered | `testEncodeBools` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:10 |
-| unnumbered | `testEncodeByteStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:27 |
-| unnumbered | `testEncodeByteStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:84 |
-| unnumbered | `testEncodeByteStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:27 |
-| unnumbered | `testEncodeByteStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:84 |
-| unnumbered | `testEncodeByteStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:27 |
-| unnumbered | `testEncodeByteStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:84 |
-| unnumbered | `testEncodeData` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:41 |
-| unnumbered | `testEncodeData` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:41 |
-| unnumbered | `testEncodeData` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:41 |
-| unnumbered | `testEncodeDates` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:277 |
-| unnumbered | `testEncodeDates` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:277 |
-| unnumbered | `testEncodeDates` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:277 |
-| unnumbered | `testEncodeFloats` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:199 |
-| unnumbered | `testEncodeFloats` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:199 |
-| unnumbered | `testEncodeFloats` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:199 |
-| unnumbered | `testEncodeIndefiniteArrays` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:229 |
-| unnumbered | `testEncodeIndefiniteArrays` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:229 |
-| unnumbered | `testEncodeIndefiniteArrays` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:229 |
-| unnumbered | `testEncodeIndefiniteByteStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:265 |
-| unnumbered | `testEncodeIndefiniteByteStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:265 |
-| unnumbered | `testEncodeIndefiniteByteStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:265 |
-| unnumbered | `testEncodeIndefiniteMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:247 |
-| unnumbered | `testEncodeIndefiniteMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:247 |
-| unnumbered | `testEncodeIndefiniteMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:247 |
-| unnumbered | `testEncodeIndefiniteStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:257 |
-| unnumbered | `testEncodeIndefiniteStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:257 |
-| unnumbered | `testEncodeIndefiniteStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:257 |
-| unnumbered | `testEncodeInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:10 |
-| unnumbered | `testEncodeInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:17 |
-| unnumbered | `testEncodeInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:10 |
-| unnumbered | `testEncodeInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:17 |
-| unnumbered | `testEncodeInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:10 |
-| unnumbered | `testEncodeInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:17 |
-| unnumbered | `testEncodeMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:88 |
-| unnumbered | `testEncodeMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:100 |
-| unnumbered | `testEncodeMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:88 |
-| unnumbered | `testEncodeMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:100 |
-| unnumbered | `testEncodeMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:88 |
-| unnumbered | `testEncodeMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:100 |
-| unnumbered | `testEncodeNegativeInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:51 |
-| unnumbered | `testEncodeNegativeInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:51 |
-| unnumbered | `testEncodeNegativeInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:51 |
-| unnumbered | `testEncodeNull` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:5 |
-| unnumbered | `testEncodeNull` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:5 |
-| unnumbered | `testEncodeNull` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:5 |
-| unnumbered | `testEncodeSimple` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:188 |
-| unnumbered | `testEncodeSimple` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:188 |
-| unnumbered | `testEncodeSimple` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:188 |
-| unnumbered | `testEncodeSimpleStructs` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:120 |
-| unnumbered | `testEncodeSimpleStructs` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:120 |
-| unnumbered | `testEncodeSimpleStructs` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:120 |
-| unnumbered | `testEncodeSortedMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:117 |
-| unnumbered | `testEncodeSortedMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:117 |
-| unnumbered | `testEncodeSortedMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:117 |
-| unnumbered | `testEncodeStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:71 |
-| unnumbered | `testEncodeStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:71 |
-| unnumbered | `testEncodeStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:71 |
-| unnumbered | `testEncodeTagged` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:181 |
-| unnumbered | `testEncodeTagged` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:181 |
-| unnumbered | `testEncodeTagged` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:181 |
-| unnumbered | `testEncodeUtf8Strings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:55 |
-| unnumbered | `testEncodeUtf8Strings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:55 |
-| unnumbered | `testEncodeUtf8Strings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:55 |
 | unnumbered | `testEquality` | TEST016: Test equality and hashing | Tests/CapDAGTests/CSCapUrnTests.m:473 |
 | unnumbered | `testExactVsConformanceMatching` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:50 |
 | unnumbered | `testExtensionsEmptyWhenNotSet` |  | Tests/CapDAGTests/CSMediaSpecTests.m:133 |
 | unnumbered | `testExtensionsPropagationFromObjectDef` | Extensions field tests | Tests/CapDAGTests/CSMediaSpecTests.m:110 |
 | unnumbered | `testExtensionsWithMetadataAndValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:152 |
 | unnumbered | `testFileReferenceWithAllFields` |  | Tests/CapDAGTests/CSStdinSourceTests.m:74 |
-| unnumbered | `testFoundationHeavyType` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:377 |
-| unnumbered | `testFoundationHeavyType` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:377 |
-| unnumbered | `testFoundationHeavyType` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:377 |
 | unnumbered | `testFullCapValidationWithMediaSpecs` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:679 |
 | unnumbered | `testGetCapDefinitionReal` |  | Tests/CapDAGTests/CSCapRegistryTests.m:115 |
-| unnumbered | `testGlobstarBashV3NoSlash` | MARK: - Globstar - Bash v3 | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:121 |
-| unnumbered | `testGlobstarBashV3NoSlash` | MARK: - Globstar - Bash v3 | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:121 |
-| unnumbered | `testGlobstarBashV3NoSlash` | MARK: - Globstar - Bash v3 | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:121 |
-| unnumbered | `testGlobstarBashV3WithSlash` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:128 |
-| unnumbered | `testGlobstarBashV3WithSlash` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:128 |
-| unnumbered | `testGlobstarBashV3WithSlash` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:128 |
-| unnumbered | `testGlobstarBashV3WithSlashAndWildcard` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:135 |
-| unnumbered | `testGlobstarBashV3WithSlashAndWildcard` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:135 |
-| unnumbered | `testGlobstarBashV3WithSlashAndWildcard` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:135 |
-| unnumbered | `testGlobstarBashV4NoSlash` | MARK: - Globstar - Bash v4 | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:150 |
-| unnumbered | `testGlobstarBashV4NoSlash` | MARK: - Globstar - Bash v4 | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:150 |
-| unnumbered | `testGlobstarBashV4NoSlash` | MARK: - Globstar - Bash v4 | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:150 |
-| unnumbered | `testGlobstarBashV4WithSlash` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:166 |
-| unnumbered | `testGlobstarBashV4WithSlash` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:166 |
-| unnumbered | `testGlobstarBashV4WithSlash` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:166 |
-| unnumbered | `testGlobstarBashV4WithSlashAndWildcard` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:178 |
-| unnumbered | `testGlobstarBashV4WithSlashAndWildcard` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:178 |
-| unnumbered | `testGlobstarBashV4WithSlashAndWildcard` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:178 |
-| unnumbered | `testGlobstarGradleNoSlash` | MARK: - Globstar - Gradle | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:205 |
-| unnumbered | `testGlobstarGradleNoSlash` | MARK: - Globstar - Gradle | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:205 |
-| unnumbered | `testGlobstarGradleNoSlash` | MARK: - Globstar - Gradle | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:205 |
-| unnumbered | `testGlobstarGradleWithSlash` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:223 |
-| unnumbered | `testGlobstarGradleWithSlash` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:223 |
-| unnumbered | `testGlobstarGradleWithSlash` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:223 |
-| unnumbered | `testGlobstarGradleWithSlashAndWildcard` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:241 |
-| unnumbered | `testGlobstarGradleWithSlashAndWildcard` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:241 |
-| unnumbered | `testGlobstarGradleWithSlashAndWildcard` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:241 |
-| unnumbered | `testIndexing` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:110 |
-| unnumbered | `testIndexing` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:110 |
-| unnumbered | `testIndexing` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:110 |
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:263 |
 | unnumbered | `testIntegrationWithOutputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:334 |
-| unnumbered | `testInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:71 |
-| unnumbered | `testInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:71 |
-| unnumbered | `testInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:71 |
 | unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:104 |
 | unnumbered | `testInvalidCharacters` | TEST003: Invalid format/character test | Tests/CapDAGTests/CSCapUrnTests.m:134 |
 | unnumbered | `testInvalidUrnHandling` |  | Tests/CapDAGTests/CSCapMatrixTests.m:147 |
-| unnumbered | `testIterateTwice` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:94 |
-| unnumbered | `testIterateTwice` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:94 |
-| unnumbered | `testIterateTwice` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:94 |
-| unnumbered | `testMacOSOnlyTypes` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:474 |
-| unnumbered | `testMacOSOnlyTypes` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:474 |
-| unnumbered | `testMacOSOnlyTypes` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:474 |
-| unnumbered | `testMaps` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:172 |
-| unnumbered | `testMaps` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:172 |
-| unnumbered | `testMaps` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:172 |
 | unnumbered | `testMediaSpecDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaSpecs definition through CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:864 |
 | unnumbered | `testMediaSpecsResolution` |  | Tests/CapDAGTests/CSCapTests.m:360 |
 | unnumbered | `testMediaSpecsWithoutSchemaSkipsValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:595 |
@@ -990,84 +758,24 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testMetadataPropagationFromObjectDef` |  | Tests/CapDAGTests/CSMediaSpecTests.m:14 |
 | unnumbered | `testMetadataWithValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:62 |
 | unnumbered | `testMissingOutSpecDefaultsToWildcard` | TEST002: Missing 'out' defaults to media: | Tests/CapDAGTests/CSCapUrnTests.m:157 |
-| unnumbered | `testMoreTransformsURLSchemeBuilding` | / Test building "More..." URL (shows target selection in main app) | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:376 |
 | unnumbered | `testMultiStepPath` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:80 |
-| unnumbered | `testMultiTypeStruct` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:295 |
-| unnumbered | `testMultiTypeStruct` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:295 |
-| unnumbered | `testMultiTypeStruct` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:295 |
 | unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaSpecTests.m:184 |
-| unnumbered | `testNegativeInts` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:115 |
-| unnumbered | `testNegativeInts` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:115 |
-| unnumbered | `testNegativeInts` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:115 |
-| unnumbered | `testNestedSubscriptSetter` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:22 |
-| unnumbered | `testNestedSubscriptSetter` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORTests.swift:22 |
-| unnumbered | `testNestedSubscriptSetter` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:22 |
-| unnumbered | `testNestedSubscriptSetterWithNewMap` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:39 |
-| unnumbered | `testNestedSubscriptSetterWithNewMap` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORTests.swift:39 |
-| unnumbered | `testNestedSubscriptSetterWithNewMap` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:39 |
-| unnumbered | `testNil` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:56 |
-| unnumbered | `testNil` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:56 |
-| unnumbered | `testNil` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:56 |
 | unnumbered | `testNonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:150 |
 | unnumbered | `testNormalizeHandlesDifferentTagOrders` | / Test that different tag orders normalize to the same URL | Tests/CapDAGTests/CSCapRegistryTests.m:102 |
-| unnumbered | `testNothingMatches` |  | .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:78 |
-| unnumbered | `testNothingMatches` |  | testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:78 |
-| unnumbered | `testNothingMatches` |  | testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:78 |
-| unnumbered | `testOpenInMachineFabricURLSchemeBuilding` | / Test building "Open in MachineFabric" URL | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:406 |
-| unnumbered | `testOptionalArray` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:358 |
-| unnumbered | `testOptionalArray` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:358 |
-| unnumbered | `testOptionalArray` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:358 |
 | unnumbered | `testOutputCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:766 |
 | unnumbered | `testOutputWithEmbeddedSchemaValidationFailure` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:222 |
 | unnumbered | `testOutputWithEmbeddedSchemaValidationSuccess` | Obj-C specific: Output validation tests | Tests/CapDAGTests/CSSchemaValidationTests.m:179 |
 | unnumbered | `testPressureAndKill` | / Single test: allocate 90% of RAM with incompressible CSPRNG data, monitor / memory, detect pressure (kernel or threshold), kill cartridge, verify death. / The goal is to overload the system — force the kernel into real pressure. | testcartridge-host/Sources/TestcartridgeHost/main.swift:288 |
-| unnumbered | `testRandomInputDoesNotHitStackLimits` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:197 |
-| unnumbered | `testRandomInputDoesNotHitStackLimits` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:197 |
-| unnumbered | `testRandomInputDoesNotHitStackLimits` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:197 |
-| unnumbered | `testReadmeExamples` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:301 |
-| unnumbered | `testReadmeExamples` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:301 |
-| unnumbered | `testReadmeExamples` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:301 |
 | unnumbered | `testRegisterAndFindCapSet` |  | Tests/CapDAGTests/CSCapMatrixTests.m:53 |
 | unnumbered | `testRegistryCreation` |  | Tests/CapDAGTests/CSCapRegistryTests.m:40 |
 | unnumbered | `testRegistryValidCapCheck` | Registry validator tests removed - not part of current API | Tests/CapDAGTests/CSCapRegistryTests.m:47 |
 | unnumbered | `testResolveMediaUrnNotFound` |  | Tests/CapDAGTests/CSMediaSpecTests.m:98 |
 | unnumbered | `testSchemaValidationErrorDetails` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:495 |
 | unnumbered | `testSchemaValidationPerformance` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:621 |
-| unnumbered | `testSimpleStruct` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:11 |
-| unnumbered | `testSimpleStruct` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:11 |
-| unnumbered | `testSimpleStruct` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:11 |
-| unnumbered | `testSimpleStructsAsKeysInMap` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:41 |
-| unnumbered | `testSimpleStructsAsKeysInMap` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:41 |
-| unnumbered | `testSimpleStructsAsKeysInMap` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:41 |
-| unnumbered | `testSimpleStructsAsValuesInMap` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:26 |
-| unnumbered | `testSimpleStructsAsValuesInMap` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:26 |
-| unnumbered | `testSimpleStructsAsValuesInMap` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:26 |
-| unnumbered | `testSimpleStructsInArray` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:17 |
-| unnumbered | `testSimpleStructsInArray` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:17 |
-| unnumbered | `testSimpleStructsInArray` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:17 |
 | unnumbered | `testSourceWithData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:14 |
 | unnumbered | `testSourceWithFileReference` |  | Tests/CapDAGTests/CSStdinSourceTests.m:29 |
 | unnumbered | `testStandaloneCollectNode` | MARK: - Standalone Collect Node Tests | Tests/CapDAGTests/CSPlanDecompositionTests.m:63 |
-| unnumbered | `testStrings` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:139 |
-| unnumbered | `testStrings` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:139 |
-| unnumbered | `testStrings` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:139 |
-| unnumbered | `testStructContainingEnum` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:262 |
-| unnumbered | `testStructContainingEnum` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:262 |
-| unnumbered | `testStructContainingEnum` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:262 |
-| unnumbered | `testStructWithArray` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:278 |
-| unnumbered | `testStructWithArray` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:278 |
-| unnumbered | `testStructWithArray` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:278 |
-| unnumbered | `testStructWithFloat` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:241 |
-| unnumbered | `testStructWithFloat` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:241 |
-| unnumbered | `testStructWithFloat` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:241 |
-| unnumbered | `testSubscriptSetter` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:5 |
-| unnumbered | `testSubscriptSetter` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORTests.swift:5 |
-| unnumbered | `testSubscriptSetter` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:5 |
 | unnumbered | `testSyncFromCaps` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:124 |
-| unnumbered | `testToCBOR` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncodableTests.swift:5 |
-| unnumbered | `testToCBOR` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncodableTests.swift:5 |
-| unnumbered | `testToCBOR` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncodableTests.swift:5 |
-| unnumbered | `testTransformURLSchemeBuilding` | / Test building transform URL scheme (done client-side in FinderSync) | testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:344 |
 | unnumbered | `testURLEncodesQuotedMediaUrns` | / Test that media URNs in cap URNs are properly URL-encoded | Tests/CapDAGTests/CSCapRegistryTests.m:74 |
 | unnumbered | `testURLFormatIsValid` | / Test the URL format is valid and can be parsed | Tests/CapDAGTests/CSCapRegistryTests.m:85 |
 | unnumbered | `testURLKeepsCapPrefixLiteral` | / Test that URL construction keeps "cap:" literal and only encodes the tags part | Tests/CapDAGTests/CSCapRegistryTests.m:63 |
@@ -1097,9 +805,6 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testWithTagIgnoresInOut` | TEST036: with_tag ignores in/out (use with_in_spec/with_out_spec instead) | Tests/CapDAGTests/CSCapUrnTests.m:361 |
 | unnumbered | `testWithoutTag` | TEST036: Test without_tag removes tag | Tests/CapDAGTests/CSCapUrnTests.m:394 |
 | unnumbered | `testWithoutTagIgnoresInOut` | TEST036: without_tag ignores in/out | Tests/CapDAGTests/CSCapUrnTests.m:406 |
-| unnumbered | `testWrappedStruct` |  | .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:191 |
-| unnumbered | `testWrappedStruct` |  | testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:191 |
-| unnumbered | `testWrappedStruct` |  | testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:191 |
 | unnumbered | `test_csCapManifestWithPageUrl` | Additional test: CSCapManifest with pageUrl | Tests/BifaciTests/ManifestTests.swift:192 |
 | unnumbered | `test_glob_pattern_detection` |  | Tests/CapDAGTests/CSInputResolverTests.m:669 |
 | unnumbered | `test_resolved_file_properties` |  | Tests/CapDAGTests/CSInputResolverTests.m:680 |
@@ -1144,24 +849,8 @@ The following tests are cataloged but do not currently participate in numeric te
 - `test936HasForeach` — Tests/CapDAGTests/CSPlanDecompositionTests.m:100
 - `test937ExtractPrefixTo` — Tests/CapDAGTests/CSPlanDecompositionTests.m:112
 - `testAddCapAndBasicTraversal` — Tests/CapDAGTests/CSLiveCapGraphTests.m:32
-- `testAnyRecursive` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:342
-- `testAnyRecursive` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:342
-- `testAnyRecursive` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:342
 - `testArgumentCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:729
-- `testArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:157
-- `testArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:157
-- `testArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:157
-- `testBadgeClearingAfterCompletion` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:432
-- `testBadgeStateTransitions` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:448
-- `testBadgeStatusPolling_EmptyState` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:266
-- `testBadgeStatusPolling_WithActiveTransform` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:293
 - `testBestCapSetSelection` — Tests/CapDAGTests/CSCapMatrixTests.m:101
-- `testBools` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:62
-- `testBools` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:62
-- `testBools` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:62
-- `testBraces` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:68
-- `testBraces` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:68
-- `testBraces` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:68
 - `testBuilderBasicConstruction` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:16
 - `testBuilderComplex` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:173
 - `testBuilderCustomTags` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:70
@@ -1219,98 +908,11 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testClear570` — Tests/CapDAGTests/CSCapMatrixTests.m:253
 - `testCoding` — Tests/CapDAGTests/CSCapUrnTests.m:487
 - `testCompleteCapDeserialization` — Tests/CapDAGTests/CSCapTests.m:275
-- `testCompleteFinderSyncFlow` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:480
 - `testComplexNestedSchema` — Tests/CapDAGTests/CSSchemaValidationTests.m:404
-- `testContextMenuPopulation_MultipleFiles` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:147
-- `testContextMenuPopulation_NonExistentFile` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:244
-- `testContextMenuPopulation_SinglePDF` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:101
-- `testContextMenuPopulation_Timeout` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:175
-- `testContextMenuPopulation_UnsupportedFileType` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:214
 - `testCopying` — Tests/CapDAGTests/CSCapUrnTests.m:509
 - `testDataSourceWithBinaryContent` — Tests/CapDAGTests/CSStdinSourceTests.m:61
 - `testDataSourceWithEmptyData` — Tests/CapDAGTests/CSStdinSourceTests.m:51
-- `testDecodeArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:64
-- `testDecodeArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:92
-- `testDecodeArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:64
-- `testDecodeArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:92
-- `testDecodeArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:64
-- `testDecodeArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:92
-- `testDecodeBools` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:10
-- `testDecodeBools` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:10
-- `testDecodeBools` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:10
-- `testDecodeByteStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:29
-- `testDecodeByteStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:85
-- `testDecodeByteStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:29
-- `testDecodeByteStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:85
-- `testDecodeByteStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:29
-- `testDecodeByteStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:85
-- `testDecodeData` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:41
-- `testDecodeData` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:41
-- `testDecodeData` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:41
-- `testDecodeDates` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:106
-- `testDecodeDates` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:120
-- `testDecodeDates` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:106
-- `testDecodeDates` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:120
-- `testDecodeDates` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:106
-- `testDecodeDates` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:120
-- `testDecodeFailsForExtremelyDeepStructures` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:172
-- `testDecodeFailsForExtremelyDeepStructures` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:172
-- `testDecodeFailsForExtremelyDeepStructures` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:172
-- `testDecodeFailsForSillyMaximumDepths` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:183
-- `testDecodeFailsForSillyMaximumDepths` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:183
-- `testDecodeFailsForSillyMaximumDepths` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:183
-- `testDecodeFloats` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:98
-- `testDecodeFloats` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:98
-- `testDecodeFloats` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:98
-- `testDecodeFromIssue78` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:141
-- `testDecodeFromIssue78` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:141
-- `testDecodeFromIssue78` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:141
-- `testDecodeInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:17
-- `testDecodeInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:17
-- `testDecodeInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:17
-- `testDecodeMapFromIssue29` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:124
-- `testDecodeMapFromIssue29` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:124
-- `testDecodeMapFromIssue29` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:124
-- `testDecodeMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:73
-- `testDecodeMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:107
-- `testDecodeMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:73
-- `testDecodeMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:107
-- `testDecodeMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:73
-- `testDecodeMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:107
-- `testDecodeNegativeInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:51
-- `testDecodeNegativeInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:51
-- `testDecodeNegativeInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:51
-- `testDecodeNull` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:5
-- `testDecodeNull` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:5
-- `testDecodeNull` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:5
-- `testDecodeNumbers` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:5
-- `testDecodeNumbers` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:5
-- `testDecodeNumbers` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:5
-- `testDecodeOfStructContainingNestedIndefiniteMapsAndArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:159
-- `testDecodeOfStructContainingNestedIndefiniteMapsAndArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:159
-- `testDecodeOfStructContainingNestedIndefiniteMapsAndArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:159
-- `testDecodePerformance` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:113
-- `testDecodePerformance` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:113
-- `testDecodePerformance` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:113
-- `testDecodeSimple` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:88
-- `testDecodeSimple` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:88
-- `testDecodeSimple` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:88
-- `testDecodeStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:71
-- `testDecodeStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:71
-- `testDecodeStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBORDecoderTests.swift:71
-- `testDecodeSucceedsForAllowedDeepStructures` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:190
-- `testDecodeSucceedsForAllowedDeepStructures` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:190
-- `testDecodeSucceedsForAllowedDeepStructures` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:190
-- `testDecodeTagged` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:81
-- `testDecodeTagged` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:81
-- `testDecodeTagged` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:81
-- `testDecodeUtf8Strings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:53
-- `testDecodeUtf8Strings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:53
-- `testDecodeUtf8Strings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:53
 - `testDeterministicOrdering` — Tests/CapDAGTests/CSLiveCapGraphTests.m:100
-- `testDirectAccess` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:88
-- `testDirectAccess` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:88
-- `testDirectAccess` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:88
 - `testDirectionSemanticMatching` — Tests/CapDAGTests/CSCapUrnTests.m:915
 - `testDirectionSemanticSpecificity` — Tests/CapDAGTests/CSCapUrnTests.m:962
 - `testDirectionWildcardMatches` — Tests/CapDAGTests/CSCapUrnTests.m:218
@@ -1320,148 +922,19 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testDotParserNodeWithAttributes` — Tests/BifaciTests/OrchestratorTests.swift:364
 - `testDotParserQuotedIdentifiers` — Tests/BifaciTests/OrchestratorTests.swift:381
 - `testDotParserSimpleDigraph` — Tests/BifaciTests/OrchestratorTests.swift:330
-- `testDoubleGlobstarBashV3` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:142
-- `testDoubleGlobstarBashV3` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:142
-- `testDoubleGlobstarBashV3` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:142
-- `testDoubleGlobstarBashV4` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:194
-- `testDoubleGlobstarBashV4` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:194
-- `testDoubleGlobstarBashV4` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:194
-- `testDoubleGlobstarGradle` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:259
-- `testDoubleGlobstarGradle` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:259
-- `testDoubleGlobstarGradle` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:259
-- `testEncodeAny` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:331
-- `testEncodeAny` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:331
-- `testEncodeAny` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:331
-- `testEncodeArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:72
-- `testEncodeArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:89
-- `testEncodeArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:72
-- `testEncodeArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:89
-- `testEncodeArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:72
-- `testEncodeArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:89
-- `testEncodeBools` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:10
-- `testEncodeBools` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:10
-- `testEncodeBools` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:10
-- `testEncodeByteStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:27
-- `testEncodeByteStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:84
-- `testEncodeByteStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:27
-- `testEncodeByteStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:84
-- `testEncodeByteStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:27
-- `testEncodeByteStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:84
-- `testEncodeData` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:41
-- `testEncodeData` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:41
-- `testEncodeData` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:41
-- `testEncodeDates` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:277
-- `testEncodeDates` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:277
-- `testEncodeDates` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:277
-- `testEncodeFloats` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:199
-- `testEncodeFloats` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:199
-- `testEncodeFloats` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:199
-- `testEncodeIndefiniteArrays` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:229
-- `testEncodeIndefiniteArrays` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:229
-- `testEncodeIndefiniteArrays` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:229
-- `testEncodeIndefiniteByteStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:265
-- `testEncodeIndefiniteByteStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:265
-- `testEncodeIndefiniteByteStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:265
-- `testEncodeIndefiniteMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:247
-- `testEncodeIndefiniteMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:247
-- `testEncodeIndefiniteMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:247
-- `testEncodeIndefiniteStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:257
-- `testEncodeIndefiniteStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:257
-- `testEncodeIndefiniteStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:257
-- `testEncodeInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:10
-- `testEncodeInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:17
-- `testEncodeInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:10
-- `testEncodeInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:17
-- `testEncodeInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:10
-- `testEncodeInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:17
-- `testEncodeMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:88
-- `testEncodeMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:100
-- `testEncodeMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:88
-- `testEncodeMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:100
-- `testEncodeMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:88
-- `testEncodeMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:100
-- `testEncodeNegativeInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:51
-- `testEncodeNegativeInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:51
-- `testEncodeNegativeInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:51
-- `testEncodeNull` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:5
-- `testEncodeNull` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:5
-- `testEncodeNull` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:5
-- `testEncodeSimple` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:188
-- `testEncodeSimple` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:188
-- `testEncodeSimple` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:188
-- `testEncodeSimpleStructs` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:120
-- `testEncodeSimpleStructs` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:120
-- `testEncodeSimpleStructs` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:120
-- `testEncodeSortedMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:117
-- `testEncodeSortedMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:117
-- `testEncodeSortedMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:117
-- `testEncodeStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:71
-- `testEncodeStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:71
-- `testEncodeStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CodableCBOREncoderTests.swift:71
-- `testEncodeTagged` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:181
-- `testEncodeTagged` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:181
-- `testEncodeTagged` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:181
-- `testEncodeUtf8Strings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:55
-- `testEncodeUtf8Strings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:55
-- `testEncodeUtf8Strings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:55
 - `testEquality` — Tests/CapDAGTests/CSCapUrnTests.m:473
 - `testExactVsConformanceMatching` — Tests/CapDAGTests/CSLiveCapGraphTests.m:50
 - `testExtensionsEmptyWhenNotSet` — Tests/CapDAGTests/CSMediaSpecTests.m:133
 - `testExtensionsPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:110
 - `testExtensionsWithMetadataAndValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:152
 - `testFileReferenceWithAllFields` — Tests/CapDAGTests/CSStdinSourceTests.m:74
-- `testFoundationHeavyType` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:377
-- `testFoundationHeavyType` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:377
-- `testFoundationHeavyType` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:377
 - `testFullCapValidationWithMediaSpecs` — Tests/CapDAGTests/CSSchemaValidationTests.m:679
 - `testGetCapDefinitionReal` — Tests/CapDAGTests/CSCapRegistryTests.m:115
-- `testGlobstarBashV3NoSlash` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:121
-- `testGlobstarBashV3NoSlash` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:121
-- `testGlobstarBashV3NoSlash` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:121
-- `testGlobstarBashV3WithSlash` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:128
-- `testGlobstarBashV3WithSlash` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:128
-- `testGlobstarBashV3WithSlash` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:128
-- `testGlobstarBashV3WithSlashAndWildcard` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:135
-- `testGlobstarBashV3WithSlashAndWildcard` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:135
-- `testGlobstarBashV3WithSlashAndWildcard` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:135
-- `testGlobstarBashV4NoSlash` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:150
-- `testGlobstarBashV4NoSlash` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:150
-- `testGlobstarBashV4NoSlash` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:150
-- `testGlobstarBashV4WithSlash` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:166
-- `testGlobstarBashV4WithSlash` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:166
-- `testGlobstarBashV4WithSlash` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:166
-- `testGlobstarBashV4WithSlashAndWildcard` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:178
-- `testGlobstarBashV4WithSlashAndWildcard` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:178
-- `testGlobstarBashV4WithSlashAndWildcard` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:178
-- `testGlobstarGradleNoSlash` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:205
-- `testGlobstarGradleNoSlash` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:205
-- `testGlobstarGradleNoSlash` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:205
-- `testGlobstarGradleWithSlash` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:223
-- `testGlobstarGradleWithSlash` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:223
-- `testGlobstarGradleWithSlash` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:223
-- `testGlobstarGradleWithSlashAndWildcard` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:241
-- `testGlobstarGradleWithSlashAndWildcard` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:241
-- `testGlobstarGradleWithSlashAndWildcard` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:241
-- `testIndexing` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:110
-- `testIndexing` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:110
-- `testIndexing` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:110
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:263
 - `testIntegrationWithOutputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:334
-- `testInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:71
-- `testInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:71
-- `testInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:71
 - `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:104
 - `testInvalidCharacters` — Tests/CapDAGTests/CSCapUrnTests.m:134
 - `testInvalidUrnHandling` — Tests/CapDAGTests/CSCapMatrixTests.m:147
-- `testIterateTwice` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:94
-- `testIterateTwice` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:94
-- `testIterateTwice` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:94
-- `testMacOSOnlyTypes` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:474
-- `testMacOSOnlyTypes` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:474
-- `testMacOSOnlyTypes` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:474
-- `testMaps` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:172
-- `testMaps` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:172
-- `testMaps` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:172
 - `testMediaSpecDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:864
 - `testMediaSpecsResolution` — Tests/CapDAGTests/CSCapTests.m:360
 - `testMediaSpecsWithoutSchemaSkipsValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:595
@@ -1470,84 +943,24 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testMetadataPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:14
 - `testMetadataWithValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:62
 - `testMissingOutSpecDefaultsToWildcard` — Tests/CapDAGTests/CSCapUrnTests.m:157
-- `testMoreTransformsURLSchemeBuilding` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:376
 - `testMultiStepPath` — Tests/CapDAGTests/CSLiveCapGraphTests.m:80
-- `testMultiTypeStruct` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:295
-- `testMultiTypeStruct` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:295
-- `testMultiTypeStruct` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:295
 - `testMultipleExtensions` — Tests/CapDAGTests/CSMediaSpecTests.m:184
-- `testNegativeInts` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:115
-- `testNegativeInts` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:115
-- `testNegativeInts` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:115
-- `testNestedSubscriptSetter` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:22
-- `testNestedSubscriptSetter` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORTests.swift:22
-- `testNestedSubscriptSetter` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:22
-- `testNestedSubscriptSetterWithNewMap` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:39
-- `testNestedSubscriptSetterWithNewMap` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORTests.swift:39
-- `testNestedSubscriptSetterWithNewMap` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:39
-- `testNil` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:56
-- `testNil` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:56
-- `testNil` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:56
 - `testNonStructuredArgumentSkipsSchemaValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:150
 - `testNormalizeHandlesDifferentTagOrders` — Tests/CapDAGTests/CSCapRegistryTests.m:102
-- `testNothingMatches` — .build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:78
-- `testNothingMatches` — testcartridge-host/.build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:78
-- `testNothingMatches` — testcartridge-host/.build/index-build/checkouts/Glob/Tests/GlobTests/GlobTests.swift:78
-- `testOpenInMachineFabricURLSchemeBuilding` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:406
-- `testOptionalArray` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:358
-- `testOptionalArray` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:358
-- `testOptionalArray` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:358
 - `testOutputCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:766
 - `testOutputWithEmbeddedSchemaValidationFailure` — Tests/CapDAGTests/CSSchemaValidationTests.m:222
 - `testOutputWithEmbeddedSchemaValidationSuccess` — Tests/CapDAGTests/CSSchemaValidationTests.m:179
 - `testPressureAndKill` — testcartridge-host/Sources/TestcartridgeHost/main.swift:288
-- `testRandomInputDoesNotHitStackLimits` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:197
-- `testRandomInputDoesNotHitStackLimits` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:197
-- `testRandomInputDoesNotHitStackLimits` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORDecoderTests.swift:197
-- `testReadmeExamples` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:301
-- `testReadmeExamples` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:301
-- `testReadmeExamples` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncoderTests.swift:301
 - `testRegisterAndFindCapSet` — Tests/CapDAGTests/CSCapMatrixTests.m:53
 - `testRegistryCreation` — Tests/CapDAGTests/CSCapRegistryTests.m:40
 - `testRegistryValidCapCheck` — Tests/CapDAGTests/CSCapRegistryTests.m:47
 - `testResolveMediaUrnNotFound` — Tests/CapDAGTests/CSMediaSpecTests.m:98
 - `testSchemaValidationErrorDetails` — Tests/CapDAGTests/CSSchemaValidationTests.m:495
 - `testSchemaValidationPerformance` — Tests/CapDAGTests/CSSchemaValidationTests.m:621
-- `testSimpleStruct` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:11
-- `testSimpleStruct` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:11
-- `testSimpleStruct` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:11
-- `testSimpleStructsAsKeysInMap` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:41
-- `testSimpleStructsAsKeysInMap` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:41
-- `testSimpleStructsAsKeysInMap` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:41
-- `testSimpleStructsAsValuesInMap` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:26
-- `testSimpleStructsAsValuesInMap` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:26
-- `testSimpleStructsAsValuesInMap` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:26
-- `testSimpleStructsInArray` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:17
-- `testSimpleStructsInArray` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:17
-- `testSimpleStructsInArray` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:17
 - `testSourceWithData` — Tests/CapDAGTests/CSStdinSourceTests.m:14
 - `testSourceWithFileReference` — Tests/CapDAGTests/CSStdinSourceTests.m:29
 - `testStandaloneCollectNode` — Tests/CapDAGTests/CSPlanDecompositionTests.m:63
-- `testStrings` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:139
-- `testStrings` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:139
-- `testStrings` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:139
-- `testStructContainingEnum` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:262
-- `testStructContainingEnum` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:262
-- `testStructContainingEnum` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:262
-- `testStructWithArray` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:278
-- `testStructWithArray` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:278
-- `testStructWithArray` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:278
-- `testStructWithFloat` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:241
-- `testStructWithFloat` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:241
-- `testStructWithFloat` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:241
-- `testSubscriptSetter` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:5
-- `testSubscriptSetter` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORTests.swift:5
-- `testSubscriptSetter` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORTests.swift:5
 - `testSyncFromCaps` — Tests/CapDAGTests/CSLiveCapGraphTests.m:124
-- `testToCBOR` — .build/index-build/checkouts/SwiftCBOR/Tests/CBOREncodableTests.swift:5
-- `testToCBOR` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBOREncodableTests.swift:5
-- `testToCBOR` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBOREncodableTests.swift:5
-- `testTransformURLSchemeBuilding` — testcartridge-host/.scrap/FinderSyncIntegrationTests.swift:344
 - `testURLEncodesQuotedMediaUrns` — Tests/CapDAGTests/CSCapRegistryTests.m:74
 - `testURLFormatIsValid` — Tests/CapDAGTests/CSCapRegistryTests.m:85
 - `testURLKeepsCapPrefixLiteral` — Tests/CapDAGTests/CSCapRegistryTests.m:63
@@ -1577,9 +990,6 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testWithTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnTests.m:361
 - `testWithoutTag` — Tests/CapDAGTests/CSCapUrnTests.m:394
 - `testWithoutTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnTests.m:406
-- `testWrappedStruct` — .build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:191
-- `testWrappedStruct` — testcartridge-host/.build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:191
-- `testWrappedStruct` — testcartridge-host/.build/index-build/checkouts/SwiftCBOR/Tests/CBORCodableRoundtripTests.swift:191
 - `test_csCapManifestWithPageUrl` — Tests/BifaciTests/ManifestTests.swift:192
 - `test_glob_pattern_detection` — Tests/CapDAGTests/CSInputResolverTests.m:669
 - `test_resolved_file_properties` — Tests/CapDAGTests/CSInputResolverTests.m:680
@@ -1589,6 +999,6 @@ The following tests are cataloged but do not currently participate in numeric te
 ---
 
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 1092*
+*Total tests: 797*
 *Total numbered tests: 618*
-*Total unnumbered tests: 474*
+*Total unnumbered tests: 179*
