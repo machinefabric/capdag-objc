@@ -1728,6 +1728,13 @@ public struct CapGroup: Codable, Sendable {
         self.caps = caps
         self.adapterUrns = adapterUrns
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        caps = try container.decodeIfPresent([CapDefinition].self, forKey: .caps) ?? []
+        adapterUrns = try container.decodeIfPresent([String].self, forKey: .adapterUrns) ?? []
+    }
 }
 
 public struct Manifest: Codable, Sendable {
