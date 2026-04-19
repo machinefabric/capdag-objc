@@ -98,13 +98,18 @@ private struct RoutingEntry {
     let destinationMasterIdx: Int
 }
 
-private struct RelayNotifyCapabilitiesPayload: Codable {
-    let caps: [String]
-    let installedCartridges: [InstalledCartridgeIdentity]
+public struct RelayNotifyCapabilitiesPayload: Codable {
+    public let caps: [String]
+    public let installedCartridges: [InstalledCartridgeIdentity]
 
     enum CodingKeys: String, CodingKey {
         case caps
         case installedCartridges = "installed_cartridges"
+    }
+
+    public init(caps: [String], installedCartridges: [InstalledCartridgeIdentity]) {
+        self.caps = caps
+        self.installedCartridges = installedCartridges
     }
 }
 

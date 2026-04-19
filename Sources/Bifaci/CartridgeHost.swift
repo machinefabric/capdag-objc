@@ -1349,19 +1349,16 @@ public final class CartridgeHost: @unchecked Sendable {
 
         let installedCartridges = cartridges.compactMap { $0.installedCartridgeIdentity() }
 
+        let payload = RelayNotifyCapabilitiesPayload(
+            caps: capUrns,
+            installedCartridges: installedCartridges
+        )
         let capsData: Data
-        if let data = try? JSONSerialization.data(withJSONObject: [
-            "caps": capUrns,
-            "installed_cartridges": installedCartridges.map { [
-                "id": $0.id,
-                "version": $0.version,
-                "sha256": $0.sha256,
-            ] },
-        ]) {
-            capsData = data
-            _capabilities = data
-        } else {
-            fatalError("BUG: failed to serialize RelayNotify capabilities payload")
+        do {
+            capsData = try JSONEncoder().encode(payload)
+            _capabilities = capsData
+        } catch {
+            fatalError("BUG: failed to serialize RelayNotify capabilities payload: \(error)")
         }
 
         // Send RelayNotify to relay if in relay mode

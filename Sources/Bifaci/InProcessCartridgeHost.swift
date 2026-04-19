@@ -256,16 +256,6 @@ struct HandlerEntry {
     let handler: FrameHandler
 }
 
-private struct RelayNotifyCapabilitiesPayload: Codable {
-    let caps: [String]
-    let installedCartridges: [InstalledCartridgeIdentity]
-
-    enum CodingKeys: String, CodingKey {
-        case caps
-        case installedCartridges = "installed_cartridges"
-    }
-}
-
 /// Cap table entry: (cap_urn_string, handler_index).
 typealias CapTable = [(String, Int)]
 

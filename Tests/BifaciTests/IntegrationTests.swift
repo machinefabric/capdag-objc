@@ -79,7 +79,7 @@ final class CborIntegrationTests: XCTestCase {
 
         XCTAssertEqual(receivedManifest, testManifest)
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(hostLimits.maxFrame, cartridgeLimits!.maxFrame)
         XCTAssertEqual(hostLimits.maxChunk, cartridgeLimits!.maxChunk)
@@ -132,7 +132,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(response.frameType, .end)
         XCTAssertEqual(response.payload, "hello back".data(using: .utf8))
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
 
     // TEST286: Streaming response with multiple CHUNK frames
@@ -198,7 +198,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(chunks[1], Data("chunk2".utf8))
         XCTAssertEqual(chunks[2], Data("chunk3".utf8))
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
 
     // TEST287: Host-initiated heartbeat
@@ -244,7 +244,7 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(response.frameType, .heartbeat)
         XCTAssertEqual(response.id, heartbeatId)
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
 
     // TEST290: Limit negotiation picks minimum
@@ -274,7 +274,7 @@ final class CborIntegrationTests: XCTestCase {
         let result = try performHandshakeWithManifest(reader: reader, writer: writer)
         let hostLimits = result.limits
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(hostLimits.maxFrame, cartridgeLimits!.maxFrame)
         XCTAssertEqual(hostLimits.maxChunk, cartridgeLimits!.maxChunk)
@@ -338,7 +338,7 @@ final class CborIntegrationTests: XCTestCase {
             XCTAssertEqual(byte, UInt8(i), "Response byte mismatch at position \(i)")
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
 
     // TEST292: Sequential requests get distinct MessageIds
@@ -384,7 +384,7 @@ final class CborIntegrationTests: XCTestCase {
             _ = try reader.read()
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(receivedIds.count, 3)
         for i in 0..<receivedIds.count {
@@ -438,7 +438,7 @@ final class CborIntegrationTests: XCTestCase {
         }
         XCTAssert(response.payload == nil || response.payload!.isEmpty)
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
 
     // NOTE: TEST461 and TEST472 are tested in FlowOrderingTests.swift
@@ -477,7 +477,7 @@ final class CborIntegrationTests: XCTestCase {
 
         let result = try performHandshakeWithManifest(reader: reader, writer: writer)
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         // Both sides should negotiate to minimum
         XCTAssertEqual(result.limits.maxFrame, 1_000_000, "maxFrame should be minimum")
@@ -571,7 +571,7 @@ final class CborIntegrationTests: XCTestCase {
             }
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertTrue(gotStreamStart, "Should receive STREAM_START")
         XCTAssertTrue(gotStreamEnd, "Should receive STREAM_END")
@@ -623,7 +623,7 @@ final class CborIntegrationTests: XCTestCase {
             return
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(response.frameType, .err, "Should receive ERR frame")
         XCTAssertEqual(response.errorCode, "IDENTITY_FAILED")
@@ -693,7 +693,7 @@ final class CborIntegrationTests: XCTestCase {
             }
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(String(data: accumulated, encoding: .utf8), "full-path-response")
     }
@@ -733,7 +733,7 @@ final class CborIntegrationTests: XCTestCase {
             return
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(response.frameType, .err, "Should receive ERR frame")
         XCTAssertEqual(response.errorCode, "CARTRIDGE_ERROR")
@@ -792,7 +792,7 @@ final class CborIntegrationTests: XCTestCase {
             if frame.frameType == .end { break }
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(received, testData, "Binary data must be preserved through full path")
         XCTAssertEqual(received.count, 256)
@@ -849,7 +849,7 @@ final class CborIntegrationTests: XCTestCase {
             if frame.frameType == .end { break }
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(chunkCount, 5, "All 5 chunks must flow through")
         XCTAssertTrue(gotStreamEnd, "STREAM_END must be received")
@@ -916,7 +916,7 @@ final class CborIntegrationTests: XCTestCase {
             if frame.frameType == .end { break }
         }
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertEqual(String(data: data1, encoding: .utf8), "response-for-cap:op=op1")
         XCTAssertEqual(String(data: data2, encoding: .utf8), "response-for-cap:op=op2")
@@ -961,7 +961,7 @@ final class CborIntegrationTests: XCTestCase {
         // Read response - should be nil (connection closed)
         let response = try reader.read()
 
-        cartridgeSemaphore.wait()
+        XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
         XCTAssertNil(response, "Should get nil when connection closes")
     }
