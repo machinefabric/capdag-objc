@@ -238,7 +238,7 @@ static NSString* testMatrixUrn(NSString *tags) {
 }
 
 // TEST569: unregisterCapSet
-- (void)testUnregisterCapSet569 {
+- (void)test569_unregisterCapSet {
     MockCapSet *host = [[MockCapSet alloc] initWithName:@"test"];
     CSCap *cap = makeCap(testMatrixUrn(@"op=test"), @"Test");
     [self.registry registerCapSet:@"test" host:host capabilities:@[cap] error:nil];
@@ -250,7 +250,7 @@ static NSString* testMatrixUrn(NSString *tags) {
 }
 
 // TEST570: clear
-- (void)testClear570 {
+- (void)test570_clear {
     MockCapSet *host = [[MockCapSet alloc] initWithName:@"test"];
     CSCap *cap = makeCap(testMatrixUrn(@"op=test"), @"Test");
     [self.registry registerCapSet:@"test" host:host capabilities:@[cap] error:nil];

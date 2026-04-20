@@ -278,31 +278,14 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isBool]);
 }
 
-// TEST551: is_file_path returns true for scalar file-path, false for array
+// TEST551: isFilePath returns true for the single file-path media URN,
+// false for everything else. There is no "array" variant — cardinality is
+// carried by is_sequence on the wire, not by URN tags.
 - (void)test551_is_file_path {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePath error:&e] isFilePath]);
-    // Array file-path is NOT isFilePath (it's isFilePathArray)
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaFilePathArray error:&e] isFilePath]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isFilePath]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaIdentity error:&e] isFilePath]);
-}
-
-// TEST552: is_file_path_array returns true for list file-path, false for scalar
-- (void)test552_is_file_path_array {
-    NSError *e;
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePathArray error:&e] isFilePathArray]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaFilePath error:&e] isFilePathArray]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isFilePathArray]);
-}
-
-// TEST553: is_any_file_path returns true for both scalar and array file-path
-- (void)test553_is_any_file_path {
-    NSError *e;
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePath error:&e] isAnyFilePath]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaFilePathArray error:&e] isAnyFilePath]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isAnyFilePath]);
-    XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isAnyFilePath]);
 }
 
 // TEST555: with_tag adds a tag and without_tag removes it

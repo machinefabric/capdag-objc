@@ -1634,6 +1634,11 @@ public enum ArgSource: Codable, Sendable {
 public struct CapArg: Codable, Sendable {
     public let mediaUrn: String
     public let required: Bool
+    /// Whether this argument carries a sequence of items (isSequence=true)
+    /// or a single item (isSequence=false, the default). Drives
+    /// file-path expansion cardinality: scalar args see one file per
+    /// invocation; sequence args see a CBOR array of file bytes.
+    public let isSequence: Bool
     public let sources: [ArgSource]
     public let argDescription: String?
     public let defaultValue: String?
@@ -1641,14 +1646,16 @@ public struct CapArg: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case mediaUrn = "media_urn"
         case required
+        case isSequence = "is_sequence"
         case sources
         case argDescription = "description"
         case defaultValue = "default"
     }
 
-    public init(mediaUrn: String, required: Bool, sources: [ArgSource], argDescription: String? = nil, defaultValue: String? = nil) {
+    public init(mediaUrn: String, required: Bool, isSequence: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: String? = nil) {
         self.mediaUrn = mediaUrn
         self.required = required
+        self.isSequence = isSequence
         self.sources = sources
         self.argDescription = argDescription
         self.defaultValue = defaultValue
@@ -1658,6 +1665,7 @@ public struct CapArg: Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
         required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+        isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
         sources = try container.decodeIfPresent([ArgSource].self, forKey: .sources) ?? []
         argDescription = try container.decodeIfPresent(String.self, forKey: .argDescription)
         defaultValue = try container.decodeIfPresent(String.self, forKey: .defaultValue)
@@ -2261,107 +2269,114 @@ public final class CartridgeRuntime: @unchecked Sendable {
         return manifest.allCaps().first { $0.command == commandName }
     }
 
-    /// Read file(s) for file-path arguments and return bytes.
+    /// Read file(s) for a file-path argument and return the CLI-wire bytes.
     ///
-    /// This method implements automatic file-path to bytes conversion when:
-    /// - arg.media_urn is "media:file-path" or "media:file-path-array"
-    /// - arg has a stdin source (indicating bytes are the canonical type)
+    /// The single media:file-path URN covers both shapes; cardinality is
+    /// driven by the arg definition's `isSequence` flag:
     ///
-    /// - Parameters:
-    ///   - pathValue: File path string (single path or JSON array of path patterns)
-    ///   - isArray: True if media:file-path-array (read multiple files with glob expansion)
-    /// - Returns:
-    ///   - For single file: Data containing raw file bytes
-    ///   - For array: CBOR-encoded array of file bytes (each element is one file's contents)
-    /// - Throws: CartridgeRuntimeError.ioError if file cannot be read with clear error message
-    private func readFilePathToBytes(_ pathValue: String, isArray: Bool) throws -> Data {
-        if isArray {
-            // Parse JSON array of path patterns
-            guard let pathData = pathValue.data(using: .utf8),
-                  let pathPatterns = try? JSONSerialization.jsonObject(with: pathData) as? [String] else {
+    /// - `isSequence = false` — treat `pathValue` as exactly one file path
+    ///   (literal or glob). Returns the file's raw bytes. Globs that expand
+    ///   to anything other than exactly one file are a hard error at this
+    ///   layer; CLI dispatch is responsible for iterating the handler
+    ///   per-file when the declared arg is scalar.
+    /// - `isSequence = true`  — treat `pathValue` as a newline-separated
+    ///   list of paths and/or globs. Expand, read every resolved file, and
+    ///   return a CBOR array of bytes (one entry per file).
+    private func readFilePathToBytes(_ pathValue: String, isSequence: Bool) throws -> Data {
+        let fileManager = FileManager.default
+
+        func expand(_ raw: String) throws -> [URL] {
+            let isGlob = raw.contains("*") || raw.contains("?") || raw.contains("[")
+            if !isGlob {
+                if !fileManager.fileExists(atPath: raw) {
+                    throw CartridgeRuntimeError.ioError("File not found: '\(raw)'")
+                }
+                var isDirectory: ObjCBool = false
+                fileManager.fileExists(atPath: raw, isDirectory: &isDirectory)
+                if isDirectory.boolValue {
+                    throw CartridgeRuntimeError.ioError(
+                        "Path is not a regular file: '\(raw)'"
+                    )
+                }
+                return [URL(fileURLWithPath: raw)]
+            }
+
+            // Validate bracket balance — unclosed brackets are a hard error
+            // rather than a silent empty match.
+            var bracketDepth = 0
+            for char in raw {
+                if char == "[" {
+                    bracketDepth += 1
+                } else if char == "]" {
+                    bracketDepth -= 1
+                }
+            }
+            if bracketDepth != 0 {
                 throw CartridgeRuntimeError.cliError(
-                    "Failed to parse file-path-array: expected JSON array of path patterns, got '\(pathValue)'"
+                    "Invalid glob pattern '\(raw)': unclosed bracket"
                 )
             }
 
-            // Expand globs and collect all file paths
-            var allFiles: [URL] = []
-            let fileManager = FileManager.default
-
-            for pattern in pathPatterns {
-                // Check if this is a literal path (no glob metacharacters) or a glob pattern
-                let isGlob = pattern.contains("*") || pattern.contains("?") || pattern.contains("[")
-
-                if !isGlob {
-                    // Literal path - verify it exists and is a file
-                    let url = URL(fileURLWithPath: pattern)
-                    if !fileManager.fileExists(atPath: pattern) {
-                        throw CartridgeRuntimeError.ioError(
-                            "Failed to read file '\(pattern)' from file-path-array: No such file or directory"
-                        )
-                    }
-                    var isDirectory: ObjCBool = false
-                    fileManager.fileExists(atPath: pattern, isDirectory: &isDirectory)
-                    if !isDirectory.boolValue {
-                        allFiles.append(url)
-                    }
-                    // Skip directories silently for consistency with glob behavior
-                } else {
-                    // Glob pattern - validate and expand it
-                    // Check for unclosed brackets (invalid pattern)
-                    var bracketDepth = 0
-                    for char in pattern {
-                        if char == "[" {
-                            bracketDepth += 1
-                        } else if char == "]" {
-                            bracketDepth -= 1
-                        }
-                    }
-                    if bracketDepth != 0 {
-                        throw CartridgeRuntimeError.cliError(
-                            "Invalid glob pattern '\(pattern)': unclosed bracket"
-                        )
-                    }
-
-                    let paths = Glob(pattern: pattern)
-                    for path in paths {
-                        let url = URL(fileURLWithPath: path)
-                        // Only include files (skip directories)
-                        var isDirectory: ObjCBool = false
-                        if fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue {
-                            allFiles.append(url)
-                        }
-                    }
+            let paths = Glob(pattern: raw)
+            var urls: [URL] = []
+            for path in paths {
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(atPath: path, isDirectory: &isDirectory),
+                   !isDirectory.boolValue {
+                    urls.append(URL(fileURLWithPath: path))
                 }
             }
-
-            // Read each file sequentially
-            var filesData: [CBOR] = []
-            for url in allFiles {
-                do {
-                    let bytes = try Data(contentsOf: url)
-                    filesData.append(.byteString([UInt8](bytes)))
-                } catch {
-                    throw CartridgeRuntimeError.ioError(
-                        "Failed to read file '\(url.path)' from file-path-array: \(error.localizedDescription)"
-                    )
-                }
+            if urls.isEmpty {
+                throw CartridgeRuntimeError.ioError(
+                    "No files matched glob pattern '\(raw)'"
+                )
             }
+            return urls
+        }
 
-            // Encode as CBOR array
-            let cborArray = CBOR.array(filesData)
-            return Data(cborArray.encode())
-        } else {
-            // Single file path - read and return raw bytes
+        if !isSequence {
+            let urls = try expand(pathValue)
+            guard urls.count == 1 else {
+                throw CartridgeRuntimeError.ioError(
+                    "File-path arg declared is_sequence=false resolved to \(urls.count) files; " +
+                    "expected exactly 1. CLI dispatch must iterate the handler across the expanded files."
+                )
+            }
             do {
-                let url = URL(fileURLWithPath: pathValue)
-                return try Data(contentsOf: url)
+                return try Data(contentsOf: urls[0])
             } catch {
                 throw CartridgeRuntimeError.ioError(
-                    "Failed to read file '\(pathValue)': \(error.localizedDescription)"
+                    "Failed to read file '\(urls[0].path)': \(error.localizedDescription)"
                 )
             }
         }
+
+        // Sequence: newline-separated list of paths and/or globs.
+        let patterns = pathValue
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        var allFiles: [URL] = []
+        for pattern in patterns {
+            let urls = try expand(pattern)
+            allFiles.append(contentsOf: urls)
+        }
+
+        var filesData: [CBOR] = []
+        for url in allFiles {
+            do {
+                let bytes = try Data(contentsOf: url)
+                filesData.append(.byteString([UInt8](bytes)))
+            } catch {
+                throw CartridgeRuntimeError.ioError(
+                    "Failed to read file '\(url.path)': \(error.localizedDescription)"
+                )
+            }
+        }
+
+        let cborArray = CBOR.array(filesData)
+        return Data(cborArray.encode())
     }
 
     /// Build payload from CLI arguments based on cap's arg definitions.
@@ -2387,10 +2402,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // - Otherwise, use the arg's media URN
                 let argMediaUrn = try CSTaggedUrn.fromString(argDef.mediaUrn)
                 let filePathPattern = try CSTaggedUrn.fromString(CSMediaFilePath)
-                let filePathArrayPattern = try CSTaggedUrn.fromString(CSMediaFilePathArray)
 
-                let isFilePath = (try? filePathPattern.accepts(argMediaUrn)) != nil ||
-                                 (try? filePathArrayPattern.accepts(argMediaUrn)) != nil
+                // Single base pattern covers file-path args; cardinality is
+                // driven by the arg's isSequence flag, not by URN tags.
+                let isFilePath = (try? filePathPattern.accepts(argMediaUrn)) != nil
 
                 var mediaUrn = argDef.mediaUrn
                 if isFilePath {
@@ -2489,11 +2504,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
         let argMediaUrn = try CSTaggedUrn.fromString(argDef.mediaUrn)
 
         let filePathPattern = try CSTaggedUrn.fromString(CSMediaFilePath)
-        let filePathArrayPattern = try CSTaggedUrn.fromString(CSMediaFilePathArray)
 
-        // Check array first (more specific), then single file-path
-        let isArray = (try? filePathArrayPattern.accepts(argMediaUrn)) != nil
-        let isFilePath = isArray || (try? filePathPattern.accepts(argMediaUrn)) != nil
+        // Single base pattern covers file-path args; cardinality comes from
+        // the arg's isSequence declaration, not URN tags.
+        let isFilePath = (try? filePathPattern.accepts(argMediaUrn)) != nil
 
         // Get stdin source media URN if it exists (tells us target type)
         let hasStdinSource = argDef.sources.contains { source in
@@ -2510,7 +2524,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 if let value = getCliFlagValue(args: cliArgs, flag: flag) {
                     // If file-path type with stdin source, read file(s)
                     if isFilePath && hasStdinSource {
-                        return try readFilePathToBytes(value, isArray: isArray)
+                        return try readFilePathToBytes(value, isSequence: argDef.isSequence)
                     }
                     return Data(value.utf8)
                 }
@@ -2520,7 +2534,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     let value = positional[position]
                     // If file-path type with stdin source, read file(s)
                     if isFilePath && hasStdinSource {
-                        return try readFilePathToBytes(value, isArray: isArray)
+                        return try readFilePathToBytes(value, isSequence: argDef.isSequence)
                     }
                     return Data(value.utf8)
                 }

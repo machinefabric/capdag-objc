@@ -122,7 +122,7 @@
     XCTAssertEqual(structure, CSContentStructureScalarRecord);
 }
 
-// TEST986: Unknown extension returns generic media URN
+// TEST1031: Simple JSON object should be ScalarRecord
 - (void)test1031_json_simple_object {
     NSString *path = [self createTestFile:@"test.json" content:@"{\"a\":1}"];
     CSContentStructure structure;
@@ -148,7 +148,7 @@
     XCTAssertEqual(structure, CSContentStructureListOpaque);
 }
 
-// TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
+// TEST1034: JSON array of primitives should be ListOpaque
 - (void)test1034_json_array_of_primitives {
     NSString *path = [self createTestFile:@"test.json" content:@"[1,2,3]"];
     CSContentStructure structure;
@@ -161,7 +161,7 @@
     XCTAssertEqual(structure, CSContentStructureListOpaque);
 }
 
-// TEST025: All 4 modelcartridge inspection ops on a single model spec
+// TEST1035: JSON array of strings should be ListOpaque
 - (void)test1035_json_array_of_strings {
     NSString *path = [self createTestFile:@"test.json" content:@"[\"a\",\"b\"]"];
     CSContentStructure structure;
@@ -187,7 +187,7 @@
     XCTAssertEqual(structure, CSContentStructureListRecord);
 }
 
-// TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis
+// TEST1038: JSON string primitive should be ScalarOpaque
 - (void)test1038_json_string_primitive {
     NSString *path = [self createTestFile:@"test.json" content:@"\"hello\""];
     CSContentStructure structure;
@@ -213,7 +213,7 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-// TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
+// TEST1040: JSON boolean true should be ScalarOpaque
 - (void)test1040_json_boolean_true {
     NSString *path = [self createTestFile:@"test.json" content:@"true"];
     CSContentStructure structure;
@@ -226,7 +226,7 @@
     XCTAssertEqual(structure, CSContentStructureScalarOpaque);
 }
 
-// TEST030: RST document fan-out produces metadata, outline (with headers), and thumbnail
+// TEST1042: JSON null should be ScalarOpaque
 - (void)test1042_json_null {
     NSString *path = [self createTestFile:@"test.json" content:@"null"];
     CSContentStructure structure;
@@ -254,7 +254,7 @@
     XCTAssertEqual(structure, CSContentStructureListRecord);
 }
 
-// TEST033: List all locally cached models via modelcartridge
+// TEST1046: NDJSON with a single object should be ListRecord
 - (void)test1046_ndjson_single_object {
     NSString *path = [self createTestFile:@"test.ndjson" content:@"{\"a\":1}"];
     CSContentStructure structure;

@@ -103,7 +103,7 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
     for (CSCapArg *arg in cap.args) {
         NSError *error = nil;
         CSMediaUrn *urn = [CSMediaUrn fromString:arg.mediaUrn error:&error];
-        if (urn && [urn isAnyFilePath]) {
+        if (urn && [urn isFilePath]) {
             return arg.mediaUrn;
         }
     }
@@ -117,7 +117,7 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
         // Check if this arg is a file-path type
         NSError *error = nil;
         CSMediaUrn *urn = [CSMediaUrn fromString:arg.mediaUrn error:&error];
-        if (!urn || ![urn isAnyFilePath]) {
+        if (!urn || ![urn isFilePath]) {
             continue;
         }
 
@@ -949,7 +949,7 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
                 NSError *parseError = nil;
                 CSMediaUrn *urn = [CSMediaUrn fromString:arg.mediaUrn error:&parseError];
                 if (urn) {
-                    isFilePathType = [urn isAnyFilePath];
+                    isFilePathType = [urn isFilePath];
                 }
 
                 NSString *resolution;

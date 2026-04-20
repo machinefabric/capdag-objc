@@ -1,14 +1,14 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 797
+**Total Tests:** 795
 
-**Numbered Tests:** 596
+**Numbered Tests:** 635
 
-**Unnumbered Tests:** 201
+**Unnumbered Tests:** 160
 
 **Numbered Tests Missing Descriptions:** 7
 
-**Numbering Mismatches:** 53
+**Numbering Mismatches:** 0
 
 All numbered test numbers are unique.
 
@@ -78,12 +78,12 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test066 | `test066_is_json` | TEST066: Test is_json returns true only when json marker tag is present for JSON representation | Tests/CapDAGTests/CSMediaUrnTests.m:197 |
 | test067 | `test067_is_text` | TEST067: Test is_text returns true only when textable marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:207 |
 | test068 | `test068_is_void` | TEST068: Test is_void returns true when void flag or type=void tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:218 |
-| test071 | `test071_to_string_roundtrip` | TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure | Tests/CapDAGTests/CSMediaUrnTests.m:362 |
-| test072 | `test072_constants_parse` | TEST072: Test all media URN constants parse successfully as valid media URNs | Tests/CapDAGTests/CSMediaUrnTests.m:373 |
-| test074 | `test074_media_urn_matching` | TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements | Tests/CapDAGTests/CSMediaUrnTests.m:405 |
-| test075 | `test075_matching` | TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests | Tests/CapDAGTests/CSMediaUrnTests.m:421 |
-| test076 | `test076_specificity` | TEST076: Test specificity increases with more tags for ranking conformance | Tests/CapDAGTests/CSMediaUrnTests.m:432 |
-| test078 | `test078_object_does_not_conform_to_string` | TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING | Tests/CapDAGTests/CSMediaUrnTests.m:447 |
+| test071 | `test071_to_string_roundtrip` | TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure | Tests/CapDAGTests/CSMediaUrnTests.m:345 |
+| test072 | `test072_constants_parse` | TEST072: Test all media URN constants parse successfully as valid media URNs | Tests/CapDAGTests/CSMediaUrnTests.m:356 |
+| test074 | `test074_media_urn_matching` | TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements | Tests/CapDAGTests/CSMediaUrnTests.m:388 |
+| test075 | `test075_matching` | TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests | Tests/CapDAGTests/CSMediaUrnTests.m:404 |
+| test076 | `test076_specificity` | TEST076: Test specificity increases with more tags for ranking conformance | Tests/CapDAGTests/CSMediaUrnTests.m:415 |
+| test078 | `test078_object_does_not_conform_to_string` | TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING | Tests/CapDAGTests/CSMediaUrnTests.m:430 |
 | test091 | `test091_resolve_custom_media_spec` | TEST091: Test resolving custom media URN from local media_specs takes precedence over registry | Tests/CapDAGTests/CSMediaSpecTests.m:355 |
 | test092 | `test092_resolve_custom_with_schema` | TEST092: Test resolving custom record media spec with schema from local media_specs | Tests/CapDAGTests/CSMediaSpecTests.m:373 |
 | test094 | `test094_local_overrides_registry` | TEST094: Test local media_specs definition overrides registry definition for same URN | Tests/CapDAGTests/CSMediaSpecTests.m:398 |
@@ -226,48 +226,48 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test292 | `test292_messageIdUniqueness` | TEST292: Sequential requests get distinct MessageIds | Tests/BifaciTests/IntegrationTests.swift:345 |
 | test293 | `test293_cartridgeRuntimeHandlerRegistration` | TEST293: Test CartridgeRuntime Op registration and lookup by exact and non-existent cap URN | Tests/BifaciTests/RuntimeTests.swift:634 |
 | test299 | `test299_emptyPayloadRoundtrip` | TEST299: Empty payload request/response roundtrip | Tests/BifaciTests/IntegrationTests.swift:398 |
-| test304 | `test304_media_availability_output_constant` | TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:459 |
-| test305 | `test305_media_path_output_constant` | TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:471 |
-| test306 | `test306_availability_and_path_output_distinct` | TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs | Tests/CapDAGTests/CSMediaUrnTests.m:483 |
-| test336 | `test336_file_path_reads_file_passes_bytes` | TEST336: Single file-path arg with stdin source reads file and passes bytes to handler | Tests/BifaciTests/CartridgeRuntimeTests.swift:622 |
-| test337 | `test337_file_path_without_stdin_passes_string` | TEST337: file-path arg without stdin source passes path as string (no conversion) | Tests/BifaciTests/CartridgeRuntimeTests.swift:676 |
-| test338 | `test338_file_path_via_cli_flag` | TEST338: file-path arg reads file via --file CLI flag | Tests/BifaciTests/CartridgeRuntimeTests.swift:711 |
-| test339 | `test339_file_path_array_glob_expansion` | TEST339: file-path-array reads multiple files with glob pattern | Tests/BifaciTests/CartridgeRuntimeTests.swift:751 |
-| test340 | `test340_file_not_found_clear_error` | TEST340: File not found error provides clear message | Tests/BifaciTests/CartridgeRuntimeTests.swift:816 |
-| test341 | `test341_stdin_precedence_over_file_path` | TEST341: stdin takes precedence over file-path in source order | Tests/BifaciTests/CartridgeRuntimeTests.swift:844 |
-| test342 | `test342_file_path_position_zero_reads_first_arg` | TEST342: file-path with position 0 reads first positional arg as file | Tests/BifaciTests/CartridgeRuntimeTests.swift:884 |
-| test343 | `test343_non_file_path_args_unaffected` | TEST343: Non-file-path args are not affected by file reading | Tests/BifaciTests/CartridgeRuntimeTests.swift:917 |
-| test344 | `test344_file_path_array_invalid_json_fails` | TEST344: file-path-array with nonexistent path fails clearly | Tests/BifaciTests/CartridgeRuntimeTests.swift:948 |
-| test345 | `test345_file_path_array_one_file_missing_fails_hard` | TEST345: file-path-array with literal nonexistent path fails hard | Tests/BifaciTests/CartridgeRuntimeTests.swift:977 |
-| test346 | `test346_large_file_reads_successfully` | TEST346: Large file (1MB) reads successfully | Tests/BifaciTests/CartridgeRuntimeTests.swift:1016 |
-| test347 | `test347_empty_file_reads_as_empty_bytes` | TEST347: Empty file reads as empty bytes | Tests/BifaciTests/CartridgeRuntimeTests.swift:1055 |
-| test348 | `test348_file_path_conversion_respects_source_order` | TEST348: file-path conversion respects source order | Tests/BifaciTests/CartridgeRuntimeTests.swift:1087 |
-| test349 | `test349_file_path_multiple_sources_fallback` | TEST349: file-path arg with multiple sources tries all in order | Tests/BifaciTests/CartridgeRuntimeTests.swift:1121 |
-| test350 | `test350_full_cli_mode_with_file_path_integration` | TEST350: Integration test - full CLI mode invocation with file-path | Tests/BifaciTests/CartridgeRuntimeTests.swift:1155 |
-| test351 | `test351_file_path_array_empty_array` | TEST351: file-path array with empty CBOR array returns empty (CBOR mode) | Tests/BifaciTests/CartridgeRuntimeTests.swift:1226 |
-| test352 | `test352_file_permission_denied_clear_error` | TEST352: file permission denied error is clear (Unix-specific) | Tests/BifaciTests/CartridgeRuntimeTests.swift:1264 |
-| test353 | `test353_cbor_payload_format_consistency` | TEST353: CBOR payload format matches between CLI and CBOR mode | Tests/BifaciTests/CartridgeRuntimeTests.swift:1303 |
-| test354 | `test354_glob_pattern_no_matches_empty_array` | TEST354: Glob pattern with no matches fails hard (NO FALLBACK) | Tests/BifaciTests/CartridgeRuntimeTests.swift:1365 |
-| test355 | `test355_glob_pattern_skips_directories` | TEST355: Glob pattern skips directories | Tests/BifaciTests/CartridgeRuntimeTests.swift:1409 |
-| test356 | `test356_multiple_glob_patterns_combined` | TEST356: Multiple glob patterns combined | Tests/BifaciTests/CartridgeRuntimeTests.swift:1469 |
-| test357 | `test357_symlinks_followed` | TEST357: Symlinks are followed when reading files | Tests/BifaciTests/CartridgeRuntimeTests.swift:1535 |
-| test358 | `test358_binary_file_non_utf8` | TEST358: Binary file with non-UTF8 data reads correctly | Tests/BifaciTests/CartridgeRuntimeTests.swift:1572 |
-| test359 | `test359_invalid_glob_pattern_fails` | TEST359: Invalid glob pattern fails with clear error | Tests/BifaciTests/CartridgeRuntimeTests.swift:1607 |
-| test360 | `test360_extract_effective_payload_with_file_data` | TEST360: Extract effective payload handles file-path data correctly | Tests/BifaciTests/CartridgeRuntimeTests.swift:1643 |
-| test361 | `test361_cli_mode_file_path` | TEST361: CLI mode with file path - pass file path as command-line argument | Tests/BifaciTests/CartridgeRuntimeTests.swift:1832 |
-| test362 | `test362_cli_mode_piped_binary` | TEST362: CLI mode with binary piped in - pipe binary data via stdin This test simulates real-world conditions: - Pure binary data piped to stdin (NOT CBOR) - CLI mode detected (command arg present) - Cap accepts stdin source - Binary is chunked on-the-fly and accumulated - Handler receives complete CBOR payload | Tests/BifaciTests/CartridgeRuntimeTests.swift:1870 |
-| test363 | `test363_cbor_mode_chunked_content` | TEST363: CBOR mode with chunked content - send file content streaming as chunks | Tests/BifaciTests/CartridgeRuntimeTests.swift:1938 |
-| test364 | `test364_cbor_mode_file_path` | TEST364: CBOR mode with file path - send file path in CBOR arguments (auto-conversion) | Tests/BifaciTests/CartridgeRuntimeTests.swift:2007 |
+| test304 | `test304_media_availability_output_constant` | TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:442 |
+| test305 | `test305_media_path_output_constant` | TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:454 |
+| test306 | `test306_availability_and_path_output_distinct` | TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs | Tests/CapDAGTests/CSMediaUrnTests.m:466 |
+| test336 | `test336_file_path_reads_file_passes_bytes` | TEST336: Single file-path arg with stdin source reads file and passes bytes to handler | Tests/BifaciTests/CartridgeRuntimeTests.swift:624 |
+| test337 | `test337_file_path_without_stdin_passes_string` | TEST337: file-path arg without stdin source passes path as string (no conversion) | Tests/BifaciTests/CartridgeRuntimeTests.swift:678 |
+| test338 | `test338_file_path_via_cli_flag` | TEST338: file-path arg reads file via --file CLI flag | Tests/BifaciTests/CartridgeRuntimeTests.swift:713 |
+| test339 | `test339_file_path_array_glob_expansion` | TEST339: A sequence-declared file-path arg (isSequence=true) expands a glob into N files and the runtime delivers them as a CBOR Array of bytes — one item per matched file. List-ness comes from the arg declaration, NOT from any `;list` URN tag. | Tests/BifaciTests/CartridgeRuntimeTests.swift:756 |
+| test340 | `test340_file_not_found_clear_error` | TEST340: File not found error provides clear message | Tests/BifaciTests/CartridgeRuntimeTests.swift:817 |
+| test341 | `test341_stdin_precedence_over_file_path` | TEST341: stdin takes precedence over file-path in source order | Tests/BifaciTests/CartridgeRuntimeTests.swift:848 |
+| test342 | `test342_file_path_position_zero_reads_first_arg` | TEST342: file-path with position 0 reads first positional arg as file | Tests/BifaciTests/CartridgeRuntimeTests.swift:888 |
+| test343 | `test343_non_file_path_args_unaffected` | TEST343: Non-file-path args are not affected by file reading | Tests/BifaciTests/CartridgeRuntimeTests.swift:921 |
+| test344 | `test344_file_path_array_invalid_json_fails` | TEST344: A scalar file-path arg receiving a nonexistent path fails hard with a clear error that names the path. The runtime refuses to silently swallow user mistakes like typos or wrong directories. | Tests/BifaciTests/CartridgeRuntimeTests.swift:954 |
+| test345 | `test345_file_path_array_one_file_missing_fails_hard` | TEST345: a sequence file-path arg with a literal nonexistent path fails hard. The runtime reads every resolved path; any missing file aborts the batch rather than silently dropping an entry. | Tests/BifaciTests/CartridgeRuntimeTests.swift:986 |
+| test346 | `test346_large_file_reads_successfully` | TEST346: Large file (1MB) reads successfully | Tests/BifaciTests/CartridgeRuntimeTests.swift:1027 |
+| test347 | `test347_empty_file_reads_as_empty_bytes` | TEST347: Empty file reads as empty bytes | Tests/BifaciTests/CartridgeRuntimeTests.swift:1066 |
+| test348 | `test348_file_path_conversion_respects_source_order` | TEST348: file-path conversion respects source order | Tests/BifaciTests/CartridgeRuntimeTests.swift:1098 |
+| test349 | `test349_file_path_multiple_sources_fallback` | TEST349: file-path arg with multiple sources tries all in order | Tests/BifaciTests/CartridgeRuntimeTests.swift:1132 |
+| test350 | `test350_full_cli_mode_with_file_path_integration` | TEST350: Integration test - full CLI mode invocation with file-path | Tests/BifaciTests/CartridgeRuntimeTests.swift:1166 |
+| test351 | `test351_file_path_array_empty_array` | TEST351: a sequence-declared file-path arg with an empty newline-separated value returns an empty CBOR Array — no spurious error. Declaring `isSequence=true` is what makes the runtime emit an Array shape; URN tags are semantic only. | Tests/BifaciTests/CartridgeRuntimeTests.swift:1240 |
+| test352 | `test352_file_permission_denied_clear_error` | TEST352: file permission denied error is clear (Unix-specific) | Tests/BifaciTests/CartridgeRuntimeTests.swift:1278 |
+| test353 | `test353_cbor_payload_format_consistency` | TEST353: CBOR payload format matches between CLI and CBOR mode | Tests/BifaciTests/CartridgeRuntimeTests.swift:1317 |
+| test354 | `test354_glob_pattern_no_matches_fails_hard` | TEST354: a glob pattern with no matches fails hard. Silent empty results mask real user mistakes (typo'd path, wrong directory), so the runtime surfaces them rather than returning an empty array. | Tests/BifaciTests/CartridgeRuntimeTests.swift:1381 |
+| test355 | `test355_glob_pattern_skips_directories` | TEST355: Glob pattern skips directories. | Tests/BifaciTests/CartridgeRuntimeTests.swift:1415 |
+| test356 | `test356_multiple_glob_patterns_combined` | TEST356: Multiple glob patterns combined via newline separation. | Tests/BifaciTests/CartridgeRuntimeTests.swift:1470 |
+| test357 | `test357_symlinks_followed` | TEST357: Symlinks are followed when reading files | Tests/BifaciTests/CartridgeRuntimeTests.swift:1533 |
+| test358 | `test358_binary_file_non_utf8` | TEST358: Binary file with non-UTF8 data reads correctly | Tests/BifaciTests/CartridgeRuntimeTests.swift:1570 |
+| test359 | `test359_invalid_glob_pattern_fails` | TEST359: Invalid glob pattern fails with a clear error instead of being silently accepted or producing an empty match set. | Tests/BifaciTests/CartridgeRuntimeTests.swift:1606 |
+| test360 | `test360_extract_effective_payload_with_file_data` | TEST360: Extract effective payload handles file-path data correctly | Tests/BifaciTests/CartridgeRuntimeTests.swift:1636 |
+| test361 | `test361_cli_mode_file_path` | TEST361: CLI mode with file path - pass file path as command-line argument | Tests/BifaciTests/CartridgeRuntimeTests.swift:1825 |
+| test362 | `test362_cli_mode_piped_binary` | TEST362: CLI mode with binary piped in - pipe binary data via stdin This test simulates real-world conditions: - Pure binary data piped to stdin (NOT CBOR) - CLI mode detected (command arg present) - Cap accepts stdin source - Binary is chunked on-the-fly and accumulated - Handler receives complete CBOR payload | Tests/BifaciTests/CartridgeRuntimeTests.swift:1863 |
+| test363 | `test363_cbor_mode_chunked_content` | TEST363: CBOR mode with chunked content - send file content streaming as chunks | Tests/BifaciTests/CartridgeRuntimeTests.swift:1931 |
+| test364 | `test364_cbor_mode_file_path` | TEST364: CBOR mode with file path - send file path in CBOR arguments (auto-conversion) | Tests/BifaciTests/CartridgeRuntimeTests.swift:2000 |
 | test365 | `test365_streamStartFrame` | TEST365: Frame::stream_start stores request_id, stream_id, and media_urn | Tests/BifaciTests/FrameTests.swift:1034 |
 | test366 | `test366_streamEndFrame` | TEST366: Frame::stream_end stores request_id and stream_id | Tests/BifaciTests/FrameTests.swift:1047 |
 | test367 | `test367_streamStartWithEmptyStreamId` | TEST367: StreamStart frame with empty stream_id still constructs (validation happens elsewhere) | Tests/BifaciTests/FrameTests.swift:1060 |
 | test368 | `test368_streamStartWithEmptyMediaUrn` | TEST368: StreamStart frame with empty media_urn still constructs (validation happens elsewhere) | Tests/BifaciTests/FrameTests.swift:1072 |
 | test389 | `test389_streamStartRoundtrip` | TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn | Tests/BifaciTests/FrameTests.swift:1084 |
 | test390 | `test390_streamEndRoundtrip` | TEST390: StreamEnd encode/decode roundtrip preserves stream_id, no media_urn | Tests/BifaciTests/FrameTests.swift:1120 |
-| test395 | `test395_build_payload_small` | TEST395: Small payload (< max_chunk) produces correct CBOR arguments | Tests/BifaciTests/CartridgeRuntimeTests.swift:1685 |
-| test396 | `test396_build_payload_large` | TEST396: Large payload (> max_chunk) accumulates across chunks correctly | Tests/BifaciTests/CartridgeRuntimeTests.swift:1723 |
-| test397 | `test397_build_payload_empty` | TEST397: Empty reader produces valid empty CBOR arguments | Tests/BifaciTests/CartridgeRuntimeTests.swift:1753 |
-| test398 | `test398_build_payload_io_error` | TEST398: IO error from reader propagates as RuntimeError::Io | Tests/BifaciTests/CartridgeRuntimeTests.swift:1811 |
+| test395 | `test395_build_payload_small` | TEST395: Small payload (< max_chunk) produces correct CBOR arguments | Tests/BifaciTests/CartridgeRuntimeTests.swift:1678 |
+| test396 | `test396_build_payload_large` | TEST396: Large payload (> max_chunk) accumulates across chunks correctly | Tests/BifaciTests/CartridgeRuntimeTests.swift:1716 |
+| test397 | `test397_build_payload_empty` | TEST397: Empty reader produces valid empty CBOR arguments | Tests/BifaciTests/CartridgeRuntimeTests.swift:1746 |
+| test398 | `test398_build_payload_io_error` | TEST398: IO error from reader propagates as RuntimeError::Io | Tests/BifaciTests/CartridgeRuntimeTests.swift:1804 |
 | test399 | `test399_relayNotifyDiscriminantRoundtrip` | TEST399: Verify RelayNotify frame type discriminant roundtrips through u8 (value 10) | Tests/BifaciTests/FrameTests.swift:1138 |
 | test400 | `test400_relayStateDiscriminantRoundtrip` | TEST400: Verify RelayState frame type discriminant roundtrips through u8 (value 11) | Tests/BifaciTests/FrameTests.swift:1146 |
 | test401 | `test401_relayNotifyFactoryAndAccessors` | TEST401: Verify relay_notify factory stores manifest and limits, and accessors extract them | Tests/BifaciTests/FrameTests.swift:1154 |
@@ -408,11 +408,11 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test548 | `test548_is_video` | TEST548: is_video returns true only when video marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:248 |
 | test549 | `test549_is_numeric` | TEST549: is_numeric returns true only when numeric marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:258 |
 | test550 | `test550_is_bool` | TEST550: is_bool returns true only when bool marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:270 |
-| test551 | `test551_is_file_path` | TEST551: is_file_path returns true for scalar file-path, false for array | Tests/CapDAGTests/CSMediaUrnTests.m:282 |
-| test552 | `test552_is_file_path_array` | TEST552: is_file_path_array returns true for list file-path, false for scalar | Tests/CapDAGTests/CSMediaUrnTests.m:292 |
-| test553 | `test553_is_any_file_path` | TEST553: is_any_file_path returns true for both scalar and array file-path | Tests/CapDAGTests/CSMediaUrnTests.m:300 |
-| test555 | `test555_with_tag_and_without_tag` | TEST555: with_tag adds a tag and without_tag removes it | Tests/CapDAGTests/CSMediaUrnTests.m:309 |
-| test558 | `test558_predicate_constant_consistency` | TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates | Tests/CapDAGTests/CSMediaUrnTests.m:327 |
+| test551 | `test551_is_file_path` | TEST551: isFilePath returns true for the single file-path media URN, false for everything else. There is no "array" variant — cardinality is carried by is_sequence on the wire, not by URN tags. | Tests/CapDAGTests/CSMediaUrnTests.m:284 |
+| test555 | `test555_with_tag_and_without_tag` | TEST555: with_tag adds a tag and without_tag removes it | Tests/CapDAGTests/CSMediaUrnTests.m:292 |
+| test558 | `test558_predicate_constant_consistency` | TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates | Tests/CapDAGTests/CSMediaUrnTests.m:310 |
+| test569 | `test569_unregisterCapSet` | TEST569: unregisterCapSet | Tests/CapDAGTests/CSCapMatrixTests.m:241 |
+| test570 | `test570_clear` | TEST570: clear | Tests/CapDAGTests/CSCapMatrixTests.m:253 |
 | test571 | `test571_get_all_capabilities` | TEST571: get_all_capabilities returns caps from all hosts | Tests/CapDAGTests/CSCapMatrixTests.m:264 |
 | test574 | `test574_cap_block_remove_registry` | TEST574: CapBlock::remove_registry removes by name, returns Arc | Tests/CapDAGTests/CSCapMatrixTests.m:440 |
 | test575 | `test575_cap_block_get_registry` | TEST575: CapBlock::get_registry returns Arc clone by name | Tests/CapDAGTests/CSCapMatrixTests.m:456 |
@@ -472,12 +472,33 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test751 | `test751_strand_shape_structure_mismatch` | TEST751: Tests shape chain analysis detects structure mismatch | Tests/CapDAGTests/CSCardinalityTests.m:389 |
 | test752 | `test752_strand_shape_with_fanout` | TEST752: Tests shape chain analysis with fan-out (matching structures) Fan-out requires output is_sequence=true on the disbind cap | Tests/CapDAGTests/CSCardinalityTests.m:402 |
 | test753 | `test753_strand_shape_list_record_to_list_record` | TEST753: Tests shape chain analysis correctly handles list-to-list record flow | Tests/CapDAGTests/CSCardinalityTests.m:414 |
+| test754 | `test754_extractPrefixNonexistent` | TEST754: extractPrefixTo with nonexistent node returns error | Tests/CapDAGTests/CSPlanDecompositionTests.m:135 |
+| test755 | `test755_extractForeachBody` | TEST755: extractForeachBody extracts body with synthetic I/O | Tests/CapDAGTests/CSPlanDecompositionTests.m:144 |
+| test756 | `test756_extractForeachBodyUnclosed` | TEST756: extractForeachBody for unclosed ForEach (single body cap) | Tests/CapDAGTests/CSPlanDecompositionTests.m:176 |
+| test757 | `test757_extractForeachBodyWrongType` | TEST757: extractForeachBody fails for non-ForEach node | Tests/CapDAGTests/CSPlanDecompositionTests.m:193 |
+| test758 | `test758_extractSuffixFrom` | TEST758: extractSuffixFrom extracts collect → cap_post → output | Tests/CapDAGTests/CSPlanDecompositionTests.m:204 |
+| test759 | `test759_extractSuffixNonexistent` | TEST759: extractSuffixFrom fails for nonexistent node | Tests/CapDAGTests/CSPlanDecompositionTests.m:225 |
+| test760 | `test760_decompositionCoversAllCaps` | TEST760: Full decomposition covers all cap nodes | Tests/CapDAGTests/CSPlanDecompositionTests.m:234 |
+| test761 | `test761_prefixIsDag` | TEST761: Prefix is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:273 |
+| test762 | `test762_bodyIsDag` | TEST762: Body is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:282 |
+| test763 | `test763_suffixIsDag` | TEST763: Suffix is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:291 |
+| test764 | `test764_prefixToInputSlot` | TEST764: extractPrefixTo with InputSlot as target (trivial prefix) | Tests/CapDAGTests/CSPlanDecompositionTests.m:300 |
+| test772 | `test772_findPathsMultiStep` | TEST772: Multi-step path through intermediate node | Tests/CapDAGTests/CSLiveCapGraphTests.m:149 |
+| test773 | `test773_findPathsEmptyWhenNoPath` | TEST773: Empty when target unreachable | Tests/CapDAGTests/CSLiveCapGraphTests.m:171 |
+| test774 | `test774_getReachableTargetsAll` | TEST774: BFS finds multiple direct targets | Tests/CapDAGTests/CSLiveCapGraphTests.m:187 |
+| test777 | `test777_typeMismatchPdfPng` | TEST777: PDF cap does not match PNG input | Tests/CapDAGTests/CSLiveCapGraphTests.m:210 |
+| test778 | `test778_typeMismatchPngPdf` | TEST778: PNG cap does not match PDF input | Tests/CapDAGTests/CSLiveCapGraphTests.m:225 |
+| test779 | `test779_reachableTargetsTypeMatching` | TEST779: BFS respects type matching | Tests/CapDAGTests/CSLiveCapGraphTests.m:240 |
 | test780 | `test780_splitIntegerArray` | TEST780: split_cbor_array splits a simple array of integers | Tests/BifaciTests/CborSequenceTests.swift:236 |
+| test781 | `test781_findPathsTypeChain` | TEST781: Multi-step type chain enforcement | Tests/CapDAGTests/CSLiveCapGraphTests.m:263 |
 | test782 | `test782_splitNonArray` | TEST782: split_cbor_array rejects non-array input | Tests/BifaciTests/CborSequenceTests.swift:266 |
 | test783 | `test783_splitEmptyArray` | TEST783: split_cbor_array rejects empty array | Tests/BifaciTests/CborSequenceTests.swift:284 |
 | test784 | `test784_splitInvalidCbor` | TEST784: split_cbor_array rejects invalid CBOR bytes | Tests/BifaciTests/CborSequenceTests.swift:302 |
 | test785 | `test785_assembleIntegerArray` | TEST785: assemble_cbor_array creates array from individual items | Tests/BifaciTests/CborSequenceTests.swift:321 |
 | test786 | `test786_roundtripSplitAssemble` | TEST786: split then assemble roundtrip preserves data | Tests/BifaciTests/CborSequenceTests.swift:342 |
+| test787 | `test787_sortingShorterFirst` | TEST787: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapGraphTests.m:286 |
+| test788 | `test788_forEachWithSequenceInput` | TEST788: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapGraphTests.m:308 |
+| test790 | `test790_identityUrnSpecific` | TEST790: Identity URN is specific, not equivalent to everything | Tests/CapDAGTests/CSLiveCapGraphTests.m:349 |
 | test810 | `test810_splitSequenceBytes` | TEST810: Tests EdgeType::JsonPath extracts values using nested path expressions Verifies that JsonPath edge type correctly navigates through multiple levels like "data.nested.value" | Tests/BifaciTests/CborSequenceTests.swift:26 |
 | test811 | `test811_splitSequenceText` | TEST811: Tests EdgeType::Iteration preserves array values for iterative processing Verifies that Iteration edge type passes through arrays unchanged to enable ForEach patterns | Tests/BifaciTests/CborSequenceTests.swift:50 |
 | test812 | `test812_splitSequenceMixed` | TEST812: Tests EdgeType::Collection preserves collected values without transformation Verifies that Collection edge type maintains structure for aggregation patterns | Tests/BifaciTests/CborSequenceTests.swift:66 |
@@ -544,15 +565,17 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test914 | `test914_progress_mapper_sub_mapper` | TEST914: ProgressMapper.sub_mapper chains correctly | Tests/CapDAGTests/CSProgressMapperTests.m:110 |
 | test915 | `test915_per_group_subdivision_monotonic_bounded` | TEST915: Per-group subdivision produces monotonic, bounded progress for N groups Uses pre-computed boundaries (same pattern as production code) to guarantee monotonicity regardless of f32 rounding. | Tests/CapDAGTests/CSProgressMapperTests.m:132 |
 | test917 | `test917_high_frequency_progress_bounded` | TEST917: High-frequency progress emission does not violate bounds (Regression test for the deadlock scenario — verifies computation stays bounded) | Tests/CapDAGTests/CSProgressMapperTests.m:170 |
-| test935 | `test935_parseSimpleTestcartridgeGraph` | TEST935: find_first_foreach returns None for linear plans | Tests/BifaciTests/OrchestratorTests.swift:82 |
-| test936 | `test936_parseSingleEdgeDag` | TEST936: has_foreach detects ForEach nodes | Tests/BifaciTests/OrchestratorTests.swift:100 |
-| test937 | `test937_parseEdge1ToEdge2Chain` | TEST937: extract_prefix_to extracts input_slot -> cap_0 as a standalone plan | Tests/BifaciTests/OrchestratorTests.swift:118 |
-| test942 | `test942_emptyGraph` | TEST985: CSV detection via MediaAdapterRegistry | Tests/BifaciTests/OrchestratorTests.swift:188 |
-| test943 | `test943_invalidCapUrn` | TEST984: YAML sequence detection via MediaAdapterRegistry produces ListOpaque | Tests/BifaciTests/OrchestratorTests.swift:206 |
-| test944 | `test944_capNotFound` | TEST013: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase | Tests/BifaciTests/OrchestratorTests.swift:224 |
-| test945 | `test945_fourMachine` | TEST012: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string | Tests/BifaciTests/OrchestratorTests.swift:250 |
-| test946 | `test946_fiveMachine` | TEST011: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP[" | Tests/BifaciTests/OrchestratorTests.swift:274 |
-| test947 | `test947_sixMachine` | TEST010: Cap not found in registry | Tests/BifaciTests/OrchestratorTests.swift:300 |
+| test919 | `test919_parseSimpleTestcartridgeGraph` | TEST919: Parse simple machine notation graph with test-edge1 | Tests/BifaciTests/OrchestratorTests.swift:82 |
+| test934 | `test934_findFirstForeach` | MARK: - TEST934: findFirstForeach detects ForEach | Tests/CapDAGTests/CSPlanDecompositionTests.m:84 |
+| test935 | `test935_findFirstForeachLinear` | TEST935: findFirstForeach returns nil for linear plans | Tests/CapDAGTests/CSPlanDecompositionTests.m:91 |
+| test936 | `test936_hasForeach` | TEST936: hasForeach | Tests/CapDAGTests/CSPlanDecompositionTests.m:100 |
+| test937 | `test937_extractPrefixTo` | TEST937: extractPrefixTo extracts input_slot → cap_0 as standalone plan | Tests/CapDAGTests/CSPlanDecompositionTests.m:112 |
+| test944 | `test944_sixMachine` | TEST944: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase | Tests/BifaciTests/OrchestratorTests.swift:300 |
+| test945 | `test945_fiveMachine` | TEST945: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string | Tests/BifaciTests/OrchestratorTests.swift:274 |
+| test946 | `test946_fourMachine` | TEST946: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP[" | Tests/BifaciTests/OrchestratorTests.swift:250 |
+| test947 | `test947_capNotFound` | TEST947: Cap not found in registry | Tests/BifaciTests/OrchestratorTests.swift:224 |
+| test948 | `test948_invalidCapUrn` | TEST948: Invalid cap URN in machine notation | Tests/BifaciTests/OrchestratorTests.swift:206 |
+| test949 | `test949_emptyGraph` | TEST949: Empty machine notation (no edges) | Tests/BifaciTests/OrchestratorTests.swift:188 |
 | test955 | `test955_splitMapArray` | TEST955: split_cbor_array with nested maps | Tests/BifaciTests/CborSequenceTests.swift:250 |
 | test956 | `test956_roundtripAssembleSplit` | TEST956: assemble then split roundtrip preserves data | Tests/BifaciTests/CborSequenceTests.swift:360 |
 | test961 | `test961_assembleEmpty` | TEST961: assemble empty list produces empty CBOR array | Tests/BifaciTests/CborSequenceTests.swift:377 |
@@ -588,17 +611,17 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1028 | `test1028_desktop_ini` | TEST1028: desktop.ini is excluded | Tests/CapDAGTests/CSInputResolverTests.m:99 |
 | test1029 | `test1029_content_files_not_excluded` | TEST1029: Normal files are NOT excluded | Tests/CapDAGTests/CSInputResolverTests.m:104 |
 | test1030 | `test1030_json_empty_object` | JSON tests | Tests/CapDAGTests/CSInputResolverTests.m:113 |
-| test1031 | `test1031_json_simple_object` | TEST986: Unknown extension returns generic media URN | Tests/CapDAGTests/CSInputResolverTests.m:126 |
+| test1031 | `test1031_json_simple_object` | TEST1031: Simple JSON object should be ScalarRecord | Tests/CapDAGTests/CSInputResolverTests.m:126 |
 | test1033 | `test1033_json_empty_array` |  | Tests/CapDAGTests/CSInputResolverTests.m:138 |
-| test1034 | `test1034_json_array_of_primitives` | TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline | Tests/CapDAGTests/CSInputResolverTests.m:152 |
-| test1035 | `test1035_json_array_of_strings` | TEST025: All 4 modelcartridge inspection ops on a single model spec | Tests/CapDAGTests/CSInputResolverTests.m:165 |
+| test1034 | `test1034_json_array_of_primitives` | TEST1034: JSON array of primitives should be ListOpaque | Tests/CapDAGTests/CSInputResolverTests.m:152 |
+| test1035 | `test1035_json_array_of_strings` | TEST1035: JSON array of strings should be ListOpaque | Tests/CapDAGTests/CSInputResolverTests.m:165 |
 | test1036 | `test1036_json_array_of_objects` |  | Tests/CapDAGTests/CSInputResolverTests.m:177 |
-| test1038 | `test1038_json_string_primitive` | TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis | Tests/CapDAGTests/CSInputResolverTests.m:191 |
+| test1038 | `test1038_json_string_primitive` | TEST1038: JSON string primitive should be ScalarOpaque | Tests/CapDAGTests/CSInputResolverTests.m:191 |
 | test1039 | `test1039_json_number_primitive` |  | Tests/CapDAGTests/CSInputResolverTests.m:203 |
-| test1040 | `test1040_json_boolean_true` | TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis | Tests/CapDAGTests/CSInputResolverTests.m:217 |
-| test1042 | `test1042_json_null` | TEST030: RST document fan-out produces metadata, outline (with headers), and thumbnail | Tests/CapDAGTests/CSInputResolverTests.m:230 |
+| test1040 | `test1040_json_boolean_true` | TEST1040: JSON boolean true should be ScalarOpaque | Tests/CapDAGTests/CSInputResolverTests.m:217 |
+| test1042 | `test1042_json_null` | TEST1042: JSON null should be ScalarOpaque | Tests/CapDAGTests/CSInputResolverTests.m:230 |
 | test1045 | `test1045_ndjson_objects_only` | NDJSON tests | Tests/CapDAGTests/CSInputResolverTests.m:245 |
-| test1046 | `test1046_ndjson_single_object` | TEST033: List all locally cached models via modelcartridge | Tests/CapDAGTests/CSInputResolverTests.m:258 |
+| test1046 | `test1046_ndjson_single_object` | TEST1046: NDJSON with a single object should be ListRecord | Tests/CapDAGTests/CSInputResolverTests.m:258 |
 | test1047 | `test1047_ndjson_primitives_only` |  | Tests/CapDAGTests/CSInputResolverTests.m:270 |
 | test1055 | `test1055_csv_multi_column` | CSV tests | Tests/CapDAGTests/CSInputResolverTests.m:286 |
 | test1056 | `test1056_csv_single_column` |  | Tests/CapDAGTests/CSInputResolverTests.m:298 |
@@ -612,6 +635,22 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1094 | `test1094_dir_multiple_files` | TEST1094: 1 dir with 3 files → is_sequence=true | Tests/CapDAGTests/CSInputResolverTests.m:618 |
 | test1098 | `test1098_common_media` | TEST1098: Common media (all same type) | Tests/CapDAGTests/CSInputResolverTests.m:634 |
 | test1099 | `test1099_heterogeneous` | TEST1099: Heterogeneous (mixed types) | Tests/CapDAGTests/CSInputResolverTests.m:649 |
+| test1400 | `test1400_missingOutSpecDefaultsToWildcard` | TEST1400: Missing 'out' defaults to media: wildcard (mirror-local variant of TEST002 covering the out-side case) | Tests/CapDAGTests/CSCapUrnTests.m:157 |
+| test1401 | `test1401_directionWildcardMatches` | TEST1401: Wildcard in/out specs accept any concrete value (mirror-local variant of TEST003's wildcard branch) | Tests/CapDAGTests/CSCapUrnTests.m:218 |
+| test1402 | `test1402_invalidCharacters` | TEST1402: Invalid characters (e.g. '@') in tag keys are rejected by the parser (mirror-local variant of TEST003) | Tests/CapDAGTests/CSCapUrnTests.m:134 |
+| test1403 | `test1403_equality` | TEST1403: Equality and hash of CSCapUrn identify identical URNs and distinguish direction/tag differences (mirror-local variant of TEST016) | Tests/CapDAGTests/CSCapUrnTests.m:473 |
+| test1404 | `test1404_merge` | TEST1404: merge() combines tags from two cap URNs; direction comes from the other cap (mirror-local variant of TEST026's merge branch) | Tests/CapDAGTests/CSCapUrnTests.m:457 |
+| test1405 | `test1405_wildcardTagDirection` | TEST1405: withWildcardTag resolves to withInSpec/withOutSpec for "in"/"out" tags, setting them to the wildcard "media:" (mirror-local variant of TEST027) | Tests/CapDAGTests/CSCapUrnTests.m:433 |
+| test1406 | `test1406_valuelessTagParsing` | TEST1406: Value-less tags (bare keys like ";flag") parse as wildcards (mirror-local variant of TEST031) | Tests/CapDAGTests/CSCapUrnTests.m:114 |
+| test1407 | `test1407_withTagIgnoresInOut` | TEST1407: withTag silently ignores attempts to set "in" or "out" tags (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:361 |
+| test1408 | `test1408_withInSpec` | TEST1408: withInSpec returns a new URN with the in= spec replaced, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:374 |
+| test1409 | `test1409_withOutSpec` | TEST1409: withOutSpec returns a new URN with the out= spec replaced, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:384 |
+| test1410 | `test1410_withoutTag` | TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:394 |
+| test1411 | `test1411_withoutTagIgnoresInOut` | TEST1411: withoutTag silently ignores attempts to remove "in" or "out" tags (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:406 |
+| test1412 | `test1412_directionSemanticMatching` | TEST1412: Semantic direction matching - generic provider matches specific request (mirror-local variant of TEST051) | Tests/CapDAGTests/CSCapUrnTests.m:915 |
+| test1413 | `test1413_directionSemanticSpecificity` | TEST1413: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052) | Tests/CapDAGTests/CSCapUrnTests.m:962 |
+| test1414 | `test1414_parseSingleEdgeDag` | TEST1414: Parse DAG with a single edge using different node names (mirror-local) | Tests/BifaciTests/OrchestratorTests.swift:100 |
+| test1415 | `test1415_parseEdge1ToEdge2Chain` | TEST1415: Parse DAG chaining test_edge1 → test_edge2 (mirror-local) | Tests/BifaciTests/OrchestratorTests.swift:118 |
 | | | | |
 | unnumbered | `test198b_limitsNegotiation` | TEST198 (continued): Limits negotiation picks minimum of both sides | Tests/BifaciTests/FrameTests.swift:308 |
 | unnumbered | `test205b_allFrameTypesRoundtrip` | Covers all frame types in a single loop for comprehensive roundtrip verification | Tests/BifaciTests/FrameTests.swift:903 |
@@ -620,31 +659,6 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `test542c_outputStreamWriteWithoutStartThrows` | TEST542c: OutputStream write without start() throws | Tests/BifaciTests/StreamingAPITests.swift:437 |
 | unnumbered | `test542d_outputStreamDoubleStartThrows` | TEST542d: OutputStream start() twice throws | Tests/BifaciTests/StreamingAPITests.swift:453 |
 | unnumbered | `test542e_outputStreamModeConflictThrows` | TEST542e: OutputStream mode conflict throws (start write, call emitListItem) | Tests/BifaciTests/StreamingAPITests.swift:470 |
-| unnumbered | `test754ExtractPrefixNonexistent` | TEST754: extractPrefixTo with nonexistent node returns error | Tests/CapDAGTests/CSPlanDecompositionTests.m:135 |
-| unnumbered | `test755ExtractForeachBody` | TEST755: extractForeachBody extracts body with synthetic I/O | Tests/CapDAGTests/CSPlanDecompositionTests.m:144 |
-| unnumbered | `test756ExtractForeachBodyUnclosed` | TEST756: extractForeachBody for unclosed ForEach (single body cap) | Tests/CapDAGTests/CSPlanDecompositionTests.m:176 |
-| unnumbered | `test757ExtractForeachBodyWrongType` | TEST757: extractForeachBody fails for non-ForEach node | Tests/CapDAGTests/CSPlanDecompositionTests.m:193 |
-| unnumbered | `test758ExtractSuffixFrom` | TEST758: extractSuffixFrom extracts collect → cap_post → output | Tests/CapDAGTests/CSPlanDecompositionTests.m:204 |
-| unnumbered | `test759ExtractSuffixNonexistent` | TEST759: extractSuffixFrom fails for nonexistent node | Tests/CapDAGTests/CSPlanDecompositionTests.m:225 |
-| unnumbered | `test760DecompositionCoversAllCaps` | TEST760: Full decomposition covers all cap nodes | Tests/CapDAGTests/CSPlanDecompositionTests.m:234 |
-| unnumbered | `test761PrefixIsDag` | TEST761: Prefix is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:273 |
-| unnumbered | `test762BodyIsDag` | TEST762: Body is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:282 |
-| unnumbered | `test763SuffixIsDag` | TEST763: Suffix is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:291 |
-| unnumbered | `test764PrefixToInputSlot` | TEST764: extractPrefixTo with InputSlot as target (trivial prefix) | Tests/CapDAGTests/CSPlanDecompositionTests.m:300 |
-| unnumbered | `test772FindPathsMultiStep` | TEST772: Multi-step path through intermediate node | Tests/CapDAGTests/CSLiveCapGraphTests.m:149 |
-| unnumbered | `test773FindPathsEmptyWhenNoPath` | TEST773: Empty when target unreachable | Tests/CapDAGTests/CSLiveCapGraphTests.m:171 |
-| unnumbered | `test774GetReachableTargetsAll` | TEST774: BFS finds multiple direct targets | Tests/CapDAGTests/CSLiveCapGraphTests.m:187 |
-| unnumbered | `test777TypeMismatchPdfPng` | TEST777: PDF cap does not match PNG input | Tests/CapDAGTests/CSLiveCapGraphTests.m:210 |
-| unnumbered | `test778TypeMismatchPngPdf` | TEST778: PNG cap does not match PDF input | Tests/CapDAGTests/CSLiveCapGraphTests.m:225 |
-| unnumbered | `test779ReachableTargetsTypeMatching` | TEST779: BFS respects type matching | Tests/CapDAGTests/CSLiveCapGraphTests.m:240 |
-| unnumbered | `test781FindPathsTypeChain` | TEST781: Multi-step type chain enforcement | Tests/CapDAGTests/CSLiveCapGraphTests.m:263 |
-| unnumbered | `test787SortingShorterFirst` | TEST787: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapGraphTests.m:286 |
-| unnumbered | `test788ForEachWithSequenceInput` | TEST788: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapGraphTests.m:308 |
-| unnumbered | `test790IdentityUrnSpecific` | TEST790: Identity URN is specific, not equivalent to everything | Tests/CapDAGTests/CSLiveCapGraphTests.m:349 |
-| unnumbered | `test934FindFirstForeach` | MARK: - TEST934: findFirstForeach detects ForEach | Tests/CapDAGTests/CSPlanDecompositionTests.m:84 |
-| unnumbered | `test935FindFirstForeachLinear` | TEST935: findFirstForeach returns nil for linear plans | Tests/CapDAGTests/CSPlanDecompositionTests.m:91 |
-| unnumbered | `test936HasForeach` | TEST936: hasForeach | Tests/CapDAGTests/CSPlanDecompositionTests.m:100 |
-| unnumbered | `test937ExtractPrefixTo` | TEST937: extractPrefixTo extracts input_slot → cap_0 as standalone plan | Tests/CapDAGTests/CSPlanDecompositionTests.m:112 |
 | unnumbered | `testAddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapGraphTests.m:32 |
 | unnumbered | `testArgumentCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:729 |
 | unnumbered | `testArgumentValidationWithUnknownSpecFails` | Obj-C specific: unresolved spec ID fails hard during schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:131 |
@@ -703,7 +717,6 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testCapStdinType` |  | Tests/CapDAGTests/CSCapTests.m:69 |
 | unnumbered | `testCapWithDescription` |  | Tests/CapDAGTests/CSCapTests.m:47 |
 | unnumbered | `testClear` |  | Tests/CapDAGTests/CSCapMatrixTests.m:475 |
-| unnumbered | `testClear570` | TEST570: clear | Tests/CapDAGTests/CSCapMatrixTests.m:253 |
 | unnumbered | `testCoding` | Obj-C specific: NSCoding support | Tests/CapDAGTests/CSCapUrnTests.m:487 |
 | unnumbered | `testCompleteCapDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:275 |
 | unnumbered | `testComplexNestedSchema` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:404 |
@@ -711,16 +724,12 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testDataSourceWithBinaryContent` |  | Tests/CapDAGTests/CSStdinSourceTests.m:61 |
 | unnumbered | `testDataSourceWithEmptyData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:51 |
 | unnumbered | `testDeterministicOrdering` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:100 |
-| unnumbered | `testDirectionSemanticMatching` | TEST051: Semantic direction matching - generic provider matches specific request | Tests/CapDAGTests/CSCapUrnTests.m:915 |
-| unnumbered | `testDirectionSemanticSpecificity` | TEST052: Semantic direction specificity - more media URN tags = higher specificity | Tests/CapDAGTests/CSCapUrnTests.m:962 |
-| unnumbered | `testDirectionWildcardMatches` | TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any | Tests/CapDAGTests/CSCapUrnTests.m:218 |
 | unnumbered | `testDotParserCapUrnLabel` | TEST: Parse cap URN label with escaped quotes | Tests/BifaciTests/OrchestratorTests.swift:413 |
 | unnumbered | `testDotParserComments` | TEST: Parse graph with comments | Tests/BifaciTests/OrchestratorTests.swift:397 |
 | unnumbered | `testDotParserEdgeWithLabel` | TEST: Parse edge with label attribute | Tests/BifaciTests/OrchestratorTests.swift:350 |
 | unnumbered | `testDotParserNodeWithAttributes` | TEST: Parse node with attributes | Tests/BifaciTests/OrchestratorTests.swift:364 |
 | unnumbered | `testDotParserQuotedIdentifiers` | TEST: Parse quoted identifiers | Tests/BifaciTests/OrchestratorTests.swift:381 |
 | unnumbered | `testDotParserSimpleDigraph` | TEST: Parse simple digraph | Tests/BifaciTests/OrchestratorTests.swift:330 |
-| unnumbered | `testEquality` | TEST016: Test that trailing semicolon is equivalent (same hash, same string, matches) | Tests/CapDAGTests/CSCapUrnTests.m:473 |
 | unnumbered | `testExactVsConformanceMatching` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:50 |
 | unnumbered | `testExtensionsEmptyWhenNotSet` |  | Tests/CapDAGTests/CSMediaSpecTests.m:133 |
 | unnumbered | `testExtensionsPropagationFromObjectDef` | Extensions field tests | Tests/CapDAGTests/CSMediaSpecTests.m:110 |
@@ -731,16 +740,13 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:263 |
 | unnumbered | `testIntegrationWithOutputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:334 |
 | unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:104 |
-| unnumbered | `testInvalidCharacters` | TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any | Tests/CapDAGTests/CSCapUrnTests.m:134 |
 | unnumbered | `testInvalidUrnHandling` |  | Tests/CapDAGTests/CSCapMatrixTests.m:147 |
 | unnumbered | `testMediaSpecDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaSpecs definition through CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:864 |
 | unnumbered | `testMediaSpecsResolution` |  | Tests/CapDAGTests/CSCapTests.m:360 |
 | unnumbered | `testMediaSpecsWithoutSchemaSkipsValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:595 |
-| unnumbered | `testMerge` | TEST026: Test merge combines tags from both caps, subset keeps only specified tags | Tests/CapDAGTests/CSCapUrnTests.m:457 |
 | unnumbered | `testMetadataNilByDefault` |  | Tests/CapDAGTests/CSMediaSpecTests.m:44 |
 | unnumbered | `testMetadataPropagationFromObjectDef` |  | Tests/CapDAGTests/CSMediaSpecTests.m:14 |
 | unnumbered | `testMetadataWithValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:62 |
-| unnumbered | `testMissingOutSpecDefaultsToWildcard` | TEST002: Test that missing 'in' or 'out' defaults to media: wildcard | Tests/CapDAGTests/CSCapUrnTests.m:157 |
 | unnumbered | `testMultiStepPath` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:80 |
 | unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaSpecTests.m:184 |
 | unnumbered | `testNonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:150 |
@@ -762,13 +768,11 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testURLFormatIsValid` | / Test the URL format is valid and can be parsed | Tests/CapDAGTests/CSCapRegistryTests.m:85 |
 | unnumbered | `testURLKeepsCapPrefixLiteral` | / Test that URL construction keeps "cap:" literal and only encodes the tags part | Tests/CapDAGTests/CSCapRegistryTests.m:63 |
 | unnumbered | `testUnregisterCapSet` |  | Tests/CapDAGTests/CSCapMatrixTests.m:187 |
-| unnumbered | `testUnregisterCapSet569` | TEST569: unregisterCapSet | Tests/CapDAGTests/CSCapMatrixTests.m:241 |
 | unnumbered | `testValidateCapCanonical` |  | Tests/CapDAGTests/CSCapRegistryTests.m:135 |
 | unnumbered | `testValidateNoMediaSpecDuplicatesEmpty` |  | Tests/CapDAGTests/CSMediaSpecTests.m:241 |
 | unnumbered | `testValidateNoMediaSpecDuplicatesFail` |  | Tests/CapDAGTests/CSMediaSpecTests.m:224 |
 | unnumbered | `testValidateNoMediaSpecDuplicatesNil` |  | Tests/CapDAGTests/CSMediaSpecTests.m:250 |
 | unnumbered | `testValidateNoMediaSpecDuplicatesPass` | Duplicate URN validation tests | Tests/CapDAGTests/CSMediaSpecTests.m:210 |
-| unnumbered | `testValuelessTagParsing` | TEST031: Test wildcard rejected in keys but accepted in values | Tests/CapDAGTests/CSCapUrnTests.m:114 |
 | unnumbered | `testWildcard001EmptyCapDefaultsToMediaWildcard` | TEST_WILDCARD_001: cap: (empty) defaults to in=media:;out=media: | Tests/CapDAGTests/CSCapUrnTests.m:982 |
 | unnumbered | `testWildcard002InOnlyDefaultsOutToMedia` | TEST_WILDCARD_002: cap:in defaults out to media: | Tests/CapDAGTests/CSCapUrnTests.m:993 |
 | unnumbered | `testWildcard003OutOnlyDefaultsInToMedia` | TEST_WILDCARD_003: cap:out defaults in to media: | Tests/CapDAGTests/CSCapUrnTests.m:1002 |
@@ -781,12 +785,6 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | unnumbered | `testWildcard010WildcardAcceptsSpecific` | TEST_WILDCARD_010: Wildcard in/out match specific caps | Tests/CapDAGTests/CSCapUrnTests.m:1065 |
 | unnumbered | `testWildcard011SpecificityScoring` | TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count | Tests/CapDAGTests/CSCapUrnTests.m:1075 |
 | unnumbered | `testWildcard012PreserveOtherTags` | TEST_WILDCARD_012: cap:in;out;op=test preserves other tags | Tests/CapDAGTests/CSCapUrnTests.m:1085 |
-| unnumbered | `testWildcardTagDirection` | TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out | Tests/CapDAGTests/CSCapUrnTests.m:433 |
-| unnumbered | `testWithInSpec` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:374 |
-| unnumbered | `testWithOutSpec` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:384 |
-| unnumbered | `testWithTagIgnoresInOut` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:361 |
-| unnumbered | `testWithoutTag` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:394 |
-| unnumbered | `testWithoutTagIgnoresInOut` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:406 |
 | unnumbered | `test_csCapManifestWithPageUrl` | Additional test: CSCapManifest with pageUrl | Tests/BifaciTests/ManifestTests.swift:192 |
 | unnumbered | `test_glob_pattern_detection` |  | Tests/CapDAGTests/CSInputResolverTests.m:665 |
 | unnumbered | `test_resolved_file_properties` |  | Tests/CapDAGTests/CSInputResolverTests.m:676 |
@@ -827,31 +825,6 @@ The following tests are cataloged but do not currently participate in numeric te
 - `test542c_outputStreamWriteWithoutStartThrows` — Tests/BifaciTests/StreamingAPITests.swift:437
 - `test542d_outputStreamDoubleStartThrows` — Tests/BifaciTests/StreamingAPITests.swift:453
 - `test542e_outputStreamModeConflictThrows` — Tests/BifaciTests/StreamingAPITests.swift:470
-- `test754ExtractPrefixNonexistent` — Tests/CapDAGTests/CSPlanDecompositionTests.m:135
-- `test755ExtractForeachBody` — Tests/CapDAGTests/CSPlanDecompositionTests.m:144
-- `test756ExtractForeachBodyUnclosed` — Tests/CapDAGTests/CSPlanDecompositionTests.m:176
-- `test757ExtractForeachBodyWrongType` — Tests/CapDAGTests/CSPlanDecompositionTests.m:193
-- `test758ExtractSuffixFrom` — Tests/CapDAGTests/CSPlanDecompositionTests.m:204
-- `test759ExtractSuffixNonexistent` — Tests/CapDAGTests/CSPlanDecompositionTests.m:225
-- `test760DecompositionCoversAllCaps` — Tests/CapDAGTests/CSPlanDecompositionTests.m:234
-- `test761PrefixIsDag` — Tests/CapDAGTests/CSPlanDecompositionTests.m:273
-- `test762BodyIsDag` — Tests/CapDAGTests/CSPlanDecompositionTests.m:282
-- `test763SuffixIsDag` — Tests/CapDAGTests/CSPlanDecompositionTests.m:291
-- `test764PrefixToInputSlot` — Tests/CapDAGTests/CSPlanDecompositionTests.m:300
-- `test772FindPathsMultiStep` — Tests/CapDAGTests/CSLiveCapGraphTests.m:149
-- `test773FindPathsEmptyWhenNoPath` — Tests/CapDAGTests/CSLiveCapGraphTests.m:171
-- `test774GetReachableTargetsAll` — Tests/CapDAGTests/CSLiveCapGraphTests.m:187
-- `test777TypeMismatchPdfPng` — Tests/CapDAGTests/CSLiveCapGraphTests.m:210
-- `test778TypeMismatchPngPdf` — Tests/CapDAGTests/CSLiveCapGraphTests.m:225
-- `test779ReachableTargetsTypeMatching` — Tests/CapDAGTests/CSLiveCapGraphTests.m:240
-- `test781FindPathsTypeChain` — Tests/CapDAGTests/CSLiveCapGraphTests.m:263
-- `test787SortingShorterFirst` — Tests/CapDAGTests/CSLiveCapGraphTests.m:286
-- `test788ForEachWithSequenceInput` — Tests/CapDAGTests/CSLiveCapGraphTests.m:308
-- `test790IdentityUrnSpecific` — Tests/CapDAGTests/CSLiveCapGraphTests.m:349
-- `test934FindFirstForeach` — Tests/CapDAGTests/CSPlanDecompositionTests.m:84
-- `test935FindFirstForeachLinear` — Tests/CapDAGTests/CSPlanDecompositionTests.m:91
-- `test936HasForeach` — Tests/CapDAGTests/CSPlanDecompositionTests.m:100
-- `test937ExtractPrefixTo` — Tests/CapDAGTests/CSPlanDecompositionTests.m:112
 - `testAddCapAndBasicTraversal` — Tests/CapDAGTests/CSLiveCapGraphTests.m:32
 - `testArgumentCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:729
 - `testArgumentValidationWithUnknownSpecFails` — Tests/CapDAGTests/CSSchemaValidationTests.m:131
@@ -910,7 +883,6 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testCapStdinType` — Tests/CapDAGTests/CSCapTests.m:69
 - `testCapWithDescription` — Tests/CapDAGTests/CSCapTests.m:47
 - `testClear` — Tests/CapDAGTests/CSCapMatrixTests.m:475
-- `testClear570` — Tests/CapDAGTests/CSCapMatrixTests.m:253
 - `testCoding` — Tests/CapDAGTests/CSCapUrnTests.m:487
 - `testCompleteCapDeserialization` — Tests/CapDAGTests/CSCapTests.m:275
 - `testComplexNestedSchema` — Tests/CapDAGTests/CSSchemaValidationTests.m:404
@@ -918,16 +890,12 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testDataSourceWithBinaryContent` — Tests/CapDAGTests/CSStdinSourceTests.m:61
 - `testDataSourceWithEmptyData` — Tests/CapDAGTests/CSStdinSourceTests.m:51
 - `testDeterministicOrdering` — Tests/CapDAGTests/CSLiveCapGraphTests.m:100
-- `testDirectionSemanticMatching` — Tests/CapDAGTests/CSCapUrnTests.m:915
-- `testDirectionSemanticSpecificity` — Tests/CapDAGTests/CSCapUrnTests.m:962
-- `testDirectionWildcardMatches` — Tests/CapDAGTests/CSCapUrnTests.m:218
 - `testDotParserCapUrnLabel` — Tests/BifaciTests/OrchestratorTests.swift:413
 - `testDotParserComments` — Tests/BifaciTests/OrchestratorTests.swift:397
 - `testDotParserEdgeWithLabel` — Tests/BifaciTests/OrchestratorTests.swift:350
 - `testDotParserNodeWithAttributes` — Tests/BifaciTests/OrchestratorTests.swift:364
 - `testDotParserQuotedIdentifiers` — Tests/BifaciTests/OrchestratorTests.swift:381
 - `testDotParserSimpleDigraph` — Tests/BifaciTests/OrchestratorTests.swift:330
-- `testEquality` — Tests/CapDAGTests/CSCapUrnTests.m:473
 - `testExactVsConformanceMatching` — Tests/CapDAGTests/CSLiveCapGraphTests.m:50
 - `testExtensionsEmptyWhenNotSet` — Tests/CapDAGTests/CSMediaSpecTests.m:133
 - `testExtensionsPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:110
@@ -938,16 +906,13 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:263
 - `testIntegrationWithOutputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:334
 - `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:104
-- `testInvalidCharacters` — Tests/CapDAGTests/CSCapUrnTests.m:134
 - `testInvalidUrnHandling` — Tests/CapDAGTests/CSCapMatrixTests.m:147
 - `testMediaSpecDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:864
 - `testMediaSpecsResolution` — Tests/CapDAGTests/CSCapTests.m:360
 - `testMediaSpecsWithoutSchemaSkipsValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:595
-- `testMerge` — Tests/CapDAGTests/CSCapUrnTests.m:457
 - `testMetadataNilByDefault` — Tests/CapDAGTests/CSMediaSpecTests.m:44
 - `testMetadataPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:14
 - `testMetadataWithValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:62
-- `testMissingOutSpecDefaultsToWildcard` — Tests/CapDAGTests/CSCapUrnTests.m:157
 - `testMultiStepPath` — Tests/CapDAGTests/CSLiveCapGraphTests.m:80
 - `testMultipleExtensions` — Tests/CapDAGTests/CSMediaSpecTests.m:184
 - `testNonStructuredArgumentSkipsSchemaValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:150
@@ -969,13 +934,11 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testURLFormatIsValid` — Tests/CapDAGTests/CSCapRegistryTests.m:85
 - `testURLKeepsCapPrefixLiteral` — Tests/CapDAGTests/CSCapRegistryTests.m:63
 - `testUnregisterCapSet` — Tests/CapDAGTests/CSCapMatrixTests.m:187
-- `testUnregisterCapSet569` — Tests/CapDAGTests/CSCapMatrixTests.m:241
 - `testValidateCapCanonical` — Tests/CapDAGTests/CSCapRegistryTests.m:135
 - `testValidateNoMediaSpecDuplicatesEmpty` — Tests/CapDAGTests/CSMediaSpecTests.m:241
 - `testValidateNoMediaSpecDuplicatesFail` — Tests/CapDAGTests/CSMediaSpecTests.m:224
 - `testValidateNoMediaSpecDuplicatesNil` — Tests/CapDAGTests/CSMediaSpecTests.m:250
 - `testValidateNoMediaSpecDuplicatesPass` — Tests/CapDAGTests/CSMediaSpecTests.m:210
-- `testValuelessTagParsing` — Tests/CapDAGTests/CSCapUrnTests.m:114
 - `testWildcard001EmptyCapDefaultsToMediaWildcard` — Tests/CapDAGTests/CSCapUrnTests.m:982
 - `testWildcard002InOnlyDefaultsOutToMedia` — Tests/CapDAGTests/CSCapUrnTests.m:993
 - `testWildcard003OutOnlyDefaultsInToMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1002
@@ -988,12 +951,6 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testWildcard010WildcardAcceptsSpecific` — Tests/CapDAGTests/CSCapUrnTests.m:1065
 - `testWildcard011SpecificityScoring` — Tests/CapDAGTests/CSCapUrnTests.m:1075
 - `testWildcard012PreserveOtherTags` — Tests/CapDAGTests/CSCapUrnTests.m:1085
-- `testWildcardTagDirection` — Tests/CapDAGTests/CSCapUrnTests.m:433
-- `testWithInSpec` — Tests/CapDAGTests/CSCapUrnTests.m:374
-- `testWithOutSpec` — Tests/CapDAGTests/CSCapUrnTests.m:384
-- `testWithTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnTests.m:361
-- `testWithoutTag` — Tests/CapDAGTests/CSCapUrnTests.m:394
-- `testWithoutTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnTests.m:406
 - `test_csCapManifestWithPageUrl` — Tests/BifaciTests/ManifestTests.swift:192
 - `test_glob_pattern_detection` — Tests/CapDAGTests/CSInputResolverTests.m:665
 - `test_resolved_file_properties` — Tests/CapDAGTests/CSInputResolverTests.m:676
@@ -1038,69 +995,9 @@ These tests still participate in numeric indexing, but the cataloger did not fin
 
 ---
 
-## Numbering Mismatches
-
-These tests have a numbering disagreement between the function name and the authoritative immediate TEST comment/docstring above the test. This is reported explicitly so comment sync does not silently overwrite a misnumbered test.
-
-- `unnumbered` / `test002` / `testMissingOutSpecDefaultsToWildcard` — Tests/CapDAGTests/CSCapUrnTests.m:157
-- `unnumbered` / `test003` / `testDirectionWildcardMatches` — Tests/CapDAGTests/CSCapUrnTests.m:218
-- `unnumbered` / `test003` / `testInvalidCharacters` — Tests/CapDAGTests/CSCapUrnTests.m:134
-- `unnumbered` / `test016` / `testEquality` — Tests/CapDAGTests/CSCapUrnTests.m:473
-- `unnumbered` / `test026` / `testMerge` — Tests/CapDAGTests/CSCapUrnTests.m:457
-- `unnumbered` / `test027` / `testWildcardTagDirection` — Tests/CapDAGTests/CSCapUrnTests.m:433
-- `unnumbered` / `test031` / `testValuelessTagParsing` — Tests/CapDAGTests/CSCapUrnTests.m:114
-- `unnumbered` / `test036` / `testWithInSpec` — Tests/CapDAGTests/CSCapUrnTests.m:374
-- `unnumbered` / `test036` / `testWithOutSpec` — Tests/CapDAGTests/CSCapUrnTests.m:384
-- `unnumbered` / `test036` / `testWithTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnTests.m:361
-- `unnumbered` / `test036` / `testWithoutTag` — Tests/CapDAGTests/CSCapUrnTests.m:394
-- `unnumbered` / `test036` / `testWithoutTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnTests.m:406
-- `unnumbered` / `test051` / `testDirectionSemanticMatching` — Tests/CapDAGTests/CSCapUrnTests.m:915
-- `unnumbered` / `test052` / `testDirectionSemanticSpecificity` — Tests/CapDAGTests/CSCapUrnTests.m:962
-- `unnumbered` / `test569` / `testUnregisterCapSet569` — Tests/CapDAGTests/CSCapMatrixTests.m:241
-- `unnumbered` / `test570` / `testClear570` — Tests/CapDAGTests/CSCapMatrixTests.m:253
-- `unnumbered` / `test754` / `test754ExtractPrefixNonexistent` — Tests/CapDAGTests/CSPlanDecompositionTests.m:135
-- `unnumbered` / `test755` / `test755ExtractForeachBody` — Tests/CapDAGTests/CSPlanDecompositionTests.m:144
-- `unnumbered` / `test756` / `test756ExtractForeachBodyUnclosed` — Tests/CapDAGTests/CSPlanDecompositionTests.m:176
-- `unnumbered` / `test757` / `test757ExtractForeachBodyWrongType` — Tests/CapDAGTests/CSPlanDecompositionTests.m:193
-- `unnumbered` / `test758` / `test758ExtractSuffixFrom` — Tests/CapDAGTests/CSPlanDecompositionTests.m:204
-- `unnumbered` / `test759` / `test759ExtractSuffixNonexistent` — Tests/CapDAGTests/CSPlanDecompositionTests.m:225
-- `unnumbered` / `test760` / `test760DecompositionCoversAllCaps` — Tests/CapDAGTests/CSPlanDecompositionTests.m:234
-- `unnumbered` / `test761` / `test761PrefixIsDag` — Tests/CapDAGTests/CSPlanDecompositionTests.m:273
-- `unnumbered` / `test762` / `test762BodyIsDag` — Tests/CapDAGTests/CSPlanDecompositionTests.m:282
-- `unnumbered` / `test763` / `test763SuffixIsDag` — Tests/CapDAGTests/CSPlanDecompositionTests.m:291
-- `unnumbered` / `test764` / `test764PrefixToInputSlot` — Tests/CapDAGTests/CSPlanDecompositionTests.m:300
-- `unnumbered` / `test772` / `test772FindPathsMultiStep` — Tests/CapDAGTests/CSLiveCapGraphTests.m:149
-- `unnumbered` / `test773` / `test773FindPathsEmptyWhenNoPath` — Tests/CapDAGTests/CSLiveCapGraphTests.m:171
-- `unnumbered` / `test774` / `test774GetReachableTargetsAll` — Tests/CapDAGTests/CSLiveCapGraphTests.m:187
-- `unnumbered` / `test777` / `test777TypeMismatchPdfPng` — Tests/CapDAGTests/CSLiveCapGraphTests.m:210
-- `unnumbered` / `test778` / `test778TypeMismatchPngPdf` — Tests/CapDAGTests/CSLiveCapGraphTests.m:225
-- `unnumbered` / `test779` / `test779ReachableTargetsTypeMatching` — Tests/CapDAGTests/CSLiveCapGraphTests.m:240
-- `unnumbered` / `test781` / `test781FindPathsTypeChain` — Tests/CapDAGTests/CSLiveCapGraphTests.m:263
-- `unnumbered` / `test787` / `test787SortingShorterFirst` — Tests/CapDAGTests/CSLiveCapGraphTests.m:286
-- `unnumbered` / `test788` / `test788ForEachWithSequenceInput` — Tests/CapDAGTests/CSLiveCapGraphTests.m:308
-- `unnumbered` / `test790` / `test790IdentityUrnSpecific` — Tests/CapDAGTests/CSLiveCapGraphTests.m:349
-- `unnumbered` / `test935` / `test935FindFirstForeachLinear` — Tests/CapDAGTests/CSPlanDecompositionTests.m:91
-- `unnumbered` / `test936` / `test936HasForeach` — Tests/CapDAGTests/CSPlanDecompositionTests.m:100
-- `unnumbered` / `test937` / `test937ExtractPrefixTo` — Tests/CapDAGTests/CSPlanDecompositionTests.m:112
-- `test942` / `test985` / `test942_emptyGraph` — Tests/BifaciTests/OrchestratorTests.swift:188
-- `test943` / `test984` / `test943_invalidCapUrn` — Tests/BifaciTests/OrchestratorTests.swift:206
-- `test944` / `test013` / `test944_capNotFound` — Tests/BifaciTests/OrchestratorTests.swift:224
-- `test945` / `test012` / `test945_fourMachine` — Tests/BifaciTests/OrchestratorTests.swift:250
-- `test946` / `test011` / `test946_fiveMachine` — Tests/BifaciTests/OrchestratorTests.swift:274
-- `test947` / `test010` / `test947_sixMachine` — Tests/BifaciTests/OrchestratorTests.swift:300
-- `test1031` / `test986` / `test1031_json_simple_object` — Tests/CapDAGTests/CSInputResolverTests.m:126
-- `test1034` / `test024` / `test1034_json_array_of_primitives` — Tests/CapDAGTests/CSInputResolverTests.m:152
-- `test1035` / `test025` / `test1035_json_array_of_strings` — Tests/CapDAGTests/CSInputResolverTests.m:165
-- `test1038` / `test027` / `test1038_json_string_primitive` — Tests/CapDAGTests/CSInputResolverTests.m:191
-- `test1040` / `test028` / `test1040_json_boolean_true` — Tests/CapDAGTests/CSInputResolverTests.m:217
-- `test1042` / `test030` / `test1042_json_null` — Tests/CapDAGTests/CSInputResolverTests.m:230
-- `test1046` / `test033` / `test1046_ndjson_single_object` — Tests/CapDAGTests/CSInputResolverTests.m:258
-
----
-
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 797*
-*Total numbered tests: 596*
-*Total unnumbered tests: 201*
+*Total tests: 795*
+*Total numbered tests: 635*
+*Total unnumbered tests: 160*
 *Total numbered tests missing descriptions: 7*
-*Total numbering mismatches: 53*
+*Total numbering mismatches: 0*

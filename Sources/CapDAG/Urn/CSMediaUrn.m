@@ -186,14 +186,8 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 }
 
 - (BOOL)isFilePath {
-    return [self hasMarkerTag:@"file-path"] && ![self isList];
-}
-
-- (BOOL)isFilePathArray {
-    return [self hasMarkerTag:@"file-path"] && [self isList];
-}
-
-- (BOOL)isAnyFilePath {
+    // Single file-path media URN; cardinality (single file vs many) is
+    // carried on the wire via is_sequence, not via URN tags.
     return [self hasMarkerTag:@"file-path"];
 }
 

@@ -78,8 +78,8 @@ final class OrchestratorTests: XCTestCase {
 
     // MARK: - Phase 1: Basic Functionality
 
-    // TEST935: find_first_foreach returns None for linear plans
-    func test935_parseSimpleTestcartridgeGraph() async throws {
+    // TEST919: Parse simple machine notation graph with test-edge1
+    func test919_parseSimpleTestcartridgeGraph() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -96,8 +96,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
     }
 
-    // TEST936: has_foreach detects ForEach nodes
-    func test936_parseSingleEdgeDag() async throws {
+    // TEST1414: Parse DAG with a single edge using different node names (mirror-local)
+    func test1414_parseSingleEdgeDag() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -114,8 +114,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["output"], "media:node2;textable")
     }
 
-    // TEST937: extract_prefix_to extracts input_slot -> cap_0 as a standalone plan
-    func test937_parseEdge1ToEdge2Chain() async throws {
+    // TEST1415: Parse DAG chaining test_edge1 → test_edge2 (mirror-local)
+    func test1415_parseEdge1ToEdge2Chain() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -184,8 +184,8 @@ final class OrchestratorTests: XCTestCase {
         }
     }
 
-    // TEST985: CSV detection via MediaAdapterRegistry
-    func test942_emptyGraph() async throws {
+    // TEST949: Empty machine notation (no edges)
+    func test949_emptyGraph() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -202,8 +202,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssert(graph.nodes.isEmpty)
     }
 
-    // TEST984: YAML sequence detection via MediaAdapterRegistry produces ListOpaque
-    func test943_invalidCapUrn() async throws {
+    // TEST948: Invalid cap URN in machine notation
+    func test948_invalidCapUrn() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -220,8 +220,8 @@ final class OrchestratorTests: XCTestCase {
         }
     }
 
-    // TEST013: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase
-    func test944_capNotFound() async throws {
+    // TEST947: Cap not found in registry
+    func test947_capNotFound() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -246,8 +246,8 @@ final class OrchestratorTests: XCTestCase {
 
     // MARK: - Phase 2: Long Chain Tests
 
-    // TEST012: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string
-    func test945_fourMachine() async throws {
+    // TEST946: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP["
+    func test946_fourMachine() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -270,8 +270,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["E"], "media:node7;textable")
     }
 
-    // TEST011: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP["
-    func test946_fiveMachine() async throws {
+    // TEST945: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string
+    func test945_fiveMachine() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""
@@ -296,8 +296,8 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(graph.nodes["F"], "media:node8;textable")
     }
 
-    // TEST010: Cap not found in registry
-    func test947_sixMachine() async throws {
+    // TEST944: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase
+    func test944_sixMachine() async throws {
         let registry = TestcartridgeRegistry()
 
         let dot = #"""

@@ -607,11 +607,13 @@ final class CborFilePathConversionTests: XCTestCase {
     private func createArg(
         mediaUrn: String,
         required: Bool,
+        isSequence: Bool = false,
         sources: [ArgSource]
     ) -> CapArg {
         return CapArg(
             mediaUrn: mediaUrn,
             required: required,
+            isSequence: isSequence,
             sources: sources,
             argDescription: nil,
             defaultValue: nil
@@ -747,7 +749,10 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST339: file-path-array reads multiple files with glob pattern
+    // TEST339: A sequence-declared file-path arg (isSequence=true) expands a
+    // glob into N files and the runtime delivers them as a CBOR Array of
+    // bytes — one item per matched file. List-ness comes from the arg
+    // declaration, NOT from any `;list` URN tag.
     func test339_file_path_array_glob_expansion() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test339")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -762,8 +767,9 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Batch",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -774,16 +780,12 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Pass glob pattern as JSON array
+        // Sequence args take a newline-separated list of paths or globs.
         let pattern = "\(tempDir.path)/*.txt"
-        let pathsJSON = try JSONEncoder().encode([pattern])
-        let pathsJSONString = String(data: pathsJSON, encoding: .utf8)!
-
-        let cliArgs = [pathsJSONString]
+        let cliArgs = [pattern]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
 
-        // Decode CBOR array
         guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
             XCTFail("Failed to decode CBOR")
             return
@@ -796,7 +798,6 @@ final class CborFilePathConversionTests: XCTestCase {
 
         XCTAssertEqual(filesArray.count, 2, "Should find 2 files")
 
-        // Verify contents (order may vary, so sort)
         var bytesVec: [[UInt8]] = []
         for val in filesArray {
             if case .byteString(let bytes) = val {
@@ -835,8 +836,11 @@ final class CborFilePathConversionTests: XCTestCase {
 
         XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
             let errMsg = error.localizedDescription
-            XCTAssertTrue(errMsg.contains("/nonexistent/file.pdf") || errMsg.contains("Failed to read file"),
-                          "Error should mention file path or read failure: \(errMsg)")
+            XCTAssertTrue(
+                errMsg.contains("/nonexistent/file.pdf")
+                    && (errMsg.contains("File not found") || errMsg.contains("Failed to read file")),
+                "Error should mention file path and read failure: \(errMsg)"
+            )
         }
     }
 
@@ -944,14 +948,16 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(valueStr, "mlx-community/Llama-3.2-3B-Instruct-4bit")
     }
 
-    // TEST344: file-path-array with nonexistent path fails clearly
-    func test344_file_path_array_invalid_json_fails() {
+    // TEST344: A scalar file-path arg receiving a nonexistent path fails
+    // hard with a clear error that names the path. The runtime refuses to
+    // silently swallow user mistakes like typos or wrong directories.
+    func test344_file_path_array_invalid_json_fails() throws {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
                 sources: [
                     .stdin("media:"),
@@ -963,17 +969,20 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Pass invalid JSON (not an array)
-        let cliArgs = ["not a json array"]
-
+        let cliArgs = ["/nonexistent/path/to/nothing"]
         XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
             let err = error.localizedDescription
-            XCTAssertTrue(err.contains("Failed to parse file-path-array") || err.contains("expected JSON array"),
-                          "Error should mention file-path-array or expected format")
+            XCTAssertTrue(
+                err.contains("/nonexistent/path/to/nothing")
+                    && (err.contains("File not found") || err.contains("Failed to read file")),
+                "Error should name the path and explain the failure; got: \(err)"
+            )
         }
     }
 
-    // TEST345: file-path-array with literal nonexistent path fails hard
+    // TEST345: a sequence file-path arg with a literal nonexistent path
+    // fails hard. The runtime reads every resolved path; any missing file
+    // aborts the batch rather than silently dropping an entry.
     func test345_file_path_array_one_file_missing_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let file1 = tempDir.appendingPathComponent("test345_exists.txt")
@@ -985,8 +994,9 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -997,16 +1007,17 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Construct JSON array with both existing and non-existing files
-        let pathsJSON = try JSONEncoder().encode([file1.path, file2Path.path])
-        let pathsJSONString = String(data: pathsJSON, encoding: .utf8)!
-
-        let cliArgs = [pathsJSONString]
+        // Sequence arg takes newline-separated paths; one missing → hard fail.
+        let pathsValue = "\(file1.path)\n\(file2Path.path)"
+        let cliArgs = [pathsValue]
 
         XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
             let err = error.localizedDescription
-            XCTAssertTrue(err.contains("test345_missing.txt") || err.contains("Failed to read file"),
-                          "Should fail hard when any file in array is missing")
+            XCTAssertTrue(
+                err.contains("test345_missing.txt")
+                    && (err.contains("File not found") || err.contains("Failed to read file")),
+                "Should fail hard when any file in sequence is missing; got: \(err)"
+            )
         }
 
         try? FileManager.default.removeItem(at: file1)
@@ -1222,15 +1233,19 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST351: file-path array with empty CBOR array returns empty (CBOR mode)
+    // TEST351: a sequence-declared file-path arg with an empty
+    // newline-separated value returns an empty CBOR Array — no spurious
+    // error. Declaring `isSequence=true` is what makes the runtime emit an
+    // Array shape; URN tags are semantic only.
     func test351_file_path_array_empty_array() throws {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
-                required: false,  // Not required
+                mediaUrn: "media:file-path;textable",
+                required: false,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -1241,11 +1256,10 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        let cliArgs = ["[]"]
+        let cliArgs = [""]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
 
-        // Decode CBOR array
         guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
             XCTFail("Failed to decode CBOR")
             return
@@ -1256,7 +1270,7 @@ final class CborFilePathConversionTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(filesArray.count, 0, "Empty array should produce empty result")
+        XCTAssertEqual(filesArray.count, 0, "Empty pattern list should produce empty result")
     }
 
     #if os(macOS) || os(Linux)
@@ -1361,8 +1375,10 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(bytes, [UInt8]("test value".utf8))
     }
 
-    // TEST354: Glob pattern with no matches fails hard (NO FALLBACK)
-    func test354_glob_pattern_no_matches_empty_array() throws {
+    // TEST354: a glob pattern with no matches fails hard. Silent empty
+    // results mask real user mistakes (typo'd path, wrong directory), so the
+    // runtime surfaces them rather than returning an empty array.
+    func test354_glob_pattern_no_matches_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
 
         let cap = createCap(
@@ -1370,8 +1386,9 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -1382,30 +1399,19 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Glob pattern that matches nothing
         let pattern = "\(tempDir.path)/nonexistent_*.xyz"
-        let pathsJSON = try JSONEncoder().encode([pattern])
-        let pathsJSONString = String(data: pathsJSON, encoding: .utf8)!
+        let cliArgs = [pattern]
 
-        let cliArgs = [pathsJSONString]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        // Decode CBOR array
-        guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
-            XCTFail("Failed to decode CBOR")
-            return
+        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+            let err = error.localizedDescription
+            XCTAssertTrue(
+                err.contains("No files matched"),
+                "Error should say no files matched; got: \(err)"
+            )
         }
-
-        guard case .array(let filesArray) = cborValue else {
-            XCTFail("Expected CBOR array")
-            return
-        }
-
-        XCTAssertEqual(filesArray.count, 0, "No matches should produce empty array")
     }
 
-    // TEST355: Glob pattern skips directories
+    // TEST355: Glob pattern skips directories.
     func test355_glob_pattern_skips_directories() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test355")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -1421,8 +1427,9 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -1433,16 +1440,11 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Glob that matches both file and directory
         let pattern = "\(tempDir.path)/*"
-        let pathsJSON = try JSONEncoder().encode([pattern])
-        let pathsJSONString = String(data: pathsJSON, encoding: .utf8)!
-
-        let cliArgs = [pathsJSONString]
+        let cliArgs = [pattern]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
 
-        // Decode CBOR array
         guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
             XCTFail("Failed to decode CBOR")
             return
@@ -1453,7 +1455,6 @@ final class CborFilePathConversionTests: XCTestCase {
             return
         }
 
-        // Should only include the file, not the directory
         XCTAssertEqual(filesArray.count, 1, "Should only include files, not directories")
 
         if case .byteString(let bytes) = filesArray[0] {
@@ -1465,7 +1466,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    // TEST356: Multiple glob patterns combined
+    // TEST356: Multiple glob patterns combined via newline separation.
     func test356_multiple_glob_patterns_combined() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test356")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -1480,8 +1481,9 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -1492,13 +1494,9 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Multiple patterns
         let pattern1 = "\(tempDir.path)/*.txt"
         let pattern2 = "\(tempDir.path)/*.json"
-        let pathsJSON = try JSONEncoder().encode([pattern1, pattern2])
-        let pathsJSONString = String(data: pathsJSON, encoding: .utf8)!
-
-        let cliArgs = [pathsJSONString]
+        let cliArgs = ["\(pattern1)\n\(pattern2)"]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
 
@@ -1603,15 +1601,17 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST359: Invalid glob pattern fails with clear error
+    // TEST359: Invalid glob pattern fails with a clear error instead of
+    // being silently accepted or producing an empty match set.
     func test359_invalid_glob_pattern_fails() {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
-                mediaUrn: "media:file-path;textable;list",
+                mediaUrn: "media:file-path;textable",
                 required: true,
+                isSequence: true,
                 sources: [
                     .stdin("media:"),
                     .positional(0)
@@ -1622,15 +1622,8 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Invalid glob pattern (unclosed bracket)
-        let pattern = "[invalid"
-        guard let pathsJSON = try? JSONEncoder().encode([pattern]),
-              let pathsJSONString = String(data: pathsJSON, encoding: .utf8) else {
-            XCTFail("Failed to encode pattern")
-            return
-        }
-
-        let cliArgs = [pathsJSONString]
+        // Invalid glob pattern (unclosed bracket).
+        let cliArgs = ["[invalid"]
 
         XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
             let err = error.localizedDescription

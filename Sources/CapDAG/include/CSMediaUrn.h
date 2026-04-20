@@ -161,17 +161,11 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn is_bool(&self) -> bool
 - (BOOL)isBool;
 
-/// Check if this represents a single file path (file-path marker AND NOT list).
+/// Check if this URN specializes `media:file-path`. There is a single
+/// file-path media URN; cardinality (single file vs many) is carried on the
+/// wire via is_sequence, not via URN tags.
 /// Mirrors Rust: pub fn is_file_path(&self) -> bool
 - (BOOL)isFilePath;
-
-/// Check if this represents a file path array (file-path marker AND list).
-/// Mirrors Rust: pub fn is_file_path_array(&self) -> bool
-- (BOOL)isFilePathArray;
-
-/// Check if this represents any file path type (single or array).
-/// Mirrors Rust: pub fn is_any_file_path(&self) -> bool
-- (BOOL)isAnyFilePath;
 
 // MARK: - Specificity
 

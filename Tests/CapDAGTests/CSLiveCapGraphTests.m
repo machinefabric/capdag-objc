@@ -146,7 +146,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 // MARK: - Numbered Tests
 
 // TEST772: Multi-step path through intermediate node
-- (void)test772FindPathsMultiStep {
+- (void)test772_findPathsMultiStep {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
@@ -168,7 +168,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST773: Empty when target unreachable
-- (void)test773FindPathsEmptyWhenNoPath {
+- (void)test773_findPathsEmptyWhenNoPath {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
@@ -184,7 +184,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST774: BFS finds multiple direct targets
-- (void)test774GetReachableTargetsAll {
+- (void)test774_getReachableTargetsAll {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
@@ -207,7 +207,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST777: PDF cap does not match PNG input
-- (void)test777TypeMismatchPdfPng {
+- (void)test777_typeMismatchPdfPng {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *cap = makeTestCap(@"media:pdf", @"media:textable", @"pdf2text", @"PDF to Text");
@@ -222,7 +222,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST778: PNG cap does not match PDF input
-- (void)test778TypeMismatchPngPdf {
+- (void)test778_typeMismatchPngPdf {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *cap = makeTestCap(@"media:png", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
@@ -237,7 +237,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST779: BFS respects type matching
-- (void)test779ReachableTargetsTypeMatching {
+- (void)test779_reachableTargetsTypeMatching {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *pdfCap = makeTestCap(@"media:pdf", @"media:textable", @"pdf2text", @"PDF to Text");
@@ -260,7 +260,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST781: Multi-step type chain enforcement
-- (void)test781FindPathsTypeChain {
+- (void)test781_findPathsTypeChain {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *resize = makeTestCap(@"media:png", @"media:resized-png", @"resize", @"Resize PNG");
@@ -283,7 +283,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST787: Sorting prefers shorter paths
-- (void)test787SortingShorterFirst {
+- (void)test787_sortingShorterFirst {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     CSCap *direct = makeTestCap(@"media:format-a", @"media:format-c", @"direct", @"Direct");
@@ -305,7 +305,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST788: ForEach synthesized when input is a sequence
-- (void)test788ForEachWithSequenceInput {
+- (void)test788_forEachWithSequenceInput {
     CSLiveCapGraph *graph = [CSLiveCapGraph graph];
 
     // Two caps: pdf→page and textable→decision
@@ -346,7 +346,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST790: Identity URN is specific, not equivalent to everything
-- (void)test790IdentityUrnSpecific {
+- (void)test790_identityUrnSpecific {
     NSError *error = nil;
     CSCapUrn *identity = [CSCapUrn fromString:CSCapIdentity error:&error];
     XCTAssertNotNil(identity, @"Should parse identity URN");

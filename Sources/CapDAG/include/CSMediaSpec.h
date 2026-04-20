@@ -84,9 +84,8 @@ FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleVision;       // media:
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleEmbeddings;   // media:model-spec;candle;textable;embeddings
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleImageEmbeddings; // media:model-spec;candle;image-embeddings;textable
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandleTranscription; // media:model-spec;candle;textable;transcription
-// File path types
+// File path type — single URN; cardinality lives on is_sequence.
 FOUNDATION_EXPORT NSString * const CSMediaFilePath;     // media:file-path;textable
-FOUNDATION_EXPORT NSString * const CSMediaFilePathArray; // media:file-path;list;textable
 // Semantic input types (continued)
 FOUNDATION_EXPORT NSString * const CSMediaMlxModelPath;    // media:mlx-model-path;textable
 // Semantic output types

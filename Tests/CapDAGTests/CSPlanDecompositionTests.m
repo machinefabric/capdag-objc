@@ -81,14 +81,14 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // MARK: - TEST934: findFirstForeach detects ForEach
-- (void)test934FindFirstForeach {
+- (void)test934_findFirstForeach {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSString *foreachId = [plan findFirstForeach];
     XCTAssertEqualObjects(foreachId, @"foreach_0");
 }
 
 // TEST935: findFirstForeach returns nil for linear plans
-- (void)test935FindFirstForeachLinear {
+- (void)test935_findFirstForeachLinear {
     CSMachinePlan *plan = [CSMachinePlan linearChainPlan:@[@"cap:a", @"cap:b"]
                                                        inputMedia:@"media:pdf"
                                                       outputMedia:@"media:png"
@@ -97,7 +97,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST936: hasForeach
-- (void)test936HasForeach {
+- (void)test936_hasForeach {
     CSMachinePlan *foreachPlan = buildForeachPlanWithCollect();
     XCTAssertTrue([foreachPlan hasForeach]);
 
@@ -109,7 +109,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST937: extractPrefixTo extracts input_slot → cap_0 as standalone plan
-- (void)test937ExtractPrefixTo {
+- (void)test937_extractPrefixTo {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
 
     NSError *error = nil;
@@ -132,7 +132,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST754: extractPrefixTo with nonexistent node returns error
-- (void)test754ExtractPrefixNonexistent {
+- (void)test754_extractPrefixNonexistent {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *result = [plan extractPrefixTo:@"nonexistent" error:&error];
@@ -141,7 +141,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST755: extractForeachBody extracts body with synthetic I/O
-- (void)test755ExtractForeachBody {
+- (void)test755_extractForeachBody {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
 
     NSError *error = nil;
@@ -173,7 +173,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST756: extractForeachBody for unclosed ForEach (single body cap)
-- (void)test756ExtractForeachBodyUnclosed {
+- (void)test756_extractForeachBodyUnclosed {
     CSMachinePlan *plan = buildForeachPlanUnclosed();
 
     NSError *error = nil;
@@ -190,7 +190,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST757: extractForeachBody fails for non-ForEach node
-- (void)test757ExtractForeachBodyWrongType {
+- (void)test757_extractForeachBodyWrongType {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *result = [plan extractForeachBody:@"cap_0" itemMediaUrn:@"media:pdf-page" error:&error];
@@ -201,7 +201,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST758: extractSuffixFrom extracts collect → cap_post → output
-- (void)test758ExtractSuffixFrom {
+- (void)test758_extractSuffixFrom {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
 
     NSError *error = nil;
@@ -222,7 +222,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST759: extractSuffixFrom fails for nonexistent node
-- (void)test759ExtractSuffixNonexistent {
+- (void)test759_extractSuffixNonexistent {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *result = [plan extractSuffixFrom:@"nonexistent" sourceMediaUrn:@"media:whatever" error:&error];
@@ -231,7 +231,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST760: Full decomposition covers all cap nodes
-- (void)test760DecompositionCoversAllCaps {
+- (void)test760_decompositionCoversAllCaps {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
 
     // Get all original cap node IDs
@@ -270,7 +270,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST761: Prefix is valid DAG
-- (void)test761PrefixIsDag {
+- (void)test761_prefixIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *prefix = [plan extractPrefixTo:@"cap_0" error:&error];
@@ -279,7 +279,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST762: Body is valid DAG
-- (void)test762BodyIsDag {
+- (void)test762_bodyIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *body = [plan extractForeachBody:@"foreach_0" itemMediaUrn:@"media:pdf-page" error:&error];
@@ -288,7 +288,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST763: Suffix is valid DAG
-- (void)test763SuffixIsDag {
+- (void)test763_suffixIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;json;record;textable" error:&error];
@@ -297,7 +297,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 }
 
 // TEST764: extractPrefixTo with InputSlot as target (trivial prefix)
-- (void)test764PrefixToInputSlot {
+- (void)test764_prefixToInputSlot {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *prefix = [plan extractPrefixTo:@"input_slot" error:&error];

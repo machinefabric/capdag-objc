@@ -64,9 +64,8 @@ NSString * const CSMediaModelSpecCandleVision = @"media:model-spec;candle;textab
 NSString * const CSMediaModelSpecCandleEmbeddings = @"media:model-spec;candle;textable;embeddings";
 NSString * const CSMediaModelSpecCandleImageEmbeddings = @"media:model-spec;candle;image-embeddings;textable";
 NSString * const CSMediaModelSpecCandleTranscription = @"media:model-spec;candle;textable;transcription";
-// File path types
+// File path type — single URN; cardinality lives on is_sequence.
 NSString * const CSMediaFilePath = @"media:file-path;textable";
-NSString * const CSMediaFilePathArray = @"media:file-path;list;textable";
 // Semantic input types (continued)
 NSString * const CSMediaMlxModelPath = @"media:mlx-model-path;textable";
 // Semantic output types

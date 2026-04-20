@@ -110,8 +110,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorInvalidFormat);
 }
 
-// TEST031: Test wildcard rejected in keys but accepted in values
-- (void)testValuelessTagParsing {
+// TEST1406: Value-less tags (bare keys like ";flag") parse as wildcards (mirror-local variant of TEST031)
+- (void)test1406_valuelessTagParsing {
     NSError *error;
     // Value-less tags are now valid (parsed as wildcards)
     // Cap URN with valid in/out and a value-less tag should succeed
@@ -130,8 +130,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getTag:@"flag"], @"*");
 }
 
-// TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
-- (void)testInvalidCharacters {
+// TEST1402: Invalid characters (e.g. '@') in tag keys are rejected by the parser (mirror-local variant of TEST003)
+- (void)test1402_invalidCharacters {
     NSError *error;
     CSCapUrn *capUrn = [CSCapUrn fromString:@"cap:in=media:void;type@invalid=value;out=\"media:record;textable\"" error:&error];
 
@@ -153,8 +153,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getOutSpec], @"media:record;textable");
 }
 
-// TEST002: Test that missing 'in' or 'out' defaults to media: wildcard
-- (void)testMissingOutSpecDefaultsToWildcard {
+// TEST1400: Missing 'out' defaults to media: wildcard (mirror-local variant of TEST002 covering the out-side case)
+- (void)test1400_missingOutSpecDefaultsToWildcard {
     NSError *error = nil;
     // Missing 'out' defaults to media:
     CSCapUrn *capUrn = [CSCapUrn fromString:@"cap:in=media:void;op=generate" error:&error];
@@ -214,8 +214,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap3 accepts:cap4]);
 }
 
-// TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
-- (void)testDirectionWildcardMatches {
+// TEST1401: Wildcard in/out specs accept any concrete value (mirror-local variant of TEST003's wildcard branch)
+- (void)test1401_directionWildcardMatches {
     NSError *error = nil;
     // Wildcard inSpec matches any
     CSCapUrn *wildcardIn = [CSCapUrn fromString:@"cap:in=*;op=test;out=\"media:record;textable\"" error:&error];
@@ -357,8 +357,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:in=media:void;op=generate;out=\"media:record;textable\"");
 }
 
-// TEST036: Test with_tag preserves value case
-- (void)testWithTagIgnoresInOut {
+// TEST1407: withTag silently ignores attempts to set "in" or "out" tags (mirror-local)
+- (void)test1407_withTagIgnoresInOut {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
 
@@ -370,8 +370,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(original, sameOut); // Same object
 }
 
-// TEST036: Test with_tag preserves value case
-- (void)testWithInSpec {
+// TEST1408: withInSpec returns a new URN with the in= spec replaced, leaving the original unchanged (mirror-local)
+- (void)test1408_withInSpec {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
     CSCapUrn *modified = [original withInSpec:@"media:string"];
@@ -380,8 +380,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original getInSpec], @"media:void"); // Original unchanged
 }
 
-// TEST036: Test with_tag preserves value case
-- (void)testWithOutSpec {
+// TEST1409: withOutSpec returns a new URN with the out= spec replaced, leaving the original unchanged (mirror-local)
+- (void)test1409_withOutSpec {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
     CSCapUrn *modified = [original withOutSpec:@"media:"];
@@ -390,8 +390,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original getOutSpec], @"media:record;textable"); // Original unchanged
 }
 
-// TEST036: Test with_tag preserves value case
-- (void)testWithoutTag {
+// TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local)
+- (void)test1410_withoutTag {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate;ext=pdf") error:&error];
     CSCapUrn *modified = [original withoutTag:@"ext"];
@@ -402,8 +402,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:ext=pdf;in=media:void;op=generate;out=\"media:record;textable\"");
 }
 
-// TEST036: Test with_tag preserves value case
-- (void)testWithoutTagIgnoresInOut {
+// TEST1411: withoutTag silently ignores attempts to remove "in" or "out" tags (mirror-local)
+- (void)test1411_withoutTagIgnoresInOut {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
 
@@ -429,8 +429,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([wildcarded accepts:request]);
 }
 
-// TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out
-- (void)testWildcardTagDirection {
+// TEST1405: withWildcardTag resolves to withInSpec/withOutSpec for "in"/"out" tags, setting them to the wildcard "media:" (mirror-local variant of TEST027)
+- (void)test1405_wildcardTagDirection {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
 
@@ -453,8 +453,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([subset toString], @"cap:ext=pdf;in=media:void;out=\"media:record;textable\"");
 }
 
-// TEST026: Test merge combines tags from both caps, subset keeps only specified tags
-- (void)testMerge {
+// TEST1404: merge() combines tags from two cap URNs; direction comes from the other cap (mirror-local variant of TEST026's merge branch)
+- (void)test1404_merge {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:@"cap:in=media:void;op=generate;out=\"media:record;textable\"" error:&error];
     CSCapUrn *cap2 = [CSCapUrn fromString:@"cap:ext=pdf;in=media:string;out=media:;output=binary" error:&error];
@@ -469,8 +469,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([merged getTag:@"output"], @"binary");
 }
 
-// TEST016: Test that trailing semicolon is equivalent (same hash, same string, matches)
-- (void)testEquality {
+// TEST1403: Equality and hash of CSCapUrn identify identical URNs and distinguish direction/tag differences (mirror-local variant of TEST016)
+- (void)test1403_equality {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
     CSCapUrn *cap2 = [CSCapUrn fromString:testUrn(@"op=generate") error:&error];
@@ -911,8 +911,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap accepts:request], @"Test 10: Direction mismatch should prevent match");
 }
 
-// TEST051: Semantic direction matching - generic provider matches specific request
-- (void)testDirectionSemanticMatching {
+// TEST1412: Semantic direction matching - generic provider matches specific request (mirror-local variant of TEST051)
+- (void)test1412_directionSemanticMatching {
     NSError *error = nil;
 
     // A cap accepting media: (generic) should match a request with media:pdf (specific)
@@ -958,8 +958,8 @@ static NSString* testUrn(NSString *tags) {
         @"Cap producing generic image must NOT satisfy request requiring image;png;thumbnail");
 }
 
-// TEST052: Semantic direction specificity - more media URN tags = higher specificity
-- (void)testDirectionSemanticSpecificity {
+// TEST1413: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052)
+- (void)test1413_directionSemanticSpecificity {
     NSError *error = nil;
 
     CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
