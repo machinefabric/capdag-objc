@@ -28,16 +28,12 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 #import "CSMediaSpec.h"
 #import "CSStandardCaps.h"
 #import "CSStdinSource.h"
-#import "CSCapCaller.h"
 #import "CSResponseWrapper.h"
 #import "CSCapManifest.h"
 #import "CSCapMatcher.h"
 #import "CSCapValidator.h"
 #import "CSSchemaValidator.h"
 #import "CSCapRegistry.h"
-#import "CSCapMatrix.h"
-#import "CSCapBlock.h"
-#import "CSCapGraph.h"
 
 // Cartridge communication infrastructure
 #import "CSPacket.h"
