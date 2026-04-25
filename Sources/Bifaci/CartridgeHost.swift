@@ -216,6 +216,8 @@ private enum CartridgeEvent {
     case death(cartridgeIdx: Int)
     case relayFrame(Frame)
     case relayClosed
+    /// Periodic wakeup to republish runtime stats via RelayNotify.
+    case statsRefresh
 }
 
 /// Composite routing key: (XID, RID) — uniquely identifies a request flow from relay.
@@ -279,6 +281,11 @@ private class ManagedCartridge {
     var memoryFootprintMb: UInt64
     /// Resident set size in MB (self-reported via heartbeat response meta).
     var memoryRssMb: UInt64
+    /// Unix timestamp seconds of the last heartbeat response. `nil` until
+    /// the first successful heartbeat round-trip completes.
+    var lastHeartbeatUnixSeconds: Int64?
+    /// Number of times this cartridge has been respawned after death.
+    var restartCount: UInt64
 
     init(path: String, cartridgeDir: String, knownCaps: [String]) {
         self.path = path
@@ -294,30 +301,89 @@ private class ManagedCartridge {
         self.shutdownReason = nil
         self.memoryFootprintMb = 0
         self.memoryRssMb = 0
+        self.lastHeartbeatUnixSeconds = nil
+        self.restartCount = 0
+        self.attachmentError = nil
     }
 
-    func installedCartridgeIdentity() -> InstalledCartridgeIdentity? {
-        guard !cartridgeDir.isEmpty else { return nil }
+    /// Per-cartridge attachment failure, if any. Set by `recordAttachmentError` at
+    /// the HELLO / identity / spawn failure sites, surfaced up through
+    /// `installedCartridgeIdentity()` into RelayNotify.
+    var attachmentError: CartridgeAttachmentError?
 
-        // Read cartridge.json from the version directory (the anchor)
-        let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
-        guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let name = json["name"] as? String,
-              let version = json["version"] as? String else {
+    func installedCartridgeIdentity() -> InstalledCartridgeIdentity? {
+        // Attached cartridges (no on-disk anchor) are pre-connected for
+        // in-process / test use — they never hold an attachment error in
+        // production. If a caller tags one with an attachment error it's a
+        // programming mistake upstream, so fail hard rather than
+        // manufacturing a placeholder id.
+        guard !cartridgeDir.isEmpty else {
+            if attachmentError != nil {
+                fatalError("BUG: attached cartridge (no cartridgeDir) carries an attachment error — this code path has no resolvable identity")
+            }
             return nil
         }
 
-        // Hash the directory tree (excluding cartridge.json)
+        // {name}/{version} come from the managed cartridge layout, which the
+        // installer guarantees. We pull them from cartridge.json when
+        // available; when cartridge.json is malformed we fall back to the
+        // directory names from the layout — the one authoritative piece of
+        // identity information still present on disk.
+        let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
+        let jsonIdentity: (id: String, version: String)? = {
+            guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let name = json["name"] as? String,
+                  let version = json["version"] as? String else {
+                return nil
+            }
+            return (id: name.lowercased(), version: version)
+        }()
+
+        let layoutIdentity: (id: String, version: String) = {
+            // cartridgeDir layout: {root}/{name}/{version}
+            let versionName = (cartridgeDir as NSString).lastPathComponent
+            let nameDir = (cartridgeDir as NSString).deletingLastPathComponent
+            let nameComponent = (nameDir as NSString).lastPathComponent
+            return (id: nameComponent.lowercased(), version: versionName)
+        }()
+
+        let identity = jsonIdentity ?? layoutIdentity
+
+        // If we have an attachment error, we report whatever identity we
+        // could salvage and an empty sha256 (the directory may be unreadable
+        // — that's precisely the kind of failure we're trying to surface).
+        // If the cartridge is healthy, hashing must succeed; failure there
+        // is a broken invariant.
+        if let error = attachmentError {
+            let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) ?? ""
+            return InstalledCartridgeIdentity(
+                id: identity.id,
+                version: identity.version,
+                sha256: sha256,
+                attachmentError: error
+            )
+        }
+
         guard let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) else {
-            fatalError("Installed cartridge directory must remain readable at \(cartridgeDir)")
+            fatalError("BUG: healthy installed cartridge directory must be hashable at \(cartridgeDir)")
         }
 
         return InstalledCartridgeIdentity(
-            id: name.lowercased(),
-            version: version,
-            sha256: sha256
+            id: identity.id,
+            version: identity.version,
+            sha256: sha256,
+            attachmentError: nil
         )
+    }
+
+    /// Record a per-cartridge attachment failure and mark the cartridge as
+    /// permanently broken (no on-demand respawn).
+    ///
+    /// Callers are expected to hold the host's `stateLock`.
+    func recordAttachmentError(kind: CartridgeAttachmentErrorKind, message: String) {
+        helloFailed = true
+        attachmentError = CartridgeAttachmentError.now(kind: kind, message: message)
     }
 
     static func attached(manifest: Data, limits: Limits, caps: [String]) -> ManagedCartridge {
@@ -460,51 +526,104 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.unlock()
     }
 
-    /// Reconcile the host's cartridge state with the current on-disk truth.
+    /// Outcome of probing one cartridge directory during discovery.
     ///
-    /// After a rescan, the XPC service calls this instead of accumulating
-    /// registerCartridge() calls.  This ensures stale entries (old binary paths)
-    /// are removed so findCartridgeForCap() never routes to a dead binary.
+    /// - `.discovered`: HELLO + manifest-parse succeeded; the host can
+    ///   spawn it on demand.
+    /// - `.failed`: Discovery-time probe failed (manifest invalid, HELLO
+    ///   timed out, entry point missing, quarantined). The cartridge is
+    ///   kept as a non-spawnable entry so the attachment error surfaces
+    ///   through `RelayNotify`.
+    public enum DiscoveredCartridgeOutcome {
+        case discovered(path: String, cartridgeDir: String, knownCaps: [String])
+        case failed(
+            path: String,
+            cartridgeDir: String,
+            kind: CartridgeAttachmentErrorKind,
+            message: String
+        )
+
+        var path: String {
+            switch self {
+            case .discovered(let path, _, _): return path
+            case .failed(let path, _, _, _): return path
+            }
+        }
+
+        var cartridgeDir: String {
+            switch self {
+            case .discovered(_, let dir, _): return dir
+            case .failed(_, let dir, _, _): return dir
+            }
+        }
+    }
+
+    /// Reconcile the host's cartridge state with the current on-disk truth,
+    /// accepting both successfully discovered cartridges and discovery failures.
+    ///
+    /// After a rescan, the XPC service calls this with one outcome per
+    /// cartridge version directory it walked. Failed outcomes are kept as
+    /// non-spawnable entries so their attachment errors propagate through
+    /// `RelayNotify` — the UI then knows *which* cartridge broke and *why*.
     ///
     /// Semantics:
-    /// - **Same path** (binary unchanged): no-op (caps updated if they changed).
-    /// - **Path gone** (in host, not in `current`): kill process, remove from capTable.
-    /// - **New path** (in `current`, not in host): append.
+    /// - **Same path, now discovered**: keep, update knownCaps, clear any prior
+    ///   attachment error.
+    /// - **Same path, still failed**: update the attachment-error record with
+    ///   the latest classification/message.
+    /// - **Path gone**: kill the process if running and **remove** the
+    ///   cartridge from the host's list entirely. The scan is authoritative
+    ///   about what exists on disk; a cartridge absent from the scan is
+    ///   uninstalled, not "failing attachment", so we drop it rather than
+    ///   report a permanent error.
+    /// - **New path**: append a fresh entry (spawnable or failed-record).
     ///
     /// Matches by **path**, not by cap set — URN strings are not stable across
     /// rescans (quoting and tag order may differ), but the binary path is.
-    ///
-    /// - Parameter current: The ground-truth list of `(binaryPath, capURNs)` from disk.
-    public func syncRegistrations(_ current: [(path: String, cartridgeDir: String, knownCaps: [String])]) {
+    public func syncDiscoveryOutcomes(_ outcomes: [DiscoveredCartridgeOutcome]) {
         stateLock.lock()
         defer {
             rebuildCapabilities()
             stateLock.unlock()
         }
 
-        // Build a lookup: path → index in `current`.
-        let currentByPath: [String: Int] = {
+        // Build a lookup: path → index in `outcomes`.
+        let outcomeByPath: [String: Int] = {
             var map = [String: Int]()
-            for (i, entry) in current.enumerated() {
-                map[entry.path] = i
+            for (i, outcome) in outcomes.enumerated() {
+                map[outcome.path] = i
             }
             return map
         }()
 
-        var matchedCurrentIndices = Set<Int>()
+        var matchedOutcomeIndices = Set<Int>()
 
-        // Walk existing cartridges and reconcile.
+        // Walk existing cartridges and reconcile with the new outcomes.
+        // Collect "still present" cartridges; cartridges whose paths are
+        // gone from the scan are dropped entirely (see doc comment).
+        var retained: [ManagedCartridge] = []
+        retained.reserveCapacity(cartridges.count)
         for cartridge in cartridges {
-            if let currentIdx = currentByPath[cartridge.path] {
-                // Same entry point path still on disk — keep it.
-                matchedCurrentIndices.insert(currentIdx)
-                let entry = current[currentIdx]
-                // Update knownCaps in case they changed (harmless if identical).
-                cartridge.knownCaps = entry.knownCaps
-                // Clear helloFailed so the cartridge can be respawned on demand.
-                cartridge.helloFailed = false
+            if let outcomeIdx = outcomeByPath[cartridge.path] {
+                matchedOutcomeIndices.insert(outcomeIdx)
+                switch outcomes[outcomeIdx] {
+                case .discovered(_, _, let knownCaps):
+                    // Clear any prior attachment error — the probe succeeded
+                    // this time around.
+                    cartridge.knownCaps = knownCaps
+                    cartridge.helloFailed = false
+                    cartridge.attachmentError = nil
+                case .failed(_, _, let kind, let message):
+                    // Still broken on this pass — refresh the error so the
+                    // latest detected reason propagates.
+                    cartridge.knownCaps = []
+                    cartridge.caps = []
+                    cartridge.recordAttachmentError(kind: kind, message: message)
+                }
+                retained.append(cartridge)
             } else {
-                // Cartridge path no longer on disk — removed or replaced by new version.
+                // Cartridge path no longer on disk — uninstalled or replaced.
+                // Tear down any running process and drop the entry.
                 cartridge.shutdownReason = .appExit
                 cartridge.killProcess()
                 cartridge.writerLock.lock()
@@ -513,19 +632,30 @@ public final class CartridgeHost: @unchecked Sendable {
                 cartridge.stdinHandle = nil
                 cartridge.stdoutHandle = nil
                 cartridge.stderrHandle = nil
-                cartridge.helloFailed = true  // Prevent on-demand spawn
-                cartridge.knownCaps = []      // Remove from capTable rebuild
-                cartridge.caps = []
+                // Do NOT append to `retained` — this cartridge is gone.
+            }
+        }
+        cartridges = retained
+
+        // Append genuinely new outcomes (path not yet tracked by the host).
+        for (i, outcome) in outcomes.enumerated() where !matchedOutcomeIndices.contains(i) {
+            switch outcome {
+            case .discovered(let path, let dir, let knownCaps):
+                let cartridge = ManagedCartridge(
+                    path: path, cartridgeDir: dir, knownCaps: knownCaps
+                )
+                cartridges.append(cartridge)
+            case .failed(let path, let dir, let kind, let message):
+                let cartridge = ManagedCartridge(
+                    path: path, cartridgeDir: dir, knownCaps: []
+                )
+                cartridge.recordAttachmentError(kind: kind, message: message)
+                cartridges.append(cartridge)
             }
         }
 
-        // Append genuinely new cartridges (path not in host).
-        for (i, entry) in current.enumerated() where !matchedCurrentIndices.contains(i) {
-            let cartridge = ManagedCartridge(path: entry.path, cartridgeDir: entry.cartridgeDir, knownCaps: entry.knownCaps)
-            cartridges.append(cartridge)
-        }
-
-        // Rebuild capTable from scratch — covers new, updated, and removed cartridges.
+        // Rebuild capTable from scratch — covers new, updated, and removed
+        // cartridges. Failed cartridges contribute no caps.
         capTable.removeAll()
         for (idx, cartridge) in cartridges.enumerated() where !cartridge.helloFailed {
             for cap in cartridge.knownCaps {
@@ -714,6 +844,21 @@ public final class CartridgeHost: @unchecked Sendable {
         relayThread.name = "CartridgeHost.relay"
         relayThread.start()
 
+        // Runtime-stats refresh cadence. Request counts and memory change
+        // continuously; structural changes (spawn/death) already trigger a
+        // RelayNotify synchronously via `rebuildCapabilities`, so this timer
+        // only needs to cover the continuous signals. The relay peer's
+        // watch-channel drops no-op frames when no stat actually changed.
+        let statsTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        statsTimer.schedule(deadline: .now() + .seconds(2), repeating: .seconds(2))
+        statsTimer.setEventHandler { [weak self] in
+            self?.pushEvent(.statsRefresh)
+        }
+        statsTimer.resume()
+        defer {
+            statsTimer.cancel()
+        }
+
         // Main loop: wait for events from any source (relay or cartridges)
         while true {
             eventSemaphore.wait()
@@ -739,6 +884,19 @@ public final class CartridgeHost: @unchecked Sendable {
                 handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
             case .death(let cartridgeIdx):
                 handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
+            case .statsRefresh:
+                // Re-emit RelayNotify only when at least one cartridge is
+                // running, so an idle host doesn't burn bandwidth. Runtime
+                // stats for non-running cartridges change only at
+                // spawn/death boundaries which already trigger a rebuild.
+                stateLock.lock()
+                let anyRunning = cartridges.contains { $0.running }
+                stateLock.unlock()
+                if anyRunning {
+                    stateLock.lock()
+                    rebuildCapabilities()
+                    stateLock.unlock()
+                }
             }
         }
     }
@@ -996,6 +1154,9 @@ public final class CartridgeHost: @unchecked Sendable {
                         cartridge.memoryRssMb = v
                     }
                 }
+                // Stamp the round-trip completion timestamp so runtime-stats
+                // snapshots can surface heartbeat age to the UI.
+                cartridge.lastHeartbeatUnixSeconds = Int64(Date().timeIntervalSince1970)
             }
             stateLock.unlock()
 
@@ -1073,6 +1234,9 @@ public final class CartridgeHost: @unchecked Sendable {
         let cartridge = cartridges[cartridgeIdx]
         cartridge.running = false
         cartridge.writer = nil
+        // One completed death (any reason) counts as one restart cycle.
+        // The next on-demand spawn increments it again with a fresh process.
+        cartridge.restartCount &+= 1
         let reason = cartridge.shutdownReason
         cartridge.shutdownReason = nil  // Reset for potential respawn
 
@@ -1283,6 +1447,10 @@ public final class CartridgeHost: @unchecked Sendable {
                 handleRelayFrame(frame)
             case .relayClosed:
                 break // Handled in run() loop
+            case .statsRefresh:
+                // Only the run() loop does the actual RelayNotify push to
+                // avoid double-work. This drain path is test-only.
+                break
             }
         }
     }
@@ -1306,6 +1474,47 @@ public final class CartridgeHost: @unchecked Sendable {
 
     // MARK: - Internal Helpers
 
+    /// Build the `installedCartridges` list for a RelayNotify payload,
+    /// injecting live runtime stats derived from the routing tables and
+    /// cartridge process state. Must be called with stateLock held. One
+    /// source of truth: the engine sees what the host sees, with no time
+    /// skew beyond the send itself.
+    private func buildInstalledCartridgeIdentitiesLocked() -> [InstalledCartridgeIdentity] {
+        var activeCounts: [Int: UInt64] = [:]
+        for idx in incomingRxids.values {
+            activeCounts[idx, default: 0] += 1
+        }
+        var peerCounts: [Int: UInt64] = [:]
+        for idx in outgoingRids.values {
+            peerCounts[idx, default: 0] += 1
+        }
+
+        var result: [InstalledCartridgeIdentity] = []
+        result.reserveCapacity(cartridges.count)
+        for (idx, cartridge) in cartridges.enumerated() {
+            guard let base = cartridge.installedCartridgeIdentity() else { continue }
+            let pid = cartridge.pid.map { UInt32($0) }
+            let stats = CartridgeRuntimeStats(
+                running: cartridge.running,
+                pid: pid,
+                activeRequestCount: activeCounts[idx, default: 0],
+                peerRequestCount: peerCounts[idx, default: 0],
+                memoryFootprintMb: cartridge.memoryFootprintMb,
+                memoryRssMb: cartridge.memoryRssMb,
+                lastHeartbeatUnixSeconds: cartridge.lastHeartbeatUnixSeconds,
+                restartCount: cartridge.restartCount
+            )
+            result.append(InstalledCartridgeIdentity(
+                id: base.id,
+                version: base.version,
+                sha256: base.sha256,
+                attachmentError: base.attachmentError,
+                runtimeStats: stats
+            ))
+        }
+        return result
+    }
+
     /// Rebuild aggregate capabilities from all known/discovered cartridges.
     /// Must hold stateLock when calling.
     /// Creates a JSON array of URN strings (not objects).
@@ -1318,10 +1527,19 @@ public final class CartridgeHost: @unchecked Sendable {
     /// If running in relay mode (outboundWriter is set), sends a RelayNotify frame
     /// to the relay interface with the updated capabilities.
     private func rebuildCapabilities() {
-        // CAP_IDENTITY is always present — structural, not cartridge-dependent
-        var capUrns: [String] = [CSCapIdentity]
+        // Collect caps contributed by healthy cartridges. CAP_IDENTITY is
+        // advertised only when at least one healthy cartridge exists — the
+        // mandatory CAP_IDENTITY declaration in every cartridge manifest is
+        // what makes it answerable end-to-end, so an empty host must not
+        // claim to answer identity. This matches the engine-side
+        // `add_master` invariant: the identity probe traverses the pipeline
+        // to a real cartridge; if no cartridge is available, there is no
+        // pipeline to probe.
+        var capUrns: [String] = []
+        var healthyCartridgeCount = 0
 
         for cartridge in cartridges where !cartridge.helloFailed {
+            healthyCartridgeCount += 1
             if cartridge.running {
                 // Running: use actual caps from manifest (verified via HELLO handshake)
                 if !cartridge.manifest.isEmpty,
@@ -1347,7 +1565,16 @@ public final class CartridgeHost: @unchecked Sendable {
             }
         }
 
-        let installedCartridges = cartridges.compactMap { $0.installedCartridgeIdentity() }
+        // Prepend CAP_IDENTITY only when the host actually has a handler
+        // chain that can service it — i.e. when we have at least one
+        // healthy cartridge. An empty-host RelayNotify advertises no caps
+        // but still carries `installed_cartridges` so attachment errors
+        // propagate.
+        if healthyCartridgeCount > 0 {
+            capUrns.insert(CSCapIdentity, at: 0)
+        }
+
+        let installedCartridges = buildInstalledCartridgeIdentitiesLocked()
 
         let payload = RelayNotifyCapabilitiesPayload(
             caps: capUrns,
@@ -1370,15 +1597,44 @@ public final class CartridgeHost: @unchecked Sendable {
         outboundLock.unlock()
     }
 
+    /// Reason a manifest was rejected by `extractCaps`. Mirrors Rust's
+    /// `ParseCapsError` so callers can pick the matching
+    /// `CartridgeAttachmentErrorKind`:
+    ///   * `.invalidJson` → `.manifestInvalid`
+    ///   * `.incompatible` → `.incompatible`
+    enum ManifestExtractError: Error, CustomStringConvertible {
+        /// Manifest blob did not parse as JSON or was missing the
+        /// `cap_groups` array (top-level structural failure).
+        case invalidJson(String)
+        /// Manifest parsed but violated the cartridge schema (missing
+        /// CAP_IDENTITY, etc.).
+        case incompatible(String)
+
+        var description: String {
+            switch self {
+            case .invalidJson(let m), .incompatible(let m): return m
+            }
+        }
+
+        var attachmentKind: CartridgeAttachmentErrorKind {
+            switch self {
+            case .invalidJson: return .manifestInvalid
+            case .incompatible: return .incompatible
+            }
+        }
+    }
+
     /// Extract cap URN strings from a manifest JSON blob.
-    /// Validates that CAP_IDENTITY is present (mandatory for all cartridges).
+    /// Throws `ManifestExtractError` so the caller can classify the failure
+    /// for `recordAttachmentError`.
     private static func extractCaps(from manifest: Data) throws -> [String] {
         guard let json = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any],
               let capGroups = json["cap_groups"] as? [[String: Any]] else {
-            throw CartridgeHostError.handshakeFailed("Invalid manifest JSON or missing cap_groups array")
+            throw ManifestExtractError.invalidJson(
+                "Invalid manifest JSON or missing cap_groups array"
+            )
         }
 
-        // Collect URNs from all cap groups
         var capUrns: [String] = []
         for group in capGroups {
             if let groupCaps = group["caps"] as? [[String: Any]] {
@@ -1386,7 +1642,6 @@ public final class CartridgeHost: @unchecked Sendable {
             }
         }
 
-        // Verify CAP_IDENTITY is declared — mandatory for every cartridge
         guard let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) else {
             fatalError("BUG: CAP_IDENTITY constant '\(CSCapIdentity)' is invalid")
         }
@@ -1397,7 +1652,7 @@ public final class CartridgeHost: @unchecked Sendable {
         }
 
         guard hasIdentity else {
-            throw CartridgeHostError.handshakeFailed(
+            throw ManifestExtractError.incompatible(
                 "Cartridge manifest missing required CAP_IDENTITY (\(CSCapIdentity))"
             )
         }
@@ -1535,7 +1790,13 @@ public final class CartridgeHost: @unchecked Sendable {
         let spawnResult = posix_spawn(&pid, path, &fileActions, nil, argv, nil)
         guard spawnResult == 0 else {
             let desc = String(cString: strerror(spawnResult))
-            throw CartridgeHostError.handshakeFailed("posix_spawn failed for \(path): \(desc)")
+            let msg = "posix_spawn failed for \(path): \(desc)"
+            stateLock.lock()
+            cartridges[idx].recordAttachmentError(kind: .entryPointMissing, message: msg)
+            capTable.removeAll { $0.1 == idx }
+            rebuildCapabilities()
+            stateLock.unlock()
+            throw CartridgeHostError.handshakeFailed(msg)
         }
 
         // Close child's ends in parent
@@ -1562,16 +1823,64 @@ public final class CartridgeHost: @unchecked Sendable {
             stdoutHandle.closeFile()
             stderrHandle.closeFile()
 
+            let msg = "HELLO failed for \(path): \(error.localizedDescription)"
             stateLock.lock()
-            cartridges[idx].helloFailed = true
+            cartridges[idx].recordAttachmentError(kind: .handshakeFailed, message: msg)
             capTable.removeAll { $0.1 == idx }
             rebuildCapabilities()
             stateLock.unlock()
 
-            throw CartridgeHostError.handshakeFailed("HELLO failed for \(path): \(error.localizedDescription)")
+            throw CartridgeHostError.handshakeFailed(msg)
         }
 
-        let caps = try Self.extractCaps(from: handshakeResult.manifest ?? Data())
+        // Parse caps from manifest — failure here means the manifest parsed
+        // as JSON but doesn't declare CAP_IDENTITY or uses an old schema.
+        let caps: [String]
+        do {
+            caps = try Self.extractCaps(from: handshakeResult.manifest ?? Data())
+        } catch let extractErr as ManifestExtractError {
+            kill(pid, SIGKILL)
+            _ = waitpid(pid, nil, 0)
+            stdinHandle.closeFile()
+            stdoutHandle.closeFile()
+            stderrHandle.closeFile()
+
+            // Classify by extract-error variant — keep parity with Rust:
+            // JSON-level failures are `.manifestInvalid`; schema-rejection
+            // (e.g. missing CAP_IDENTITY) is `.incompatible`.
+            let kind = extractErr.attachmentKind
+            let label = kind == .manifestInvalid ? "manifest invalid" : "manifest incompatible"
+            let msg = "Cartridge \(label) for \(path): \(extractErr)"
+            stateLock.lock()
+            cartridges[idx].recordAttachmentError(kind: kind, message: msg)
+            capTable.removeAll { $0.1 == idx }
+            rebuildCapabilities()
+            stateLock.unlock()
+
+            throw CartridgeHostError.handshakeFailed(msg)
+        }
+
+        // Identity verification: send nonce, expect echo. Mirrors the Rust
+        // host_runtime identity check and proves the protocol stack works
+        // end-to-end for this cartridge.
+        do {
+            try Self.verifyCartridgeIdentity(reader: reader, writer: writer)
+        } catch {
+            kill(pid, SIGKILL)
+            _ = waitpid(pid, nil, 0)
+            stdinHandle.closeFile()
+            stdoutHandle.closeFile()
+            stderrHandle.closeFile()
+
+            let msg = "Identity verification failed for \(path): \(error.localizedDescription)"
+            stateLock.lock()
+            cartridges[idx].recordAttachmentError(kind: .identityRejected, message: msg)
+            capTable.removeAll { $0.1 == idx }
+            rebuildCapabilities()
+            stateLock.unlock()
+
+            throw CartridgeHostError.handshakeFailed(msg)
+        }
 
         // Update cartridge state under lock
         stateLock.lock()
@@ -1585,6 +1894,9 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridge.limits = handshakeResult.limits
         cartridge.caps = caps
         cartridge.running = true
+        // Successful attach — clear any lingering attachment error from a
+        // prior failed attempt (e.g. after a binary replacement).
+        cartridge.attachmentError = nil
 
         // Update capTable with actual caps from manifest
         capTable.removeAll { $0.1 == idx }

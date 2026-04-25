@@ -228,91 +228,98 @@ public final class RelaySwitch: @unchecked Sendable {
             var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
             var caps = notifyPayload.caps
 
-            // Verify identity through the relay chain.
-            // This is done inline because RelaySwitch is sync and needs its own
-            // XID allocation + SeqAssigner per-master for the relay chain.
+            // Per-master SeqAssigner that persists into the MasterConnection
+            // regardless of whether we run the identity probe.
             let seqAssigner = SeqAssigner()
-            xidCounter += 1
-            let xid = MessageId.uint(xidCounter)
 
-            let nonce = identityNonce()
-            let reqId = MessageId.newUUID()
-            let streamId = "identity-verify"
+            // End-to-end identity verification. The probe traverses the
+            // relay chain to a cartridge — it is only meaningful when the
+            // host has at least one advertised cap. An empty cap list
+            // means "no cartridges attached successfully"; the master
+            // still joins so its `installed_cartridges` attachment errors
+            // reach the engine.
+            if !caps.isEmpty {
+                xidCounter += 1
+                let xid = MessageId.uint(xidCounter)
 
-            // Send REQ + STREAM_START + CHUNK + STREAM_END + END with XID + seq
-            var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-            req.routingId = xid
-            seqAssigner.assign(&req)
-            try socketWriter.write(req)
+                let nonce = identityNonce()
+                let reqId = MessageId.newUUID()
+                let streamId = "identity-verify"
 
-            var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
-            ss.routingId = xid
-            seqAssigner.assign(&ss)
-            try socketWriter.write(ss)
+                var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
+                req.routingId = xid
+                seqAssigner.assign(&req)
+                try socketWriter.write(req)
 
-            let checksum = Frame.computeChecksum(nonce)
-            var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-            chunk.routingId = xid
-            seqAssigner.assign(&chunk)
-            try socketWriter.write(chunk)
+                var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
+                ss.routingId = xid
+                seqAssigner.assign(&ss)
+                try socketWriter.write(ss)
 
-            var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
-            se.routingId = xid
-            seqAssigner.assign(&se)
-            try socketWriter.write(se)
+                let checksum = Frame.computeChecksum(nonce)
+                var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
+                chunk.routingId = xid
+                seqAssigner.assign(&chunk)
+                try socketWriter.write(chunk)
 
-            var end = Frame.end(id: reqId)
-            end.routingId = xid
-            seqAssigner.assign(&end)
-            try socketWriter.write(end)
+                var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
+                se.routingId = xid
+                seqAssigner.assign(&se)
+                try socketWriter.write(se)
 
-            seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
+                var end = Frame.end(id: reqId)
+                end.routingId = xid
+                seqAssigner.assign(&end)
+                try socketWriter.write(end)
 
-            // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
-            // Also handle updated RelayNotify frames (host sends full caps after cartridge startup)
-            var accumulated = Data()
-            while true {
-                guard let frame = try socketReader.read() else {
-                    throw RelaySwitchError.protocolError("master \(masterIdx): connection closed during identity verification")
+                seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
+
+                // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
+                // Also handle updated RelayNotify frames (host sends full caps after cartridge startup)
+                var accumulated = Data()
+                while true {
+                    guard let frame = try socketReader.read() else {
+                        throw RelaySwitchError.protocolError("master \(masterIdx): connection closed during identity verification")
+                    }
+
+                    switch frame.frameType {
+                    case .relayNotify:
+                        // CartridgeHostRuntime sends the full RelayNotify (with all caps)
+                        // through RelaySlave during identity verification. Update caps.
+                        if let manifest = frame.relayNotifyManifest {
+                            capsPayload = manifest
+                            notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                            caps = notifyPayload.caps
+                        }
+                        if let newLimits = frame.relayNotifyLimits {
+                            masterLimits = newLimits
+                        }
+                    case .streamStart:
+                        break // Expected, no action needed
+                    case .chunk:
+                        if let payload = frame.payload {
+                            accumulated.append(payload)
+                        }
+                    case .streamEnd:
+                        break // Expected, no action needed
+                    case .end:
+                        // Verify nonce matches
+                        if accumulated != nonce {
+                            throw RelaySwitchError.protocolError(
+                                "master \(masterIdx): identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))")
+                        }
+                        break // Done — fall through to next master
+                    case .err:
+                        let code = frame.errorCode ?? "UNKNOWN"
+                        let msg = frame.errorMessage ?? "no message"
+                        throw RelaySwitchError.protocolError("master \(masterIdx): identity verification failed: [\(code)] \(msg)")
+                    default:
+                        throw RelaySwitchError.protocolError("master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)")
+                    }
+
+                    // Break out of loop after END
+                    if frame.frameType == .end { break }
                 }
-
-                switch frame.frameType {
-                case .relayNotify:
-                    // CartridgeHostRuntime sends the full RelayNotify (with all caps)
-                    // through RelaySlave during identity verification. Update caps.
-                    if let manifest = frame.relayNotifyManifest {
-                        capsPayload = manifest
-                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                        caps = notifyPayload.caps
-                    }
-                    if let newLimits = frame.relayNotifyLimits {
-                        masterLimits = newLimits
-                    }
-                case .streamStart:
-                    break // Expected, no action needed
-                case .chunk:
-                    if let payload = frame.payload {
-                        accumulated.append(payload)
-                    }
-                case .streamEnd:
-                    break // Expected, no action needed
-                case .end:
-                    // Verify nonce matches
-                    if accumulated != nonce {
-                        throw RelaySwitchError.protocolError(
-                            "master \(masterIdx): identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))")
-                    }
-                    break // Done — fall through to next master
-                case .err:
-                    let code = frame.errorCode ?? "UNKNOWN"
-                    let msg = frame.errorMessage ?? "no message"
-                    throw RelaySwitchError.protocolError("master \(masterIdx): identity verification failed: [\(code)] \(msg)")
-                default:
-                    throw RelaySwitchError.protocolError("master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)")
-                }
-
-                // Break out of loop after END
-                if frame.frameType == .end { break }
             }
 
             // Stash reader for spawning after all masters verified
@@ -488,86 +495,91 @@ public final class RelaySwitch: @unchecked Sendable {
         var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
         var caps = notifyPayload.caps
 
-        // Verify identity
         let seqAssigner = SeqAssigner()
-        lock.lock()
-        xidCounter += 1
-        let xid = MessageId.uint(xidCounter)
-        lock.unlock()
 
-        let nonce = identityNonce()
-        let reqId = MessageId.newUUID()
-        let streamId = "identity-verify"
+        // End-to-end identity verification. Only meaningful when the host
+        // advertises at least one cap — otherwise there is no cartridge
+        // chain to echo the nonce. The master still joins so its
+        // `installed_cartridges` attachment errors reach the engine.
+        if !caps.isEmpty {
+            lock.lock()
+            xidCounter += 1
+            let xid = MessageId.uint(xidCounter)
+            lock.unlock()
 
-        // Send identity verification
-        var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-        req.routingId = xid
-        seqAssigner.assign(&req)
-        try socketWriter.write(req)
+            let nonce = identityNonce()
+            let reqId = MessageId.newUUID()
+            let streamId = "identity-verify"
 
-        var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
-        ss.routingId = xid
-        seqAssigner.assign(&ss)
-        try socketWriter.write(ss)
+            var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
+            req.routingId = xid
+            seqAssigner.assign(&req)
+            try socketWriter.write(req)
 
-        let checksum = Frame.computeChecksum(nonce)
-        var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-        chunk.routingId = xid
-        seqAssigner.assign(&chunk)
-        try socketWriter.write(chunk)
+            var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
+            ss.routingId = xid
+            seqAssigner.assign(&ss)
+            try socketWriter.write(ss)
 
-        var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
-        se.routingId = xid
-        seqAssigner.assign(&se)
-        try socketWriter.write(se)
+            let checksum = Frame.computeChecksum(nonce)
+            var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
+            chunk.routingId = xid
+            seqAssigner.assign(&chunk)
+            try socketWriter.write(chunk)
 
-        var end = Frame.end(id: reqId)
-        end.routingId = xid
-        seqAssigner.assign(&end)
-        try socketWriter.write(end)
+            var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
+            se.routingId = xid
+            seqAssigner.assign(&se)
+            try socketWriter.write(se)
 
-        seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
+            var end = Frame.end(id: reqId)
+            end.routingId = xid
+            seqAssigner.assign(&end)
+            try socketWriter.write(end)
 
-        // Read response
-        var accumulated = Data()
-        while true {
-            guard let frame = try socketReader.read() else {
-                throw RelaySwitchError.protocolError("new master \(masterIdx): connection closed during identity verification")
+            seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
+
+            // Read response
+            var accumulated = Data()
+            while true {
+                guard let frame = try socketReader.read() else {
+                    throw RelaySwitchError.protocolError("new master \(masterIdx): connection closed during identity verification")
+                }
+
+                switch frame.frameType {
+                case .relayNotify:
+                    if let manifest = frame.relayNotifyManifest {
+                        capsPayload = manifest
+                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                        caps = notifyPayload.caps
+                    }
+                    if let newLimits = frame.relayNotifyLimits {
+                        masterLimits = newLimits
+                    }
+                case .streamStart:
+                    break
+                case .chunk:
+                    if let payload = frame.payload {
+                        accumulated.append(payload)
+                    }
+                case .streamEnd:
+                    break
+                case .end:
+                    if accumulated != nonce {
+                        throw RelaySwitchError.protocolError(
+                            "new master \(masterIdx): identity verification payload mismatch")
+                    }
+                    break
+                case .err:
+                    let code = frame.errorCode ?? "UNKNOWN"
+                    let msg = frame.errorMessage ?? "no message"
+                    throw RelaySwitchError.protocolError("new master \(masterIdx): identity verification failed: [\(code)] \(msg)")
+                default:
+                    throw RelaySwitchError.protocolError("new master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)")
+                }
+
+                if frame.frameType == .end { break }
             }
-
-            switch frame.frameType {
-            case .relayNotify:
-                if let manifest = frame.relayNotifyManifest {
-                    capsPayload = manifest
-                    notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                    caps = notifyPayload.caps
-                }
-                if let newLimits = frame.relayNotifyLimits {
-                    masterLimits = newLimits
-                }
-            case .streamStart:
-                break
-            case .chunk:
-                if let payload = frame.payload {
-                    accumulated.append(payload)
-                }
-            case .streamEnd:
-                break
-            case .end:
-                if accumulated != nonce {
-                    throw RelaySwitchError.protocolError(
-                        "new master \(masterIdx): identity verification payload mismatch")
-                }
-                break
-            case .err:
-                let code = frame.errorCode ?? "UNKNOWN"
-                let msg = frame.errorMessage ?? "no message"
-                throw RelaySwitchError.protocolError("new master \(masterIdx): identity verification failed: [\(code)] \(msg)")
-            default:
-                throw RelaySwitchError.protocolError("new master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)")
-            }
-
-            if frame.frameType == .end { break }
         }
 
         // Add master
@@ -1179,23 +1191,181 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError("RelayNotify payload must contain caps and installed_cartridges: \(error)")
         }
 
-        // Verify CAP_IDENTITY is present — mandatory for every host
-        let identityUrn = try? CSCapUrn.fromString(CSCapIdentity)
-        let hasIdentity = payload.caps.contains { capStr in
-            guard let capUrn = try? CSCapUrn.fromString(capStr),
-                  let identity = identityUrn else { return false }
-            return identity.conforms(to: capUrn)
-        }
+        // If the host advertises any caps, CAP_IDENTITY must be among them —
+        // that is the contract that makes end-to-end identity verification
+        // meaningful. An empty cap set is a valid state meaning "this host
+        // has no cartridges that passed the attachment checklist"; the
+        // `installed_cartridges` list may still report attachment failures
+        // the UI needs to surface.
+        if !payload.caps.isEmpty {
+            let identityUrn = try? CSCapUrn.fromString(CSCapIdentity)
+            let hasIdentity = payload.caps.contains { capStr in
+                guard let capUrn = try? CSCapUrn.fromString(capStr),
+                      let identity = identityUrn else { return false }
+                return identity.conforms(to: capUrn)
+            }
 
-        guard hasIdentity else {
-            throw RelaySwitchError.protocolError("RelayNotify missing required CAP_IDENTITY (\(CSCapIdentity))")
+            guard hasIdentity else {
+                throw RelaySwitchError.protocolError("RelayNotify advertised caps but is missing required CAP_IDENTITY (\(CSCapIdentity))")
+            }
         }
 
         return payload
     }
 }
+/// Kinds of attachment failure for a cartridge. Matches the Rust
+/// `CartridgeAttachmentErrorKind` and the `CartridgeAttachmentErrorKind` enum
+/// in `cartridge.proto`.
+public enum CartridgeAttachmentErrorKind: String, Codable, Hashable, Sendable {
+    case incompatible
+    case manifestInvalid = "manifest_invalid"
+    case handshakeFailed = "handshake_failed"
+    case identityRejected = "identity_rejected"
+    case entryPointMissing = "entry_point_missing"
+    case quarantined
+}
+
+/// Structured per-cartridge attachment failure. Mirrors the Rust
+/// `CartridgeAttachmentError` struct wire-for-wire over RelayNotify JSON.
+public struct CartridgeAttachmentError: Codable, Hashable, Sendable {
+    public let kind: CartridgeAttachmentErrorKind
+    public let message: String
+    public let detectedAtUnixSeconds: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case message
+        case detectedAtUnixSeconds = "detected_at_unix_seconds"
+    }
+
+    public init(kind: CartridgeAttachmentErrorKind, message: String, detectedAtUnixSeconds: Int64) {
+        self.kind = kind
+        self.message = message
+        self.detectedAtUnixSeconds = detectedAtUnixSeconds
+    }
+
+    public static func now(kind: CartridgeAttachmentErrorKind, message: String) -> CartridgeAttachmentError {
+        let seconds = Int64(Date().timeIntervalSince1970)
+        return CartridgeAttachmentError(kind: kind, message: message, detectedAtUnixSeconds: seconds)
+    }
+}
+
+/// Live runtime statistics for an attached cartridge. Mirrors
+/// `capdag::CartridgeRuntimeStats` wire-for-wire over RelayNotify JSON.
+public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
+    public let running: Bool
+    public let pid: UInt32?
+    public let activeRequestCount: UInt64
+    public let peerRequestCount: UInt64
+    public let memoryFootprintMb: UInt64
+    public let memoryRssMb: UInt64
+    public let lastHeartbeatUnixSeconds: Int64?
+    public let restartCount: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case running
+        case pid
+        case activeRequestCount = "active_request_count"
+        case peerRequestCount = "peer_request_count"
+        case memoryFootprintMb = "memory_footprint_mb"
+        case memoryRssMb = "memory_rss_mb"
+        case lastHeartbeatUnixSeconds = "last_heartbeat_unix_seconds"
+        case restartCount = "restart_count"
+    }
+
+    public init(
+        running: Bool,
+        pid: UInt32? = nil,
+        activeRequestCount: UInt64,
+        peerRequestCount: UInt64,
+        memoryFootprintMb: UInt64,
+        memoryRssMb: UInt64,
+        lastHeartbeatUnixSeconds: Int64? = nil,
+        restartCount: UInt64
+    ) {
+        self.running = running
+        self.pid = pid
+        self.activeRequestCount = activeRequestCount
+        self.peerRequestCount = peerRequestCount
+        self.memoryFootprintMb = memoryFootprintMb
+        self.memoryRssMb = memoryRssMb
+        self.lastHeartbeatUnixSeconds = lastHeartbeatUnixSeconds
+        self.restartCount = restartCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.running = try c.decode(Bool.self, forKey: .running)
+        self.pid = try c.decodeIfPresent(UInt32.self, forKey: .pid)
+        self.activeRequestCount = try c.decode(UInt64.self, forKey: .activeRequestCount)
+        self.peerRequestCount = try c.decode(UInt64.self, forKey: .peerRequestCount)
+        self.memoryFootprintMb = try c.decode(UInt64.self, forKey: .memoryFootprintMb)
+        self.memoryRssMb = try c.decode(UInt64.self, forKey: .memoryRssMb)
+        self.lastHeartbeatUnixSeconds = try c.decodeIfPresent(Int64.self, forKey: .lastHeartbeatUnixSeconds)
+        self.restartCount = try c.decode(UInt64.self, forKey: .restartCount)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(running, forKey: .running)
+        try c.encodeIfPresent(pid, forKey: .pid)
+        try c.encode(activeRequestCount, forKey: .activeRequestCount)
+        try c.encode(peerRequestCount, forKey: .peerRequestCount)
+        try c.encode(memoryFootprintMb, forKey: .memoryFootprintMb)
+        try c.encode(memoryRssMb, forKey: .memoryRssMb)
+        try c.encodeIfPresent(lastHeartbeatUnixSeconds, forKey: .lastHeartbeatUnixSeconds)
+        try c.encode(restartCount, forKey: .restartCount)
+    }
+}
+
 public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public let id: String
     public let version: String
     public let sha256: String
+    /// Present when the cartridge failed to attach; absent when healthy.
+    public let attachmentError: CartridgeAttachmentError?
+    /// Live runtime statistics from the host that owns this cartridge.
+    /// `nil` for cartridges that aren't host-tracked (e.g. identities
+    /// emitted by an in-process host with no routing tables).
+    public let runtimeStats: CartridgeRuntimeStats?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case version
+        case sha256
+        case attachmentError = "attachment_error"
+        case runtimeStats = "runtime_stats"
+    }
+
+    public init(
+        id: String,
+        version: String,
+        sha256: String,
+        attachmentError: CartridgeAttachmentError? = nil,
+        runtimeStats: CartridgeRuntimeStats? = nil
+    ) {
+        self.id = id
+        self.version = version
+        self.sha256 = sha256
+        self.attachmentError = attachmentError
+        self.runtimeStats = runtimeStats
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.version = try c.decode(String.self, forKey: .version)
+        self.sha256 = try c.decode(String.self, forKey: .sha256)
+        self.attachmentError = try c.decodeIfPresent(CartridgeAttachmentError.self, forKey: .attachmentError)
+        self.runtimeStats = try c.decodeIfPresent(CartridgeRuntimeStats.self, forKey: .runtimeStats)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(version, forKey: .version)
+        try c.encode(sha256, forKey: .sha256)
+        try c.encodeIfPresent(attachmentError, forKey: .attachmentError)
+        try c.encodeIfPresent(runtimeStats, forKey: .runtimeStats)
+    }
 }
