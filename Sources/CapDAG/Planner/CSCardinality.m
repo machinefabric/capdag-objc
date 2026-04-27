@@ -11,29 +11,12 @@
 
 // MARK: - InputCardinality Functions
 
-CSInputCardinality CSInputCardinalityFromMediaUrn(NSString *urn) {
-    // Cardinality is NOT derived from the media URN — the list tag is a semantic
-    // type indicator, not a shape indicator. Cardinality comes from context
-    // (how many files the user provided, is_sequence on the wire).
-    // This function always returns Single. Callers that need actual cardinality
-    // must get it from the input context, not the URN.
-    (void)urn;
-    return CSInputCardinalitySingle;
-}
-
 BOOL CSInputCardinalityIsMultiple(CSInputCardinality cardinality) {
     return cardinality == CSInputCardinalitySequence || cardinality == CSInputCardinalityAtLeastOne;
 }
 
 BOOL CSInputCardinalityAcceptsSingle(CSInputCardinality cardinality) {
     return cardinality == CSInputCardinalitySingle || cardinality == CSInputCardinalityAtLeastOne;
-}
-
-NSString *CSInputCardinalityApplyToUrn(CSInputCardinality cardinality, NSString *baseUrn) {
-    // Cardinality is a shape concern (is_sequence), not a URN concern.
-    // The URN is never modified for cardinality — return it unchanged.
-    (void)cardinality;
-    return baseUrn;
 }
 
 // MARK: - CardinalityCompatibility Functions
@@ -115,6 +98,11 @@ NSString *CSInputStructureApplyToUrn(CSInputStructure structure, NSString *baseU
 
 // MARK: - MediaShape
 
+@interface CSMediaShape ()
+@property (nonatomic, assign, readwrite) CSInputCardinality cardinality;
+@property (nonatomic, assign, readwrite) CSInputStructure structure;
+@end
+
 @implementation CSMediaShape
 
 + (instancetype)fromMediaUrn:(NSString *)urn {
@@ -181,6 +169,26 @@ CSShapeCompatibility CSMediaShapeIsCompatibleWith(CSMediaShape *target, CSMediaS
     CSCapShapeInfo *info = [[CSCapShapeInfo alloc] init];
     info->_input = [CSMediaShape fromMediaUrn:inSpec];
     info->_output = [CSMediaShape fromMediaUrn:outSpec];
+    info->_capUrn = [capUrn copy];
+    return info;
+}
+
++ (instancetype)fromCapUrn:(NSString *)capUrn
+                    inSpec:(NSString *)inSpec
+                   outSpec:(NSString *)outSpec
+           inputIsSequence:(BOOL)inputIsSequence
+          outputIsSequence:(BOOL)outputIsSequence {
+    CSCapShapeInfo *info = [[CSCapShapeInfo alloc] init];
+    CSMediaShape *input = [CSMediaShape fromMediaUrn:inSpec];
+    CSMediaShape *output = [CSMediaShape fromMediaUrn:outSpec];
+    if (inputIsSequence) {
+        input.cardinality = CSInputCardinalitySequence;
+    }
+    if (outputIsSequence) {
+        output.cardinality = CSInputCardinalitySequence;
+    }
+    info->_input = input;
+    info->_output = output;
     info->_capUrn = [capUrn copy];
     return info;
 }

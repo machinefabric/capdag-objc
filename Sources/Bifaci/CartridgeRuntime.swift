@@ -1181,85 +1181,348 @@ func getOwnMemoryMb() -> (footprintMb: UInt64, rssMb: UInt64)? {
 ///   - capUrn: The cap URN being invoked (used to determine expected input type)
 /// - Returns: The effective payload bytes
 /// - Throws: CartridgeRuntimeError if parsing fails or no matching argument found
-func extractEffectivePayload(payload: Data, contentType: String?, capUrn: String) throws -> Data {
-    // Check if this is CBOR arguments
+/// Extract the effective payload from a REQ frame.
+///
+/// Mirrors capdag/src/bifaci/cartridge_runtime.rs::extract_effective_payload.
+///
+/// When `contentType` is "application/cbor", decode the CBOR arguments,
+/// perform file-path auto-conversion (reading file bytes and relabeling
+/// the arg's media_urn to the stdin source's target URN), validate that
+/// at least one argument matches the cap's declared in= spec (unless the
+/// cap takes media:void), and return the re-serialized CBOR array.
+public func extractEffectivePayload(payload: Data, contentType: String?, cap: CapDefinition, isCliMode: Bool) throws -> Data {
+    // Not CBOR arguments - return raw payload.
     guard contentType == "application/cbor" else {
-        // Not CBOR arguments - return raw payload
         return payload
     }
 
-    // Parse the cap URN to get the expected input media type using proper CSCapUrn
-    let parsedUrn: CSCapUrn
+    // Parse cap URN to get expected input media URN.
+    let capUrnParsed: CSCapUrn
     do {
-        parsedUrn = try CSCapUrn.fromString(capUrn)
+        capUrnParsed = try CSCapUrn.fromString(cap.urn)
     } catch {
-        throw CartridgeRuntimeError.capUrnError("Failed to parse cap URN '\(capUrn)': \(error.localizedDescription)")
+        throw CartridgeRuntimeError.capUrnError("Invalid cap URN: \(error.localizedDescription)")
     }
-    let expectedInput = parsedUrn.getInSpec()
+    let expectedInput = capUrnParsed.getInSpec()
+    let expectedMediaUrn = try? CSMediaUrn.fromString(expectedInput)
 
-    // Parse the CBOR payload as an array of argument maps
-    let cborValue: CBOR
-    do {
-        guard let decoded = try CBOR.decode([UInt8](payload)) else {
-            throw CartridgeRuntimeError.deserializationError("Failed to decode CBOR payload")
+    // Build arg-definition lookup: parsed CSMediaUrn -> (stdin_target, is_sequence).
+    struct ArgDefInfo {
+        let urn: CSMediaUrn
+        let stdinTarget: String?
+        let isSequence: Bool
+    }
+    var argDefs: [ArgDefInfo] = []
+    for a in cap.args {
+        guard let parsed = try? CSMediaUrn.fromString(a.mediaUrn) else { continue }
+        var stdinTarget: String? = nil
+        for s in a.sources {
+            if case .stdin(let target) = s {
+                stdinTarget = target
+                break
+            }
         }
-        cborValue = decoded
-    } catch {
-        throw CartridgeRuntimeError.deserializationError("Failed to parse CBOR arguments: \(error)")
+        argDefs.append(ArgDefInfo(urn: parsed, stdinTarget: stdinTarget, isSequence: a.isSequence))
     }
 
-    // Must be an array
-    guard case .array(let arguments) = cborValue else {
+    // Parse the CBOR payload as an array of argument maps.
+    guard let decoded = try CBOR.decode([UInt8](payload)) else {
+        throw CartridgeRuntimeError.deserializationError("Failed to parse CBOR arguments")
+    }
+    guard case .array(var arguments) = decoded else {
         throw CartridgeRuntimeError.deserializationError("CBOR arguments must be an array")
     }
 
-    // Parse the expected input as a tagged URN for proper matching
-    let expectedUrn = try? CSTaggedUrn.fromString(expectedInput)
+    // File-path auto-conversion.
+    let filePathBase = try CSMediaUrn.fromString("media:file-path")
 
-    // Find the argument with matching media_urn
-    for arg in arguments {
-        guard case .map(let argMap) = arg else {
-            continue
-        }
-
-        var mediaUrn: String?
-        var value: Data?
-
+    for (idx, arg) in arguments.enumerated() {
+        guard case .map(var argMap) = arg else { continue }
+        var urnStr: String? = nil
+        var value: CBOR? = nil
         for (k, v) in argMap {
             if case .utf8String(let key) = k {
-                switch key {
-                case "media_urn":
-                    if case .utf8String(let s) = v {
-                        mediaUrn = s
+                if key == "media_urn", case .utf8String(let s) = v { urnStr = s }
+                else if key == "value" { value = v }
+            }
+        }
+        guard let urnStr = urnStr, let value = value else { continue }
+        let argUrn: CSMediaUrn
+        do {
+            argUrn = try CSMediaUrn.fromString(urnStr)
+        } catch {
+            throw CartridgeRuntimeError.handlerError("Invalid argument media URN '\(urnStr)': \(error.localizedDescription)")
+        }
+        // file_path_base.accepts(argUrn) == argUrn.conforms(to: file_path_base).
+        if !argUrn.conforms(to: filePathBase) { continue }
+
+        // Look up the cap's arg definition by URN equivalence (NOT string compare).
+        var matched: ArgDefInfo? = nil
+        for ad in argDefs {
+            if ad.urn.isEquivalent(to: argUrn) {
+                matched = ad
+                break
+            }
+        }
+        guard let matchedInfo = matched else { continue }
+        guard let stdinTarget = matchedInfo.stdinTarget else { continue }
+
+        let paths = try expandFilePathValue(value: value, urnStr: urnStr, isCliMode: isCliMode)
+
+        if !matchedInfo.isSequence {
+            if paths.count != 1 {
+                throw CartridgeRuntimeError.handlerError(
+                    "File-path arg '\(urnStr)' declared is_sequence=false resolved to \(paths.count) files; "
+                    + "expected exactly 1. CLI-mode dispatch should have iterated the handler "
+                    + "across the expanded files before calling the runtime."
+                )
+            }
+            let url = URL(fileURLWithPath: paths[0])
+            let fileBytes: Data
+            do {
+                fileBytes = try Data(contentsOf: url)
+            } catch {
+                throw CartridgeRuntimeError.handlerError("Failed to read file '\(paths[0])': \(error.localizedDescription)")
+            }
+            replaceArgValue(&argMap, newValue: .byteString([UInt8](fileBytes)), newUrn: stdinTarget)
+        } else {
+            var items: [CBOR] = []
+            for p in paths {
+                let url = URL(fileURLWithPath: p)
+                do {
+                    let data = try Data(contentsOf: url)
+                    items.append(.byteString([UInt8](data)))
+                } catch {
+                    throw CartridgeRuntimeError.handlerError("Failed to read file '\(p)': \(error.localizedDescription)")
+                }
+            }
+            replaceArgValue(&argMap, newValue: .array(items), newUrn: stdinTarget)
+        }
+        arguments[idx] = .map(argMap)
+    }
+
+    // Validate: at least ONE argument must match the cap's declared in=spec,
+    // unless the cap takes no input (in=media:void).
+    let voidUrn = try CSMediaUrn.fromString("media:void")
+    let isVoidInput: Bool = {
+        guard let exp = expectedMediaUrn else { return false }
+        return exp.isEquivalent(to: voidUrn)
+    }()
+
+    if !isVoidInput {
+        var validTargets: [CSMediaUrn] = []
+        if let exp = expectedMediaUrn {
+            validTargets.append(exp)
+        }
+        for ad in argDefs {
+            if let t = ad.stdinTarget, let parsed = try? CSMediaUrn.fromString(t) {
+                validTargets.append(parsed)
+            }
+        }
+
+        var foundMatchingArg = false
+        outer: for arg in arguments {
+            guard case .map(let argMap) = arg else { continue }
+            for (k, v) in argMap {
+                if case .utf8String(let key) = k, key == "media_urn", case .utf8String(let s) = v {
+                    guard let argUrn = try? CSMediaUrn.fromString(s) else { continue }
+                    for target in validTargets {
+                        if argUrn.isComparable(to: target) {
+                            foundMatchingArg = true
+                            break outer
+                        }
                     }
-                case "value":
-                    if case .byteString(let bytes) = v {
-                        value = Data(bytes)
-                    }
-                default:
-                    break
                 }
             }
         }
 
-        // Check if this argument matches the expected input using tagged URN matching
-        if let urnStr = mediaUrn, let val = value {
-            if let expectedUrn = expectedUrn,
-               let argUrn = try? CSTaggedUrn.fromString(urnStr) {
-                // Use proper semantic matching in both directions
-                let conformsForward = (try? argUrn.conforms(to: expectedUrn)) != nil
-                let conformsReverse = (try? expectedUrn.conforms(to: argUrn)) != nil
-                if conformsForward || conformsReverse {
-                    return val
-                }
-            }
+        if !foundMatchingArg {
+            throw CartridgeRuntimeError.deserializationError(
+                "No argument found matching expected input media type '\(expectedInput)' in CBOR arguments"
+            )
         }
     }
 
-    // No matching argument found - this is an error, no fallbacks
-    throw CartridgeRuntimeError.deserializationError(
-        "No argument found matching expected input media type '\(expectedInput)' in CBOR arguments"
-    )
+    // After file-path conversion and validation, return the full CBOR array.
+    let modified = CBOR.array(arguments)
+    return Data(modified.encode())
+}
+
+/// Replace an argument map's "value" and "media_urn" entries in place.
+///
+/// Mirrors capdag/src/bifaci/cartridge_runtime.rs::replace_arg_value.
+func replaceArgValue(_ argMap: inout [CBOR: CBOR], newValue: CBOR, newUrn: String) {
+    argMap[.utf8String("value")] = newValue
+    argMap[.utf8String("media_urn")] = .utf8String(newUrn)
+}
+
+/// Expand a file-path arg value into a concrete list of filesystem paths.
+///
+/// Mirrors capdag/src/bifaci/cartridge_runtime.rs::expand_file_path_value.
+///
+/// The incoming value may be:
+///   - byteString/utf8String containing a single path or a single glob pattern
+///   - array of byteString/utf8String items, each a path or a glob (CBOR mode only)
+///
+/// Globs (detected via `*`, `?`, or `[`) are expanded and the results filtered
+/// to regular files. Literal paths must exist and point at a regular file.
+/// Returns at least one path on success; empty matches fail hard so the caller
+/// never has to guard against a silently-empty list.
+func expandFilePathValue(value: CBOR, urnStr: String, isCliMode: Bool) throws -> [String] {
+    var rawPaths: [String] = []
+    switch value {
+    case .byteString(let bytes):
+        rawPaths = [String(decoding: bytes, as: UTF8.self)]
+    case .utf8String(let s):
+        rawPaths = [s]
+    case .array(let arr):
+        if isCliMode {
+            throw CartridgeRuntimeError.handlerError(
+                "File-path arg '\(urnStr)' received a CBOR Array value in CLI mode; "
+                + "CLI dispatch must expand globs before calling into the runtime"
+            )
+        }
+        for item in arr {
+            switch item {
+            case .utf8String(let s): rawPaths.append(s)
+            case .byteString(let b): rawPaths.append(String(decoding: b, as: UTF8.self))
+            default:
+                throw CartridgeRuntimeError.handlerError(
+                    "File-path arg '\(urnStr)' array contained an unsupported CBOR item"
+                )
+            }
+        }
+    default:
+        throw CartridgeRuntimeError.handlerError(
+            "File-path arg '\(urnStr)' value must be Bytes, Text, or (CBOR mode) Array"
+        )
+    }
+
+    let fileManager = FileManager.default
+    var resolved: [String] = []
+    for raw in rawPaths {
+        let isGlob = raw.contains("*") || raw.contains("?") || raw.contains("[")
+        if isGlob {
+            // Validate bracket balance.
+            var bracketCount = 0
+            for ch in raw {
+                if ch == "[" { bracketCount += 1 }
+                else if ch == "]" {
+                    bracketCount -= 1
+                    if bracketCount < 0 {
+                        throw CartridgeRuntimeError.handlerError("Invalid glob pattern '\(raw)': unmatched ']'")
+                    }
+                }
+            }
+            if bracketCount != 0 {
+                throw CartridgeRuntimeError.handlerError("Invalid glob pattern '\(raw)': unclosed '['")
+            }
+            let matches = Glob(pattern: raw)
+            let before = resolved.count
+            for m in matches {
+                var isDir: ObjCBool = false
+                if fileManager.fileExists(atPath: m, isDirectory: &isDir), !isDir.boolValue {
+                    resolved.append(m)
+                }
+            }
+            if resolved.count == before {
+                throw CartridgeRuntimeError.handlerError("No files matched glob pattern '\(raw)'")
+            }
+        } else {
+            var isDir: ObjCBool = false
+            if !fileManager.fileExists(atPath: raw, isDirectory: &isDir) {
+                throw CartridgeRuntimeError.handlerError("File not found: '\(raw)'")
+            }
+            if isDir.boolValue {
+                throw CartridgeRuntimeError.handlerError("Path is not a regular file: '\(raw)'")
+            }
+            resolved.append(raw)
+        }
+    }
+    return resolved
+}
+
+/// Compute per-iteration CBOR argument payloads for a CLI invocation.
+///
+/// Mirrors capdag/src/bifaci/cartridge_runtime.rs::build_cli_foreach_iterations.
+public func buildCliForeachIterations(rawPayload: Data, cap: CapDefinition) throws -> [Data] {
+    let filePathBase = try CSMediaUrn.fromString("media:file-path")
+
+    guard let decoded = try CBOR.decode([UInt8](rawPayload)) else {
+        throw CartridgeRuntimeError.deserializationError("Failed to parse CBOR arguments")
+    }
+    guard case .array(let arguments) = decoded else {
+        throw CartridgeRuntimeError.deserializationError("CBOR arguments must be an array")
+    }
+
+    struct ArgDefShort {
+        let urn: CSMediaUrn
+        let isSequence: Bool
+    }
+    var argDefs: [ArgDefShort] = []
+    for a in cap.args {
+        if let parsed = try? CSMediaUrn.fromString(a.mediaUrn) {
+            argDefs.append(ArgDefShort(urn: parsed, isSequence: a.isSequence))
+        }
+    }
+
+    var iterable: (Int, [String])? = nil
+    for (idx, arg) in arguments.enumerated() {
+        guard case .map(let argMap) = arg else { continue }
+        var urnStr: String? = nil
+        var value: CBOR? = nil
+        for (k, v) in argMap {
+            if case .utf8String(let key) = k {
+                if key == "media_urn", case .utf8String(let s) = v { urnStr = s }
+                else if key == "value" { value = v }
+            }
+        }
+        guard let urnStr = urnStr, let value = value else { continue }
+        let argUrn: CSMediaUrn
+        do {
+            argUrn = try CSMediaUrn.fromString(urnStr)
+        } catch {
+            throw CartridgeRuntimeError.handlerError("Invalid argument media URN '\(urnStr)': \(error.localizedDescription)")
+        }
+        if !argUrn.conforms(to: filePathBase) { continue }
+
+        var isSeq = false
+        for ad in argDefs {
+            if ad.urn.isEquivalent(to: argUrn) {
+                isSeq = ad.isSequence
+                break
+            }
+        }
+        if isSeq { continue }
+
+        let paths = try expandFilePathValue(value: value, urnStr: urnStr, isCliMode: true)
+        if paths.count <= 1 { continue }
+
+        if iterable != nil {
+            throw CartridgeRuntimeError.handlerError(
+                "Multiple file-path arguments with is_sequence=false each resolved to more than one file; "
+                + "the ForEach axis is ambiguous. Declare at most one such arg as scalar, or mark "
+                + "additional args as is_sequence=true."
+            )
+        }
+        iterable = (idx, paths)
+    }
+
+    guard let (idx, paths) = iterable else {
+        return [rawPayload]
+    }
+
+    var out: [Data] = []
+    for path in paths {
+        var argsForIter = arguments
+        if case .map(var m) = argsForIter[idx] {
+            m[.utf8String("value")] = .utf8String(path)
+            argsForIter[idx] = .map(m)
+        }
+        let wrapped = CBOR.array(argsForIter)
+        out.append(Data(wrapped.encode()))
+    }
+    return out
 }
 
 
@@ -1748,6 +2011,11 @@ public struct CapGroup: Codable, Sendable {
 public struct Manifest: Codable, Sendable {
     public let name: String
     public let version: String
+    /// Distribution channel ("release" or "nightly"). Part of the
+    /// cartridge's identity — `(name, version, channel)` is the full
+    /// identity. The Swift cartridge SDK reads this from the
+    /// `MFR_CARTRIDGE_CHANNEL` env var at compile time.
+    public let channel: String
     public let description: String
     /// All caps must be in cap groups. Groups without adapter URNs are valid.
     public let capGroups: [CapGroup]
@@ -1755,13 +2023,15 @@ public struct Manifest: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case name
         case version
+        case channel
         case description
         case capGroups = "cap_groups"
     }
 
-    public init(name: String, version: String, description: String, capGroups: [CapGroup]) {
+    public init(name: String, version: String, channel: String, description: String, capGroups: [CapGroup]) {
         self.name = name
         self.version = version
+        self.channel = channel
         self.description = description
         self.capGroups = capGroups
     }
@@ -2128,112 +2398,79 @@ public final class CartridgeRuntime: @unchecked Sendable {
             throw CartridgeRuntimeError.noHandler("No handler registered for cap '\(cap.urn)'")
         }
 
-        // Build payload from CLI arguments
+        // Build raw CBOR arguments payload (file-path values still raw strings).
         let cliArgs = Array(args.dropFirst(2))
-        let payload = try buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        let rawPayload = try buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
 
-        // Create AsyncStream with Frame sequence for each argument
-        // Each argument as separate stream: STREAM_START → CHUNK → STREAM_END per arg, then END
+        // CLI-mode foreach iteration. If any file-path arg with is_sequence=false
+        // resolved to multiple files, this returns one per-iteration payload per
+        // resolved file. Otherwise it returns the single original payload.
+        let iterations = try buildCliForeachIterations(rawPayload: rawPayload, cap: cap)
+        for perIter in iterations {
+            let payload = try extractEffectivePayload(payload: perIter, contentType: "application/cbor", cap: cap, isCliMode: true)
+            try dispatchCliPayload(cap: cap, factory: factory, payload: payload)
+        }
+    }
+
+    /// Dispatch one CLI-mode invocation: take the (already file-path-resolved)
+    /// CBOR arguments payload, build input frames, and run the handler.
+    ///
+    /// Mirrors capdag/src/bifaci/cartridge_runtime.rs::dispatch_cli_payload.
+    private func dispatchCliPayload(cap: CapDefinition, factory: OpFactory, payload: Data) throws {
         let (stream, continuation) = AsyncStream<Frame>.makeStream()
         let requestId = MessageId.newUUID()
 
-        // Decode CBOR arguments array
         if !payload.isEmpty {
             if let cborValue = try? CBOR.decode([UInt8](payload)),
                case .array(let arguments) = cborValue {
-                // Send each argument as a separate stream
                 for (i, arg) in arguments.enumerated() {
                     guard case .map(let argMap) = arg else { continue }
 
                     var mediaUrn: String?
                     var value: CBOR?
-
-                    // Extract media_urn and value from arg map
                     for (key, val) in argMap {
                         if case .utf8String(let keyStr) = key {
-                            if keyStr == "media_urn" {
-                                if case .utf8String(let urnStr) = val {
-                                    mediaUrn = urnStr
-                                }
-                            } else if keyStr == "value" {
-                                value = val
-                            }
+                            if keyStr == "media_urn", case .utf8String(let urnStr) = val { mediaUrn = urnStr }
+                            else if keyStr == "value" { value = val }
                         }
                     }
-
                     guard let mediaUrn = mediaUrn, let value = value else { continue }
 
                     let streamId = "arg-\(i)"
+                    continuation.yield(Frame.streamStart(reqId: requestId, streamId: streamId, mediaUrn: mediaUrn))
 
-                    // STREAM_START
-                    continuation.yield(Frame.streamStart(
-                        reqId: requestId,
-                        streamId: streamId,
-                        mediaUrn: mediaUrn
-                    ))
-
-                    // CHUNK: CBOR-encode the value before sending
-                    // Protocol: ALL values must be CBOR-encoded (encode once, no double-wrapping)
-                    let cborValue = Data(value.encode())
-                    let checksum = Frame.computeChecksum(cborValue)
-
+                    let cborBytes = Data(value.encode())
+                    let checksum = Frame.computeChecksum(cborBytes)
                     continuation.yield(Frame.chunk(
-                        reqId: requestId,
-                        streamId: streamId,
-                        seq: 0,
-                        payload: cborValue,
-                        chunkIndex: 0,
-                        checksum: checksum
+                        reqId: requestId, streamId: streamId, seq: 0,
+                        payload: cborBytes, chunkIndex: 0, checksum: checksum
                     ))
 
-                    // STREAM_END with chunk count = 1 (single chunk per argument)
-                    continuation.yield(Frame.streamEnd(
-                        reqId: requestId,
-                        streamId: streamId,
-                        chunkCount: 1
-                    ))
+                    continuation.yield(Frame.streamEnd(reqId: requestId, streamId: streamId, chunkCount: 1))
                 }
             }
         }
 
-        // END
         continuation.yield(Frame.end(id: requestId))
         continuation.finish()
 
-        // Collect all frames synchronously using DispatchGroup
+        // Collect all frames synchronously using DispatchGroup.
         final class FrameCollector: @unchecked Sendable {
             var frames: [Frame] = []
             let lock = NSLock()
-
-            func add(_ frame: Frame) {
-                lock.lock()
-                frames.append(frame)
-                lock.unlock()
-            }
-
-            func getAll() -> [Frame] {
-                lock.lock()
-                defer { lock.unlock() }
-                return frames
-            }
+            func add(_ frame: Frame) { lock.lock(); frames.append(frame); lock.unlock() }
+            func getAll() -> [Frame] { lock.lock(); defer { lock.unlock() }; return frames }
         }
-
         let collector = FrameCollector()
         let group = DispatchGroup()
         group.enter()
-
-        // Spawn detached task to drain stream
         Task.detached {
-            for await frame in stream {
-                collector.add(frame)
-            }
+            for await frame in stream { collector.add(frame) }
             group.leave()
         }
-
         group.wait()
         let allFrames = collector.getAll()
 
-        // Build iterator for demux
         var frameIndex = 0
         let frameIterator = AnyIterator<Frame> {
             guard frameIndex < allFrames.count else { return nil }
@@ -2269,117 +2506,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         return manifest.allCaps().first { $0.command == commandName }
     }
 
-    /// Read file(s) for a file-path argument and return the CLI-wire bytes.
-    ///
-    /// The single media:file-path URN covers both shapes; cardinality is
-    /// driven by the arg definition's `isSequence` flag:
-    ///
-    /// - `isSequence = false` — treat `pathValue` as exactly one file path
-    ///   (literal or glob). Returns the file's raw bytes. Globs that expand
-    ///   to anything other than exactly one file are a hard error at this
-    ///   layer; CLI dispatch is responsible for iterating the handler
-    ///   per-file when the declared arg is scalar.
-    /// - `isSequence = true`  — treat `pathValue` as a newline-separated
-    ///   list of paths and/or globs. Expand, read every resolved file, and
-    ///   return a CBOR array of bytes (one entry per file).
-    private func readFilePathToBytes(_ pathValue: String, isSequence: Bool) throws -> Data {
-        let fileManager = FileManager.default
-
-        func expand(_ raw: String) throws -> [URL] {
-            let isGlob = raw.contains("*") || raw.contains("?") || raw.contains("[")
-            if !isGlob {
-                if !fileManager.fileExists(atPath: raw) {
-                    throw CartridgeRuntimeError.ioError("File not found: '\(raw)'")
-                }
-                var isDirectory: ObjCBool = false
-                fileManager.fileExists(atPath: raw, isDirectory: &isDirectory)
-                if isDirectory.boolValue {
-                    throw CartridgeRuntimeError.ioError(
-                        "Path is not a regular file: '\(raw)'"
-                    )
-                }
-                return [URL(fileURLWithPath: raw)]
-            }
-
-            // Validate bracket balance — unclosed brackets are a hard error
-            // rather than a silent empty match.
-            var bracketDepth = 0
-            for char in raw {
-                if char == "[" {
-                    bracketDepth += 1
-                } else if char == "]" {
-                    bracketDepth -= 1
-                }
-            }
-            if bracketDepth != 0 {
-                throw CartridgeRuntimeError.cliError(
-                    "Invalid glob pattern '\(raw)': unclosed bracket"
-                )
-            }
-
-            let paths = Glob(pattern: raw)
-            var urls: [URL] = []
-            for path in paths {
-                var isDirectory: ObjCBool = false
-                if fileManager.fileExists(atPath: path, isDirectory: &isDirectory),
-                   !isDirectory.boolValue {
-                    urls.append(URL(fileURLWithPath: path))
-                }
-            }
-            if urls.isEmpty {
-                throw CartridgeRuntimeError.ioError(
-                    "No files matched glob pattern '\(raw)'"
-                )
-            }
-            return urls
-        }
-
-        if !isSequence {
-            let urls = try expand(pathValue)
-            guard urls.count == 1 else {
-                throw CartridgeRuntimeError.ioError(
-                    "File-path arg declared is_sequence=false resolved to \(urls.count) files; " +
-                    "expected exactly 1. CLI dispatch must iterate the handler across the expanded files."
-                )
-            }
-            do {
-                return try Data(contentsOf: urls[0])
-            } catch {
-                throw CartridgeRuntimeError.ioError(
-                    "Failed to read file '\(urls[0].path)': \(error.localizedDescription)"
-                )
-            }
-        }
-
-        // Sequence: newline-separated list of paths and/or globs.
-        let patterns = pathValue
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-
-        var allFiles: [URL] = []
-        for pattern in patterns {
-            let urls = try expand(pattern)
-            allFiles.append(contentsOf: urls)
-        }
-
-        var filesData: [CBOR] = []
-        for url in allFiles {
-            do {
-                let bytes = try Data(contentsOf: url)
-                filesData.append(.byteString([UInt8](bytes)))
-            } catch {
-                throw CartridgeRuntimeError.ioError(
-                    "Failed to read file '\(url.path)': \(error.localizedDescription)"
-                )
-            }
-        }
-
-        let cborArray = CBOR.array(filesData)
-        return Data(cborArray.encode())
-    }
-
-    /// Build payload from CLI arguments based on cap's arg definitions.
+    /// Build the raw CBOR arguments payload from CLI args.
     /// Internal for testing purposes.
     func buildPayloadFromCli(cap: CapDefinition, cliArgs: [String]) throws -> Data {
         var arguments: [CapArgumentValue] = []
@@ -2392,24 +2519,18 @@ public final class CartridgeRuntime: @unchecked Sendable {
             stdinData = nil
         }
 
-        // Process each argument definition
+        // Process each argument definition. File-path values stay as raw
+        // path/glob strings here — file reading and glob expansion happen
+        // later in extractEffectivePayload (after CLI-mode foreach iteration
+        // via buildCliForeachIterations).
         for argDef in cap.args {
-            let value = try extractArgValue(argDef: argDef, cliArgs: cliArgs, stdinData: stdinData)
+            let (value, cameFromStdin) = try extractArgValue(argDef: argDef, cliArgs: cliArgs, stdinData: stdinData)
 
             if let v = value {
-                // Determine the media URN to use in the CBOR payload:
-                // - For file-path args, use the stdin source's media URN if present (the target type)
-                // - Otherwise, use the arg's media URN
-                let argMediaUrn = try CSTaggedUrn.fromString(argDef.mediaUrn)
-                let filePathPattern = try CSTaggedUrn.fromString(CSMediaFilePath)
-
-                // Single base pattern covers file-path args; cardinality is
-                // driven by the arg's isSequence flag, not by URN tags.
-                let isFilePath = (try? filePathPattern.accepts(argMediaUrn)) != nil
-
+                // Determine media_urn: if value came from stdin source, use stdin's media_urn.
+                // Otherwise use arg's media_urn as-is (file-path conversion happens later).
                 var mediaUrn = argDef.mediaUrn
-                if isFilePath {
-                    // Check if there's a stdin source and use its media URN
+                if cameFromStdin {
                     for source in argDef.sources {
                         if case .stdin(let stdinMediaUrn) = source {
                             mediaUrn = stdinMediaUrn
@@ -2417,10 +2538,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         }
                     }
                 }
-
                 arguments.append(CapArgumentValue(mediaUrn: mediaUrn, value: v))
             } else if argDef.required {
-                // Required argument not found
                 let sources = argDef.sources.map { source -> String in
                     switch source {
                     case .cliFlag(let flag): return flag
@@ -2432,22 +2551,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
             }
         }
 
-        // Check if any argument has stdin source (indicates file-path conversion happened)
-        var hasStdinSourceArg = false
-        for argDef in cap.args {
-            if argDef.sources.contains(where: { source in
-                if case .stdin(_) = source { return true }
-                return false
-            }) {
-                hasStdinSourceArg = true
-                break
-            }
+        // If no arguments are defined but stdin data exists, use it as raw payload.
+        if cap.args.isEmpty {
+            if let stdin = stdinData { return stdin }
+            return Data()
         }
 
-        // Build CBOR arguments array if we have arguments with stdin sources
-        // (this matches the Rust implementation for file-path conversion)
-        if !arguments.isEmpty && hasStdinSourceArg {
-            // Build CBOR: [{media_urn: "...", value: bytes}, ...]
+        // Build CBOR arguments array (same format as CBOR mode).
+        if !arguments.isEmpty {
             var cborArgs: [CBOR] = []
             for arg in arguments {
                 let argMap: CBOR = .map([
@@ -2456,101 +2567,44 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 ])
                 cborArgs.append(argMap)
             }
-
             let cborArray = CBOR.array(cborArgs)
             return Data(cborArray.encode())
-        } else if !arguments.isEmpty {
-            // No stdin sources - use JSON payload (old behavior)
-            var jsonObj: [String: Any] = [:]
-            for arg in arguments {
-                // Try to parse as JSON first
-                if let parsed = try? JSONSerialization.jsonObject(with: arg.value) {
-                    // Use the last part of media_urn as key
-                    let key = extractArgKey(from: arg.mediaUrn)
-                    jsonObj[key] = parsed
-                } else if let str = String(data: arg.value, encoding: .utf8) {
-                    let key = extractArgKey(from: arg.mediaUrn)
-                    jsonObj[key] = str
-                } else {
-                    throw CartridgeRuntimeError.cliError("Binary data cannot be passed via CLI flags. Use stdin instead.")
-                }
-            }
-            return try JSONSerialization.data(withJSONObject: jsonObj)
-        } else if let stdin = stdinData {
-            // No arguments but have stdin data
-            return stdin
-        } else {
-            // No arguments, no stdin - return empty payload
-            return Data()
         }
-    }
 
-    /// Extract a key name from a media URN for JSON object.
-    private func extractArgKey(from mediaUrn: String) -> String {
-        // media:model-spec;textable -> model_spec
-        var key = mediaUrn
-        if key.hasPrefix("media:") {
-            key = String(key.dropFirst(6))
-        }
-        if let semicolon = key.firstIndex(of: ";") {
-            key = String(key[..<semicolon])
-        }
-        return key.replacingOccurrences(of: "-", with: "_")
+        return Data()
     }
 
     /// Extract a single argument value from CLI args or stdin.
-    private func extractArgValue(argDef: CapArg, cliArgs: [String], stdinData: Data?) throws -> Data? {
-        // Check if this arg requires file-path to bytes conversion using proper URN matching
-        let argMediaUrn = try CSTaggedUrn.fromString(argDef.mediaUrn)
-
-        let filePathPattern = try CSTaggedUrn.fromString(CSMediaFilePath)
-
-        // Single base pattern covers file-path args; cardinality comes from
-        // the arg's isSequence declaration, not URN tags.
-        let isFilePath = (try? filePathPattern.accepts(argMediaUrn)) != nil
-
-        // Get stdin source media URN if it exists (tells us target type)
-        let hasStdinSource = argDef.sources.contains { source in
-            if case .stdin(_) = source {
-                return true
-            }
-            return false
-        }
-
-        // Try each source in order
+    ///
+    /// Mirrors capdag/src/bifaci/cartridge_runtime.rs::extract_arg_value.
+    ///
+    /// Returns (value, cameFromStdin). RAW values only — file-path
+    /// auto-conversion happens later in extractEffectivePayload, after
+    /// CLI-mode foreach iteration.
+    func extractArgValue(argDef: CapArg, cliArgs: [String], stdinData: Data?) throws -> (Data?, Bool) {
         for source in argDef.sources {
             switch source {
             case .cliFlag(let flag):
                 if let value = getCliFlagValue(args: cliArgs, flag: flag) {
-                    // If file-path type with stdin source, read file(s)
-                    if isFilePath && hasStdinSource {
-                        return try readFilePathToBytes(value, isSequence: argDef.isSequence)
-                    }
-                    return Data(value.utf8)
+                    return (Data(value.utf8), false)
                 }
             case .positional(let position):
                 let positional = getPositionalArgs(args: cliArgs)
                 if position < positional.count {
-                    let value = positional[position]
-                    // If file-path type with stdin source, read file(s)
-                    if isFilePath && hasStdinSource {
-                        return try readFilePathToBytes(value, isSequence: argDef.isSequence)
-                    }
-                    return Data(value.utf8)
+                    return (Data(positional[position].utf8), false)
                 }
             case .stdin(_):
                 if let data = stdinData {
-                    return data
+                    return (data, true)
                 }
             }
         }
 
-        // Try default value
         if let defaultValue = argDef.defaultValue {
-            return Data(defaultValue.utf8)
+            return (Data(defaultValue.utf8), false)
         }
 
-        return nil
+        return (nil, false)
     }
 
     /// Get value for a CLI flag (e.g., --model "value")

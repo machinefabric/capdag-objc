@@ -30,11 +30,9 @@ final class CborFrameTests: XCTestCase {
 
     // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     func test172_invalidFrameType() {
-        XCTAssertNil(FrameType(rawValue: 2), "rawValue 2 (res) removed - must be invalid")
-        XCTAssertEqual(FrameType(rawValue: 10), .relayNotify)
-        XCTAssertEqual(FrameType(rawValue: 11), .relayState)
-        XCTAssertNil(FrameType(rawValue: 12), "rawValue 12 must be invalid")
-        XCTAssertNil(FrameType(rawValue: 99), "rawValue 99 must be invalid")
+        XCTAssertNil(FrameType(rawValue: 13), "rawValue 13 is one past Cancel")
+        XCTAssertNil(FrameType(rawValue: 100), "rawValue 100 must be invalid")
+        XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
         XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
     }
 
@@ -52,6 +50,7 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(FrameType.streamEnd.rawValue, 9)
         XCTAssertEqual(FrameType.relayNotify.rawValue, 10)
         XCTAssertEqual(FrameType.relayState.rawValue, 11)
+        XCTAssertEqual(FrameType.cancel.rawValue, 12)
     }
 
     // MARK: - Message ID Tests (TEST174-177, TEST202-203)
@@ -125,7 +124,7 @@ final class CborFrameTests: XCTestCase {
     // TEST181: Test Frame::hello_with_manifest produces HELLO with manifest bytes for cartridge side
     func test181_helloFrameWithManifest() {
         let manifestJSON = """
-        {"name":"TestCartridge","version":"1.0.0","description":"Test","caps":[{"urn":"cap:","title":"Identity","command":"identity"}]}
+        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"}]}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
@@ -433,7 +432,7 @@ final class CborFrameTests: XCTestCase {
     // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes and limits
     func test211_helloWithManifestRoundtrip() throws {
         let manifestJSON = """
-        {"name":"TestCartridge","version":"1.0.0","description":"Test description","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}
+        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test description","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 500_000, maxChunk: 50_000, maxReorderBuffer: 64)
@@ -1187,8 +1186,9 @@ final class CborFrameTests: XCTestCase {
     }
 
     // TEST403: Verify from_u8 returns None for values past the last valid frame type
-    func test403_frameTypeOnePastRelayState() {
-        XCTAssertNil(FrameType(rawValue: 12), "rawValue 12 must be nil (one past RelayState)")
+    func test403_invalidFrameTypePastCancel() {
+        XCTAssertEqual(FrameType(rawValue: 12), .cancel, "12 is Cancel")
+        XCTAssertNil(FrameType(rawValue: 13), "13 is past the last valid frame type")
     }
 
     // TEST521: RelayNotify CBOR roundtrip preserves manifest and limits

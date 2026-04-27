@@ -25,12 +25,6 @@ typedef NS_ENUM(NSInteger, CSInputCardinality) {
     CSInputCardinalityAtLeastOne
 };
 
-/// Parse cardinality from a media URN string.
-/// Uses the `list` marker tag to determine if this represents an array.
-/// No list marker = scalar (default), list marker = sequence.
-/// Mirrors Rust: InputCardinality::from_media_urn
-CSInputCardinality CSInputCardinalityFromMediaUrn(NSString *urn);
-
 /// Check if this cardinality accepts multiple items
 /// Mirrors Rust: pub fn is_multiple(&self) -> bool
 BOOL CSInputCardinalityIsMultiple(CSInputCardinality cardinality);
@@ -38,10 +32,6 @@ BOOL CSInputCardinalityIsMultiple(CSInputCardinality cardinality);
 /// Check if this cardinality can accept a single item
 /// Mirrors Rust: pub fn accepts_single(&self) -> bool
 BOOL CSInputCardinalityAcceptsSingle(CSInputCardinality cardinality);
-
-/// Create a media URN with this cardinality from a base URN
-/// Mirrors Rust: pub fn apply_to_urn(&self, base_urn: &str) -> String
-NSString *CSInputCardinalityApplyToUrn(CSInputCardinality cardinality, NSString *baseUrn);
 
 // MARK: - CardinalityCompatibility
 
@@ -156,7 +146,21 @@ CSShapeCompatibility CSMediaShapeIsCompatibleWith(CSMediaShape *target, CSMediaS
 @property (nonatomic, strong, readonly) CSMediaShape *output;
 @property (nonatomic, copy, readonly) NSString *capUrn;
 
+/// Create shape info by parsing a cap's input and output specs.
+/// Cardinality defaults to Single — use fromCapUrn:inSpec:outSpec:inputIsSequence:outputIsSequence:
+/// when is_sequence flags are known.
+/// Mirrors Rust: pub fn from_cap_specs
 + (instancetype)fromCapUrn:(NSString *)capUrn inSpec:(NSString *)inSpec outSpec:(NSString *)outSpec;
+
+/// Create shape info with explicit is_sequence flags from the Cap definition.
+/// This is the primary constructor — cardinality comes from is_sequence, not the URN.
+/// Mirrors Rust: pub fn from_cap_specs_with_sequence
++ (instancetype)fromCapUrn:(NSString *)capUrn
+                    inSpec:(NSString *)inSpec
+                   outSpec:(NSString *)outSpec
+           inputIsSequence:(BOOL)inputIsSequence
+          outputIsSequence:(BOOL)outputIsSequence;
+
 - (CSCardinalityPattern)cardinalityPattern;
 - (BOOL)structuresMatch;
 

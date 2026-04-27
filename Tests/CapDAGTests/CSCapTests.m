@@ -441,14 +441,17 @@
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"TestComponent"
-                                                                     version:@"0.1.0"
-                                                                 description:@"A test component for validation"
-                                                                caps:@[cap]];
+                                                       version:@"0.1.0"
+                                                       channel:@"release"
+                                                   description:@"A test component for validation"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap]
+                                                          adapterUrns:@[]]]];
 
     XCTAssertEqualObjects(manifest.name, @"TestComponent");
     XCTAssertEqualObjects(manifest.version, @"0.1.0");
     XCTAssertEqualObjects(manifest.manifestDescription, @"A test component for validation");
-    XCTAssertEqual(manifest.caps.count, 1);
+    XCTAssertEqual([manifest allCaps].count, 1);
     XCTAssertNil(manifest.author);
 }
 
@@ -470,9 +473,12 @@
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [[CSCapManifest manifestWithName:@"TestComponent"
-                                                                      version:@"0.1.0"
-                                                                  description:@"A test component for validation"
-                                                                 caps:@[cap]]
+                                                       version:@"0.1.0"
+                                                       channel:@"release"
+                                                   description:@"A test component for validation"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap]
+                                                          adapterUrns:@[]]]]
                                       withAuthor:@"Test Author"];
 
     XCTAssertEqualObjects(manifest.author, @"Test Author");
@@ -496,9 +502,12 @@
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [[[CSCapManifest manifestWithName:@"TestComponent"
-                                                                       version:@"0.1.0"
-                                                                   description:@"A test component for validation"
-                                                                  caps:@[cap]]
+                                                       version:@"0.1.0"
+                                                       channel:@"release"
+                                                   description:@"A test component for validation"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap]
+                                                          adapterUrns:@[]]]]
                                        withAuthor:@"Test Author"]
                                        withPageUrl:@"https://github.com/example/test"];
 
@@ -511,23 +520,29 @@
     NSDictionary *manifestDict = @{
         @"name": @"TestComponent",
         @"version": @"0.1.0",
+        @"channel": @"release",
         @"description": @"A test component for validation",
         @"author": @"Test Author",
         @"page_url": @"https://github.com/example/test",
-        @"caps": @[
+        @"cap_groups": @[
             @{
-                @"urn": @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=metadata",
-                @"title": @"Extract Metadata",
-                @"command": @"extract-metadata",
-                @"args": @[
+                @"name": @"default",
+                @"caps": @[
                     @{
-                        @"media_urn": @"media:file-path;textable",
-                        @"required": @YES,
-                        @"sources": @[
-                            @{@"stdin": stdinMediaType},
-                            @{@"position": @0}
-                        ],
-                        @"arg_description": @"Path to the document file"
+                        @"urn": @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=metadata",
+                        @"title": @"Extract Metadata",
+                        @"command": @"extract-metadata",
+                        @"args": @[
+                            @{
+                                @"media_urn": @"media:file-path;textable",
+                                @"required": @YES,
+                                @"sources": @[
+                                    @{@"stdin": stdinMediaType},
+                                    @{@"position": @0}
+                                ],
+                                @"arg_description": @"Path to the document file"
+                            }
+                        ]
                     }
                 ]
             }
@@ -544,9 +559,9 @@
     XCTAssertEqualObjects(manifest.manifestDescription, @"A test component for validation");
     XCTAssertEqualObjects(manifest.author, @"Test Author");
     XCTAssertEqualObjects(manifest.pageUrl, @"https://github.com/example/test");
-    XCTAssertEqual(manifest.caps.count, 1);
+    XCTAssertEqual([manifest allCaps].count, 1);
 
-    CSCap *cap = manifest.caps.firstObject;
+    CSCap *cap = [manifest allCaps].firstObject;
     XCTAssertEqualObjects([cap urnString], @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=metadata");
     XCTAssertNotNil([cap getStdinMediaUrn], @"stdinType should be set from arg with stdin source");
     XCTAssertEqualObjects([cap getStdinMediaUrn], stdinMediaType);
@@ -598,38 +613,43 @@
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"MultiCapComponent"
-                                                                     version:@"1.0.0"
-                                                                 description:@"Component with multiple caps"
-                                                                caps:@[cap1, cap2]];
+                                                       version:@"1.0.0"
+                                                       channel:@"release"
+                                                   description:@"Component with multiple caps"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap1, cap2]
+                                                          adapterUrns:@[]]]];
 
-    XCTAssertEqual(manifest.caps.count, 2);
-    XCTAssertEqualObjects([manifest.caps[0] urnString], @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=metadata");
-    XCTAssertEqualObjects([manifest.caps[1] urnString], @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=outline");
+    XCTAssertEqual([manifest allCaps].count, 2);
+    XCTAssertEqualObjects([[manifest allCaps][0] urnString], @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=metadata");
+    XCTAssertEqualObjects([[manifest allCaps][1] urnString], @"cap:in=media:void;op=extract;out=\"media:record;textable\";target=outline");
     XCTAssertEqualObjects(cap2.metadata[@"supports_outline"], @"true");
 }
 
 - (void)testCapManifestEmptyCaps {
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"EmptyComponent"
-                                                                     version:@"1.0.0"
-                                                                 description:@"Component with no caps"
-                                                                caps:@[]];
+                                                       version:@"1.0.0"
+                                                       channel:@"release"
+                                                   description:@"Component with no caps"
+                                                     capGroups:@[]];
 
-    XCTAssertEqual(manifest.caps.count, 0);
+    XCTAssertEqual([manifest allCaps].count, 0);
 
     // Test dictionary serialization preserves empty array
     NSDictionary *manifestDict = @{
         @"name": @"EmptyComponent",
         @"version": @"1.0.0",
+        @"channel": @"release",
         @"description": @"Component with no caps",
-        @"caps": @[]
+        @"cap_groups": @[]
     };
 
     NSError *error;
     CSCapManifest *deserializedManifest = [CSCapManifest manifestWithDictionary:manifestDict error:&error];
 
-    XCTAssertNil(error, @"Empty caps manifest should deserialize successfully");
+    XCTAssertNil(error, @"Empty cap_groups manifest should deserialize successfully");
     XCTAssertNotNil(deserializedManifest);
-    XCTAssertEqual(deserializedManifest.caps.count, 0);
+    XCTAssertEqual([deserializedManifest allCaps].count, 0);
 }
 
 - (void)testCapManifestOptionalAuthorField {
@@ -650,24 +670,33 @@
                       metadataJSON:nil];
 
     CSCapManifest *manifestWithoutAuthor = [CSCapManifest manifestWithName:@"ValidatorComponent"
-                                                                                  version:@"1.0.0"
-                                                                              description:@"File validation component"
-                                                                             caps:@[cap]];
+                                                       version:@"1.0.0"
+                                                       channel:@"release"
+                                                   description:@"File validation component"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap]
+                                                          adapterUrns:@[]]]];
 
     // Manifest without author should not include author field in dictionary representation
     NSDictionary *manifestDict = @{
         @"name": @"ValidatorComponent",
         @"version": @"1.0.0",
+        @"channel": @"release",
         @"description": @"File validation component",
-        @"caps": @[
+        @"cap_groups": @[
             @{
-                @"urn": @"cap:in=media:void;op=validate;out=\"media:record;textable\";file",
-                @"title": @"Validate",
-                @"command": @"validate",
-                @"arguments": @{
-                    @"required": @[],
-                    @"optional": @[]
-                }
+                @"name": @"default",
+                @"caps": @[
+                    @{
+                        @"urn": @"cap:in=media:void;op=validate;out=\"media:record;textable\";file",
+                        @"title": @"Validate",
+                        @"command": @"validate",
+                        @"arguments": @{
+                            @"required": @[],
+                            @"optional": @[]
+                        }
+                    }
+                ]
             }
         ]
     };
@@ -699,31 +728,37 @@
 
     // Create manifest similar to what a cartridge would have
     CSCapManifest *cartridgeStyleManifest = [CSCapManifest manifestWithName:@"CartridgeComponent"
-                                                                                version:@"0.1.0"
-                                                                            description:@"Cartridge-style component"
-                                                                           caps:@[cap]];
+                                                       version:@"0.1.0"
+                                                       channel:@"release"
+                                                   description:@"Cartridge-style component"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap]
+                                                          adapterUrns:@[]]]];
 
     // Create manifest similar to what a provider would have
     CSCapManifest *providerStyleManifest = [CSCapManifest manifestWithName:@"ProviderComponent"
-                                                                                  version:@"0.1.0"
-                                                                              description:@"Provider-style component"
-                                                                             caps:@[cap]];
+                                                       version:@"0.1.0"
+                                                       channel:@"release"
+                                                   description:@"Provider-style component"
+                                                     capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
+                                                                 caps:@[cap]
+                                                          adapterUrns:@[]]]];
 
     // Both should have the same structure
     XCTAssertNotNil(cartridgeStyleManifest.name);
     XCTAssertNotNil(cartridgeStyleManifest.version);
     XCTAssertNotNil(cartridgeStyleManifest.manifestDescription);
-    XCTAssertNotNil(cartridgeStyleManifest.caps);
+    XCTAssertNotNil(cartridgeStyleManifest.capGroups);
 
     XCTAssertNotNil(providerStyleManifest.name);
     XCTAssertNotNil(providerStyleManifest.version);
     XCTAssertNotNil(providerStyleManifest.manifestDescription);
-    XCTAssertNotNil(providerStyleManifest.caps);
+    XCTAssertNotNil(providerStyleManifest.capGroups);
 
     // Same cap structure
-    XCTAssertEqual(cartridgeStyleManifest.caps.count, providerStyleManifest.caps.count);
-    XCTAssertEqualObjects([cartridgeStyleManifest.caps.firstObject urnString],
-                         [providerStyleManifest.caps.firstObject urnString]);
+    XCTAssertEqual([cartridgeStyleManifest allCaps].count, [providerStyleManifest allCaps].count);
+    XCTAssertEqualObjects([[cartridgeStyleManifest allCaps].firstObject urnString],
+                         [[providerStyleManifest allCaps].firstObject urnString]);
 }
 
 - (void)testArgumentCreationWithNewAPI {

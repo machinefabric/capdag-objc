@@ -47,6 +47,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, strong) NSString *name;
 @property (nonatomic, strong) NSString *version;
+/// Distribution channel the cartridge was built for ("release" or
+/// "nightly"). `(name, version, channel)` is the cartridge's full
+/// identity — channels are independent namespaces. The Rust SDK
+/// reads this from the `MFR_CARTRIDGE_CHANNEL` env var at compile
+/// time; Swift cartridges set it the same way at compile time.
+/// Required.
+@property (nonatomic, strong) NSString *channel;
 @property (nonatomic, strong) NSString *manifestDescription;
 /// Cap groups — bundles of caps + adapter URNs. All caps must be in a cap group.
 @property (nonatomic, strong) NSArray<CSCapGroup *> *capGroups;
@@ -55,17 +62,19 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithName:(NSString *)name
                      version:(NSString *)version
+                     channel:(NSString *)channel
           manifestDescription:(NSString *)manifestDescription
                capGroups:(NSArray<CSCapGroup *> *)capGroups;
 
 + (instancetype)manifestWithName:(NSString *)name
                          version:(NSString *)version
+                         channel:(NSString *)channel
                      description:(NSString *)description
                        capGroups:(NSArray<CSCapGroup *> *)capGroups;
 
-+ (instancetype)manifestWithDictionary:(NSDictionary * _Nonnull)dictionary 
-                                 error:(NSError * _Nullable * _Nullable)error 
-    NS_SWIFT_NAME(init(dictionary:error:));
++ (nullable instancetype)manifestWithDictionary:(NSDictionary * _Nonnull)dictionary
+                                          error:(NSError * _Nullable * _Nullable)error
+    NS_SWIFT_NAME(init(dictionary:));
 
 - (CSCapManifest *)withAuthor:(NSString *)author;
 - (CSCapManifest *)withPageUrl:(NSString *)pageUrl;

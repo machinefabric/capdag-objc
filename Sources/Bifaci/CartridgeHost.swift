@@ -324,28 +324,44 @@ private class ManagedCartridge {
             return nil
         }
 
-        // {name}/{version} come from the managed cartridge layout, which the
-        // installer guarantees. We pull them from cartridge.json when
-        // available; when cartridge.json is malformed we fall back to the
-        // directory names from the layout — the one authoritative piece of
-        // identity information still present on disk.
+        // (id, channel, version) come from the managed cartridge
+        // layout. We pull them from cartridge.json when available;
+        // when cartridge.json is malformed we fall back to the
+        // directory names from the layout — the one authoritative
+        // piece of identity information still present on disk. The
+        // installed-cartridges layout is
+        //   {root}/{channel}/{name}/{version}/cartridge.json
+        // so the layout fallback can reconstruct channel from the
+        // grandparent directory's name as long as it matches one of
+        // the recognized values.
         let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
-        let jsonIdentity: (id: String, version: String)? = {
+        let jsonIdentity: (id: String, channel: String, version: String)? = {
             guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let name = json["name"] as? String,
-                  let version = json["version"] as? String else {
+                  let channel = json["channel"] as? String,
+                  let version = json["version"] as? String,
+                  channel == "release" || channel == "nightly" else {
                 return nil
             }
-            return (id: name.lowercased(), version: version)
+            return (id: name.lowercased(), channel: channel, version: version)
         }()
 
-        let layoutIdentity: (id: String, version: String) = {
-            // cartridgeDir layout: {root}/{name}/{version}
+        let layoutIdentity: (id: String, channel: String, version: String) = {
             let versionName = (cartridgeDir as NSString).lastPathComponent
             let nameDir = (cartridgeDir as NSString).deletingLastPathComponent
             let nameComponent = (nameDir as NSString).lastPathComponent
-            return (id: nameComponent.lowercased(), version: versionName)
+            // Grandparent's basename is the channel for installed
+            // cartridges. Bundle cartridges live at {bundleRoot}/
+            // {name}/{version}/, so the grandparent there is the
+            // bundle's cartridges-root name (e.g. "cartridges") and
+            // is NOT a recognized channel — in that case we leave
+            // channel empty and let the consumer treat it as a
+            // failure record (jsonIdentity is the only authoritative
+            // source for bundle-cartridge channel).
+            let channelDir = ((nameDir as NSString).deletingLastPathComponent as NSString).lastPathComponent
+            let channel = (channelDir == "release" || channelDir == "nightly") ? channelDir : ""
+            return (id: nameComponent.lowercased(), channel: channel, version: versionName)
         }()
 
         let identity = jsonIdentity ?? layoutIdentity
@@ -359,9 +375,21 @@ private class ManagedCartridge {
             let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) ?? ""
             return InstalledCartridgeIdentity(
                 id: identity.id,
+                channel: identity.channel,
                 version: identity.version,
                 sha256: sha256,
                 attachmentError: error
+            )
+        }
+
+        // Healthy cartridges MUST come with a parseable cartridge.json
+        // — the host enforced this at HELLO time, and a cartridge
+        // that reached "healthy" without a valid channel is a broken
+        // invariant. Fail hard rather than ship an empty channel
+        // through RelayNotify.
+        guard !identity.channel.isEmpty else {
+            fatalError(
+                "BUG: healthy cartridge at \(cartridgeDir) has no channel — cartridge.json must declare 'channel' (release|nightly)"
             )
         }
 
@@ -371,6 +399,7 @@ private class ManagedCartridge {
 
         return InstalledCartridgeIdentity(
             id: identity.id,
+            channel: identity.channel,
             version: identity.version,
             sha256: sha256,
             attachmentError: nil
@@ -1506,6 +1535,7 @@ public final class CartridgeHost: @unchecked Sendable {
             )
             result.append(InstalledCartridgeIdentity(
                 id: base.id,
+                channel: base.channel,
                 version: base.version,
                 sha256: base.sha256,
                 attachmentError: base.attachmentError,

@@ -70,6 +70,12 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn is_equivalent(&self, other: &MediaUrn) -> Result<bool, MediaUrnError>
 - (BOOL)isEquivalentTo:(CSMediaUrn *)other;
 
+/// Check if two media URNs are comparable (on the same specialization chain).
+/// Equivalent to `self.accepts(other) || other.accepts(self)`.
+/// Returns NO if both directions fail.
+/// Mirrors Rust: pub fn is_comparable(&self, other: &MediaUrn) -> Result<bool, MediaUrnError>
+- (BOOL)isComparableTo:(CSMediaUrn *)other;
+
 // MARK: - Builders (mirror Rust MediaUrn builders)
 
 /// Create a new MediaUrn with an added or replaced tag.

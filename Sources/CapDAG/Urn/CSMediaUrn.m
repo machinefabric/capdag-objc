@@ -92,6 +92,18 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return reverse;
 }
 
+- (BOOL)isComparableTo:(CSMediaUrn *)other {
+    // Comparable: either side accepts the other (same specialization chain).
+    // Mirrors Rust MediaUrn::is_comparable.
+    NSError *err = nil;
+    BOOL forward = [self accepts:other error:&err];
+    if (!err && forward) return YES;
+    err = nil;
+    BOOL reverse = [other accepts:self error:&err];
+    if (!err && reverse) return YES;
+    return NO;
+}
+
 // MARK: - Builders
 
 - (CSMediaUrn *)withTag:(NSString *)key value:(NSString *)value {

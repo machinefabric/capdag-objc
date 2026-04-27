@@ -559,6 +559,10 @@ final class CborRelaySwitchTests: XCTestCase {
     }
 
     // TEST435: URN matching (exact vs accepts())
+    // Dispatch is contravariant on input (request input must conform to provider input — i.e. request
+    // can be more specific) and covariant on output (provider output must conform to request output —
+    // i.e. provider can be more specific). A request whose input is in a different type family than
+    // any registered provider has no handler.
     func test435_urn_matching_exact_and_accepts() throws {
         let pair1 = FileHandle.socketPair()  // engine_read, slave_write
         let pair2 = FileHandle.socketPair()  // slave_read, engine_write
@@ -578,11 +582,13 @@ final class CborRelaySwitchTests: XCTestCase {
 
             try! self.handleIdentityVerification(reader: reader, writer: writer)
 
-            // Handle 1 request then exit
-            if let frame = try? reader.read(), frame.frameType == .req {
-                var response = Frame.end(id: frame.id, finalPayload: Data([42]))
-                response.routingId = frame.routingId
-                try! writer.write(response)
+            // Respond to every Req frame the engine forwards until the read side closes.
+            while let frame = try? reader.read() {
+                if frame.frameType == .req {
+                    var response = Frame.end(id: frame.id, finalPayload: Data([42]))
+                    response.routingId = frame.routingId
+                    try! writer.write(response)
+                }
             }
             slaveDone.signal()
         }
@@ -597,23 +603,35 @@ final class CborRelaySwitchTests: XCTestCase {
         let resp1 = try switch_.readFromMasters()
         XCTAssertEqual(resp1?.payload, Data([42]))
 
-        // More specific request should NOT match less specific registered cap
-        // (request is more specific, registered is less specific → no match)
+        // Request with more specific input and less specific output SHOULD match.
+        // Input (contravariant): request's "media:text;utf8;normalized" conforms to provider's "media:text;utf8".
+        // Output (covariant): provider's "media:text;utf8" conforms to request's "media:text".
         let req2 = Frame.req(
             id: MessageId.uint(2),
             capUrn: "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"",
             payload: Data(),
             contentType: "text/plain"
         )
-        XCTAssertThrowsError(try switch_.sendToMaster(req2)) { error in
+        try switch_.sendToMaster(req2)
+        let resp2 = try switch_.readFromMasters()
+        XCTAssertEqual(resp2?.payload, Data([42]))
+
+        // Request with INCOMPATIBLE input (different type family) must NOT match.
+        let req3 = Frame.req(
+            id: MessageId.uint(3),
+            capUrn: "cap:in=\"media:image;png\";op=process;out=\"media:text\"",
+            payload: Data(),
+            contentType: "text/plain"
+        )
+        XCTAssertThrowsError(try switch_.sendToMaster(req3)) { error in
             guard case RelaySwitchError.noHandler = error else {
-                XCTFail("Expected noHandler error")
+                XCTFail("Expected noHandler error, got: \(error)")
                 return
             }
         }
 
-        XCTAssertEqual(slaveDone.wait(timeout: .now() + 2), .success)
         switch_.shutdown()
+        _ = slaveDone.wait(timeout: .now() + 2)
     }
 
     // MARK: - Preferred Cap Routing Tests (TEST437-439)

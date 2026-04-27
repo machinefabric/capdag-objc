@@ -21,9 +21,10 @@ import TaggedUrn
 @preconcurrency import SwiftCBOR
 import Foundation
 
-// Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY)
+// Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
+// `channel` is part of every cartridge's identity (release/nightly).
 private let testManifest = """
-{"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
 """.data(using: .utf8)!
 
 final class CborIntegrationTests: XCTestCase {

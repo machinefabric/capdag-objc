@@ -150,9 +150,9 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let ss = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:text")
         try! writer.write(ss)
 
-        let payload = cborBytesPayload("hello world".data(using: .utf8)!)
-        let checksum = Frame.computeChecksum(payload)
-        let chunk = Frame.chunk(reqId: rid, streamId: "arg0", seq: 0, payload: payload, chunkIndex: 0, checksum: checksum)
+        let chunkPayload = cborBytesPayload("hello world".data(using: .utf8)!)
+        let checksum = Frame.computeChecksum(chunkPayload)
+        let chunk = Frame.chunk(reqId: rid, streamId: "arg0", seq: 0, payload: chunkPayload, chunkIndex: 0, checksum: checksum)
         try! writer.write(chunk)
 
         let se = Frame.streamEnd(reqId: rid, streamId: "arg0", chunkCount: 1)

@@ -41,10 +41,12 @@ final class StandardCapsTests: XCTestCase {
     func test475_manifestValidatePassesWithIdentity() throws {
         let identityUrn = try CSCapUrn.fromString(CSCapIdentity)
         let identityCap = CSCap(urn: identityUrn, title: "Identity", command: "identity")
+        let group = CSCapGroup(name: "default", caps: [identityCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
+                                     channel: "release",
                                      manifestDescription: "Test",
-                                     caps: [identityCap])
+                                     capGroups: [group])
 
         XCTAssertNoThrow(try manifest.validate(), "Manifest with CAP_IDENTITY must validate successfully")
     }
@@ -53,10 +55,12 @@ final class StandardCapsTests: XCTestCase {
     func test476_manifestValidateFailsWithoutIdentity() throws {
         let otherUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
         let otherCap = CSCap(urn: otherUrn, title: "Test", command: "test")
+        let group = CSCapGroup(name: "default", caps: [otherCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
+                                     channel: "release",
                                      manifestDescription: "Test",
-                                     caps: [otherCap])
+                                     capGroups: [group])
 
         XCTAssertThrowsError(try manifest.validate(), "Manifest without CAP_IDENTITY must fail validation")
     }
@@ -66,18 +70,20 @@ final class StandardCapsTests: XCTestCase {
         // Test 1: Adding identity when missing
         let testUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
         let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")
+        let group = CSCapGroup(name: "default", caps: [cap1], adapterUrns: [])
         let manifestWithout = CSCapManifest(name: "TestCartridge",
                                             version: "1.0.0",
+                                            channel: "release",
                                             manifestDescription: "Test",
-                                            caps: [cap1])
+                                            capGroups: [group])
 
         let withIdentity = manifestWithout.ensureIdentity()
         XCTAssertNoThrow(try withIdentity.validate(), "ensureIdentity() must add CAP_IDENTITY")
-        XCTAssertEqual(withIdentity.caps.count, 2, "ensureIdentity() must add identity cap")
+        XCTAssertEqual(withIdentity.allCaps().count, 2, "ensureIdentity() must add identity cap")
 
         // Test 2: Idempotent when already present
         let withIdentityAgain = withIdentity.ensureIdentity()
-        XCTAssertEqual(withIdentityAgain.caps.count, 2, "ensureIdentity() must be idempotent")
+        XCTAssertEqual(withIdentityAgain.allCaps().count, 2, "ensureIdentity() must be idempotent")
     }
 
     // MARK: - Auto-Registration Tests (TEST478-480)
@@ -85,9 +91,9 @@ final class StandardCapsTests: XCTestCase {
     // TEST478: CartridgeRuntime auto-registers identity and discard handlers on construction
     func test478_cartridgeRuntimeAutoRegistersIdentity() throws {
         let manifest = """
-        {"name":"Test","version":"1.0.0","description":"Test","caps":[
+        {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
             {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"}
-        ]}
+        ]}]}
         """.data(using: .utf8)!
 
         let runtime = CartridgeRuntime(manifest: manifest)
@@ -100,9 +106,9 @@ final class StandardCapsTests: XCTestCase {
     // TEST479: Custom identity Op overrides auto-registered default
     func test479_identityHandlerEchoesInput() throws {
         let manifest = """
-        {"name":"Test","version":"1.0.0","description":"Test","caps":[
+        {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
             {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"}
-        ]}
+        ]}]}
         """.data(using: .utf8)!
 
         let runtime = CartridgeRuntime(manifest: manifest)
@@ -168,10 +174,10 @@ final class StandardCapsTests: XCTestCase {
     // TEST480: parse_caps_from_manifest rejects manifest without CAP_IDENTITY
     func test480_discardHandlerConsumesInput() throws {
         let manifest = """
-        {"name":"Test","version":"1.0.0","description":"Test","caps":[
+        {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
             {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"},
             {"urn":"\(CSCapDiscard)","title":"Discard","command":"discard"}
-        ]}
+        ]}]}
         """.data(using: .utf8)!
 
         let runtime = CartridgeRuntime(manifest: manifest)

@@ -1320,6 +1320,13 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 
 public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public let id: String
+    /// Distribution channel ("release" or "nightly") this install
+    /// belongs to. `(id, channel, version)` is the install's full
+    /// identity — release v1.0.0 and nightly v1.0.0 are different
+    /// artifacts. Sourced from `cartridge.json:channel` (written by
+    /// the .pkg installer) and verified to match the cartridge's
+    /// own HELLO manifest channel.
+    public let channel: String
     public let version: String
     public let sha256: String
     /// Present when the cartridge failed to attach; absent when healthy.
@@ -1331,6 +1338,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case channel
         case version
         case sha256
         case attachmentError = "attachment_error"
@@ -1339,12 +1347,14 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
 
     public init(
         id: String,
+        channel: String,
         version: String,
         sha256: String,
         attachmentError: CartridgeAttachmentError? = nil,
         runtimeStats: CartridgeRuntimeStats? = nil
     ) {
         self.id = id
+        self.channel = channel
         self.version = version
         self.sha256 = sha256
         self.attachmentError = attachmentError
@@ -1354,6 +1364,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decode(String.self, forKey: .id)
+        self.channel = try c.decode(String.self, forKey: .channel)
         self.version = try c.decode(String.self, forKey: .version)
         self.sha256 = try c.decode(String.self, forKey: .sha256)
         self.attachmentError = try c.decodeIfPresent(CartridgeAttachmentError.self, forKey: .attachmentError)
@@ -1363,6 +1374,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
+        try c.encode(channel, forKey: .channel)
         try c.encode(version, forKey: .version)
         try c.encode(sha256, forKey: .sha256)
         try c.encodeIfPresent(attachmentError, forKey: .attachmentError)

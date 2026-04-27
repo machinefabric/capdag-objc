@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -54,8 +54,11 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             allCaps.append("{\"urn\":\"\(capWithDirs)\",\"title\":\"\(name)\",\"command\":\"\(name.lowercased())\"}")
         }
         let capsJson = allCaps.joined(separator: ",")
-        // Manifest uses cap_groups format — all caps in a single default group
-        return "{\"name\":\"\(name)\",\"version\":\"1.0\",\"description\":\"\(name)\",\"cap_groups\":[{\"name\":\"default\",\"caps\":[\(capsJson)],\"adapter_urns\":[]}]}".data(using: .utf8)!
+        // Manifest uses cap_groups format — all caps in a single default group.
+        // `channel` is part of the cartridge's identity (release/nightly).
+        // Tests build their fixtures here in release-channel form;
+        // a runtime parsing the manifest accepts both channels equally.
+        return "{\"name\":\"\(name)\",\"version\":\"1.0\",\"channel\":\"release\",\"description\":\"\(name)\",\"cap_groups\":[{\"name\":\"default\",\"caps\":[\(capsJson)],\"adapter_urns\":[]}]}".data(using: .utf8)!
     }
 
     nonisolated static func helloWith(manifest: Data, maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
@@ -644,13 +647,26 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Gap Tests (TEST415, TEST418, TEST420-422, TEST424)
 
-    // TEST415: REQ for known cap triggers spawn attempt (verified by expected spawn error for non-existent binary)
+    // TEST415: REQ for known cap triggers spawn attempt (verified by expected
+    // spawn error). Mirrors Rust test415_req_for_known_cap_triggers_spawn:
+    // production install layout — versioned cartridge directory with
+    // cartridge.json (carrying the channel) plus an entry-point binary that
+    // isn't executable, so spawn fails.
     func test415_reqTriggersSpawnError() async throws {
+        let fm = FileManager.default
+        let cartridgeDir = fm.temporaryDirectory.appendingPathComponent("test415-\(UUID().uuidString)")
+        try fm.createDirectory(at: cartridgeDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: cartridgeDir) }
+        try Data(#"{"name":"test","version":"0.0.1","channel":"release","entry":"bin","installed_at":"2026-01-01T00:00:00Z","installed_from":"dev"}"#.utf8)
+            .write(to: cartridgeDir.appendingPathComponent("cartridge.json"))
+        let entryPoint = cartridgeDir.appendingPathComponent("bin")
+        try Data("not an executable".utf8).write(to: entryPoint)
+
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
         let host = CartridgeHost()
-        host.registerCartridge(path: "/nonexistent/cartridge/binary/path", cartridgeDir: "", knownCaps: ["cap:op=spawn-test"])
+        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, knownCaps: ["cap:op=spawn-test"])
 
         let hostTask = Task.detached { @Sendable in
             try host.run(

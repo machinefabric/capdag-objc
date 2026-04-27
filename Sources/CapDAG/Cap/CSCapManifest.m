@@ -75,12 +75,14 @@
 
 - (instancetype)initWithName:(NSString *)name
                      version:(NSString *)version
+                     channel:(NSString *)channel
           manifestDescription:(NSString *)manifestDescription
                capGroups:(NSArray<CSCapGroup *> *)capGroups {
     self = [super init];
     if (self) {
         _name = [name copy];
         _version = [version copy];
+        _channel = [channel copy];
         _manifestDescription = [manifestDescription copy];
         _capGroups = [capGroups copy];
     }
@@ -89,25 +91,39 @@
 
 + (instancetype)manifestWithName:(NSString *)name
                          version:(NSString *)version
+                         channel:(NSString *)channel
                      description:(NSString *)description
                        capGroups:(NSArray<CSCapGroup *> *)capGroups {
     return [[self alloc] initWithName:name
                               version:version
+                              channel:channel
                    manifestDescription:description
                          capGroups:capGroups];
 }
 
-+ (instancetype)manifestWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
++ (nullable instancetype)manifestWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
     NSString *name = dictionary[@"name"];
     NSString *version = dictionary[@"version"];
+    NSString *channel = dictionary[@"channel"];
     NSString *description = dictionary[@"description"];
     NSArray *capGroupsArray = dictionary[@"cap_groups"];
 
-    if (!name || !version || !description || !capGroupsArray) {
+    if (!name || !version || !channel || !description || !capGroupsArray) {
         if (error) {
             *error = [NSError errorWithDomain:@"CSCapManifestError"
                                          code:1007
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Missing required manifest fields: name, version, description, or cap_groups"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Missing required manifest fields: name, version, channel, description, or cap_groups"}];
+        }
+        return nil;
+    }
+    // Channel is part of the cartridge's identity. Reject anything
+    // outside the closed enum {release, nightly} so a typo never
+    // silently masquerades as a known channel.
+    if (![channel isEqualToString:@"release"] && ![channel isEqualToString:@"nightly"]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSCapManifestError"
+                                         code:1023
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Manifest 'channel' is '%@'; expected 'release' or 'nightly'", channel]}];
         }
         return nil;
     }
@@ -132,6 +148,7 @@
 
     CSCapManifest *manifest = [[self alloc] initWithName:name
                                                 version:version
+                                                channel:channel
                                      manifestDescription:description
                                               capGroups:[groups copy]];
 
@@ -246,6 +263,7 @@
 
     return [CSCapManifest manifestWithName:self.name
                                    version:self.version
+                                   channel:self.channel
                                description:self.manifestDescription
                                  capGroups:[newGroups copy]];
 }

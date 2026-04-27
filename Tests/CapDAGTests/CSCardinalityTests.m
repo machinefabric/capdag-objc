@@ -14,43 +14,10 @@
 @implementation CSCardinalityTests
 
 // ==================== InputCardinality Tests ====================
+// NOTE: InputCardinality::from_media_urn was removed — cardinality comes from
+// context (is_sequence on the wire), not from URN tags.
 
-// Mirror-specific coverage: Tests InputCardinality correctly identifies single-value media URNs
-// Verifies that URNs without list marker are parsed as Single cardinality
-- (void)testfrom_media_urn_single {
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:pdf"), CSInputCardinalitySingle);
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:textable"), CSInputCardinalitySingle);
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:integer"), CSInputCardinalitySingle);
-    // Record marker doesn't affect cardinality
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:record;textable"), CSInputCardinalitySingle);
-}
-
-// Mirror-specific coverage: Tests InputCardinality correctly identifies list/vector media URNs
-// Verifies that URNs with list marker tag are parsed as Sequence cardinality
-- (void)testfrom_media_urn_vector {
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:pdf;list"), CSInputCardinalitySequence);
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:list;png"), CSInputCardinalitySequence);
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:disbound-pages;list;textable"), CSInputCardinalitySequence);
-    // List of records
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:json;list;record;textable"), CSInputCardinalitySequence);
-}
-
-// Mirror-specific coverage: Tests that list marker tag position doesn't affect vector detection
-// Verifies cardinality parsing is independent of tag order in URN
-- (void)testfrom_media_urn_vector_tag_position {
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:pdf;list"), CSInputCardinalitySequence);
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:list;pdf"), CSInputCardinalitySequence);
-}
-
-// Mirror-specific coverage: Tests that URN content doesn't cause false positive vector detection
-// Verifies that "list" in media type name doesn't trigger Sequence cardinality
-- (void)testfrom_media_urn_no_false_positives {
-    // "list-data" is a tag with value "data", not a marker
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:list-data=something"), CSInputCardinalitySingle);
-    XCTAssertEqual(CSInputCardinalityFromMediaUrn(@"media:sequence-data"), CSInputCardinalitySingle);
-}
-
-// TEST688: Tests is_multiple method correctly identifies multi-value cardinalities Verifies Single returns false while Sequence and AtLeastOne return true
+// TEST688: Tests is_multiple method correctly identifies multi-value cardinalities
 // Verifies Single returns false while Sequence and AtLeastOne return true
 - (void)test688_is_multiple {
     XCTAssertFalse(CSInputCardinalityIsMultiple(CSInputCardinalitySingle));
@@ -58,7 +25,7 @@
     XCTAssertTrue(CSInputCardinalityIsMultiple(CSInputCardinalityAtLeastOne));
 }
 
-// TEST689: Tests accepts_single method identifies cardinalities that accept single values Verifies Single and AtLeastOne accept singles while Sequence does not
+// TEST689: Tests accepts_single method identifies cardinalities that accept single values
 // Verifies Single and AtLeastOne accept singles while Sequence does not
 - (void)test689_accepts_single {
     XCTAssertTrue(CSInputCardinalityAcceptsSingle(CSInputCardinalitySingle));
@@ -68,61 +35,37 @@
 
 // ==================== Compatibility Tests ====================
 
-// TEST690: Tests cardinality compatibility for single-to-single data flow Verifies Direct compatibility when both input and output are Single
+// TEST690: Tests cardinality compatibility for single-to-single data flow
 // Verifies Direct compatibility when both input and output are Single
 - (void)test690_compatibility_single_to_single {
     XCTAssertEqual(CSInputCardinalityIsCompatibleWith(CSInputCardinalitySingle, CSInputCardinalitySingle),
                    CSCardinalityCompatibilityDirect);
 }
 
-// TEST691: Tests cardinality compatibility when wrapping single value into array Verifies WrapInArray compatibility when Sequence expects Single input
+// TEST691: Tests cardinality compatibility when wrapping single value into array
 // Verifies WrapInArray compatibility when Sequence expects Single input
 - (void)test691_compatibility_single_to_vector {
     XCTAssertEqual(CSInputCardinalityIsCompatibleWith(CSInputCardinalitySequence, CSInputCardinalitySingle),
                    CSCardinalityCompatibilityWrapInArray);
 }
 
-// TEST692: Tests cardinality compatibility when unwrapping array to singles Verifies RequiresFanOut compatibility when Single expects Sequence input
+// TEST692: Tests cardinality compatibility when unwrapping array to singles
 // Verifies RequiresFanOut compatibility when Single expects Sequence input
 - (void)test692_compatibility_vector_to_single {
     XCTAssertEqual(CSInputCardinalityIsCompatibleWith(CSInputCardinalitySingle, CSInputCardinalitySequence),
                    CSCardinalityCompatibilityRequiresFanOut);
 }
 
-// TEST693: Tests cardinality compatibility for sequence-to-sequence data flow Verifies Direct compatibility when both input and output are Sequence
+// TEST693: Tests cardinality compatibility for sequence-to-sequence data flow
 // Verifies Direct compatibility when both input and output are Sequence
 - (void)test693_compatibility_vector_to_vector {
     XCTAssertEqual(CSInputCardinalityIsCompatibleWith(CSInputCardinalitySequence, CSInputCardinalitySequence),
                    CSCardinalityCompatibilityDirect);
 }
 
-// ==================== URN Manipulation Tests ====================
+// ==================== CapShapeInfo Cardinality Pattern Tests ====================
 
-// Mirror-specific coverage: Tests applying Sequence cardinality adds list marker to URN
-// Verifies that apply_to_urn correctly modifies URN to indicate list
-- (void)testapply_to_urn_add_vector {
-    NSString *result = CSInputCardinalityApplyToUrn(CSInputCardinalitySequence, @"media:pdf");
-    // URN tags are alphabetized, so list comes first
-    XCTAssertEqualObjects(result, @"media:list;pdf");
-}
-
-// Mirror-specific coverage: Tests applying Single cardinality removes list marker from URN
-// Verifies that apply_to_urn correctly strips list marker
-- (void)testapply_to_urn_remove_vector {
-    NSString *result = CSInputCardinalityApplyToUrn(CSInputCardinalitySingle, @"media:list;pdf");
-    XCTAssertEqualObjects(result, @"media:pdf");
-}
-
-// Mirror-specific coverage: Tests apply_to_urn is idempotent when URN already matches cardinality
-// Verifies that URN remains unchanged when cardinality already matches desired
-- (void)testapply_to_urn_no_change_needed {
-    XCTAssertEqualObjects(CSInputCardinalityApplyToUrn(CSInputCardinalitySingle, @"media:pdf"), @"media:pdf");
-    XCTAssertEqualObjects(CSInputCardinalityApplyToUrn(CSInputCardinalitySequence, @"media:list;pdf"), @"media:list;pdf");
-}
-
-// ==================== CapCardinalityInfo Cardinality Pattern Tests ====================
-
-// TEST697: Tests CapShapeInfo correctly identifies one-to-one pattern Verifies Single input and Single output result in OneToOne pattern
+// TEST697: Tests CapShapeInfo correctly identifies one-to-one pattern
 // Verifies Single input and Single output result in OneToOne pattern
 - (void)test697_cap_shape_info_one_to_one {
     CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:test" inSpec:@"media:pdf" outSpec:@"media:png"];
@@ -131,25 +74,38 @@
     XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToOne);
 }
 
-// TEST698: CapShapeInfo cardinality is always Single when derived from URN Cardinality comes from context (is_sequence), not from URN tags. The list tag is a semantic type property, not a cardinality indicator.
-- (void)test698_cap_shape_info_one_to_many {
+// TEST698: CapShapeInfo cardinality is always Single when derived from URN
+// Cardinality comes from context (is_sequence), not from URN tags.
+// The list tag is a semantic type property, not a cardinality indicator.
+- (void)test698_cap_shape_info_cardinality_always_single_from_urn {
     CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:pdf" outSpec:@"media:list;png"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
-    XCTAssertEqual(info.output.cardinality, CSInputCardinalitySequence);
-    XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToMany);
+    XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
+    XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToOne);
 }
 
 // TEST699: CapShapeInfo cardinality from URN is always Single; ManyToOne requires is_sequence
-- (void)test699_cap_shape_info_many_to_one {
-    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:list;pdf" outSpec:@"media:pdf"];
-    XCTAssertEqual(info.input.cardinality, CSInputCardinalitySequence);
-    XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
-    XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternManyToOne);
+- (void)test699_cap_shape_info_list_urn_still_single_cardinality {
+    // URN parsing always yields Single — the "list" tag is a structure marker, not cardinality
+    CSCapShapeInfo *fromUrn = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:list;pdf" outSpec:@"media:pdf"];
+    XCTAssertEqual(fromUrn.input.cardinality, CSInputCardinalitySingle);
+    XCTAssertEqual(fromUrn.output.cardinality, CSInputCardinalitySingle);
+    XCTAssertEqual([fromUrn cardinalityPattern], CSCardinalityPatternOneToOne);
+
+    // With is_sequence=true on input, cardinality becomes ManyToOne
+    CSCapShapeInfo *withSeq = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs"
+                                                  inSpec:@"media:list;pdf"
+                                                 outSpec:@"media:pdf"
+                                         inputIsSequence:YES
+                                        outputIsSequence:NO];
+    XCTAssertEqual(withSeq.input.cardinality, CSInputCardinalitySequence);
+    XCTAssertEqual(withSeq.output.cardinality, CSInputCardinalitySingle);
+    XCTAssertEqual([withSeq cardinalityPattern], CSCardinalityPatternManyToOne);
 }
 
 // ==================== CardinalityPattern Tests ====================
 
-// TEST709: Tests CardinalityPattern correctly identifies patterns that produce vectors Verifies OneToMany and ManyToMany return true, others return false
+// TEST709: Tests CardinalityPattern correctly identifies patterns that produce vectors
 // Verifies OneToMany and ManyToMany return true, others return false
 - (void)test709_pattern_produces_vector {
     XCTAssertFalse(CSCardinalityPatternProducesVector(CSCardinalityPatternOneToOne));
@@ -158,7 +114,7 @@
     XCTAssertTrue(CSCardinalityPatternProducesVector(CSCardinalityPatternManyToMany));
 }
 
-// TEST710: Tests CardinalityPattern correctly identifies patterns that require vectors Verifies ManyToOne and ManyToMany return true, others return false
+// TEST710: Tests CardinalityPattern correctly identifies patterns that require vectors
 // Verifies ManyToOne and ManyToMany return true, others return false
 - (void)test710_pattern_requires_vector {
     XCTAssertFalse(CSCardinalityPatternRequiresVector(CSCardinalityPatternOneToOne));
@@ -169,7 +125,7 @@
 
 // ==================== Shape Chain Analysis Tests ====================
 
-// TEST711: Tests shape chain analysis for simple linear one-to-one capability chains Verifies chains with no fan-out are valid and require no transformation
+// TEST711: Tests shape chain analysis for simple linear one-to-one capability chains
 // Verifies chains with no fan-out are valid and require no transformation
 - (void)test711_strand_shape_analysis_simple_linear {
     NSArray *infos = @[
@@ -182,10 +138,15 @@
     XCTAssertFalse([analysis requiresTransformation]);
 }
 
-// TEST712: Tests shape chain analysis detects fan-out points in capability chains Fan-out requires is_sequence=true on the cap's output, not a "list" URN tag
+// TEST712: Tests shape chain analysis detects fan-out points in capability chains
+// Fan-out requires is_sequence=true on the cap's output, not a "list" URN tag
 - (void)test712_strand_shape_analysis_with_fan_out {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:pdf" outSpec:@"media:list;png"],
+        [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages"
+                            inSpec:@"media:pdf"
+                           outSpec:@"media:png"
+                   inputIsSequence:NO
+                  outputIsSequence:YES],
         [CSCapShapeInfo fromCapUrn:@"cap:thumbnail" inSpec:@"media:png" outSpec:@"media:png"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
@@ -194,7 +155,7 @@
     XCTAssertTrue([analysis requiresTransformation]);
 }
 
-// TEST713: Tests shape chain analysis handles empty capability chains correctly Verifies empty chains are valid and require no transformation
+// TEST713: Tests shape chain analysis handles empty capability chains correctly
 // Verifies empty chains are valid and require no transformation
 - (void)test713_strand_shape_analysis_empty {
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:@[]];
@@ -203,26 +164,30 @@
 }
 
 // ==================== Serialization Tests ====================
-// TEST714 and TEST715 test JSON serialization which is Rust/serde-specific.
-// ObjC does not serialize these enums to JSON, so we test string representation instead.
+// TEST714/TEST715 in Rust test serde JSON round-trip. ObjC has no serde-equivalent
+// for these enums; the parity check is value distinctness, which exposes any enum-shape
+// regression equivalent to a JSON tag drift.
 
-// TEST714: Tests InputCardinality serializes and deserializes correctly to/from JSON Verifies JSON round-trip preserves cardinality values
-- (void)test714_cardinality_enum_values {
+// TEST714: Tests InputCardinality enum values are distinct (parity for Rust serde round-trip)
+- (void)test714_cardinality_serialization {
     XCTAssertNotEqual(CSInputCardinalitySingle, CSInputCardinalitySequence);
     XCTAssertNotEqual(CSInputCardinalitySingle, CSInputCardinalityAtLeastOne);
     XCTAssertNotEqual(CSInputCardinalitySequence, CSInputCardinalityAtLeastOne);
 }
 
-// TEST715: Tests CardinalityPattern serializes and deserializes correctly to/from JSON Verifies JSON round-trip preserves pattern values with snake_case formatting
-- (void)test715_pattern_enum_values {
+// TEST715: Tests CardinalityPattern enum values are distinct (parity for Rust serde round-trip)
+- (void)test715_pattern_serialization {
     XCTAssertNotEqual(CSCardinalityPatternOneToOne, CSCardinalityPatternOneToMany);
     XCTAssertNotEqual(CSCardinalityPatternOneToOne, CSCardinalityPatternManyToOne);
     XCTAssertNotEqual(CSCardinalityPatternOneToOne, CSCardinalityPatternManyToMany);
+    XCTAssertNotEqual(CSCardinalityPatternOneToMany, CSCardinalityPatternManyToOne);
+    XCTAssertNotEqual(CSCardinalityPatternOneToMany, CSCardinalityPatternManyToMany);
+    XCTAssertNotEqual(CSCardinalityPatternManyToOne, CSCardinalityPatternManyToMany);
 }
 
 // ==================== InputStructure Tests ====================
 
-// TEST720: Tests InputStructure correctly identifies opaque media URNs Verifies that URNs without record marker are parsed as Opaque
+// TEST720: Tests InputStructure correctly identifies opaque media URNs
 // Verifies that URNs without record marker are parsed as Opaque
 - (void)test720_from_media_urn_opaque {
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:pdf"), CSInputStructureOpaque);
@@ -232,7 +197,7 @@
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:file-path;list"), CSInputStructureOpaque);
 }
 
-// TEST721: Tests InputStructure correctly identifies record media URNs Verifies that URNs with record marker tag are parsed as Record
+// TEST721: Tests InputStructure correctly identifies record media URNs
 // Verifies that URNs with record marker tag are parsed as Record
 - (void)test721_from_media_urn_record {
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:json;record"), CSInputStructureRecord);
@@ -281,6 +246,7 @@
 // ==================== MediaShape Tests ====================
 
 // TEST730: Tests MediaShape correctly parses all four combinations
+// Cardinality is always Single from URN — comes from context, not URN tags
 - (void)test730_media_shape_from_urn_all_combinations {
     // Scalar opaque (default)
     CSMediaShape *shape = [CSMediaShape fromMediaUrn:@"media:textable"];
@@ -292,14 +258,14 @@
     XCTAssertEqual(shape.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(shape.structure, CSInputStructureRecord);
 
-    // List opaque
+    // List opaque — cardinality is always Single from URN (shape comes from context)
     shape = [CSMediaShape fromMediaUrn:@"media:file-path;list"];
-    XCTAssertEqual(shape.cardinality, CSInputCardinalitySequence);
+    XCTAssertEqual(shape.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(shape.structure, CSInputStructureOpaque);
 
-    // List record
+    // List record — cardinality is always Single from URN (shape comes from context)
     shape = [CSMediaShape fromMediaUrn:@"media:json;list;record"];
-    XCTAssertEqual(shape.cardinality, CSInputCardinalitySequence);
+    XCTAssertEqual(shape.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(shape.structure, CSInputStructureRecord);
 }
 
@@ -367,8 +333,10 @@
 // TEST741: Tests CapShapeInfo pattern detection — OneToMany requires output is_sequence=true
 - (void)test741_cap_shape_info_pattern {
     CSCapShapeInfo *oneToMany = [CSCapShapeInfo fromCapUrn:@"cap:disbind"
-                                                   inSpec:@"media:pdf"
-                                                  outSpec:@"media:disbound-page;list;textable"];
+                                                    inSpec:@"media:pdf"
+                                                   outSpec:@"media:disbound-page;textable"
+                                           inputIsSequence:NO
+                                          outputIsSequence:YES];
     XCTAssertEqual([oneToMany cardinalityPattern], CSCardinalityPatternOneToMany);
 }
 
@@ -398,10 +366,15 @@
     XCTAssertTrue([analysis.error containsString:@"Shape mismatch"]);
 }
 
-// TEST752: Tests shape chain analysis with fan-out (matching structures) Fan-out requires output is_sequence=true on the disbind cap
+// TEST752: Tests shape chain analysis with fan-out (matching structures)
+// Fan-out requires output is_sequence=true on the disbind cap
 - (void)test752_strand_shape_with_fanout {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:disbind" inSpec:@"media:pdf" outSpec:@"media:page;list;textable"],
+        [CSCapShapeInfo fromCapUrn:@"cap:disbind"
+                            inSpec:@"media:pdf"
+                           outSpec:@"media:page;textable"
+                   inputIsSequence:NO
+                  outputIsSequence:YES],
         [CSCapShapeInfo fromCapUrn:@"cap:process" inSpec:@"media:textable" outSpec:@"media:result;textable"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];

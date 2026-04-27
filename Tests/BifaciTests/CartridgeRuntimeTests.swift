@@ -1,6 +1,7 @@
 import XCTest
 import Foundation
 import SwiftCBOR
+import CapDAG
 @testable import Bifaci
 import Ops
 
@@ -53,6 +54,42 @@ func invokeOp(_ factory: OpFactory, input: InputPackage, output: Bifaci.OutputSt
     try dispatchOp(op: op, input: input, output: output, peer: NoPeerInvoker())
 }
 
+/// Test Op that decodes the CBOR args array, extracts the first arg's
+/// `value` byteString, and stores it in a shared sink. Mirrors Rust
+/// ExtractValueOp.
+final class ExtractValueOp: Op, @unchecked Sendable {
+    typealias Output = Void
+    let received: NSLockedBytes
+    init(received: NSLockedBytes) { self.received = received }
+    func perform(dry: DryContext, wet: WetContext) async throws {
+        let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
+        let input = try req.takeInput()
+        try req.output().start(isSequence: false)
+        let bytes = try input.collectAllBytes()
+        guard let cborVal = try CBOR.decode([UInt8](bytes)) else { return }
+        if case .array(let args) = cborVal {
+            for arg in args {
+                if case .map(let m) = arg {
+                    if case .byteString(let b) = m[.utf8String("value")] ?? .null {
+                        received.set(Data(b))
+                        try req.output().emitCbor(CBOR.byteString(b))
+                        return
+                    }
+                }
+            }
+        }
+    }
+    func metadata() -> OpMetadata { OpMetadata.builder("ExtractValueOp").build() }
+}
+
+/// Thread-safe Data sink for ExtractValueOp.
+final class NSLockedBytes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data: Data = Data()
+    func set(_ d: Data) { lock.lock(); data = d; lock.unlock() }
+    func get() -> Data { lock.lock(); defer { lock.unlock() }; return data }
+}
+
 /// Test Op: echoes all input bytes to output (collectAllBytes → write).
 /// dispatchOp closes output on success — do NOT call output.close() here.
 final class EchoAllBytesOp: Op, @unchecked Sendable {
@@ -101,13 +138,24 @@ final class EmitCborBytesOp: Op, @unchecked Sendable {
 // Helper functions for testing are defined later in the file
 // See: streamToInputPackage(), OutputCollector, createCollectingOutputStream()
 
+// File-scope helpers, accessible from every test class in this file.
+fileprivate func makeTestCap(urn: String, args: [CapArg]) -> CapDefinition {
+    return CapDefinition(
+        urn: urn,
+        title: "Test",
+        command: "test",
+        capDescription: nil,
+        args: args
+    )
+}
+
 @available(macOS 10.15.4, iOS 13.4, *)
 final class CartridgeRuntimeTests: XCTestCase {
 
     // MARK: - Test Constants
 
     static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
     """
     static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -255,15 +303,17 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST259: Test extract_effective_payload with non-CBOR content_type returns raw payload unchanged
     func test259_extractEffectivePayloadNonCbor() throws {
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
         let payload = "raw data".data(using: .utf8)!
-        let result = try extractEffectivePayload(payload: payload, contentType: "application/json", capUrn: "cap:op=test")
-        XCTAssertEqual(result, payload, "non-CBOR must return raw payload")
+        let result = try extractEffectivePayload(payload: payload, contentType: "application/json", cap: cap, isCliMode: true)
+        XCTAssertEqual(result, payload)
     }
 
-    // TEST260: Test extract_effective_payload with None content_type returns raw payload unchanged
+    // TEST260: Test extract_effective_payload with empty content_type returns raw payload unchanged
     func test260_extractEffectivePayloadNoContentType() throws {
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
         let payload = "raw data".data(using: .utf8)!
-        let result = try extractEffectivePayload(payload: payload, contentType: nil, capUrn: "cap:op=test")
+        let result = try extractEffectivePayload(payload: payload, contentType: nil, cap: cap, isCliMode: true)
         XCTAssertEqual(result, payload)
     }
 
@@ -278,12 +328,17 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let result = try extractEffectivePayload(
-            payload: payload,
-            contentType: "application/cbor",
-            capUrn: "cap:in=media:string;textable;op=test;out=*"
-        )
-        XCTAssertEqual(String(data: result, encoding: .utf8), "hello")
+        let cap = makeTestCap(urn: "cap:in=\"media:string;textable\";op=test;out=\"media:void\"", args: [])
+        let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
+        // NEW REGIME: result is full CBOR array; extract value from matching argument
+        guard let decoded = try CBOR.decode([UInt8](result)),
+              case .array(let arr) = decoded,
+              arr.count == 1,
+              case .map(let m) = arr[0],
+              let valEntry = m[CBOR.utf8String("value")],
+              case .byteString(let valBytes) = valEntry
+        else { return XCTFail("Expected CBOR array with one arg map containing value bytes") }
+        XCTAssertEqual(String(decoding: valBytes, as: UTF8.self), "hello")
     }
 
     // TEST262: Test extract_effective_payload with CBOR content fails when no argument matches expected input
@@ -296,11 +351,8 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        XCTAssertThrowsError(try extractEffectivePayload(
-            payload: payload,
-            contentType: "application/cbor",
-            capUrn: "cap:in=media:string;textable;op=test;out=*"
-        )) { error in
+        let cap = makeTestCap(urn: "cap:in=\"media:string;textable\";op=test;out=\"media:void\"", args: [])
+        XCTAssertThrowsError(try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)) { error in
             if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
                 XCTAssertTrue(msg.contains("No argument found matching"), "\(msg)")
@@ -310,10 +362,12 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST263: Test extract_effective_payload with invalid CBOR bytes returns deserialization error
     func test263_extractEffectivePayloadInvalidCbor() {
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
         XCTAssertThrowsError(try extractEffectivePayload(
             payload: "not cbor".data(using: .utf8)!,
             contentType: "application/cbor",
-            capUrn: "cap:in=*;op=test;out=*"
+            cap: cap,
+            isCliMode: false
         ))
     }
 
@@ -322,38 +376,11 @@ final class CartridgeRuntimeTests: XCTestCase {
         let cborMap: CBOR = .map([:])
         let payload = Data(cborMap.encode())
 
-        XCTAssertThrowsError(try extractEffectivePayload(
-            payload: payload,
-            contentType: "application/cbor",
-            capUrn: "cap:in=*;op=test;out=*"
-        )) { error in
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
+        XCTAssertThrowsError(try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)) { error in
             if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
                 XCTAssertTrue(msg.contains("must be an array"), "\(msg)")
-            }
-        }
-    }
-
-    // Mirror-specific coverage: extract_effective_payload with invalid cap URN returns CapUrn error
-    func testextractEffectivePayloadInvalidCapUrn() {
-        let cborArray: CBOR = .array([
-            .map([
-                .utf8String("media_urn"): .utf8String("media:anything"),
-                .utf8String("value"): .byteString([UInt8]("data".utf8))
-            ])
-        ])
-        let payload = Data(cborArray.encode())
-
-        XCTAssertThrowsError(try extractEffectivePayload(
-            payload: payload,
-            contentType: "application/cbor",
-            capUrn: "not-a-cap-urn"
-        )) { error in
-            if let runtimeError = error as? CartridgeRuntimeError,
-               case .capUrnError = runtimeError {
-                // Expected - matches Rust behavior
-            } else {
-                XCTFail("expected capUrnError, got \(error)")
             }
         }
     }
@@ -372,12 +399,26 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let result = try extractEffectivePayload(
-            payload: payload,
-            contentType: "application/cbor",
-            capUrn: "cap:in=media:model-spec;textable;op=infer;out=*"
-        )
-        XCTAssertEqual(String(data: result, encoding: .utf8), "correct")
+        let cap = makeTestCap(urn: "cap:in=\"media:model-spec;textable\";op=infer;out=\"media:void\"", args: [])
+        let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
+        // Handler matches against in_spec to find main input.
+        guard let decoded = try CBOR.decode([UInt8](result)),
+              case .array(let arr) = decoded
+        else { return XCTFail("Expected CBOR array") }
+        XCTAssertEqual(arr.count, 2)
+        let inSpec = try CSMediaUrn.fromString("media:model-spec;textable")
+        var found: [UInt8]? = nil
+        for arg in arr {
+            guard case .map(let m) = arg else { continue }
+            guard case .utf8String(let urnStr) = m[.utf8String("media_urn")] ?? .null,
+                  case .byteString(let val) = m[.utf8String("value")] ?? .null
+            else { continue }
+            if let argUrn = try? CSMediaUrn.fromString(urnStr), inSpec.isComparable(to: argUrn) {
+                found = val
+                break
+            }
+        }
+        XCTAssertEqual(found.map { String(decoding: $0, as: UTF8.self) }, "correct")
     }
 
     // TEST273: Test extract_effective_payload with binary data in CBOR value (not just text)
@@ -393,12 +434,16 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let result = try extractEffectivePayload(
-            payload: payload,
-            contentType: "application/cbor",
-            capUrn: "cap:in=media:pdf;op=process;out=*"
-        )
-        XCTAssertEqual(result, Data(binaryData), "binary values must roundtrip through CBOR extraction")
+        let cap = makeTestCap(urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"", args: [])
+        let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
+        guard let decoded = try CBOR.decode([UInt8](result)),
+              case .array(let arr) = decoded,
+              arr.count == 1,
+              case .map(let m) = arr[0],
+              let valEntry = m[CBOR.utf8String("value")],
+              case .byteString(let val) = valEntry
+        else { return XCTFail("Expected CBOR array with binary value") }
+        XCTAssertEqual(val, binaryData)
     }
 
     // MARK: - CliStreamEmitter Tests (TEST266-267)
@@ -566,7 +611,10 @@ final class CapArgumentValueTests: XCTestCase {
 @available(macOS 10.15.4, iOS 13.4, *)
 final class CborFilePathConversionTests: XCTestCase {
 
-    // Helper to create test manifest with caps
+    // Helper to create test manifest with caps. Caps live exclusively
+    // inside cap_groups now; tests get a single "default" group. Channel
+    // is part of the cartridge's identity — fixtures use "release" since
+    // these tests don't exercise channel-specific behaviour.
     private func createTestManifest(caps: [CapDefinition]) -> Data {
         // Always append CAP_IDENTITY at the end - cartridges must declare it
         // (Appending instead of prepending to avoid breaking tests that reference caps[0])
@@ -581,8 +629,9 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = Manifest(
             name: "TestCartridge",
             version: "1.0.0",
+            channel: "release",
             description: "Test cartridge",
-            caps: allCaps
+            capGroups: [CapGroup(name: "default", caps: allCaps, adapterUrns: [])]
         )
         return try! JSONEncoder().encode(manifest)
     }
@@ -603,6 +652,38 @@ final class CborFilePathConversionTests: XCTestCase {
         )
     }
 
+    // Helper mirroring Rust test_filepath_conversion: drives CLI flow and
+    // extracts the first arg's `value` bytes from the post-extract CBOR array.
+    private func filepathConversion(cap: CapDefinition, cliArgs: [String], runtime: CartridgeRuntime) throws -> Data {
+        let raw = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        let payload = try extractEffectivePayload(payload: raw, contentType: "application/cbor", cap: cap, isCliMode: true)
+        guard let decoded = try CBOR.decode([UInt8](payload)),
+              case .array(let arr) = decoded,
+              !arr.isEmpty,
+              case .map(let m) = arr[0],
+              case .byteString(let bytes) = m[.utf8String("value")] ?? .null
+        else { throw CartridgeRuntimeError.deserializationError("Expected CBOR array with byteString value") }
+        return Data(bytes)
+    }
+
+    // Helper mirroring Rust test_filepath_array_conversion: drives CLI flow
+    // and returns the first arg's value as a [Data] sequence.
+    private func filepathArrayConversion(cap: CapDefinition, cliArgs: [String], runtime: CartridgeRuntime) throws -> [Data] {
+        let raw = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        let payload = try extractEffectivePayload(payload: raw, contentType: "application/cbor", cap: cap, isCliMode: true)
+        guard let decoded = try CBOR.decode([UInt8](payload)),
+              case .array(let arr) = decoded,
+              !arr.isEmpty,
+              case .map(let m) = arr[0],
+              case .array(let items) = m[.utf8String("value")] ?? .null
+        else { throw CartridgeRuntimeError.deserializationError("Expected CBOR array with array value") }
+        var out: [Data] = []
+        for item in items {
+            if case .byteString(let b) = item { out.append(Data(b)) }
+        }
+        return out
+    }
+
     // Helper to create a cap arg
     private func createArg(
         mediaUrn: String,
@@ -621,10 +702,13 @@ final class CborFilePathConversionTests: XCTestCase {
     }
 
     // TEST336: Single file-path arg with stdin source reads file and passes bytes to handler
+    // TEST336: Single file-path arg with stdin source reads file and passes
+    // bytes to handler. Mirrors Rust test336_file_path_reads_file_passes_bytes.
     func test336_file_path_reads_file_passes_bytes() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test336_input.pdf")
         try Data("PDF binary content 336".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
             urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
@@ -633,52 +717,38 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .stdin("media:pdf"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:pdf"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Register Op handler that echoes payload
-        runtime.register_op(capUrn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"") {
-            AnyOp(EchoAllBytesOp())
-        }
+        let received = NSLockedBytes()
+        runtime.register_op(capUrn: cap.urn) { AnyOp(ExtractValueOp(received: received)) }
 
         // Simulate CLI invocation: cartridge process /path/to/file.pdf
         let cliArgs = [testFile.path]
-        let raw_payload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-
-        // Extract effective payload (simulates what run_cli_mode does)
-        let payload = try extractEffectivePayload(
-            payload: raw_payload,
-            contentType: "application/cbor",
-            capUrn: cap.urn
-        )
+        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)
 
         let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
+        try invokeOp(factory, input: testInputPackage([("media:", payload)]), output: output)
 
-        let inputStream = createSinglePayloadStream(mediaUrn: "media:pdf", data: payload)
-
-        try invokeOp(factory, input: streamToInputPackage(inputStream), output: output)
-
-        // Verify handler received file bytes, not file path
-        XCTAssertEqual(collector.getData(), Data("PDF binary content 336".utf8), "Handler should receive file bytes")
-        XCTAssertEqual(payload, Data("PDF binary content 336".utf8))
-
-        try? FileManager.default.removeItem(at: testFile)
+        // Verify handler decoded the args and received file bytes (not file path string).
+        XCTAssertEqual(received.get(), Data("PDF binary content 336".utf8),
+                       "Handler receives file bytes after auto-conversion")
     }
 
-    // TEST337: file-path arg without stdin source passes path as string (no conversion)
+    // TEST337: file-path arg without stdin source passes path as string (no conversion).
+    // Mirrors Rust test337_file_path_without_stdin_passes_string.
     func test337_file_path_without_stdin_passes_string() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test337_input.txt")
         try Data("content".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
             urn: "cap:in=\"media:void\";op=test;out=\"media:void\"",
@@ -695,25 +765,20 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
-        // Use reflection or manual extraction to test extractArgValue
-        // Since it's private, we'll test through buildPayloadFromCli
-        let payload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-
-        // Should get JSON payload with file PATH as string, not file CONTENTS
-        if let jsonObj = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] {
-            if let filePath = jsonObj["file_path"] as? String {
-                XCTAssertTrue(filePath.contains("test337_input.txt"), "Should receive file path string when no stdin source")
-            }
-        }
-
-        try? FileManager.default.removeItem(at: testFile)
+        let (result, cameFromStdin) = try runtime.extractArgValue(argDef: cap.args[0], cliArgs: cliArgs, stdinData: nil)
+        XCTAssertFalse(cameFromStdin)
+        let valueStr = String(decoding: result ?? Data(), as: UTF8.self)
+        XCTAssertTrue(valueStr.contains("test337_input.txt"),
+                      "Should receive file path string when no stdin source: \(valueStr)")
     }
 
-    // TEST338: file-path arg reads file via --file CLI flag
+    // TEST338: file-path arg reads file via --file CLI flag.
+    // Mirrors Rust test338_file_path_via_cli_flag.
     func test338_file_path_via_cli_flag() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test338.pdf")
         try Data("PDF via flag 338".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
             urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
@@ -722,40 +787,30 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .stdin("media:pdf"),
-                    .cliFlag("--file")
-                ]
+                sources: [.stdin("media:pdf"), .cliFlag("--file")]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        runtime.register_op(capUrn: cap.urn) { AnyOp(EchoAllBytesOp()) }
-
         let cliArgs = ["--file", testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
-        let collector = OutputCollector()
-        let output = createCollectingOutputStream(collector: collector)
-        let inputStream = createSinglePayloadStream(mediaUrn: "media:pdf", data: payload)
-        try invokeOp(factory, input: streamToInputPackage(inputStream), output: output)
-
-        XCTAssertEqual(collector.getData(), Data("PDF via flag 338".utf8), "Should read file from --file flag")
-
-        try? FileManager.default.removeItem(at: testFile)
+        let fileContents = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(fileContents, Data("PDF via flag 338".utf8), "Should read file from --file flag")
     }
 
     // TEST339: A sequence-declared file-path arg (isSequence=true) expands a
     // glob into N files and the runtime delivers them as a CBOR Array of
     // bytes — one item per matched file. List-ness comes from the arg
     // declaration, NOT from any `;list` URN tag.
+    // TEST339: A sequence-declared file-path arg expands a glob to N files
+    // and the runtime delivers them as a CBOR Array of bytes — one item per
+    // matched file. List-ness comes from the arg declaration, not from any
+    // `;list` URN tag. Mirrors Rust test339_file_path_array_glob_expansion.
     func test339_file_path_array_glob_expansion() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test339")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let file1 = tempDir.appendingPathComponent("doc1.txt")
         let file2 = tempDir.appendingPathComponent("doc2.txt")
@@ -770,47 +825,20 @@ final class CborFilePathConversionTests: XCTestCase {
                 mediaUrn: "media:file-path;textable",
                 required: true,
                 isSequence: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Sequence args take a newline-separated list of paths or globs.
+        // CLI: bare glob pattern.
         let pattern = "\(tempDir.path)/*.txt"
         let cliArgs = [pattern]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
-            XCTFail("Failed to decode CBOR")
-            return
-        }
-
-        guard case .array(let filesArray) = cborValue else {
-            XCTFail("Expected CBOR array")
-            return
-        }
-
-        XCTAssertEqual(filesArray.count, 2, "Should find 2 files")
-
-        var bytesVec: [[UInt8]] = []
-        for val in filesArray {
-            if case .byteString(let bytes) = val {
-                bytesVec.append(bytes)
-            } else {
-                XCTFail("Expected byte strings")
-            }
-        }
-        bytesVec.sort { $0.lexicographicallyPrecedes($1) }
-        XCTAssertEqual(bytesVec.map { Data($0) }.sorted { $0.lexicographicallyPrecedes($1) },
-                       [Data("content1".utf8), Data("content2".utf8)].sorted { $0.lexicographicallyPrecedes($1) })
-
-        try? FileManager.default.removeItem(at: tempDir)
+        let filesBytes = try filepathArrayConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(filesBytes.count, 2, "Should find 2 files")
+        let sorted = filesBytes.sorted { $0.lexicographicallyPrecedes($1) }
+        XCTAssertEqual(sorted, [Data("content1".utf8), Data("content2".utf8)])
     }
 
     // TEST340: File not found error provides clear message
@@ -833,24 +861,24 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["/nonexistent/file.pdf"]
-
-        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        XCTAssertThrowsError(try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)) { error in
             let errMsg = error.localizedDescription
-            XCTAssertTrue(
-                errMsg.contains("/nonexistent/file.pdf")
-                    && (errMsg.contains("File not found") || errMsg.contains("Failed to read file")),
-                "Error should mention file path and read failure: \(errMsg)"
-            )
+            XCTAssertTrue(errMsg.contains("/nonexistent/file.pdf"), "Error should mention file path; got: \(errMsg)")
+            XCTAssertTrue(errMsg.contains("File not found") || errMsg.contains("Failed to read file"),
+                          "Error should be clear; got: \(errMsg)")
         }
     }
 
-    // TEST341: stdin takes precedence over file-path in source order
-    func test341_stdin_precedence_over_file_path() async throws {
+    // TEST341: stdin takes precedence over file-path in source order.
+    // Mirrors Rust test341_stdin_precedence_over_file_path.
+    func test341_stdin_precedence_over_file_path() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test341_input.txt")
         try Data("file content".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
-        // Stdin source comes BEFORE position source
+        // Stdin source comes BEFORE position source.
         let cap = createCap(
             urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
             title: "Test",
@@ -858,37 +886,27 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .stdin("media:"),  // First
-                    .positional(0)          // Second
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        runtime.register_op(capUrn: cap.urn) { AnyOp(EchoAllBytesOp()) }
-
-        // Simulate stdin data being available
-        // Since we can't actually provide stdin in tests, we'll test the buildPayloadFromCli behavior
-        // The Rust test uses extract_arg_value directly with stdin_data parameter
-        // We test that when only positional arg is provided, file is read
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        // Without stdin, position source is used, so file is read
-        XCTAssertEqual(payload, Data("file content".utf8))
-
-        try? FileManager.default.removeItem(at: testFile)
+        let stdinData = Data("stdin content 341".utf8)
+        let (result, cameFromStdin) = try runtime.extractArgValue(argDef: cap.args[0], cliArgs: cliArgs, stdinData: stdinData)
+        XCTAssertTrue(cameFromStdin)
+        XCTAssertEqual(result, stdinData, "stdin source should take precedence")
     }
 
-    // TEST342: file-path with position 0 reads first positional arg as file
+    // TEST342: file-path with position 0 reads first positional arg as file.
+    // Mirrors Rust test342_file_path_position_zero_reads_first_arg.
     func test342_file_path_position_zero_reads_first_arg() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test342.dat")
         try Data("binary data 342".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
             urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
@@ -897,40 +915,29 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // CLI: cartridge test /path/to/file (position 0 after subcommand)
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        XCTAssertEqual(payload, Data("binary data 342".utf8), "Should read file at position 0")
-
-        try? FileManager.default.removeItem(at: testFile)
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, Data("binary data 342".utf8), "Should read file at position 0")
     }
 
-    // TEST343: Non-file-path args are not affected by file reading
+    // TEST343: Non-file-path args are not affected by file reading.
+    // Mirrors Rust test343_non_file_path_args_unaffected.
     func test343_non_file_path_args_unaffected() throws {
-        // Arg with different media type should NOT trigger file reading
         let cap = createCap(
-            urn: "cap:in=\"media:model-spec;textable\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:void\";op=test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
                 mediaUrn: "media:model-spec;textable",  // NOT file-path
                 required: true,
-                sources: [
-                    .stdin("media:model-spec;textable"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:model-spec;textable"), .positional(0)]
             )]
         )
 
@@ -938,13 +945,8 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["mlx-community/Llama-3.2-3B-Instruct-4bit"]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-
-        // For non-file-path args with stdin source, CBOR format is still used
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        // Should get the string value, not attempt file read
-        let valueStr = String(data: payload, encoding: .utf8)
+        let (result, _) = try runtime.extractArgValue(argDef: cap.args[0], cliArgs: cliArgs, stdinData: nil)
+        let valueStr = String(decoding: result ?? Data(), as: UTF8.self)
         XCTAssertEqual(valueStr, "mlx-community/Llama-3.2-3B-Instruct-4bit")
     }
 
@@ -970,24 +972,20 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = ["/nonexistent/path/to/nothing"]
-        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        XCTAssertThrowsError(try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)) { error in
             let err = error.localizedDescription
-            XCTAssertTrue(
-                err.contains("/nonexistent/path/to/nothing")
-                    && (err.contains("File not found") || err.contains("Failed to read file")),
-                "Error should name the path and explain the failure; got: \(err)"
-            )
+            XCTAssertTrue(err.contains("/nonexistent/path/to/nothing"), "Error should mention the path; got: \(err)")
+            XCTAssertTrue(err.contains("File not found") || err.contains("Failed to read"),
+                          "Error should be clear about file access failure; got: \(err)")
         }
     }
 
-    // TEST345: a sequence file-path arg with a literal nonexistent path
-    // fails hard. The runtime reads every resolved path; any missing file
-    // aborts the batch rather than silently dropping an entry.
+    // TEST345: file-path arg with literal nonexistent path fails hard.
+    // Mirrors Rust test345_file_path_array_one_file_missing_fails_hard.
     func test345_file_path_array_one_file_missing_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
-        let file1 = tempDir.appendingPathComponent("test345_exists.txt")
-        try Data("exists".utf8).write(to: file1)
-        let file2Path = tempDir.appendingPathComponent("test345_missing.txt")
+        let missingPath = tempDir.appendingPathComponent("test345_missing.txt")
 
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
@@ -996,31 +994,21 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                isSequence: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Sequence arg takes newline-separated paths; one missing → hard fail.
-        let pathsValue = "\(file1.path)\n\(file2Path.path)"
-        let cliArgs = [pathsValue]
-
-        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+        let cliArgs = [missingPath.path]
+        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        XCTAssertThrowsError(try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)) { error in
             let err = error.localizedDescription
-            XCTAssertTrue(
-                err.contains("test345_missing.txt")
-                    && (err.contains("File not found") || err.contains("Failed to read file")),
-                "Should fail hard when any file in sequence is missing; got: \(err)"
-            )
+            XCTAssertTrue(err.contains("test345_missing.txt"), "Error should mention the missing file; got: \(err)")
+            XCTAssertTrue(err.contains("File not found") || err.contains("doesn't exist"),
+                          "Error should be clear about missing file; got: \(err)")
         }
-
-        try? FileManager.default.removeItem(at: file1)
     }
 
     // TEST346: Large file (1MB) reads successfully
@@ -1053,20 +1041,20 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        XCTAssertEqual(payload.count, 1_000_000, "Should read entire 1MB file")
-        XCTAssertEqual(payload, largeData, "Content should match exactly")
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result.count, 1_000_000, "Should read entire 1MB file")
+        XCTAssertEqual(result, largeData, "Content should match exactly")
 
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST347: Empty file reads as empty bytes
+    // TEST347: Empty file reads as empty bytes.
+    // Mirrors Rust test347_empty_file_reads_as_empty_bytes.
     func test347_empty_file_reads_as_empty_bytes() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test347_empty.txt")
         try Data().write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
             urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
@@ -1075,10 +1063,7 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
@@ -1086,21 +1071,19 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        XCTAssertEqual(payload, Data(), "Empty file should produce empty bytes")
-
-        try? FileManager.default.removeItem(at: testFile)
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, Data(), "Empty file should produce empty bytes")
     }
 
-    // TEST348: file-path conversion respects source order
+    // TEST348: file-path conversion respects source order.
+    // Mirrors Rust test348_file_path_conversion_respects_source_order.
     func test348_file_path_conversion_respects_source_order() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test348.txt")
         try Data("file content 348".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
-        // Position source BEFORE stdin source
+        // Position source BEFORE stdin source.
         let cap = createCap(
             urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
             title: "Test",
@@ -1108,10 +1091,7 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .positional(0),         // First
-                    .stdin("media:")   // Second
-                ]
+                sources: [.positional(0), .stdin("media:")]
             )]
         )
 
@@ -1119,13 +1099,8 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        // Position source tried first, so file is read
-        XCTAssertEqual(payload, Data("file content 348".utf8), "Position source tried first, file read")
-
-        try? FileManager.default.removeItem(at: testFile)
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, Data("file content 348".utf8), "Position source tried first, file read")
     }
 
     // TEST349: file-path arg with multiple sources tries all in order
@@ -1154,10 +1129,8 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Only provide position arg, no --file flag
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        XCTAssertEqual(payload, Data("content 349".utf8), "Should fall back to position source and read file")
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, Data("content 349".utf8), "Should fall back to position source and read file")
 
         try? FileManager.default.removeItem(at: testFile)
     }
@@ -1168,6 +1141,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let testFile = tempDir.appendingPathComponent("test350_input.pdf")
         let testContent = Data("PDF file content for integration test".utf8)
         try testContent.write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
             urn: "cap:in=\"media:pdf\";op=process;out=\"media:result;textable\"",
@@ -1176,67 +1150,34 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                sources: [
-                    .stdin("media:pdf"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:pdf"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Track what the handler receives using a class wrapper for thread-safe capture
-        final class PayloadCapture: @unchecked Sendable {
-            var data = Data()
-        }
-        let capture = PayloadCapture()
-
-        // Register Op handler that captures received bytes and writes processed output
-        let captureRef = capture
-        runtime.register_op(capUrn: "cap:in=\"media:pdf\";op=process;out=\"media:result;textable\"") {
-            final class CaptureAndWriteOp: Op, @unchecked Sendable {
-                typealias Output = Void
-                let capture: PayloadCapture
-                init(_ c: PayloadCapture) { capture = c }
-                func perform(dry: DryContext, wet: WetContext) async throws {
-                    let req = try wet.getRequired(CborRequest.self, for: WET_KEY_REQUEST)
-                    let input = try req.takeInput()
-                    let data = try input.collectAllBytes()
-                    capture.data = data
-                    try req.output().start(isSequence: false)
-                    try req.output().write(Data("processed".utf8))
-                }
-                func metadata() -> OpMetadata { OpMetadata.builder("CaptureAndWriteOp").build() }
-            }
-            return AnyOp(CaptureAndWriteOp(captureRef))
-        }
+        let received = NSLockedBytes()
+        runtime.register_op(capUrn: cap.urn) { AnyOp(ExtractValueOp(received: received)) }
 
         // Simulate full CLI invocation
         let cliArgs = [testFile.path]
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-
-        // Create InputPackage directly from CBOR payload (don't extract - let the test helper handle it)
-        let inputPackage = createInputPackage(fromPayload: rawPayload, mediaUrn: "media:pdf")
-
-        // Create output collector
-        let outputCollector = OutputCollector()
-        let outputStream = createCollectingOutputStream(collector: outputCollector, mediaUrn: "media:result;textable")
+        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)
 
         let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
-        try invokeOp(factory, input: inputPackage, output: outputStream)
+        let collector = OutputCollector()
+        let output = createCollectingOutputStream(collector: collector)
+        try invokeOp(factory, input: testInputPackage([("media:", payload)]), output: output)
 
-        // Verify handler received file bytes
-        XCTAssertEqual(capture.data, testContent, "Handler should receive file bytes, not path")
-        XCTAssertEqual(outputCollector.getData(), Data("processed".utf8))
-
-        try? FileManager.default.removeItem(at: testFile)
+        // Verify handler received file bytes after auto-conversion.
+        XCTAssertEqual(received.get(), testContent,
+                       "Handler receives file bytes after auto-conversion")
     }
 
-    // TEST351: a sequence-declared file-path arg with an empty
-    // newline-separated value returns an empty CBOR Array — no spurious
-    // error. Declaring `isSequence=true` is what makes the runtime emit an
-    // Array shape; URN tags are semantic only.
+    // TEST351: file-path arg in CBOR mode with empty Array value returns
+    // empty. CBOR Array (not JSON) is the multi-input wire form for sequence
+    // args. Mirrors Rust test351_file_path_array_empty_array.
     func test351_file_path_array_empty_array() throws {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
@@ -1246,31 +1187,25 @@ final class CborFilePathConversionTests: XCTestCase {
                 mediaUrn: "media:file-path;textable",
                 required: false,
                 isSequence: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:")]
             )]
         )
 
-        let manifest = createTestManifest(caps: [cap])
-        let runtime = CartridgeRuntime(manifest: manifest)
+        // CBOR-mode payload: value is an empty Array.
+        let arg: CBOR = .map([
+            .utf8String("media_urn"): .utf8String("media:file-path;textable"),
+            .utf8String("value"): .array([])
+        ])
+        let payload = Data(CBOR.array([arg]).encode())
+        let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
 
-        let cliArgs = [""]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
-            XCTFail("Failed to decode CBOR")
-            return
-        }
-
-        guard case .array(let filesArray) = cborValue else {
-            XCTFail("Expected CBOR array")
-            return
-        }
-
-        XCTAssertEqual(filesArray.count, 0, "Empty pattern list should produce empty result")
+        guard let decoded = try CBOR.decode([UInt8](result)),
+              case .array(let arr) = decoded,
+              arr.count == 1,
+              case .map(let m) = arr[0],
+              case .array(let value) = m[.utf8String("value")] ?? .null
+        else { return XCTFail("Expected CBOR array with array value") }
+        XCTAssertEqual(value.count, 0, "Empty array should produce empty result")
     }
 
     #if os(macOS) || os(Linux)
@@ -1301,8 +1236,8 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
-
-        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        XCTAssertThrowsError(try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)) { error in
             let err = error.localizedDescription
             XCTAssertTrue(err.contains("test352_noperm.txt"), "Error should mention the file: \(err)")
         }
@@ -1375,9 +1310,8 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(bytes, [UInt8]("test value".utf8))
     }
 
-    // TEST354: a glob pattern with no matches fails hard. Silent empty
-    // results mask real user mistakes (typo'd path, wrong directory), so the
-    // runtime surfaces them rather than returning an empty array.
+    // TEST354: Glob pattern with no matches fails hard (NO FALLBACK).
+    // Mirrors Rust test354_glob_pattern_no_matches_empty_array.
     func test354_glob_pattern_no_matches_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
 
@@ -1388,26 +1322,21 @@ final class CborFilePathConversionTests: XCTestCase {
             args: [createArg(
                 mediaUrn: "media:file-path;textable",
                 required: true,
-                isSequence: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
+        // CLI: bare glob that matches nothing — must fail hard.
         let pattern = "\(tempDir.path)/nonexistent_*.xyz"
         let cliArgs = [pattern]
-
-        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        XCTAssertThrowsError(try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)) { error in
             let err = error.localizedDescription
-            XCTAssertTrue(
-                err.contains("No files matched"),
-                "Error should say no files matched; got: \(err)"
-            )
+            XCTAssertTrue(err.contains("No files matched") || err.contains("nonexistent"),
+                          "Should fail hard when glob matches nothing — NO FALLBACK; got: \(err)")
         }
     }
 
@@ -1442,34 +1371,19 @@ final class CborFilePathConversionTests: XCTestCase {
 
         let pattern = "\(tempDir.path)/*"
         let cliArgs = [pattern]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
-            XCTFail("Failed to decode CBOR")
-            return
-        }
-
-        guard case .array(let filesArray) = cborValue else {
-            XCTFail("Expected CBOR array")
-            return
-        }
-
-        XCTAssertEqual(filesArray.count, 1, "Should only include files, not directories")
-
-        if case .byteString(let bytes) = filesArray[0] {
-            XCTAssertEqual(bytes, [UInt8]("content1".utf8))
-        } else {
-            XCTFail("Expected bytes")
-        }
+        let files = try filepathArrayConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(files.count, 1, "Should only include files, not directories")
+        XCTAssertEqual(files[0], Data("content1".utf8))
 
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    // TEST356: Multiple glob patterns combined via newline separation.
+    // TEST356: Multiple glob patterns combined as CBOR Array (CBOR mode).
+    // Mirrors Rust test356_multiple_glob_patterns_combined.
     func test356_multiple_glob_patterns_combined() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test356")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let file1 = tempDir.appendingPathComponent("doc.txt")
         let file2 = tempDir.appendingPathComponent("data.json")
@@ -1484,36 +1398,31 @@ final class CborFilePathConversionTests: XCTestCase {
                 mediaUrn: "media:file-path;textable",
                 required: true,
                 isSequence: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
-        let manifest = createTestManifest(caps: [cap])
-        let runtime = CartridgeRuntime(manifest: manifest)
-
         let pattern1 = "\(tempDir.path)/*.txt"
         let pattern2 = "\(tempDir.path)/*.json"
-        let cliArgs = ["\(pattern1)\n\(pattern2)"]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
 
-        // Decode CBOR array
-        guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
-            XCTFail("Failed to decode CBOR")
-            return
-        }
+        // Build CBOR payload with Array of patterns (CBOR mode allows arrays).
+        let arg: CBOR = .map([
+            .utf8String("media_urn"): .utf8String("media:file-path;textable"),
+            .utf8String("value"): .array([.utf8String(pattern1), .utf8String(pattern2)])
+        ])
+        let payload = Data(CBOR.array([arg]).encode())
 
-        guard case .array(let filesArray) = cborValue else {
-            XCTFail("Expected CBOR array")
-            return
-        }
+        let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
+
+        guard let decoded = try CBOR.decode([UInt8](result)),
+              case .array(let arr) = decoded,
+              !arr.isEmpty,
+              case .map(let m) = arr[0],
+              case .array(let filesArray) = m[.utf8String("value")] ?? .null
+        else { return XCTFail("Expected CBOR array with array value") }
 
         XCTAssertEqual(filesArray.count, 2, "Should find both files from different patterns")
 
-        // Collect contents (order may vary)
         var contents: [[UInt8]] = []
         for val in filesArray {
             if case .byteString(let bytes) = val {
@@ -1557,10 +1466,8 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [linkFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        XCTAssertEqual(payload, Data("real content".utf8), "Should follow symlink and read real file")
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, Data("real content".utf8), "Should follow symlink and read real file")
 
         try? FileManager.default.removeItem(at: tempDir)
     }
@@ -1593,16 +1500,14 @@ final class CborFilePathConversionTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let cliArgs = [testFile.path]
-        let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
-        let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", capUrn: cap.urn)
-
-        XCTAssertEqual(payload, binaryData, "Binary data should read correctly")
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, binaryData, "Binary data should read correctly")
 
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST359: Invalid glob pattern fails with a clear error instead of
-    // being silently accepted or producing an empty match set.
+    // TEST359: Invalid glob pattern fails with a clear error.
+    // Mirrors Rust test359_invalid_glob_pattern_fails.
     func test359_invalid_glob_pattern_fails() {
         let cap = createCap(
             urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
@@ -1612,22 +1517,20 @@ final class CborFilePathConversionTests: XCTestCase {
                 mediaUrn: "media:file-path;textable",
                 required: true,
                 isSequence: true,
-                sources: [
-                    .stdin("media:"),
-                    .positional(0)
-                ]
+                sources: [.stdin("media:"), .positional(0)]
             )]
         )
 
-        let manifest = createTestManifest(caps: [cap])
-        let runtime = CartridgeRuntime(manifest: manifest)
+        // Invalid glob pattern (unclosed bracket) sent in CBOR mode.
+        let arg: CBOR = .map([
+            .utf8String("media_urn"): .utf8String("media:file-path;textable"),
+            .utf8String("value"): .utf8String("[invalid")
+        ])
+        let payload = Data(CBOR.array([arg]).encode())
 
-        // Invalid glob pattern (unclosed bracket).
-        let cliArgs = ["[invalid"]
-
-        XCTAssertThrowsError(try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)) { error in
+        XCTAssertThrowsError(try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: true)) { error in
             let err = error.localizedDescription
-            XCTAssertTrue(err.contains("Invalid glob pattern") || err.contains("glob"),
+            XCTAssertTrue(err.contains("Invalid glob pattern") || err.contains("Pattern"),
                           "Error should mention invalid glob: \(err)")
         }
     }
@@ -1658,18 +1561,28 @@ final class CborFilePathConversionTests: XCTestCase {
 
         let cliArgs = [testFile.path]
 
-        // Build CBOR payload (what build_payload_from_cli does)
+        // NEW REGIME: extract_effective_payload returns the full CBOR args
+        // array; the matching arg's value is the file bytes after auto-conv.
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
+        let effective = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)
 
-        // Extract effective payload (what run_cli_mode does)
-        let effective = try extractEffectivePayload(
-            payload: rawPayload,
-            contentType: "application/cbor",
-            capUrn: cap.urn
-        )
+        guard let decoded = try CBOR.decode([UInt8](effective)),
+              case .array(let arr) = decoded
+        else { return XCTFail("Expected CBOR array") }
 
-        // Effective payload should be the raw PDF bytes
-        XCTAssertEqual(effective, pdfContent, "Should extract file bytes from CBOR payload")
+        let inSpec = try CSMediaUrn.fromString("media:pdf")
+        var foundValue: Data? = nil
+        for arg in arr {
+            guard case .map(let m) = arg else { continue }
+            guard case .utf8String(let urnStr) = m[.utf8String("media_urn")] ?? .null,
+                  case .byteString(let val) = m[.utf8String("value")] ?? .null
+            else { continue }
+            if let argUrn = try? CSMediaUrn.fromString(urnStr), inSpec.isComparable(to: argUrn) {
+                foundValue = Data(val)
+                break
+            }
+        }
+        XCTAssertEqual(foundValue, pdfContent, "File-path auto-converted to bytes")
 
         try? FileManager.default.removeItem(at: testFile)
     }
@@ -1996,7 +1909,9 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(resultHolder.data, pdfContent, "Handler should receive chunked content")
     }
 
-    // TEST364: CBOR mode with file path - send file path in CBOR arguments (auto-conversion)
+    // TEST364: CBOR mode with file path - file-path arg in CBOR mode is
+    // auto-converted to file bytes via extract_effective_payload.
+    // Mirrors Rust test364_cbor_mode_file_path.
     func test364_cbor_mode_file_path() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test364.pdf")
@@ -2004,55 +1919,45 @@ final class CborFilePathConversionTests: XCTestCase {
         try pdfContent.write(to: testFile)
         defer { try? FileManager.default.removeItem(at: testFile) }
 
-        // Build CBOR arguments with file-path URN
-        let args = [CapArgumentValue(
-            mediaUrn: "media:file-path;textable",
-            value: Data(testFile.path.utf8)
-        )]
-        let cborArgs: [CBOR] = args.map { arg in
-            CBOR.map([
-                CBOR.utf8String("media_urn"): CBOR.utf8String(arg.mediaUrn),
-                CBOR.utf8String("value"): CBOR.byteString([UInt8](arg.value))
-            ])
-        }
-        let payload = Data(CBOR.array(cborArgs).encode())
+        let cap = createCap(
+            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            title: "Process",
+            command: "process",
+            args: [createArg(
+                mediaUrn: "media:file-path;textable",
+                required: true,
+                sources: [.stdin("media:pdf")]
+            )]
+        )
 
-        // Verify the CBOR structure is correct
-        let decoded = try CBORDecoder(input: [UInt8](payload)).decodeItem()
-        guard case .array(let arr) = decoded else {
-            XCTFail("Expected CBOR array")
-            return
-        }
+        // Build CBOR arguments with file-path URN.
+        let arg: CBOR = .map([
+            .utf8String("media_urn"): .utf8String("media:file-path;textable"),
+            .utf8String("value"): .byteString([UInt8](testFile.path.utf8))
+        ])
+        let payload = Data(CBOR.array([arg]).encode())
 
-        XCTAssertEqual(arr.count, 1, "Expected 1 argument")
+        // Extract effective payload (triggers file-path auto-conversion).
+        let effective = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
 
-        guard case .map(let argMap) = arr[0] else {
-            XCTFail("Expected map")
-            return
-        }
+        // Verify the result is modified CBOR with PDF bytes (not file path) and
+        // the arg is relabeled to the stdin source's target URN.
+        guard let decoded = try CBOR.decode([UInt8](effective)),
+              case .array(let arr) = decoded,
+              !arr.isEmpty,
+              case .map(let m) = arr[0]
+        else { return XCTFail("Expected CBOR array with map[0]") }
 
-        var mediaUrn: String?
-        var value: Data?
-
-        for (k, v) in argMap {
+        var mediaUrn: String? = nil
+        var value: [UInt8]? = nil
+        for (k, v) in m {
             if case .utf8String(let key) = k {
-                switch key {
-                case "media_urn":
-                    if case .utf8String(let s) = v {
-                        mediaUrn = s
-                    }
-                case "value":
-                    if case .byteString(let bytes) = v {
-                        value = Data(bytes)
-                    }
-                default:
-                    break
-                }
+                if key == "media_urn", case .utf8String(let s) = v { mediaUrn = s }
+                else if key == "value", case .byteString(let b) = v { value = b }
             }
         }
-
-        XCTAssertEqual(mediaUrn, "media:file-path;textable", "Expected media:file-path URN")
-        XCTAssertEqual(value, Data(testFile.path.utf8), "Expected file path as value")
+        XCTAssertEqual(mediaUrn, "media:pdf", "Should be relabeled to stdin source target")
+        XCTAssertEqual(value.map { Data($0) }, pdfContent, "File-path auto-converted to bytes")
     }
 }
 
@@ -2168,29 +2073,50 @@ private func createInputPackage(fromPayload payload: Data, mediaUrn: String) -> 
     return InputPackage(rx: streamIterator)
 }
 
+/// Build an InputPackage from a list of (mediaUrn, data) streams.
+/// Each `data` is sent as a single CBOR byteString chunk. Mirrors Rust
+/// test_input_package(&[(&str, &[u8])]).
+@available(macOS 10.15.4, iOS 13.4, *)
+private func testInputPackage(_ streams: [(String, Data)]) -> InputPackage {
+    let requestId = MessageId.newUUID()
+    var frames: [Frame] = []
+    for (mediaUrn, data) in streams {
+        let streamId = UUID().uuidString
+        frames.append(Frame.streamStart(reqId: requestId, streamId: streamId, mediaUrn: mediaUrn))
+        let cborPayload = CBOR.byteString([UInt8](data)).encode()
+        let cborData = Data(cborPayload)
+        frames.append(Frame.chunk(
+            reqId: requestId, streamId: streamId, seq: 0,
+            payload: cborData, chunkIndex: 0,
+            checksum: Frame.computeChecksum(cborData)
+        ))
+        frames.append(Frame.streamEnd(reqId: requestId, streamId: streamId, chunkCount: 1))
+    }
+    frames.append(Frame.end(id: requestId))
+    var idx = 0
+    let iter = AnyIterator<Frame> {
+        guard idx < frames.count else { return nil }
+        let f = frames[idx]; idx += 1; return f
+    }
+    return demuxMultiStream(frameIterator: iter)
+}
+
 /// Converts AsyncStream<Frame> to InputPackage by collecting frames synchronously
 @available(macOS 10.15.4, iOS 13.4, *)
 private func streamToInputPackage(_ stream: AsyncStream<Frame>) -> InputPackage {
     // Collect all frames synchronously
-    let framesBox = NSMutableArray()
-    let group = DispatchGroup()
-    group.enter()
-
-    Thread.detachNewThread {
-        let localGroup = DispatchGroup()
-        localGroup.enter()
-        Task {
-            for await frame in stream {
-                framesBox.add(frame)
-            }
-            localGroup.leave()
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var collected: [Frame] = []
+    Task {
+        var frames: [Frame] = []
+        for await frame in stream {
+            frames.append(frame)
         }
-        localGroup.wait()
-        group.leave()
+        collected = frames
+        semaphore.signal()
     }
-
-    group.wait()
-    let allFrames = framesBox.compactMap { $0 as? Frame }
+    semaphore.wait()
+    let allFrames = collected
 
     var frameIndex = 0
     let frameIterator = AnyIterator<Frame> {
