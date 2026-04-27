@@ -630,6 +630,7 @@ final class CborFilePathConversionTests: XCTestCase {
             name: "TestCartridge",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             description: "Test cartridge",
             capGroups: [CapGroup(name: "default", caps: allCaps, adapterUrns: [])]
         )

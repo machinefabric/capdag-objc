@@ -2012,10 +2012,17 @@ public struct Manifest: Codable, Sendable {
     public let name: String
     public let version: String
     /// Distribution channel ("release" or "nightly"). Part of the
-    /// cartridge's identity — `(name, version, channel)` is the full
-    /// identity. The Swift cartridge SDK reads this from the
-    /// `MFR_CARTRIDGE_CHANNEL` env var at compile time.
+    /// cartridge's identity. The Swift cartridge SDK reads this
+    /// from `MFR_CARTRIDGE_CHANNEL` at compile time.
     public let channel: String
+    /// Verbatim registry URL the cartridge was built for. `nil` ⇔
+    /// dev build (cartridge.sh was invoked without `--registry`).
+    /// Part of the cartridge's identity — `(name, version, channel,
+    /// registryURL)` is the full four-tuple. The Swift cartridge
+    /// SDK reads this from a generated `BuildIdentity.generated.swift`
+    /// file under `Sources/<cartridge>/Generated/` (mirror of Rust's
+    /// `option_env!("MFR_REGISTRY_URL")`).
+    public let registryURL: String?
     public let description: String
     /// All caps must be in cap groups. Groups without adapter URNs are valid.
     public let capGroups: [CapGroup]
@@ -2024,16 +2031,56 @@ public struct Manifest: Codable, Sendable {
         case name
         case version
         case channel
+        case registryURL = "registry_url"
         case description
         case capGroups = "cap_groups"
     }
 
-    public init(name: String, version: String, channel: String, description: String, capGroups: [CapGroup]) {
+    public init(name: String, version: String, channel: String, registryURL: String?, description: String, capGroups: [CapGroup]) {
         self.name = name
         self.version = version
         self.channel = channel
+        self.registryURL = registryURL
         self.description = description
         self.capGroups = capGroups
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // `registry_url` is required-but-nullable on the wire.
+        // Missing key (vs. null value) means the cartridge SDK
+        // emitting this manifest predates the registry-aware
+        // schema; refuse to accept it.
+        guard c.contains(.registryURL) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.registryURL,
+                DecodingError.Context(
+                    codingPath: c.codingPath,
+                    debugDescription:
+                        "Manifest is missing required `registry_url` field. "
+                        + "It must be present, with value null for dev builds or "
+                        + "a URL string for registry builds."
+                )
+            )
+        }
+        self.name = try c.decode(String.self, forKey: .name)
+        self.version = try c.decode(String.self, forKey: .version)
+        self.channel = try c.decode(String.self, forKey: .channel)
+        self.registryURL = try c.decode(String?.self, forKey: .registryURL)
+        self.description = try c.decode(String.self, forKey: .description)
+        self.capGroups = try c.decode([CapGroup].self, forKey: .capGroups)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(version, forKey: .version)
+        try c.encode(channel, forKey: .channel)
+        // Always emit `registry_url` — even null is explicit so the
+        // decoder's "required-but-nullable" check passes round-trip.
+        try c.encode(registryURL, forKey: .registryURL)
+        try c.encode(description, forKey: .description)
+        try c.encode(capGroups, forKey: .capGroups)
     }
 
     /// Returns all caps from all cap groups.

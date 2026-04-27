@@ -76,6 +76,7 @@
 - (instancetype)initWithName:(NSString *)name
                      version:(NSString *)version
                      channel:(NSString *)channel
+                 registryURL:(nullable NSString *)registryURL
           manifestDescription:(NSString *)manifestDescription
                capGroups:(NSArray<CSCapGroup *> *)capGroups {
     self = [super init];
@@ -83,6 +84,7 @@
         _name = [name copy];
         _version = [version copy];
         _channel = [channel copy];
+        _registryURL = [registryURL copy];
         _manifestDescription = [manifestDescription copy];
         _capGroups = [capGroups copy];
     }
@@ -92,11 +94,13 @@
 + (instancetype)manifestWithName:(NSString *)name
                          version:(NSString *)version
                          channel:(NSString *)channel
+                     registryURL:(nullable NSString *)registryURL
                      description:(NSString *)description
                        capGroups:(NSArray<CSCapGroup *> *)capGroups {
     return [[self alloc] initWithName:name
                               version:version
                               channel:channel
+                          registryURL:registryURL
                    manifestDescription:description
                          capGroups:capGroups];
 }
@@ -115,6 +119,32 @@
                                      userInfo:@{NSLocalizedDescriptionKey: @"Missing required manifest fields: name, version, channel, description, or cap_groups"}];
         }
         return nil;
+    }
+    // `registry_url` is required-but-nullable on the wire. The key
+    // MUST be present in the dictionary; the value MAY be `[NSNull
+    // null]` (dev install) or an `NSString` (registry install). A
+    // missing key surfaces here as a parse error so old-schema
+    // payloads never silently pass.
+    if (!dictionary[@"registry_url"]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSCapManifestError"
+                                         code:1024
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Manifest is missing required `registry_url` field. It must be present, with value null for dev builds or a URL string for registry builds."}];
+        }
+        return nil;
+    }
+    NSString *registryURL = nil;
+    id rawRegistryURL = dictionary[@"registry_url"];
+    if (rawRegistryURL && rawRegistryURL != [NSNull null]) {
+        if (![rawRegistryURL isKindOfClass:[NSString class]]) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"CSCapManifestError"
+                                             code:1025
+                                         userInfo:@{NSLocalizedDescriptionKey: @"Manifest 'registry_url' must be null or a string"}];
+            }
+            return nil;
+        }
+        registryURL = (NSString *)rawRegistryURL;
     }
     // Channel is part of the cartridge's identity. Reject anything
     // outside the closed enum {release, nightly} so a typo never
@@ -149,6 +179,7 @@
     CSCapManifest *manifest = [[self alloc] initWithName:name
                                                 version:version
                                                 channel:channel
+                                            registryURL:registryURL
                                      manifestDescription:description
                                               capGroups:[groups copy]];
 
@@ -264,6 +295,7 @@
     return [CSCapManifest manifestWithName:self.name
                                    version:self.version
                                    channel:self.channel
+                               registryURL:self.registryURL
                                description:self.manifestDescription
                                  capGroups:[newGroups copy]];
 }

@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -58,7 +58,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // `channel` is part of the cartridge's identity (release/nightly).
         // Tests build their fixtures here in release-channel form;
         // a runtime parsing the manifest accepts both channels equally.
-        return "{\"name\":\"\(name)\",\"version\":\"1.0\",\"channel\":\"release\",\"description\":\"\(name)\",\"cap_groups\":[{\"name\":\"default\",\"caps\":[\(capsJson)],\"adapter_urns\":[]}]}".data(using: .utf8)!
+        return "{\"name\":\"\(name)\",\"version\":\"1.0\",\"channel\":\"release\",\"registry_url\":null,\"description\":\"\(name)\",\"cap_groups\":[{\"name\":\"default\",\"caps\":[\(capsJson)],\"adapter_urns\":[]}]}".data(using: .utf8)!
     }
 
     nonisolated static func helloWith(manifest: Data, maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
@@ -657,7 +657,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeDir = fm.temporaryDirectory.appendingPathComponent("test415-\(UUID().uuidString)")
         try fm.createDirectory(at: cartridgeDir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: cartridgeDir) }
-        try Data(#"{"name":"test","version":"0.0.1","channel":"release","entry":"bin","installed_at":"2026-01-01T00:00:00Z","installed_from":"dev"}"#.utf8)
+        try Data(#"{"name":"test","version":"0.0.1","channel":"release","registry_url":null,"entry":"bin","installed_at":"2026-01-01T00:00:00Z","installed_from":"dev"}"#.utf8)
             .write(to: cartridgeDir.appendingPathComponent("cartridge.json"))
         let entryPoint = cartridgeDir.appendingPathComponent("bin")
         try Data("not an executable".utf8).write(to: entryPoint)

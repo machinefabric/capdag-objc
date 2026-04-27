@@ -443,6 +443,7 @@
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"TestComponent"
                                                        version:@"0.1.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"A test component for validation"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]
@@ -475,6 +476,7 @@
     CSCapManifest *manifest = [[CSCapManifest manifestWithName:@"TestComponent"
                                                        version:@"0.1.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"A test component for validation"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]
@@ -504,6 +506,7 @@
     CSCapManifest *manifest = [[[CSCapManifest manifestWithName:@"TestComponent"
                                                        version:@"0.1.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"A test component for validation"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]
@@ -521,6 +524,7 @@
         @"name": @"TestComponent",
         @"version": @"0.1.0",
         @"channel": @"release",
+        @"registry_url": [NSNull null],
         @"description": @"A test component for validation",
         @"author": @"Test Author",
         @"page_url": @"https://github.com/example/test",
@@ -615,6 +619,7 @@
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"MultiCapComponent"
                                                        version:@"1.0.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"Component with multiple caps"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap1, cap2]
@@ -630,6 +635,7 @@
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"EmptyComponent"
                                                        version:@"1.0.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"Component with no caps"
                                                      capGroups:@[]];
 
@@ -640,6 +646,7 @@
         @"name": @"EmptyComponent",
         @"version": @"1.0.0",
         @"channel": @"release",
+        @"registry_url": [NSNull null],
         @"description": @"Component with no caps",
         @"cap_groups": @[]
     };
@@ -672,6 +679,7 @@
     CSCapManifest *manifestWithoutAuthor = [CSCapManifest manifestWithName:@"ValidatorComponent"
                                                        version:@"1.0.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"File validation component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]
@@ -682,6 +690,7 @@
         @"name": @"ValidatorComponent",
         @"version": @"1.0.0",
         @"channel": @"release",
+        @"registry_url": [NSNull null],
         @"description": @"File validation component",
         @"cap_groups": @[
             @{
@@ -730,6 +739,7 @@
     CSCapManifest *cartridgeStyleManifest = [CSCapManifest manifestWithName:@"CartridgeComponent"
                                                        version:@"0.1.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"Cartridge-style component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]
@@ -739,6 +749,7 @@
     CSCapManifest *providerStyleManifest = [CSCapManifest manifestWithName:@"ProviderComponent"
                                                        version:@"0.1.0"
                                                        channel:@"release"
+                                                   registryURL:nil
                                                    description:@"Provider-style component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]

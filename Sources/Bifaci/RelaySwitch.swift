@@ -1319,13 +1319,16 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 }
 
 public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
+    /// Verbatim URL of the registry the cartridge was published from.
+    /// `nil` ⇔ dev install (built locally without a registry URL).
+    /// Compared byte-wise; never normalized. `(registryURL, channel,
+    /// id, version)` is the install's full identity — installs of
+    /// the same id from different registries × channels are
+    /// independent records. Required-but-nullable on the wire:
+    /// missing field is a parse error so an old-schema payload
+    /// never silently passes; null means dev.
+    public let registryURL: String?
     public let id: String
-    /// Distribution channel ("release" or "nightly") this install
-    /// belongs to. `(id, channel, version)` is the install's full
-    /// identity — release v1.0.0 and nightly v1.0.0 are different
-    /// artifacts. Sourced from `cartridge.json:channel` (written by
-    /// the .pkg installer) and verified to match the cartridge's
-    /// own HELLO manifest channel.
     public let channel: String
     public let version: String
     public let sha256: String
@@ -1337,6 +1340,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public let runtimeStats: CartridgeRuntimeStats?
 
     enum CodingKeys: String, CodingKey {
+        case registryURL = "registry_url"
         case id
         case channel
         case version
@@ -1346,6 +1350,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     }
 
     public init(
+        registryURL: String?,
         id: String,
         channel: String,
         version: String,
@@ -1353,6 +1358,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
         attachmentError: CartridgeAttachmentError? = nil,
         runtimeStats: CartridgeRuntimeStats? = nil
     ) {
+        self.registryURL = registryURL
         self.id = id
         self.channel = channel
         self.version = version
@@ -1363,6 +1369,23 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        // `registry_url` is required-but-nullable on the wire. The
+        // key MUST be present; the value MAY be null. `decodeNil`
+        // plus `contains` distinguishes "key absent" (parse error)
+        // from "key present with null value" (dev install).
+        guard c.contains(.registryURL) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.registryURL,
+                DecodingError.Context(
+                    codingPath: c.codingPath,
+                    debugDescription:
+                        "InstalledCartridgeIdentity is missing required `registry_url` field. "
+                        + "It must be present, with value null for dev installs or a URL "
+                        + "string for registry installs."
+                )
+            )
+        }
+        self.registryURL = try c.decode(String?.self, forKey: .registryURL)
         self.id = try c.decode(String.self, forKey: .id)
         self.channel = try c.decode(String.self, forKey: .channel)
         self.version = try c.decode(String.self, forKey: .version)
@@ -1373,6 +1396,10 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        // Always emit `registry_url` — even for dev installs it
+        // serializes as explicit null. `encodeIfPresent` would elide
+        // the key for nil, which the decoder explicitly rejects.
+        try c.encode(registryURL, forKey: .registryURL)
         try c.encode(id, forKey: .id)
         try c.encode(channel, forKey: .channel)
         try c.encode(version, forKey: .version)

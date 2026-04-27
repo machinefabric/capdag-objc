@@ -324,44 +324,73 @@ private class ManagedCartridge {
             return nil
         }
 
-        // (id, channel, version) come from the managed cartridge
-        // layout. We pull them from cartridge.json when available;
-        // when cartridge.json is malformed we fall back to the
-        // directory names from the layout — the one authoritative
-        // piece of identity information still present on disk. The
-        // installed-cartridges layout is
-        //   {root}/{channel}/{name}/{version}/cartridge.json
-        // so the layout fallback can reconstruct channel from the
-        // grandparent directory's name as long as it matches one of
-        // the recognized values.
+        // (registryURL, id, channel, version) come from the managed
+        // cartridge layout. We pull them from cartridge.json when
+        // available; when cartridge.json is malformed we fall back
+        // to the directory names from the layout — the one
+        // authoritative piece of identity information still present
+        // on disk. The installed-cartridges layout is
+        //   `{root}/{registry_slug}/{channel}/{name}/{version}/cartridge.json`
+        // so the layout fallback reconstructs channel from the
+        // great-grandparent and name from the grandparent. The slug
+        // alone can't recover the registry URL (the slug is
+        // one-way), so layout-fallback emits `nil` for registryURL —
+        // the consumer treats that as "registry unknown" and
+        // surfaces a failure record.
         let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
-        let jsonIdentity: (id: String, channel: String, version: String)? = {
+        struct LocalIdentity {
+            let registryURL: String?
+            let id: String
+            let channel: String
+            let version: String
+        }
+        let jsonIdentity: LocalIdentity? = {
             guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let name = json["name"] as? String,
                   let channel = json["channel"] as? String,
                   let version = json["version"] as? String,
-                  channel == "release" || channel == "nightly" else {
+                  channel == "release" || channel == "nightly",
+                  json.keys.contains("registry_url") else {
                 return nil
             }
-            return (id: name.lowercased(), channel: channel, version: version)
+            let registryURL: String?
+            if json["registry_url"] is NSNull {
+                registryURL = nil
+            } else if let s = json["registry_url"] as? String {
+                registryURL = s
+            } else {
+                return nil
+            }
+            return LocalIdentity(
+                registryURL: registryURL,
+                id: name.lowercased(),
+                channel: channel,
+                version: version
+            )
         }()
 
-        let layoutIdentity: (id: String, channel: String, version: String) = {
+        let layoutIdentity: LocalIdentity = {
             let versionName = (cartridgeDir as NSString).lastPathComponent
             let nameDir = (cartridgeDir as NSString).deletingLastPathComponent
             let nameComponent = (nameDir as NSString).lastPathComponent
-            // Grandparent's basename is the channel for installed
-            // cartridges. Bundle cartridges live at {bundleRoot}/
-            // {name}/{version}/, so the grandparent there is the
-            // bundle's cartridges-root name (e.g. "cartridges") and
-            // is NOT a recognized channel — in that case we leave
-            // channel empty and let the consumer treat it as a
-            // failure record (jsonIdentity is the only authoritative
-            // source for bundle-cartridge channel).
-            let channelDir = ((nameDir as NSString).deletingLastPathComponent as NSString).lastPathComponent
-            let channel = (channelDir == "release" || channelDir == "nightly") ? channelDir : ""
-            return (id: nameComponent.lowercased(), channel: channel, version: versionName)
+            // Walk up: cartridgeDir/version → nameDir/name →
+            // channelDir/channel → slugDir/{slug}.
+            let channelDir = (nameDir as NSString).deletingLastPathComponent
+            let channelName = (channelDir as NSString).lastPathComponent
+            let channel = (channelName == "release" || channelName == "nightly") ? channelName : ""
+            // The slug folder is one above the channel folder. We
+            // cannot reverse the slug into a URL — that lives only
+            // in cartridge.json — so layout-fallback always emits
+            // nil registryURL. Consumers downstream (the engine)
+            // treat the resulting record as a failure-with-unknown-
+            // registry and surface it for operator inspection.
+            return LocalIdentity(
+                registryURL: nil,
+                id: nameComponent.lowercased(),
+                channel: channel,
+                version: versionName
+            )
         }()
 
         let identity = jsonIdentity ?? layoutIdentity
@@ -374,6 +403,7 @@ private class ManagedCartridge {
         if let error = attachmentError {
             let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) ?? ""
             return InstalledCartridgeIdentity(
+                registryURL: identity.registryURL,
                 id: identity.id,
                 channel: identity.channel,
                 version: identity.version,
@@ -398,6 +428,7 @@ private class ManagedCartridge {
         }
 
         return InstalledCartridgeIdentity(
+            registryURL: identity.registryURL,
             id: identity.id,
             channel: identity.channel,
             version: identity.version,
@@ -1534,6 +1565,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 restartCount: cartridge.restartCount
             )
             result.append(InstalledCartridgeIdentity(
+                registryURL: base.registryURL,
                 id: base.id,
                 channel: base.channel,
                 version: base.version,

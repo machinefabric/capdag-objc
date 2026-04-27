@@ -31,6 +31,7 @@ final class ManifestTests: XCTestCase {
             name: "test-cartridge",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             description: "A test cartridge",
             capGroups: [defaultGroup([cap])]
         )
@@ -50,6 +51,7 @@ final class ManifestTests: XCTestCase {
             name: "test-cartridge",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             manifestDescription: "A test cartridge",
             capGroups: []
         ).withAuthor("Test Author")
@@ -65,6 +67,7 @@ final class ManifestTests: XCTestCase {
             name: "roundtrip-cartridge",
             version: "2.0.0",
             channel: "nightly",
+            registryURL: nil,
             description: "Roundtrip test",
             capGroups: [defaultGroup([cap])]
         )
@@ -133,6 +136,7 @@ final class ManifestTests: XCTestCase {
             name: "multi-cap-cartridge",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             description: "Cartridge with multiple cap groups",
             capGroups: [
                 CapGroup(name: "media", caps: [processCap], adapterUrns: ["media:"]),
@@ -164,6 +168,7 @@ final class ManifestTests: XCTestCase {
             name: "empty-groups-cartridge",
             version: "1.0.0",
             channel: "nightly",
+            registryURL: nil,
             description: "Cartridge with no cap groups",
             capGroups: []
         )
@@ -187,6 +192,7 @@ final class ManifestTests: XCTestCase {
             name: "test",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             manifestDescription: "test",
             capGroups: []
         )
@@ -207,6 +213,7 @@ final class ManifestTests: XCTestCase {
             name: "test-component",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             manifestDescription: "Test component",
             capGroups: [group]
         )
@@ -226,6 +233,7 @@ final class ManifestTests: XCTestCase {
             name: "cartridge-with-url",
             version: "1.0.0",
             channel: "release",
+            registryURL: nil,
             manifestDescription: "Cartridge with page URL",
             capGroups: []
         ).withPageUrl("https://example.com/cartridge")
