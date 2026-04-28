@@ -133,7 +133,7 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 /// Set the filter for available cap URNs
 - (instancetype)withAvailableCaps:(NSSet<NSString *> *)availableCaps;
 
-/// Find a path through the cap graph from source to target media type
+/// Find a path through the capfab from source to target media type
 - (void)findPathFromSource:(NSString *)sourceMedia
                   toTarget:(NSString *)targetMedia
                 completion:(void (^)(NSArray<NSString *> * _Nullable capUrns, NSError * _Nullable error))completion;
