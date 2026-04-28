@@ -825,7 +825,7 @@
     // Optional fields
     NSString *capDescription = dictionary[@"cap_description"];
     // Long-form markdown documentation. Snake_case in JSON to match the
-    // capgraph schema; we accept it only as a non-empty NSString and
+    // capfab schema; we accept it only as a non-empty NSString and
     // discard empty strings so the absent/empty cases collapse to nil.
     NSString *documentation = nil;
     id documentationField = dictionary[@"documentation"];

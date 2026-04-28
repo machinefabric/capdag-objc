@@ -468,22 +468,22 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test762 | `test762_bodyIsDag` | TEST762: Body is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:282 |
 | test763 | `test763_suffixIsDag` | TEST763: Suffix is valid DAG | Tests/CapDAGTests/CSPlanDecompositionTests.m:291 |
 | test764 | `test764_prefixToInputSlot` | TEST764: extractPrefixTo with InputSlot as target (trivial prefix) | Tests/CapDAGTests/CSPlanDecompositionTests.m:300 |
-| test772 | `test772_findPathsMultiStep` | TEST772: Multi-step path through intermediate node | Tests/CapDAGTests/CSLiveCapGraphTests.m:149 |
-| test773 | `test773_findPathsEmptyWhenNoPath` | TEST773: Empty when target unreachable | Tests/CapDAGTests/CSLiveCapGraphTests.m:171 |
-| test774 | `test774_getReachableTargetsAll` | TEST774: BFS finds multiple direct targets | Tests/CapDAGTests/CSLiveCapGraphTests.m:187 |
-| test777 | `test777_typeMismatchPdfPng` | TEST777: PDF cap does not match PNG input | Tests/CapDAGTests/CSLiveCapGraphTests.m:210 |
-| test778 | `test778_typeMismatchPngPdf` | TEST778: PNG cap does not match PDF input | Tests/CapDAGTests/CSLiveCapGraphTests.m:225 |
-| test779 | `test779_reachableTargetsTypeMatching` | TEST779: BFS respects type matching | Tests/CapDAGTests/CSLiveCapGraphTests.m:240 |
+| test772 | `test772_findPathsMultiStep` | TEST772: Multi-step path through intermediate node | Tests/CapDAGTests/CSLiveCapFabTests.m:149 |
+| test773 | `test773_findPathsEmptyWhenNoPath` | TEST773: Empty when target unreachable | Tests/CapDAGTests/CSLiveCapFabTests.m:171 |
+| test774 | `test774_getReachableTargetsAll` | TEST774: BFS finds multiple direct targets | Tests/CapDAGTests/CSLiveCapFabTests.m:187 |
+| test777 | `test777_typeMismatchPdfPng` | TEST777: PDF cap does not match PNG input | Tests/CapDAGTests/CSLiveCapFabTests.m:210 |
+| test778 | `test778_typeMismatchPngPdf` | TEST778: PNG cap does not match PDF input | Tests/CapDAGTests/CSLiveCapFabTests.m:225 |
+| test779 | `test779_reachableTargetsTypeMatching` | TEST779: BFS respects type matching | Tests/CapDAGTests/CSLiveCapFabTests.m:240 |
 | test780 | `test780_splitIntegerArray` | TEST780: split_cbor_array splits a simple array of integers | Tests/BifaciTests/CborSequenceTests.swift:236 |
-| test781 | `test781_findPathsTypeChain` | TEST781: Multi-step type chain enforcement | Tests/CapDAGTests/CSLiveCapGraphTests.m:263 |
+| test781 | `test781_findPathsTypeChain` | TEST781: Multi-step type chain enforcement | Tests/CapDAGTests/CSLiveCapFabTests.m:263 |
 | test782 | `test782_splitNonArray` | TEST782: split_cbor_array rejects non-array input | Tests/BifaciTests/CborSequenceTests.swift:266 |
 | test783 | `test783_splitEmptyArray` | TEST783: split_cbor_array rejects empty array | Tests/BifaciTests/CborSequenceTests.swift:284 |
 | test784 | `test784_splitInvalidCbor` | TEST784: split_cbor_array rejects invalid CBOR bytes | Tests/BifaciTests/CborSequenceTests.swift:302 |
 | test785 | `test785_assembleIntegerArray` | TEST785: assemble_cbor_array creates array from individual items | Tests/BifaciTests/CborSequenceTests.swift:321 |
 | test786 | `test786_roundtripSplitAssemble` | TEST786: split then assemble roundtrip preserves data | Tests/BifaciTests/CborSequenceTests.swift:342 |
-| test787 | `test787_sortingShorterFirst` | TEST787: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapGraphTests.m:286 |
-| test788 | `test788_forEachWithSequenceInput` | TEST788: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapGraphTests.m:308 |
-| test790 | `test790_identityUrnSpecific` | TEST790: Identity URN is specific, not equivalent to everything | Tests/CapDAGTests/CSLiveCapGraphTests.m:349 |
+| test787 | `test787_sortingShorterFirst` | TEST787: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapFabTests.m:286 |
+| test788 | `test788_forEachWithSequenceInput` | TEST788: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapFabTests.m:308 |
+| test790 | `test790_identityUrnSpecific` | TEST790: Identity URN is specific, not equivalent to everything | Tests/CapDAGTests/CSLiveCapFabTests.m:349 |
 | test810 | `test810_splitSequenceBytes` | TEST810: Tests EdgeType::JsonPath extracts values using nested path expressions Verifies that JsonPath edge type correctly navigates through multiple levels like "data.nested.value" | Tests/BifaciTests/CborSequenceTests.swift:26 |
 | test811 | `test811_splitSequenceText` | TEST811: Tests EdgeType::Iteration preserves array values for iterative processing Verifies that Iteration edge type passes through arrays unchanged to enable ForEach patterns | Tests/BifaciTests/CborSequenceTests.swift:50 |
 | test812 | `test812_splitSequenceMixed` | TEST812: Tests EdgeType::Collection preserves collected values without transformation Verifies that Collection edge type maintains structure for aggregation patterns | Tests/BifaciTests/CborSequenceTests.swift:66 |
@@ -635,7 +635,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `test542c_outputStreamWriteWithoutStartThrows` | TEST542c: OutputStream write without start() throws | Tests/BifaciTests/StreamingAPITests.swift:437 |
 | unnumbered | `test542d_outputStreamDoubleStartThrows` | TEST542d: OutputStream start() twice throws | Tests/BifaciTests/StreamingAPITests.swift:453 |
 | unnumbered | `test542e_outputStreamModeConflictThrows` | TEST542e: OutputStream mode conflict throws (start write, call emitListItem) | Tests/BifaciTests/StreamingAPITests.swift:470 |
-| unnumbered | `testAddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapGraphTests.m:32 |
+| unnumbered | `testAddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapFabTests.m:32 |
 | unnumbered | `testArgumentCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:775 |
 | unnumbered | `testArgumentValidationWithUnknownSpecFails` | Obj-C specific: unresolved spec ID fails hard during schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:131 |
 | unnumbered | `testBuilderBasicConstruction` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:16 |
@@ -681,14 +681,14 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testCopying` | Obj-C specific: NSCopying support | Tests/CapDAGTests/CSCapUrnTests.m:509 |
 | unnumbered | `testDataSourceWithBinaryContent` |  | Tests/CapDAGTests/CSStdinSourceTests.m:61 |
 | unnumbered | `testDataSourceWithEmptyData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:51 |
-| unnumbered | `testDeterministicOrdering` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:100 |
+| unnumbered | `testDeterministicOrdering` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:100 |
 | unnumbered | `testDotParserCapUrnLabel` | TEST: Parse cap URN label with escaped quotes | Tests/BifaciTests/OrchestratorTests.swift:413 |
 | unnumbered | `testDotParserComments` | TEST: Parse graph with comments | Tests/BifaciTests/OrchestratorTests.swift:397 |
 | unnumbered | `testDotParserEdgeWithLabel` | TEST: Parse edge with label attribute | Tests/BifaciTests/OrchestratorTests.swift:350 |
 | unnumbered | `testDotParserNodeWithAttributes` | TEST: Parse node with attributes | Tests/BifaciTests/OrchestratorTests.swift:364 |
 | unnumbered | `testDotParserQuotedIdentifiers` | TEST: Parse quoted identifiers | Tests/BifaciTests/OrchestratorTests.swift:381 |
 | unnumbered | `testDotParserSimpleDigraph` | TEST: Parse simple digraph | Tests/BifaciTests/OrchestratorTests.swift:330 |
-| unnumbered | `testExactVsConformanceMatching` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:50 |
+| unnumbered | `testExactVsConformanceMatching` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:50 |
 | unnumbered | `testExtensionsEmptyWhenNotSet` |  | Tests/CapDAGTests/CSMediaSpecTests.m:133 |
 | unnumbered | `testExtensionsPropagationFromObjectDef` | Extensions field tests | Tests/CapDAGTests/CSMediaSpecTests.m:110 |
 | unnumbered | `testExtensionsWithMetadataAndValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:152 |
@@ -704,7 +704,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testMetadataNilByDefault` |  | Tests/CapDAGTests/CSMediaSpecTests.m:44 |
 | unnumbered | `testMetadataPropagationFromObjectDef` |  | Tests/CapDAGTests/CSMediaSpecTests.m:14 |
 | unnumbered | `testMetadataWithValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:62 |
-| unnumbered | `testMultiStepPath` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:80 |
+| unnumbered | `testMultiStepPath` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:80 |
 | unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaSpecTests.m:184 |
 | unnumbered | `testNonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:150 |
 | unnumbered | `testNormalizeHandlesDifferentTagOrders` | / Test that different tag orders normalize to the same URL | Tests/CapDAGTests/CSCapRegistryTests.m:102 |
@@ -719,7 +719,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testSourceWithData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:14 |
 | unnumbered | `testSourceWithFileReference` |  | Tests/CapDAGTests/CSStdinSourceTests.m:29 |
 | unnumbered | `testStandaloneCollectNode` | MARK: - Standalone Collect Node Tests | Tests/CapDAGTests/CSPlanDecompositionTests.m:63 |
-| unnumbered | `testSyncFromCaps` |  | Tests/CapDAGTests/CSLiveCapGraphTests.m:124 |
+| unnumbered | `testSyncFromCaps` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:124 |
 | unnumbered | `testURLEncodesQuotedMediaUrns` | / Test that media URNs in cap URNs are properly URL-encoded | Tests/CapDAGTests/CSCapRegistryTests.m:74 |
 | unnumbered | `testURLFormatIsValid` | / Test the URL format is valid and can be parsed | Tests/CapDAGTests/CSCapRegistryTests.m:85 |
 | unnumbered | `testURLKeepsCapPrefixLiteral` | / Test that URL construction keeps "cap:" literal and only encodes the tags part | Tests/CapDAGTests/CSCapRegistryTests.m:63 |
@@ -761,7 +761,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `test542c_outputStreamWriteWithoutStartThrows` — Tests/BifaciTests/StreamingAPITests.swift:437
 - `test542d_outputStreamDoubleStartThrows` — Tests/BifaciTests/StreamingAPITests.swift:453
 - `test542e_outputStreamModeConflictThrows` — Tests/BifaciTests/StreamingAPITests.swift:470
-- `testAddCapAndBasicTraversal` — Tests/CapDAGTests/CSLiveCapGraphTests.m:32
+- `testAddCapAndBasicTraversal` — Tests/CapDAGTests/CSLiveCapFabTests.m:32
 - `testArgumentCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:775
 - `testArgumentValidationWithUnknownSpecFails` — Tests/CapDAGTests/CSSchemaValidationTests.m:131
 - `testBuilderBasicConstruction` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:16
@@ -807,14 +807,14 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testCopying` — Tests/CapDAGTests/CSCapUrnTests.m:509
 - `testDataSourceWithBinaryContent` — Tests/CapDAGTests/CSStdinSourceTests.m:61
 - `testDataSourceWithEmptyData` — Tests/CapDAGTests/CSStdinSourceTests.m:51
-- `testDeterministicOrdering` — Tests/CapDAGTests/CSLiveCapGraphTests.m:100
+- `testDeterministicOrdering` — Tests/CapDAGTests/CSLiveCapFabTests.m:100
 - `testDotParserCapUrnLabel` — Tests/BifaciTests/OrchestratorTests.swift:413
 - `testDotParserComments` — Tests/BifaciTests/OrchestratorTests.swift:397
 - `testDotParserEdgeWithLabel` — Tests/BifaciTests/OrchestratorTests.swift:350
 - `testDotParserNodeWithAttributes` — Tests/BifaciTests/OrchestratorTests.swift:364
 - `testDotParserQuotedIdentifiers` — Tests/BifaciTests/OrchestratorTests.swift:381
 - `testDotParserSimpleDigraph` — Tests/BifaciTests/OrchestratorTests.swift:330
-- `testExactVsConformanceMatching` — Tests/CapDAGTests/CSLiveCapGraphTests.m:50
+- `testExactVsConformanceMatching` — Tests/CapDAGTests/CSLiveCapFabTests.m:50
 - `testExtensionsEmptyWhenNotSet` — Tests/CapDAGTests/CSMediaSpecTests.m:133
 - `testExtensionsPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:110
 - `testExtensionsWithMetadataAndValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:152
@@ -830,7 +830,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testMetadataNilByDefault` — Tests/CapDAGTests/CSMediaSpecTests.m:44
 - `testMetadataPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:14
 - `testMetadataWithValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:62
-- `testMultiStepPath` — Tests/CapDAGTests/CSLiveCapGraphTests.m:80
+- `testMultiStepPath` — Tests/CapDAGTests/CSLiveCapFabTests.m:80
 - `testMultipleExtensions` — Tests/CapDAGTests/CSMediaSpecTests.m:184
 - `testNonStructuredArgumentSkipsSchemaValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:150
 - `testNormalizeHandlesDifferentTagOrders` — Tests/CapDAGTests/CSCapRegistryTests.m:102
@@ -845,7 +845,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testSourceWithData` — Tests/CapDAGTests/CSStdinSourceTests.m:14
 - `testSourceWithFileReference` — Tests/CapDAGTests/CSStdinSourceTests.m:29
 - `testStandaloneCollectNode` — Tests/CapDAGTests/CSPlanDecompositionTests.m:63
-- `testSyncFromCaps` — Tests/CapDAGTests/CSLiveCapGraphTests.m:124
+- `testSyncFromCaps` — Tests/CapDAGTests/CSLiveCapFabTests.m:124
 - `testURLEncodesQuotedMediaUrns` — Tests/CapDAGTests/CSCapRegistryTests.m:74
 - `testURLFormatIsValid` — Tests/CapDAGTests/CSCapRegistryTests.m:85
 - `testURLKeepsCapPrefixLiteral` — Tests/CapDAGTests/CSCapRegistryTests.m:63

@@ -1,5 +1,5 @@
 //
-//  CSLiveCapGraph.h
+//  CSLiveCapFab.h
 //  CapDAG
 //
 //  Precomputed capability graph for path finding.
@@ -80,11 +80,11 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
 
 @end
 
-// MARK: - LiveCapGraph
+// MARK: - LiveCapFab
 
 /// Precomputed capability graph for path finding and reachability queries.
 /// Maintains a persistent graph structure updated when capabilities change.
-@interface CSLiveCapGraph : NSObject
+@interface CSLiveCapFab : NSObject
 
 /// Create a new empty graph
 + (instancetype)graph;

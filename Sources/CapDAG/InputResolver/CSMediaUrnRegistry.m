@@ -5,7 +5,7 @@
 //  MediaUrnRegistry — Extension to URN mapping from bundled specs
 //
 //  This mirrors the extension index from Rust's MediaUrnRegistry.
-//  The mappings are compiled from the TOML specs in capgraph/src/media/
+//  The mappings are compiled from the TOML specs in capfab/src/media/
 //
 
 #import "CSMediaUrnRegistry.h"
@@ -33,7 +33,7 @@
 }
 
 /// Build extension index from compiled-in mappings
-/// These mappings mirror the TOML specs in capgraph/src/media/
+/// These mappings mirror the TOML specs in capfab/src/media/
 - (void)_buildExtensionIndex {
     // This index is generated from the standard media specs
     // Each extension maps to an array of URNs (some extensions have multiple)

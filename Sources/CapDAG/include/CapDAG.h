@@ -46,7 +46,7 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 #import "CSPlan.h"
 #import "CSPlanBuilder.h"
 #import "CSExecutor.h"
-#import "CSLiveCapGraph.h"
+#import "CSLiveCapFab.h"
 
 // Progress mapping for DAG execution
 #import "CSProgressMapper.h"

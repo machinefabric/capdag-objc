@@ -1,12 +1,12 @@
 //
-//  CSLiveCapGraph.m
+//  CSLiveCapFab.m
 //  CapDAG
 //
 //  Precomputed capability graph for path finding.
 //  Mirrors Rust: src/planner/live_cap_graph.rs (1466 lines)
 //
 
-#import "CSLiveCapGraph.h"
+#import "CSLiveCapFab.h"
 #import "CSCap.h"
 #import "CSCapUrn.h"
 #import "CSMediaUrn.h"
@@ -89,10 +89,10 @@
 @end
 
 // =============================================================================
-// CSLiveCapGraph
+// CSLiveCapFab
 // =============================================================================
 
-@interface CSLiveCapGraph ()
+@interface CSLiveCapFab ()
 /// All edges in the graph
 @property (nonatomic, strong) NSMutableArray<CSLiveMachinePlanEdge *> *edges;
 /// Index: from_spec canonical -> edge indices
@@ -107,10 +107,10 @@
 @property (nonatomic, strong, nullable) CSCapUrn *identityUrn;
 @end
 
-@implementation CSLiveCapGraph
+@implementation CSLiveCapFab
 
 + (instancetype)graph {
-    CSLiveCapGraph *graph = [[CSLiveCapGraph alloc] init];
+    CSLiveCapFab *graph = [[CSLiveCapFab alloc] init];
     graph.edges = [NSMutableArray array];
     graph.outgoing = [NSMutableDictionary dictionary];
     graph.incoming = [NSMutableDictionary dictionary];
@@ -408,7 +408,7 @@
 
     // Sort paths deterministically
     [allPaths sortUsingComparator:^NSComparisonResult(CSStrand *a, CSStrand *b) {
-        return [CSLiveCapGraph comparePaths:a with:b];
+        return [CSLiveCapFab comparePaths:a with:b];
     }];
 
     return allPaths;

@@ -1,15 +1,15 @@
 //
-//  CSLiveCapGraphTests.m
+//  CSLiveCapFabTests.m
 //  CapDAGTests
 //
-//  Tests for CSLiveCapGraph — mirrors Rust live_cap_graph.rs tests.
+//  Tests for CSLiveCapFab — mirrors Rust live_cap_graph.rs tests.
 //
 
 #import <XCTest/XCTest.h>
 #import "CapDAG.h"
 #import "CSMediaUrn.h"
 
-@interface CSLiveCapGraphTests : XCTestCase
+@interface CSLiveCapFabTests : XCTestCase
 @end
 
 // Helper: build a test cap with given in/out/op/title
@@ -25,12 +25,12 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     return [CSCap capWithUrn:built title:title command:@"test"];
 }
 
-@implementation CSLiveCapGraphTests
+@implementation CSLiveCapFabTests
 
 // MARK: - Basic Tests (unnumbered, match Rust unnumbered tests)
 
 - (void)testAddCapAndBasicTraversal {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract_text", @"Extract Text");
     [graph addCap:cap];
@@ -56,7 +56,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertFalse([singular isEquivalentTo:list], @"singular and list should NOT be equivalent");
     XCTAssertFalse([list isEquivalentTo:singular], @"list and singular should NOT be equivalent (reverse)");
 
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:pdf", @"media:analysis-result", @"analyze", @"Analyze PDF");
     CSCap *cap2 = makeTestCap(@"media:pdf", @"media:analysis-result;list", @"analyze_multi", @"Analyze PDF Multi");
@@ -78,7 +78,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 - (void)testMultiStepPath {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract", @"Extract");
     CSCap *cap2 = makeTestCap(@"media:extracted-text", @"media:summary-text", @"summarize", @"Summarize");
@@ -98,7 +98,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 - (void)testDeterministicOrdering {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract_a", @"Extract A");
     CSCap *cap2 = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract_b", @"Extract B");
@@ -122,7 +122,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 - (void)testSyncFromCaps {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     NSArray *caps = @[
         makeTestCap(@"media:pdf", @"media:extracted-text", @"op1", @"Op1"),
@@ -147,7 +147,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST772: Multi-step path through intermediate node
 - (void)test772_findPathsMultiStep {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
     CSCap *cap2 = makeTestCap(@"media:b", @"media:c", @"step2", @"B to C");
@@ -169,7 +169,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST773: Empty when target unreachable
 - (void)test773_findPathsEmptyWhenNoPath {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
     [graph addCap:cap1];
@@ -185,7 +185,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST774: BFS finds multiple direct targets
 - (void)test774_getReachableTargetsAll {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
     CSCap *cap2 = makeTestCap(@"media:a", @"media:d", @"step3", @"A to D");
@@ -208,7 +208,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST777: PDF cap does not match PNG input
 - (void)test777_typeMismatchPdfPng {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:pdf", @"media:textable", @"pdf2text", @"PDF to Text");
     [graph addCap:cap];
@@ -223,7 +223,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST778: PNG cap does not match PDF input
 - (void)test778_typeMismatchPngPdf {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:png", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
     [graph addCap:cap];
@@ -238,7 +238,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST779: BFS respects type matching
 - (void)test779_reachableTargetsTypeMatching {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *pdfCap = makeTestCap(@"media:pdf", @"media:textable", @"pdf2text", @"PDF to Text");
     CSCap *pngCap = makeTestCap(@"media:png", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
@@ -261,7 +261,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST781: Multi-step type chain enforcement
 - (void)test781_findPathsTypeChain {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *resize = makeTestCap(@"media:png", @"media:resized-png", @"resize", @"Resize PNG");
     CSCap *toThumb = makeTestCap(@"media:resized-png", @"media:thumbnail", @"thumb", @"To Thumbnail");
@@ -284,7 +284,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST787: Sorting prefers shorter paths
 - (void)test787_sortingShorterFirst {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *direct = makeTestCap(@"media:format-a", @"media:format-c", @"direct", @"Direct");
     CSCap *step1 = makeTestCap(@"media:format-a", @"media:format-b", @"step1", @"Step 1");
@@ -306,7 +306,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // TEST788: ForEach synthesized when input is a sequence
 - (void)test788_forEachWithSequenceInput {
-    CSLiveCapGraph *graph = [CSLiveCapGraph graph];
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     // Two caps: pdf→page and textable→decision
     CSCap *disbind = makeTestCap(@"media:pdf", @"media:page;textable", @"disbind", @"Disbind PDF");
