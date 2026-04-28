@@ -2,7 +2,7 @@
 //  CSLiveCapFabTests.m
 //  CapDAGTests
 //
-//  Tests for CSLiveCapFab — mirrors Rust live_cap_graph.rs tests.
+//  Tests for CSLiveCapFab — mirrors Rust live_cap_fab.rs tests.
 //
 
 #import <XCTest/XCTest.h>

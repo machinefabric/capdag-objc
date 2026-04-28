@@ -3,7 +3,7 @@
 //  CapDAG
 //
 //  Precomputed capability graph for path finding.
-//  Mirrors Rust: src/planner/live_cap_graph.rs (1466 lines)
+//  Mirrors Rust: src/planner/live_cap_fab.rs (1466 lines)
 //
 
 #import "CSLiveCapFab.h"

@@ -3,7 +3,7 @@
 //  CapDAG
 //
 //  Precomputed capability graph for path finding.
-//  Mirrors Rust: src/planner/live_cap_graph.rs
+//  Mirrors Rust: src/planner/live_cap_fab.rs
 //
 //  Design:
 //  1. Store MediaUrn/CapUrn directly (not strings) — avoids reparsing.
