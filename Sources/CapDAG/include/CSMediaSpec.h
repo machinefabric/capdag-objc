@@ -73,6 +73,11 @@ FOUNDATION_EXPORT NSString * const CSMediaYaml;         // media:record;textable
 // Semantic input types
 FOUNDATION_EXPORT NSString * const CSMediaModelSpec;    // media:model-spec;textable (generic, modelcartridge)
 FOUNDATION_EXPORT NSString * const CSMediaModelRepo;    // media:model-repo;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaHfToken;      // media:hf-token;secret;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelArchList;          // media:model-arch-list;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelSearchRequest;     // media:model-search-request;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelSearchResponse;    // media:model-search-response;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelFilterResolution;  // media:model-filter-resolution;json;record;textable
 // Backend+use-case specific model-spec variants
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufVision;         // media:model-spec;gguf;textable;vision
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufLlm;            // media:model-spec;gguf;textable;llm

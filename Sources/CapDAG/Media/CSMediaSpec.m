@@ -53,6 +53,11 @@ NSString * const CSMediaYaml = @"media:record;textable;yaml";
 // Semantic input types
 NSString * const CSMediaModelSpec = @"media:model-spec;textable";
 NSString * const CSMediaModelRepo = @"media:model-repo;record;textable";
+NSString * const CSMediaHfToken = @"media:hf-token;secret;textable";
+NSString * const CSMediaModelArchList = @"media:model-arch-list;json;record;textable";
+NSString * const CSMediaModelSearchRequest = @"media:model-search-request;json;record;textable";
+NSString * const CSMediaModelSearchResponse = @"media:model-search-response;json;record;textable";
+NSString * const CSMediaModelFilterResolution = @"media:model-filter-resolution;json;record;textable";
 // Backend+use-case specific model-spec variants
 NSString * const CSMediaModelSpecGgufVision = @"media:model-spec;gguf;textable;vision";
 NSString * const CSMediaModelSpecGgufLlm = @"media:model-spec;gguf;textable;llm";
