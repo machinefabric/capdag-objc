@@ -1,10 +1,10 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 731
+**Total Tests:** 733
 
 **Numbered Tests:** 611
 
-**Unnumbered Tests:** 120
+**Unnumbered Tests:** 122
 
 **Numbered Tests Missing Descriptions:** 0
 
@@ -695,6 +695,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testFileReferenceWithAllFields` |  | Tests/CapDAGTests/CSStdinSourceTests.m:74 |
 | unnumbered | `testFullCapValidationWithMediaSpecs` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:679 |
 | unnumbered | `testGetCapDefinitionReal` |  | Tests/CapDAGTests/CSCapRegistryTests.m:115 |
+| unnumbered | `testHostConstructsAndClosesWithoutAnObserver` |  | Tests/BifaciTests/CartridgeHostObserverTests.swift:53 |
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:263 |
 | unnumbered | `testIntegrationWithOutputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:334 |
 | unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:104 |
@@ -716,6 +717,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testResolveMediaUrnNotFound` |  | Tests/CapDAGTests/CSMediaSpecTests.m:98 |
 | unnumbered | `testSchemaValidationErrorDetails` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:495 |
 | unnumbered | `testSchemaValidationPerformance` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:621 |
+| unnumbered | `testSetObserverNilClearsThePreviouslyRegisteredObserver` |  | Tests/BifaciTests/CartridgeHostObserverTests.swift:62 |
 | unnumbered | `testSourceWithData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:14 |
 | unnumbered | `testSourceWithFileReference` |  | Tests/CapDAGTests/CSStdinSourceTests.m:29 |
 | unnumbered | `testStandaloneCollectNode` | MARK: - Standalone Collect Node Tests | Tests/CapDAGTests/CSPlanDecompositionTests.m:63 |
@@ -821,6 +823,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testFileReferenceWithAllFields` — Tests/CapDAGTests/CSStdinSourceTests.m:74
 - `testFullCapValidationWithMediaSpecs` — Tests/CapDAGTests/CSSchemaValidationTests.m:679
 - `testGetCapDefinitionReal` — Tests/CapDAGTests/CSCapRegistryTests.m:115
+- `testHostConstructsAndClosesWithoutAnObserver` — Tests/BifaciTests/CartridgeHostObserverTests.swift:53
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:263
 - `testIntegrationWithOutputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:334
 - `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:104
@@ -842,6 +845,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testResolveMediaUrnNotFound` — Tests/CapDAGTests/CSMediaSpecTests.m:98
 - `testSchemaValidationErrorDetails` — Tests/CapDAGTests/CSSchemaValidationTests.m:495
 - `testSchemaValidationPerformance` — Tests/CapDAGTests/CSSchemaValidationTests.m:621
+- `testSetObserverNilClearsThePreviouslyRegisteredObserver` — Tests/BifaciTests/CartridgeHostObserverTests.swift:62
 - `testSourceWithData` — Tests/CapDAGTests/CSStdinSourceTests.m:14
 - `testSourceWithFileReference` — Tests/CapDAGTests/CSStdinSourceTests.m:29
 - `testStandaloneCollectNode` — Tests/CapDAGTests/CSPlanDecompositionTests.m:63
@@ -878,8 +882,8 @@ The following tests are cataloged but do not currently participate in numeric te
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 731*
+*Total tests: 733*
 *Total numbered tests: 611*
-*Total unnumbered tests: 120*
+*Total unnumbered tests: 122*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*
