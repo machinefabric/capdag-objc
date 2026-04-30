@@ -36,6 +36,42 @@ import os
 @preconcurrency import SwiftCBOR
 import CapDAG
 
+// MARK: - CartridgeHostObserver
+
+/// Lifecycle observer for `CartridgeHost`. Mirrors the Rust
+/// `CartridgeHostObserver` trait in `capdag/src/bifaci/host_runtime.rs`.
+///
+/// The host invokes the registered observer's callbacks at the
+/// moments a cartridge becomes runnable (`spawned`) and at the moment
+/// it has stopped running (`died`). All callbacks fire synchronously
+/// from the host's internal threads — implementations MUST NOT block
+/// or take long-held locks: the host's `stateLock` is **not** held
+/// during the call, but the call still runs on the run loop / reader
+/// thread that produced the event.
+///
+/// Used by `CartridgeXPCService` to forward lifecycle into reverse-XPC
+/// callbacks; not used by the engine or in-process tests (they leave
+/// the observer unset).
+public protocol CartridgeHostObserver: AnyObject {
+    /// A cartridge has just transitioned to running (handshake
+    /// completed, caps extracted, reader thread started).
+    /// - Parameters:
+    ///   - cartridgeIndex: stable index assigned by the host
+    ///   - pid: OS process id, or `nil` for in-process attached cartridges
+    ///   - name: derived from the cartridge binary path's last component,
+    ///     or empty for attached cartridges with no path
+    ///   - caps: cap URN strings declared by the cartridge's manifest
+    func cartridgeSpawned(cartridgeIndex: Int, pid: pid_t?, name: String, caps: [String])
+
+    /// A cartridge has just transitioned to not-running (reader thread
+    /// observed EOF, process reaped, OOM-kill, or clean shutdown).
+    /// - Parameters:
+    ///   - cartridgeIndex: stable index assigned by the host
+    ///   - pid: OS process id at time of death, or `nil`
+    ///   - name: derived from the cartridge binary path's last component
+    func cartridgeDied(cartridgeIndex: Int, pid: pid_t?, name: String)
+}
+
 private func sha256Hex(for data: Data) -> String {
     var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
     data.withUnsafeBytes { bytes in
@@ -555,6 +591,28 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Whether the host is closed.
     private var closed = false
 
+    /// Lifecycle observer. Set by callers that want to be notified
+    /// when a cartridge transitions in/out of the running state
+    /// (typically `CartridgeXPCService` to forward to its Mac-app
+    /// client via reverse-XPC). Held weakly so the observer's
+    /// lifecycle is owned by its real holder. Mirrors
+    /// `CartridgeHostRuntime::observer` in the Rust reference.
+    private weak var _observer: CartridgeHostObserver?
+    private let observerLock = NSLock()
+
+    public func setObserver(_ observer: CartridgeHostObserver?) {
+        observerLock.lock()
+        _observer = observer
+        observerLock.unlock()
+    }
+
+    private var observer: CartridgeHostObserver? {
+        observerLock.lock()
+        let o = _observer
+        observerLock.unlock()
+        return o
+    }
+
     // MARK: - Initialization
 
     /// Create a new cartridge host runtime.
@@ -792,10 +850,21 @@ public final class CartridgeHost: @unchecked Sendable {
             capTable.append((cap, idx))
         }
         rebuildCapabilities()
+        let observerPid = cartridge.pid
+        let observerName = (cartridge.path as NSString).lastPathComponent
+        let observerCaps = caps
         stateLock.unlock()
 
         // Start reader thread for this cartridge
         startCartridgeReaderThread(cartridgeIdx: idx, reader: reader)
+
+        // Notify lifecycle observer (XPC reverse-callback bridge, etc.).
+        observer?.cartridgeSpawned(
+            cartridgeIndex: idx,
+            pid: observerPid,
+            name: observerName,
+            caps: observerCaps
+        )
 
         return idx
     }
@@ -1292,6 +1361,12 @@ public final class CartridgeHost: @unchecked Sendable {
     private func handleCartridgeDeath(cartridgeIdx: Int) {
         stateLock.lock()
         let cartridge = cartridges[cartridgeIdx]
+        // Capture observer payload before any state mutation: pid is
+        // about to be cleared, and the name needs to reflect the
+        // process that actually died (path is stable, but cache the
+        // derived `lastPathComponent` once for the callback below).
+        let observerPidAtDeath = cartridge.pid
+        let observerName = (cartridge.path as NSString).lastPathComponent
         cartridge.running = false
         cartridge.writer = nil
         // One completed death (any reason) counts as one restart cycle.
@@ -1434,6 +1509,13 @@ public final class CartridgeHost: @unchecked Sendable {
         }
         rebuildCapabilities()
         stateLock.unlock()
+
+        // Notify lifecycle observer outside the lock.
+        observer?.cartridgeDied(
+            cartridgeIndex: cartridgeIdx,
+            pid: observerPidAtDeath,
+            name: observerName
+        )
 
         // Send ERR frames for all pending work (unexpected death and OOM kill).
         if let info = errInfo {
@@ -1966,10 +2048,25 @@ public final class CartridgeHost: @unchecked Sendable {
             capTable.append((cap, idx))
         }
         rebuildCapabilities()
+        // Capture observer payload while we still hold the lock so the
+        // values match the running=true state above. Fire the callback
+        // outside the lock to avoid handing observer code a held lock.
+        let observerPid = cartridge.pid
+        let observerName = (cartridge.path as NSString).lastPathComponent
+        let observerCaps = caps
         stateLock.unlock()
 
         // Start reader thread
         startCartridgeReaderThread(cartridgeIdx: idx, reader: reader)
+
+        // Notify lifecycle observer (XPC reverse-callback bridge, etc.).
+        // No-op when no observer is registered.
+        observer?.cartridgeSpawned(
+            cartridgeIndex: idx,
+            pid: observerPid,
+            name: observerName,
+            caps: observerCaps
+        )
     }
 
     // MARK: - Lifecycle
@@ -1985,8 +2082,13 @@ public final class CartridgeHost: @unchecked Sendable {
         }
         closed = true
 
+        // Collect death notifications under lock so the observer
+        // payload reflects the state at the time of transition.
+        // Fire callbacks after releasing the lock.
+        var deathNotifications: [(idx: Int, pid: pid_t?, name: String)] = []
+
         // Kill all running cartridges
-        for cartridge in cartridges {
+        for (idx, cartridge) in cartridges.enumerated() {
             cartridge.writerLock.lock()
             cartridge.writer = nil
             cartridge.writerLock.unlock()
@@ -1999,11 +2101,25 @@ public final class CartridgeHost: @unchecked Sendable {
                 try? stderr.close()
                 cartridge.stderrHandle = nil
             }
+            let wasRunning = cartridge.running
+            let pidAtDeath = cartridge.pid
+            let name = (cartridge.path as NSString).lastPathComponent
             cartridge.shutdownReason = .appExit
             cartridge.killProcess()
             cartridge.running = false
+            if wasRunning {
+                deathNotifications.append((idx: idx, pid: pidAtDeath, name: name))
+            }
         }
         stateLock.unlock()
+
+        // Notify observer for each cartridge that was actually
+        // running at the moment close() was called.
+        if let obs = observer {
+            for note in deathNotifications {
+                obs.cartridgeDied(cartridgeIndex: note.idx, pid: note.pid, name: note.name)
+            }
+        }
 
         // Signal the event loop to wake up and exit
         pushEvent(.relayClosed)
