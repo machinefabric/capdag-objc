@@ -591,6 +591,14 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Whether the host is closed.
     private var closed = false
 
+    /// One-shot run() guard. Mirrors the Rust reference's
+    /// `event_rx.take().expect("run() must only be called once")`
+    /// (capdag/src/bifaci/host_runtime.rs:875). A `CartridgeHost` is
+    /// scoped to a single relay session — callers that need a new
+    /// session must construct a new host.
+    private var hasRun = false
+    private let hasRunLock = NSLock()
+
     /// Lifecycle observer. Set by callers that want to be notified
     /// when a cartridge transitions in/out of the running state
     /// (typically `CartridgeXPCService` to forward to its Mac-app
@@ -944,6 +952,23 @@ public final class CartridgeHost: @unchecked Sendable {
         relayWrite: FileHandle,
         resourceFn: @escaping () -> Data
     ) throws {
+        // One-shot enforcement — mirrors the Rust reference. A
+        // second invocation would race with the first on
+        // `eventQueue`/`outboundWriter`/`statsTimer` and silently
+        // accumulate orphaned frames; we'd rather crash loud at the
+        // misuse site than leak GBs of NSConcreteData.
+        hasRunLock.lock()
+        precondition(!hasRun, "CartridgeHost.run() may only be called once per host instance — construct a new CartridgeHost for a new relay session")
+        hasRun = true
+        hasRunLock.unlock()
+
+        let sessionStart = Date()
+        let attachedCount: Int = {
+            stateLock.lock(); defer { stateLock.unlock() }
+            return cartridges.count
+        }()
+        os_log(.info, log: Self.log, "[run] ENTER session_start=%{public}@ attached_cartridges=%d", String(describing: sessionStart), attachedCount)
+
         outboundLock.lock()
         outboundWriter = FrameWriter(handle: relayWrite)
         outboundLock.unlock()
@@ -957,14 +982,18 @@ public final class CartridgeHost: @unchecked Sendable {
         // Start relay reader thread — feeds into the same event queue as cartridge readers
         let relayReader = FrameReader(handle: relayRead)
         let relayThread = Thread { [weak self] in
+            var frameCount: UInt64 = 0
             while true {
                 do {
                     guard let frame = try relayReader.read() else {
+                        os_log(.info, log: Self.log, "[run.relayReader] EOF after %{public}llu frames — pushing relayClosed", frameCount)
                         self?.pushEvent(.relayClosed)
                         break
                     }
+                    frameCount &+= 1
                     self?.pushEvent(.relayFrame(frame))
                 } catch {
+                    os_log(.error, log: Self.log, "[run.relayReader] read error after %{public}llu frames: %{public}@ — pushing relayClosed", frameCount, String(describing: error))
                     self?.pushEvent(.relayClosed)
                     break
                 }
@@ -984,8 +1013,24 @@ public final class CartridgeHost: @unchecked Sendable {
             self?.pushEvent(.statsRefresh)
         }
         statsTimer.resume()
+
+        // On exit (clean or via thrown error), match the Rust
+        // reference (capdag/src/bifaci/host_runtime.rs:989
+        // `self.kill_all_cartridges().await`): kill every managed
+        // cartridge so processes don't outlive the relay session,
+        // and drop the per-session outboundWriter so any late frame
+        // pushed by an in-flight cartridge reader thread fails fast
+        // (visible at sendToRelay's nil-writer log) instead of being
+        // silently buffered against a stale FD.
         defer {
             statsTimer.cancel()
+            killAllCartridgesOnRunExit()
+            outboundLock.lock()
+            outboundWriter = nil
+            outboundLock.unlock()
+            let elapsedMs = Int(Date().timeIntervalSince(sessionStart) * 1000)
+            let queueDepth: Int = { eventLock.lock(); defer { eventLock.unlock() }; return eventQueue.count }()
+            os_log(.info, log: Self.log, "[run] EXIT elapsed_ms=%d residual_event_queue=%d", elapsedMs, queueDepth)
         }
 
         // Main loop: wait for events from any source (relay or cartridges)
@@ -1026,6 +1071,53 @@ public final class CartridgeHost: @unchecked Sendable {
                     rebuildCapabilities()
                     stateLock.unlock()
                 }
+            }
+        }
+    }
+
+    /// Kill every managed cartridge on `run()` exit.
+    ///
+    /// Mirrors the Rust reference's `kill_all_cartridges` invoked at
+    /// the end of `run()`. Distinct from `close()` (which sets the
+    /// host's `closed` flag and pushes a `relayClosed` event to wake
+    /// the loop) — by the time we get here the loop has already
+    /// returned, so we only need to terminate the child processes
+    /// and tear down their I/O. Idempotent.
+    private func killAllCartridgesOnRunExit() {
+        var deathNotifications: [(idx: Int, pid: pid_t?, name: String)] = []
+        stateLock.lock()
+        for (idx, cartridge) in cartridges.enumerated() {
+            cartridge.writerLock.lock()
+            cartridge.writer = nil
+            cartridge.writerLock.unlock()
+
+            if let stdin = cartridge.stdinHandle {
+                try? stdin.close()
+                cartridge.stdinHandle = nil
+            }
+            if let stderr = cartridge.stderrHandle {
+                try? stderr.close()
+                cartridge.stderrHandle = nil
+            }
+            let wasRunning = cartridge.running
+            let pidAtDeath = cartridge.pid
+            let name = (cartridge.path as NSString).lastPathComponent
+            cartridge.shutdownReason = .appExit
+            cartridge.killProcess()
+            cartridge.running = false
+            if wasRunning {
+                deathNotifications.append((idx: idx, pid: pidAtDeath, name: name))
+            }
+        }
+        stateLock.unlock()
+
+        if !deathNotifications.isEmpty {
+            os_log(.info, log: Self.log, "[run.exit] killed %d running cartridge(s)", deathNotifications.count)
+        }
+
+        if let obs = observer {
+            for note in deathNotifications {
+                obs.cartridgeDied(cartridgeIndex: note.idx, pid: note.pid, name: note.name)
             }
         }
     }
@@ -2067,6 +2159,43 @@ public final class CartridgeHost: @unchecked Sendable {
             name: observerName,
             caps: observerCaps
         )
+    }
+
+    // MARK: - Test-only Hooks
+
+    /// Register a stub managed cartridge slot with no real
+    /// process or I/O, already marked `running`. Test-only —
+    /// production code brings a cartridge to running state via
+    /// spawn + HELLO handshake. Exposed so the session-lifecycle
+    /// test can verify that run() exit fires `cartridgeDied` for
+    /// every running cartridge (the leak-class regression we
+    /// guard against would drop these callbacks because
+    /// cartridges would survive the session).
+    ///
+    /// Returns the assigned cartridge index.
+    @discardableResult
+    internal func attachStubCartridgeForTest() -> Int {
+        let cartridge = ManagedCartridge.attached(
+            manifest: Data(),
+            limits: Limits(),
+            caps: []
+        )
+        stateLock.lock()
+        let idx = cartridges.count
+        cartridges.append(cartridge)
+        stateLock.unlock()
+        return idx
+    }
+
+    /// Test-only inspection of the per-session outbound writer.
+    /// `nil` after run() exits — used by the session-lifecycle
+    /// test to assert that the writer is dropped on exit so late
+    /// frames fail loud instead of silently buffering against a
+    /// closed FD.
+    internal var outboundWriterForTest: FrameWriter? {
+        outboundLock.lock()
+        defer { outboundLock.unlock() }
+        return outboundWriter
     }
 
     // MARK: - Lifecycle

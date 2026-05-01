@@ -72,6 +72,14 @@ public final class RelaySlave: @unchecked Sendable {
         socketWrite: FileHandle,
         initialNotify: (manifest: Data, limits: Limits)? = nil
     ) throws {
+        let sessionStart = Date()
+        let manifestBytes = initialNotify?.manifest.count ?? 0
+        os_log(.info, log: RelaySlave.log, "[run] ENTER session_start=%{public}@ initial_manifest_bytes=%d", String(describing: sessionStart), manifestBytes)
+        defer {
+            let elapsedMs = Int(Date().timeIntervalSince(sessionStart) * 1000)
+            os_log(.info, log: RelaySlave.log, "[run] EXIT elapsed_ms=%d", elapsedMs)
+        }
+
         let socketReader = FrameReader(handle: socketRead)
         let socketWriter = FrameWriter(handle: socketWrite)
 
