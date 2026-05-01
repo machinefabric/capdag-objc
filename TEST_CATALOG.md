@@ -1,10 +1,10 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 735
+**Total Tests:** 738
 
 **Numbered Tests:** 611
 
-**Unnumbered Tests:** 124
+**Unnumbered Tests:** 127
 
 **Numbered Tests Missing Descriptions:** 0
 
@@ -694,6 +694,9 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testExtensionsWithMetadataAndValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:152 |
 | unnumbered | `testFileReferenceWithAllFields` |  | Tests/CapDAGTests/CSStdinSourceTests.m:74 |
 | unnumbered | `testFullCapValidationWithMediaSpecs` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:679 |
+| unnumbered | `testGcEvictsOldestEntriesByTouchedAt` | / Contract #2 — the GC drops the OLDEST entries by / `touchedAt`, not arbitrary keys. We seed a known age / distribution and recompute the expected victim set / independently of the production code, then assert that / the post-GC table contains exactly the entries the test / computed should survive. / / A regression where the GC e.g. iterates the dictionary and / drops the first N entries (dictionary iteration order is / arbitrary in Swift) would still pass contract #1 but fail / this one — so this is the assertion that catches a "wrong / victims" bug, which is the more dangerous one (silently / drops in-flight continuation frames). | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:108 |
+| unnumbered | `testGcReducesTableBelowSoftWatermarkInOnePass` | / Contract #1 — the GC keeps the table strictly below the / hard cap. We seed the table well above the soft watermark / (matching what a runaway producer would do mid-frame-burst) / and call the production GC entry point. The post-state / must be at most `softWatermark` entries because the GC / drops at least `evictionFraction × pre-state` entries in / one pass and the pre-state is below `hardCap` (i.e. one / pass is enough; the secondary "hard cap" pass would only / kick in if pre-state crossed the hard cap before insertion / completed, which production prevents by gc-ing on every / insert). | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:45 |
+| unnumbered | `testGcSecondaryPassEnforcesHardCap` | / Contract #3 — the secondary "hard cap" pass kicks in if / the table somehow exceeds `hardCap` (e.g. a seed that goes / over, simulating an extreme runaway). Without the / secondary pass, a single GC at the soft watermark would / not be enough to recover headroom and the table could / grow without bound between bursts. | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:172 |
 | unnumbered | `testGetCapDefinitionReal` |  | Tests/CapDAGTests/CSCapRegistryTests.m:115 |
 | unnumbered | `testHostConstructsAndClosesWithoutAnObserver` |  | Tests/BifaciTests/CartridgeHostObserverTests.swift:53 |
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:263 |
@@ -824,6 +827,9 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testExtensionsWithMetadataAndValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:152
 - `testFileReferenceWithAllFields` — Tests/CapDAGTests/CSStdinSourceTests.m:74
 - `testFullCapValidationWithMediaSpecs` — Tests/CapDAGTests/CSSchemaValidationTests.m:679
+- `testGcEvictsOldestEntriesByTouchedAt` — Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:108
+- `testGcReducesTableBelowSoftWatermarkInOnePass` — Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:45
+- `testGcSecondaryPassEnforcesHardCap` — Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:172
 - `testGetCapDefinitionReal` — Tests/CapDAGTests/CSCapRegistryTests.m:115
 - `testHostConstructsAndClosesWithoutAnObserver` — Tests/BifaciTests/CartridgeHostObserverTests.swift:53
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:263
@@ -886,8 +892,8 @@ The following tests are cataloged but do not currently participate in numeric te
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 735*
+*Total tests: 738*
 *Total numbered tests: 611*
-*Total unnumbered tests: 124*
+*Total unnumbered tests: 127*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*
