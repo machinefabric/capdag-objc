@@ -258,7 +258,12 @@ private enum CartridgeEvent {
 
 /// Composite routing key: (XID, RID) — uniquely identifies a request flow from relay.
 /// XID is assigned by RelaySwitch, RID is the request's MessageId.
-private struct RxidKey: Hashable {
+// Internal (not private) so the routing-GC contract test can
+// construct keys for the seed helper. Production callers outside
+// this file have no use for this type — it's still effectively
+// host-internal — but `@testable import` requires non-private
+// access for symbols a test uses through public/internal helpers.
+internal struct RxidKey: Hashable {
     let xid: MessageId
     let rid: MessageId
 }
@@ -555,18 +560,34 @@ public final class CartridgeHost: @unchecked Sendable {
     /// List 1: OUTGOING_RIDS — tracks peer requests sent BY cartridges (RID → cartridge_idx).
     /// Used for death cleanup (ERR all pending peer requests when cartridge dies).
     /// Cleaned up only on cartridge death, never on terminal frames.
+    /// Entries also drop on routing-table GC (see `gcRoutingTablesIfNeededLocked`).
     private var outgoingRids: [MessageId: Int] = [:]
+    /// Parallel touched-at clock for `outgoingRids`. Same key set;
+    /// values are `mach_absolute_time` ticks. Read by the GC to
+    /// pick the oldest 25 % of entries when the table exceeds the
+    /// soft watermark. Updated on insert and on every read that
+    /// matches the entry (so a flow that's still seeing
+    /// continuations stays "fresh"). Never read by the routing
+    /// fast path — only the GC sees it.
+    private var outgoingRidsTouched: [MessageId: UInt64] = [:]
 
     /// List 2: INCOMING_RXIDS — tracks incoming requests FROM relay ((XID, RID) → cartridge_idx).
     /// Routes continuation frames (STREAM_START/CHUNK/STREAM_END/END/ERR) to the correct cartridge.
     /// NEVER cleaned up on terminal frames — intentionally leaked until cartridge death.
     /// This avoids premature cleanup in self-loop peer request scenarios where the same RID
     /// appears in both outgoing and incoming maps.
+    /// Bounded by `routingTableHardCap`; the GC evicts the
+    /// least-recently-touched entries when the table exceeds the
+    /// soft watermark.
     private var incomingRxids: [RxidKey: Int] = [:]
+    private var incomingRxidsTouched: [RxidKey: UInt64] = [:]
 
     /// Tracks which incoming request spawned which outgoing peer RIDs.
     /// Maps parent (xid, rid) → list of child peer RIDs. Used for cancel cascade.
+    /// Same GC discipline as `incomingRxids` — eviction here is
+    /// keyed off the parent's touched-at, not the children's.
     private var incomingToPeerRids: [RxidKey: [MessageId]] = [:]
+    private var incomingToPeerRidsTouched: [RxidKey: UInt64] = [:]
 
     /// Aggregate capabilities (serialized JSON manifest of all cartridge caps).
     private var _capabilities: Data = Data()
@@ -581,7 +602,164 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Max-seen seq per flow for cartridge-originated frames.
     /// Used to set seq on host-generated ERR frames (max_seen + 1).
     /// Protected by stateLock (same as outgoingRids/incomingRxids).
+    /// Bounded by `routingTableHardCap` like the routing tables;
+    /// stale entries (whose flow died without a terminal frame the
+    /// cleanup path could see) are evicted oldest-first by the
+    /// touched-at clock recorded in `outgoingMaxSeqTouched`.
     private var outgoingMaxSeq: [FlowKey: UInt64] = [:]
+    private var outgoingMaxSeqTouched: [FlowKey: UInt64] = [:]
+
+    /// Generous cap on the per-host routing tables. The
+    /// "intentionally leaked until cartridge death" semantics on
+    /// `incomingRxids` (and the parallel structure on
+    /// `outgoingRids` / `incomingToPeerRids` / `outgoingMaxSeq`)
+    /// means a cartridge that creates many distinct request IDs
+    /// without dying will accumulate entries forever. In normal
+    /// use we observed ~568 entries across a long session; 8192
+    /// gives ~14× headroom before the GC fires, which is enough to
+    /// cover bursts (PDF disbind→ForEach×N→LLM-call patterns) while
+    /// still catching a runaway producer well before it grows
+    /// memory by megabytes.
+    private static let routingTableHardCap = 8192
+    /// Soft watermark — when an insertion would push a table at or
+    /// above this size, the GC fires and evicts the oldest 25% by
+    /// `touchedAt`. Set to ~80 % of `hardCap` so the GC runs ahead
+    /// of the cap rather than spinning right at it.
+    private static let routingTableSoftWatermark = 6553
+    /// Fraction of entries to drop in one GC pass. Lower values
+    /// re-fire the GC more often (more log noise, more lock churn);
+    /// higher values discard entries that may still be live (more
+    /// likely to drop a continuation frame). 25 % is a balance —
+    /// matches the watermark distance so two consecutive GC passes
+    /// can carry the table back down to half-full if traffic
+    /// briefly stays above the watermark.
+    private static let routingTableGcEvictionFraction = 0.25
+
+    /// Diagnostic counts for the routing-table GC. Reset to zero
+    /// only when the host is constructed; expose via `os_log` each
+    /// time the GC fires so a runaway producer is visible in the
+    /// unified log without needing a custom subscriber.
+    private var routingTableGcRunsTotal: UInt64 = 0
+    private var routingTableGcEvictedTotal: UInt64 = 0
+
+    /// Mark an entry in `incomingRxids` as touched right now.
+    /// Caller MUST hold `stateLock`. Called both on insert and on
+    /// every read that hits an existing key, so a still-streaming
+    /// flow stays "fresh" for the GC.
+    private func touchIncomingRxidLocked(_ key: RxidKey) {
+        incomingRxidsTouched[key] = mach_absolute_time()
+    }
+
+    private func touchOutgoingRidLocked(_ rid: MessageId) {
+        outgoingRidsTouched[rid] = mach_absolute_time()
+    }
+
+    private func touchIncomingToPeerRidsLocked(_ key: RxidKey) {
+        incomingToPeerRidsTouched[key] = mach_absolute_time()
+    }
+
+    private func touchOutgoingMaxSeqLocked(_ key: FlowKey) {
+        outgoingMaxSeqTouched[key] = mach_absolute_time()
+    }
+
+    /// Run the GC if any routing table has crossed its soft
+    /// watermark. Caller MUST hold `stateLock`. Logs at `.error`
+    /// (this is unusual enough that we want it visible by default
+    /// in `log show --predicate 'subsystem == "com.machinefabric.bifaci"'`,
+    /// even when the user hasn't enabled info-level capture).
+    ///
+    /// Each table is GC'd independently — they share the soft
+    /// watermark and eviction fraction, but their key sets don't
+    /// overlap so there's no benefit to ganging them. Eviction
+    /// drops the parallel `*Touched` entry too, so the touched
+    /// maps cannot grow past their primary tables.
+    private func gcRoutingTablesIfNeededLocked() {
+        if incomingRxids.count >= Self.routingTableSoftWatermark {
+            gcRoutingTableLocked(
+                tableName: "incomingRxids",
+                primary: &incomingRxids,
+                touched: &incomingRxidsTouched
+            )
+        }
+        if outgoingRids.count >= Self.routingTableSoftWatermark {
+            gcRoutingTableLocked(
+                tableName: "outgoingRids",
+                primary: &outgoingRids,
+                touched: &outgoingRidsTouched
+            )
+        }
+        if incomingToPeerRids.count >= Self.routingTableSoftWatermark {
+            gcRoutingTableLocked(
+                tableName: "incomingToPeerRids",
+                primary: &incomingToPeerRids,
+                touched: &incomingToPeerRidsTouched
+            )
+        }
+        if outgoingMaxSeq.count >= Self.routingTableSoftWatermark {
+            gcRoutingTableLocked(
+                tableName: "outgoingMaxSeq",
+                primary: &outgoingMaxSeq,
+                touched: &outgoingMaxSeqTouched
+            )
+        }
+    }
+
+    /// Generic GC pass: drop the oldest
+    /// `routingTableGcEvictionFraction` of `primary` (and its
+    /// matching `touched` entries) by `touchedAt` ascending. Keys
+    /// missing from `touched` are treated as oldest (touchedAt = 0)
+    /// — they're either pre-touch state or buggy non-touched
+    /// inserts; either way, evicting them is safer than letting
+    /// them linger.
+    private func gcRoutingTableLocked<K, V>(
+        tableName: String,
+        primary: inout [K: V],
+        touched: inout [K: UInt64]
+    ) {
+        let beforeCount = primary.count
+        let evictCount = max(1, Int(Double(beforeCount) * Self.routingTableGcEvictionFraction))
+        // Build (key, touchedAt) pairs and pick the oldest N.
+        // O(n log n) sort over `n = beforeCount`; with the cap at
+        // 8192 this is < 100 µs even on a low-end Mac. Acceptable
+        // for an event that should fire only when something is
+        // genuinely off-the-rails.
+        let candidates: [(K, UInt64)] = primary.keys.map { key in
+            (key, touched[key] ?? 0)
+        }
+        let sorted = candidates.sorted { $0.1 < $1.1 }
+        let victims = sorted.prefix(evictCount)
+        for (key, _) in victims {
+            primary.removeValue(forKey: key)
+            touched.removeValue(forKey: key)
+        }
+        routingTableGcRunsTotal &+= 1
+        routingTableGcEvictedTotal &+= UInt64(evictCount)
+
+        os_log(.error, log: Self.log,
+               "[routing-gc] table=%{public}@ before=%{public}d evicted=%{public}d after=%{public}d total_runs=%{public}llu total_evicted=%{public}llu — least-recently-touched entries dropped to keep the table under %{public}d. If this fires repeatedly, a cartridge or relay path is producing request IDs without ever terminating their flows.",
+               tableName, beforeCount, evictCount, primary.count,
+               routingTableGcRunsTotal, routingTableGcEvictedTotal,
+               Self.routingTableHardCap)
+
+        // If the primary still exceeds the hard cap after this
+        // pass (extreme runaway), evict more aggressively until
+        // we're back under the watermark. This is a guard, not a
+        // hot path — the loop runs at most 1-2 times even at
+        // pathological growth rates.
+        while primary.count >= Self.routingTableHardCap {
+            let extraEvict = max(1, primary.count - Self.routingTableSoftWatermark)
+            let extras: [(K, UInt64)] = primary.keys.map { ($0, touched[$0] ?? 0) }
+            let extrasSorted = extras.sorted { $0.1 < $1.1 }
+            for (key, _) in extrasSorted.prefix(extraEvict) {
+                primary.removeValue(forKey: key)
+                touched.removeValue(forKey: key)
+            }
+            routingTableGcEvictedTotal &+= UInt64(extraEvict)
+            os_log(.error, log: Self.log,
+                   "[routing-gc] table=%{public}@ HARD CAP secondary pass evicted=%{public}d new_size=%{public}d",
+                   tableName, extraEvict, primary.count)
+        }
+    }
 
     /// Cartridge events from reader threads.
     private var eventQueue: [CartridgeEvent] = []
@@ -598,23 +776,6 @@ public final class CartridgeHost: @unchecked Sendable {
     /// session must construct a new host.
     private var hasRun = false
     private let hasRunLock = NSLock()
-
-    /// Diagnostic counters for the frame-retention investigation
-    /// (multi-GB NSConcreteData accumulator that survives the
-    /// per-session host fix). Updated under `diagLock` so a
-    /// reporter thread can take a coherent snapshot every 5s.
-    /// All `_total` fields are monotonic; `_bytes_total` tracks the
-    /// sum of `Frame.payload.count` so we can spot the path that
-    /// has frames flowing IN but not OUT (or vice-versa).
-    private let diagLock = NSLock()
-    private var diagFramesFromCartridgeTotal: UInt64 = 0
-    private var diagFramesFromCartridgeBytesTotal: UInt64 = 0
-    private var diagFramesFromRelayTotal: UInt64 = 0
-    private var diagFramesFromRelayBytesTotal: UInt64 = 0
-    private var diagFramesToRelayTotal: UInt64 = 0
-    private var diagFramesToRelayBytesTotal: UInt64 = 0
-    private var diagDeathEventsTotal: UInt64 = 0
-    private var diagStatsRefreshTotal: UInt64 = 0
 
     /// Lifecycle observer. Set by callers that want to be notified
     /// when a cartridge transitions in/out of the running state
@@ -979,13 +1140,6 @@ public final class CartridgeHost: @unchecked Sendable {
         hasRun = true
         hasRunLock.unlock()
 
-        let sessionStart = Date()
-        let attachedCount: Int = {
-            stateLock.lock(); defer { stateLock.unlock() }
-            return cartridges.count
-        }()
-        os_log(.info, log: Self.log, "[run] ENTER session_start=%{public}@ attached_cartridges=%d", String(describing: sessionStart), attachedCount)
-
         outboundLock.lock()
         outboundWriter = FrameWriter(handle: relayWrite)
         outboundLock.unlock()
@@ -999,7 +1153,6 @@ public final class CartridgeHost: @unchecked Sendable {
         // Start relay reader thread — feeds into the same event queue as cartridge readers
         let relayReader = FrameReader(handle: relayRead)
         let relayThread = Thread { [weak self] in
-            var frameCount: UInt64 = 0
             // See startCartridgeReaderThread for why we wrap each
             // iteration in an autoreleasepool — same root cause:
             // NSConcreteFileHandle.readDataOfLength returns
@@ -1009,15 +1162,13 @@ public final class CartridgeHost: @unchecked Sendable {
                 let shouldBreak: Bool = autoreleasepool {
                     do {
                         guard let frame = try relayReader.read() else {
-                            os_log(.info, log: Self.log, "[run.relayReader] EOF after %{public}llu frames — pushing relayClosed", frameCount)
                             self?.pushEvent(.relayClosed)
                             return true
                         }
-                        frameCount &+= 1
                         self?.pushEvent(.relayFrame(frame))
                         return false
                     } catch {
-                        os_log(.error, log: Self.log, "[run.relayReader] read error after %{public}llu frames: %{public}@ — pushing relayClosed", frameCount, String(describing: error))
+                        os_log(.error, log: Self.log, "[run.relayReader] read error: %{public}@ — pushing relayClosed", String(describing: error))
                         self?.pushEvent(.relayClosed)
                         return true
                     }
@@ -1040,48 +1191,51 @@ public final class CartridgeHost: @unchecked Sendable {
         }
         statsTimer.resume()
 
-        // Diagnostic reporter — every 5s, dump frame-flow counters
-        // and routing-table sizes so we can correlate inbound vs
-        // outbound rates with phys_footprint growth in mfmon. This
-        // is the primary signal for the multi-GB NSConcreteData
-        // retention investigation that survived the per-session-
-        // host fix. Lives only for the duration of run() (cancelled
-        // in the defer block below). Captures `self` weakly so a
-        // late tick doesn't outlive the host instance.
-        let diagTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        diagTimer.schedule(deadline: .now() + .seconds(5), repeating: .seconds(5))
-        diagTimer.setEventHandler { [weak self] in
+        // Heartbeat probe timer — sends a heartbeat REQ to every
+        // running cartridge every 10s. Each cartridge replies with
+        // a heartbeat carrying its self-reported memory footprint
+        // in `meta` (footprint_mb / rss_mb). The host's
+        // .heartbeat handler stores those into
+        // `cartridge.memoryFootprintMb` / `memoryRssMb`. Without
+        // this timer no heartbeats ever fire, leaving the
+        // self-report channel dormant — which was why the cartridge
+        // detail view's resident/CPU columns stayed at zero even
+        // after the autoreleasepool fix.
+        //
+        // 10s cadence is shorter than the Rust reference's 30s
+        // because we're using the same heartbeat for live UI stats,
+        // not just liveness. Cost per probe: one frame in, one
+        // frame out, both ~64 B + meta — negligible compared to
+        // the 2s statsRefresh rebuild.
+        let heartbeatTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        heartbeatTimer.schedule(deadline: .now() + .seconds(10), repeating: .seconds(10))
+        heartbeatTimer.setEventHandler { [weak self] in
             guard let self = self else { return }
-            self.diagLock.lock()
-            let cFrames = self.diagFramesFromCartridgeTotal
-            let cBytes = self.diagFramesFromCartridgeBytesTotal
-            let rFrames = self.diagFramesFromRelayTotal
-            let rBytes = self.diagFramesFromRelayBytesTotal
-            let oFrames = self.diagFramesToRelayTotal
-            let oBytes = self.diagFramesToRelayBytesTotal
-            let dEvents = self.diagDeathEventsTotal
-            let sRefresh = self.diagStatsRefreshTotal
-            self.diagLock.unlock()
-
-            self.eventLock.lock()
-            let qDepth = self.eventQueue.count
-            self.eventLock.unlock()
-
             self.stateLock.lock()
-            let inRxids = self.incomingRxids.count
-            let outRids = self.outgoingRids.count
-            let inToPeer = self.incomingToPeerRids.count
-            let inToPeerSum = self.incomingToPeerRids.values.reduce(0) { $0 + $1.count }
-            let outMaxSeq = self.outgoingMaxSeq.count
-            let capsBytes = self._capabilities.count
+            let snapshot: [(idx: Int, writer: FrameWriter)] = self.cartridges.enumerated().compactMap { (idx, c) in
+                guard c.running, let writer = c.writer else { return nil }
+                return (idx, writer)
+            }
             self.stateLock.unlock()
-
-            os_log(.info, log: Self.log,
-                   "[diag] frames cart=%{public}llu(%{public}lluB) relay=%{public}llu(%{public}lluB) outbound=%{public}llu(%{public}lluB) deaths=%{public}llu stats=%{public}llu queue=%{public}d rxids_in=%{public}d rids_out=%{public}d in2peer_keys=%{public}d in2peer_sum=%{public}d max_seq=%{public}d caps_bytes=%{public}d",
-                   cFrames, cBytes, rFrames, rBytes, oFrames, oBytes, dEvents, sRefresh,
-                   qDepth, inRxids, outRids, inToPeer, inToPeerSum, outMaxSeq, capsBytes)
+            for entry in snapshot {
+                let probeId = MessageId.newUUID()
+                self.stateLock.lock()
+                self.cartridges[entry.idx].pendingHeartbeats[probeId] = Date()
+                self.stateLock.unlock()
+                let frame = Frame.heartbeat(id: probeId)
+                do {
+                    try entry.writer.write(frame)
+                } catch {
+                    os_log(.error, log: Self.log,
+                           "Failed to write heartbeat probe to cartridge %{public}d: %{public}@",
+                           entry.idx, String(describing: error))
+                    self.stateLock.lock()
+                    self.cartridges[entry.idx].pendingHeartbeats.removeValue(forKey: probeId)
+                    self.stateLock.unlock()
+                }
+            }
         }
-        diagTimer.resume()
+        heartbeatTimer.resume()
 
         // On exit (clean or via thrown error), match the Rust
         // reference (capdag/src/bifaci/host_runtime.rs:989
@@ -1093,14 +1247,11 @@ public final class CartridgeHost: @unchecked Sendable {
         // silently buffered against a stale FD.
         defer {
             statsTimer.cancel()
-            diagTimer.cancel()
+            heartbeatTimer.cancel()
             killAllCartridgesOnRunExit()
             outboundLock.lock()
             outboundWriter = nil
             outboundLock.unlock()
-            let elapsedMs = Int(Date().timeIntervalSince(sessionStart) * 1000)
-            let queueDepth: Int = { eventLock.lock(); defer { eventLock.unlock() }; return eventQueue.count }()
-            os_log(.info, log: Self.log, "[run] EXIT elapsed_ms=%d residual_event_queue=%d", elapsedMs, queueDepth)
         }
 
         // Main loop: wait for events from any source (relay or cartridges).
@@ -1129,11 +1280,6 @@ public final class CartridgeHost: @unchecked Sendable {
             let shouldExit: Bool = autoreleasepool {
                 switch event {
                 case .relayFrame(let frame):
-                    let payloadBytes = UInt64(frame.payload?.count ?? 0)
-                    diagLock.lock()
-                    diagFramesFromRelayTotal &+= 1
-                    diagFramesFromRelayBytesTotal &+= payloadBytes
-                    diagLock.unlock()
                     handleRelayFrame(frame)
                     return false
                 case .relayClosed:
@@ -1143,23 +1289,12 @@ public final class CartridgeHost: @unchecked Sendable {
                     stateLock.unlock()
                     return true
                 case .frame(let cartridgeIdx, let frame):
-                    let payloadBytes = UInt64(frame.payload?.count ?? 0)
-                    diagLock.lock()
-                    diagFramesFromCartridgeTotal &+= 1
-                    diagFramesFromCartridgeBytesTotal &+= payloadBytes
-                    diagLock.unlock()
                     handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
                     return false
                 case .death(let cartridgeIdx):
-                    diagLock.lock()
-                    diagDeathEventsTotal &+= 1
-                    diagLock.unlock()
                     handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
                     return false
                 case .statsRefresh:
-                    diagLock.lock()
-                    diagStatsRefreshTotal &+= 1
-                    diagLock.unlock()
                     // Re-emit RelayNotify only when at least one cartridge is
                     // running, so an idle host doesn't burn bandwidth. Runtime
                     // stats for non-running cartridges change only at
@@ -1214,10 +1349,6 @@ public final class CartridgeHost: @unchecked Sendable {
             }
         }
         stateLock.unlock()
-
-        if !deathNotifications.isEmpty {
-            os_log(.info, log: Self.log, "[run.exit] killed %d running cartridge(s)", deathNotifications.count)
-        }
 
         if let obs = observer {
             for note in deathNotifications {
@@ -1314,6 +1445,8 @@ public final class CartridgeHost: @unchecked Sendable {
             let key = RxidKey(xid: xid, rid: frame.id)
             stateLock.lock()
             incomingRxids[key] = cartridgeIdx
+            touchIncomingRxidLocked(key)
+            gcRoutingTablesIfNeededLocked()
             let cartridge = cartridges[cartridgeIdx]
             stateLock.unlock()
 
@@ -1326,6 +1459,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 sendToRelay(err)
                 stateLock.lock()
                 incomingRxids.removeValue(forKey: key)
+                incomingRxidsTouched.removeValue(forKey: key)
                 stateLock.unlock()
             }
 
@@ -1341,10 +1475,18 @@ public final class CartridgeHost: @unchecked Sendable {
             // Route by (XID, RID) to the mapped cartridge
             stateLock.lock()
             var cartridgeIdx = incomingRxids[key]
-            if cartridgeIdx == nil {
+            if cartridgeIdx != nil {
+                // Hit on incoming side — keep this entry "fresh" so
+                // the GC doesn't evict it while continuations are
+                // still arriving.
+                touchIncomingRxidLocked(key)
+            } else {
                 // Not an incoming engine request — check if it's a peer response.
                 // outgoingRids[RID] tracks which cartridge made a peer request with this RID.
                 cartridgeIdx = outgoingRids[frame.id]
+                if cartridgeIdx != nil {
+                    touchOutgoingRidLocked(frame.id)
+                }
             }
             guard let resolvedIdx = cartridgeIdx else {
                 stateLock.unlock()
@@ -1359,8 +1501,11 @@ public final class CartridgeHost: @unchecked Sendable {
                 let flowKey = FlowKey(rid: frame.id, xid: xid)
                 stateLock.lock()
                 let nextSeq = (outgoingMaxSeq.removeValue(forKey: flowKey) ?? 0) + 1
+                outgoingMaxSeqTouched.removeValue(forKey: flowKey)
                 outgoingRids.removeValue(forKey: frame.id)
+                outgoingRidsTouched.removeValue(forKey: frame.id)
                 incomingRxids.removeValue(forKey: key)
+                incomingRxidsTouched.removeValue(forKey: key)
                 stateLock.unlock()
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
                 var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", message: deathMsg)
@@ -1380,6 +1525,9 @@ public final class CartridgeHost: @unchecked Sendable {
             // made the peer request. Identified by outgoingRids[RID].
             stateLock.lock()
             let cartridgeIdx = outgoingRids[frame.id]
+            if cartridgeIdx != nil {
+                touchOutgoingRidLocked(frame.id)
+            }
             stateLock.unlock()
 
             if let idx = cartridgeIdx {
@@ -1408,6 +1556,11 @@ public final class CartridgeHost: @unchecked Sendable {
                 fputs("[CartridgeHost] Cancel for unknown request (\(xid), \(rid)) — ignoring\n", stderr)
                 return
             }
+            // Touch on cancel-route too — the cancel itself is
+            // routing activity for this entry, and the cooperative
+            // cancel below may cause more frames to flow on this
+            // (XID, RID) before the cartridge actually exits.
+            touchIncomingRxidLocked(key)
 
             if forceKill {
                 // Force kill: set shutdown reason and kill the process
@@ -1428,6 +1581,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 // Also cascade: send Cancel to relay for each peer call spawned by this request
                 stateLock.lock()
                 if let peerRids = incomingToPeerRids[key] {
+                    touchIncomingToPeerRidsLocked(key)
                     stateLock.unlock()
                     for peerRid in peerRids {
                         fputs("[CartridgeHost] Cascading Cancel to peer call rid=\(peerRid)\n", stderr)
@@ -1499,8 +1653,10 @@ public final class CartridgeHost: @unchecked Sendable {
             // Cartridges MUST NOT send XID (that's a relay-level concept).
             stateLock.lock()
             outgoingRids[frame.id] = cartridgeIdx
+            touchOutgoingRidLocked(frame.id)
             let flowKey = FlowKey.fromFrame(frame)
             outgoingMaxSeq[flowKey] = frame.seq
+            touchOutgoingMaxSeqLocked(flowKey)
 
             // Track parent→child peer call mapping for cancel cascade
             if let meta = frame.meta, let parentRidCbor = meta["parent_rid"] {
@@ -1518,9 +1674,13 @@ public final class CartridgeHost: @unchecked Sendable {
                     let parentKey = incomingRxids.first(where: { $0.key.rid == parentRid })?.key
                     if let pk = parentKey {
                         incomingToPeerRids[pk, default: []].append(frame.id)
+                        touchIncomingToPeerRidsLocked(pk)
                     }
                 }
             }
+            // Run the GC after recording — covers all four
+            // tables touched in this branch.
+            gcRoutingTablesIfNeededLocked()
             stateLock.unlock()
             sendToRelay(frame)
 
@@ -1533,8 +1693,11 @@ public final class CartridgeHost: @unchecked Sendable {
                 let isTerminal = frame.frameType == .end || frame.frameType == .err
                 if isTerminal {
                     outgoingMaxSeq.removeValue(forKey: flowKey)
+                    outgoingMaxSeqTouched.removeValue(forKey: flowKey)
                 } else {
                     outgoingMaxSeq[flowKey] = frame.seq
+                    touchOutgoingMaxSeqLocked(flowKey)
+                    gcRoutingTablesIfNeededLocked()
                 }
                 stateLock.unlock()
             }
@@ -1641,11 +1804,13 @@ public final class CartridgeHost: @unchecked Sendable {
             if idx == cartridgeIdx {
                 let flowKey = FlowKey(rid: rid, xid: nil)
                 let nextSeq = (outgoingMaxSeq.removeValue(forKey: flowKey) ?? 0) + 1
+                outgoingMaxSeqTouched.removeValue(forKey: flowKey)
                 failedOutgoing.append((rid: rid, nextSeq: nextSeq))
             }
         }
         for entry in failedOutgoing {
             outgoingRids.removeValue(forKey: entry.rid)
+            outgoingRidsTouched.removeValue(forKey: entry.rid)
         }
 
         // incomingRxids: requests routed to this cartridge (intentionally leaked)
@@ -1654,12 +1819,15 @@ public final class CartridgeHost: @unchecked Sendable {
             if idx == cartridgeIdx {
                 let flowKey = FlowKey(rid: key.rid, xid: key.xid)
                 let nextSeq = (outgoingMaxSeq.removeValue(forKey: flowKey) ?? 0) + 1
+                outgoingMaxSeqTouched.removeValue(forKey: flowKey)
                 failedIncoming.append((key: key, xid: key.xid, rid: key.rid, nextSeq: nextSeq))
             }
         }
         for entry in failedIncoming {
             incomingRxids.removeValue(forKey: entry.key)
+            incomingRxidsTouched.removeValue(forKey: entry.key)
             incomingToPeerRids.removeValue(forKey: entry.key)
+            incomingToPeerRidsTouched.removeValue(forKey: entry.key)
         }
 
         // Determine error code and message based on shutdown reason.
@@ -1816,11 +1984,6 @@ public final class CartridgeHost: @unchecked Sendable {
         if frame.frameType != .log {
             os_log(.debug, log: Self.log, "[sendToRelay] %{public}@ id=%{public}@ xid=%{public}@", String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
         }
-        let payloadBytes = UInt64(frame.payload?.count ?? 0)
-        diagLock.lock()
-        diagFramesToRelayTotal &+= 1
-        diagFramesToRelayBytesTotal &+= payloadBytes
-        diagLock.unlock()
         outboundLock.lock()
         defer { outboundLock.unlock() }
         guard let w = outboundWriter else {
@@ -2321,6 +2484,66 @@ public final class CartridgeHost: @unchecked Sendable {
         defer { outboundLock.unlock() }
         return outboundWriter
     }
+
+    /// Test-only snapshot of the four routing tables' current
+    /// sizes plus the GC's monotonic counters. Used by routing-GC
+    /// contract tests to assert the cap is enforced and that
+    /// eviction fires when expected.
+    internal struct RoutingTableSnapshotForTest: Equatable {
+        let incomingRxids: Int
+        let outgoingRids: Int
+        let incomingToPeerRids: Int
+        let outgoingMaxSeq: Int
+        let gcRunsTotal: UInt64
+        let gcEvictedTotal: UInt64
+    }
+
+    internal func routingTableSnapshotForTest() -> RoutingTableSnapshotForTest {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return RoutingTableSnapshotForTest(
+            incomingRxids: incomingRxids.count,
+            outgoingRids: outgoingRids.count,
+            incomingToPeerRids: incomingToPeerRids.count,
+            outgoingMaxSeq: outgoingMaxSeq.count,
+            gcRunsTotal: routingTableGcRunsTotal,
+            gcEvictedTotal: routingTableGcEvictedTotal
+        )
+    }
+
+    /// Test-only direct insert into `incomingRxids` with a
+    /// caller-supplied `touchedAt`. Lets the GC contract test seed
+    /// a deterministic age distribution so it can verify that the
+    /// oldest entries are the ones evicted (not arbitrary keys
+    /// chosen by dictionary iteration order).
+    internal func seedIncomingRxidForTest(
+        key: RxidKey,
+        cartridgeIdx: Int,
+        touchedAt: UInt64
+    ) {
+        stateLock.lock()
+        incomingRxids[key] = cartridgeIdx
+        incomingRxidsTouched[key] = touchedAt
+        // NB: the test seeds beyond the cap intentionally to fire
+        // the GC in a follow-up call — do NOT run the GC here.
+        stateLock.unlock()
+    }
+
+    /// Test-only invocation of the GC. Mirrors the production path
+    /// (which fires from within stateLock-held insert sites) by
+    /// taking the lock for the duration of the GC pass.
+    internal func runRoutingTableGcForTest() {
+        stateLock.lock()
+        gcRoutingTablesIfNeededLocked()
+        stateLock.unlock()
+    }
+
+    /// Expose the cap constants so tests can compute expected
+    /// post-GC sizes without hardcoding magic numbers that would
+    /// silently desync if the cap is later tuned.
+    internal static var routingTableHardCapForTest: Int { routingTableHardCap }
+    internal static var routingTableSoftWatermarkForTest: Int { routingTableSoftWatermark }
+    internal static var routingTableGcEvictionFractionForTest: Double { routingTableGcEvictionFraction }
 
     // MARK: - Lifecycle
 

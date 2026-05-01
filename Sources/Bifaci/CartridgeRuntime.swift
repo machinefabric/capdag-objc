@@ -26,11 +26,21 @@
 //  ```
 
 import Foundation
+import os
 import CapDAG
 import TaggedUrn
 @preconcurrency import SwiftCBOR
 import Glob
 import Ops
+
+/// OSLog handle for cartridge-runtime diagnostic events. Visible to
+/// `log stream --subsystem com.machinefabric.bifaci --category
+/// CartridgeRuntime`, and to mfmon's predicate (which already covers
+/// the bifaci subsystem).
+private let cartridgeRuntimeLog = OSLog(
+    subsystem: "com.machinefabric.bifaci",
+    category: "CartridgeRuntime"
+)
 
 // MARK: - Error Types
 
@@ -3190,14 +3200,24 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 if isOurProbe {
                     // Response to our health probe - host is alive, no action needed
                 } else {
-                    // Host-initiated heartbeat — respond with self-reported memory.
-                    // proc_pid_rusage(getpid()) always works, even in a sandbox.
+                    // Host-initiated heartbeat — respond with
+                    // self-reported memory. `proc_pid_rusage(getpid())`
+                    // works under the cartridge sandbox (verified in
+                    // run 20260501-143945; sandbox blocks queries
+                    // against *other* pids, not self). The host's
+                    // stats pump combines this footprint with its own
+                    // proc_pidinfo measurement and pushes the result
+                    // to the Mac app via reverse-XPC.
                     var response = Frame.heartbeat(id: frame.id)
                     if let mem = getOwnMemoryMb() {
                         response.meta = [
                             "footprint_mb": .unsignedInt(mem.footprintMb),
                             "rss_mb": .unsignedInt(mem.rssMb)
                         ]
+                    } else {
+                        os_log(.error, log: cartridgeRuntimeLog,
+                               "Cartridge pid %{public}d failed to self-sample memory (proc_pid_rusage returned non-zero) — heartbeat response will omit memory meta",
+                               getpid())
                     }
                     try outputSender.send(response)
                 }
