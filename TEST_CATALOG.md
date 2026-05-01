@@ -1,10 +1,10 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 733
+**Total Tests:** 735
 
 **Numbered Tests:** 611
 
-**Unnumbered Tests:** 122
+**Unnumbered Tests:** 124
 
 **Numbered Tests Missing Descriptions:** 0
 
@@ -707,6 +707,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testMetadataWithValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:62 |
 | unnumbered | `testMultiStepPath` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:80 |
 | unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaSpecTests.m:184 |
+| unnumbered | `testNewHostInstancePerRelaySession` | / Contract #2 (well-behaved path): one host → one run() → / drop. The misuse path (calling run() twice) is enforced via / `precondition` and is not death-tested here — the well- / behaved path is sufficient because if the precondition were / silently disabled, the prior test (`testRunExitKills…`) / would still pass on the first invocation but the second / call would race with itself and fail intermittently. This / test documents the contract by demonstrating that a fresh / `CartridgeHost` instance is the only correct way to start / a new relay session. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141 |
 | unnumbered | `testNonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:150 |
 | unnumbered | `testNormalizeHandlesDifferentTagOrders` | / Test that different tag orders normalize to the same URL | Tests/CapDAGTests/CSCapRegistryTests.m:102 |
 | unnumbered | `testOutputCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:812 |
@@ -715,6 +716,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testRegistryCreation` |  | Tests/CapDAGTests/CSCapRegistryTests.m:40 |
 | unnumbered | `testRegistryValidCapCheck` | Registry validator tests removed - not part of current API | Tests/CapDAGTests/CSCapRegistryTests.m:47 |
 | unnumbered | `testResolveMediaUrnNotFound` |  | Tests/CapDAGTests/CSMediaSpecTests.m:98 |
+| unnumbered | `testRunExitKillsAllManagedCartridges` | / Contract #1: when `run()` exits because the relay closed, / every running cartridge is torn down and the observer is / fired with a death notification for each. The Rust reference / enforces this by calling `kill_all_cartridges().await` at / the very end of `run()`. The Swift mirror's previous / behavior was to leak cartridges across reconnects, which is / what allowed the XPC-service NSConcreteData accumulator bug. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66 |
 | unnumbered | `testSchemaValidationErrorDetails` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:495 |
 | unnumbered | `testSchemaValidationPerformance` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:621 |
 | unnumbered | `testSetObserverNilClearsThePreviouslyRegisteredObserver` |  | Tests/BifaciTests/CartridgeHostObserverTests.swift:62 |
@@ -835,6 +837,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testMetadataWithValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:62
 - `testMultiStepPath` — Tests/CapDAGTests/CSLiveCapFabTests.m:80
 - `testMultipleExtensions` — Tests/CapDAGTests/CSMediaSpecTests.m:184
+- `testNewHostInstancePerRelaySession` — Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141
 - `testNonStructuredArgumentSkipsSchemaValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:150
 - `testNormalizeHandlesDifferentTagOrders` — Tests/CapDAGTests/CSCapRegistryTests.m:102
 - `testOutputCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:812
@@ -843,6 +846,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testRegistryCreation` — Tests/CapDAGTests/CSCapRegistryTests.m:40
 - `testRegistryValidCapCheck` — Tests/CapDAGTests/CSCapRegistryTests.m:47
 - `testResolveMediaUrnNotFound` — Tests/CapDAGTests/CSMediaSpecTests.m:98
+- `testRunExitKillsAllManagedCartridges` — Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66
 - `testSchemaValidationErrorDetails` — Tests/CapDAGTests/CSSchemaValidationTests.m:495
 - `testSchemaValidationPerformance` — Tests/CapDAGTests/CSSchemaValidationTests.m:621
 - `testSetObserverNilClearsThePreviouslyRegisteredObserver` — Tests/BifaciTests/CartridgeHostObserverTests.swift:62
@@ -882,8 +886,8 @@ The following tests are cataloged but do not currently participate in numeric te
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 733*
+*Total tests: 735*
 *Total numbered tests: 611*
-*Total unnumbered tests: 122*
+*Total unnumbered tests: 124*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*

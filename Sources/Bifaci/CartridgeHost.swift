@@ -599,6 +599,23 @@ public final class CartridgeHost: @unchecked Sendable {
     private var hasRun = false
     private let hasRunLock = NSLock()
 
+    /// Diagnostic counters for the frame-retention investigation
+    /// (multi-GB NSConcreteData accumulator that survives the
+    /// per-session host fix). Updated under `diagLock` so a
+    /// reporter thread can take a coherent snapshot every 5s.
+    /// All `_total` fields are monotonic; `_bytes_total` tracks the
+    /// sum of `Frame.payload.count` so we can spot the path that
+    /// has frames flowing IN but not OUT (or vice-versa).
+    private let diagLock = NSLock()
+    private var diagFramesFromCartridgeTotal: UInt64 = 0
+    private var diagFramesFromCartridgeBytesTotal: UInt64 = 0
+    private var diagFramesFromRelayTotal: UInt64 = 0
+    private var diagFramesFromRelayBytesTotal: UInt64 = 0
+    private var diagFramesToRelayTotal: UInt64 = 0
+    private var diagFramesToRelayBytesTotal: UInt64 = 0
+    private var diagDeathEventsTotal: UInt64 = 0
+    private var diagStatsRefreshTotal: UInt64 = 0
+
     /// Lifecycle observer. Set by callers that want to be notified
     /// when a cartridge transitions in/out of the running state
     /// (typically `CartridgeXPCService` to forward to its Mac-app
@@ -983,20 +1000,29 @@ public final class CartridgeHost: @unchecked Sendable {
         let relayReader = FrameReader(handle: relayRead)
         let relayThread = Thread { [weak self] in
             var frameCount: UInt64 = 0
+            // See startCartridgeReaderThread for why we wrap each
+            // iteration in an autoreleasepool — same root cause:
+            // NSConcreteFileHandle.readDataOfLength returns
+            // autoreleased NSConcreteData and a bare Thread {}
+            // closure does not provide an outer pool to drain them.
             while true {
-                do {
-                    guard let frame = try relayReader.read() else {
-                        os_log(.info, log: Self.log, "[run.relayReader] EOF after %{public}llu frames — pushing relayClosed", frameCount)
+                let shouldBreak: Bool = autoreleasepool {
+                    do {
+                        guard let frame = try relayReader.read() else {
+                            os_log(.info, log: Self.log, "[run.relayReader] EOF after %{public}llu frames — pushing relayClosed", frameCount)
+                            self?.pushEvent(.relayClosed)
+                            return true
+                        }
+                        frameCount &+= 1
+                        self?.pushEvent(.relayFrame(frame))
+                        return false
+                    } catch {
+                        os_log(.error, log: Self.log, "[run.relayReader] read error after %{public}llu frames: %{public}@ — pushing relayClosed", frameCount, String(describing: error))
                         self?.pushEvent(.relayClosed)
-                        break
+                        return true
                     }
-                    frameCount &+= 1
-                    self?.pushEvent(.relayFrame(frame))
-                } catch {
-                    os_log(.error, log: Self.log, "[run.relayReader] read error after %{public}llu frames: %{public}@ — pushing relayClosed", frameCount, String(describing: error))
-                    self?.pushEvent(.relayClosed)
-                    break
                 }
+                if shouldBreak { break }
             }
         }
         relayThread.name = "CartridgeHost.relay"
@@ -1014,6 +1040,49 @@ public final class CartridgeHost: @unchecked Sendable {
         }
         statsTimer.resume()
 
+        // Diagnostic reporter — every 5s, dump frame-flow counters
+        // and routing-table sizes so we can correlate inbound vs
+        // outbound rates with phys_footprint growth in mfmon. This
+        // is the primary signal for the multi-GB NSConcreteData
+        // retention investigation that survived the per-session-
+        // host fix. Lives only for the duration of run() (cancelled
+        // in the defer block below). Captures `self` weakly so a
+        // late tick doesn't outlive the host instance.
+        let diagTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        diagTimer.schedule(deadline: .now() + .seconds(5), repeating: .seconds(5))
+        diagTimer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            self.diagLock.lock()
+            let cFrames = self.diagFramesFromCartridgeTotal
+            let cBytes = self.diagFramesFromCartridgeBytesTotal
+            let rFrames = self.diagFramesFromRelayTotal
+            let rBytes = self.diagFramesFromRelayBytesTotal
+            let oFrames = self.diagFramesToRelayTotal
+            let oBytes = self.diagFramesToRelayBytesTotal
+            let dEvents = self.diagDeathEventsTotal
+            let sRefresh = self.diagStatsRefreshTotal
+            self.diagLock.unlock()
+
+            self.eventLock.lock()
+            let qDepth = self.eventQueue.count
+            self.eventLock.unlock()
+
+            self.stateLock.lock()
+            let inRxids = self.incomingRxids.count
+            let outRids = self.outgoingRids.count
+            let inToPeer = self.incomingToPeerRids.count
+            let inToPeerSum = self.incomingToPeerRids.values.reduce(0) { $0 + $1.count }
+            let outMaxSeq = self.outgoingMaxSeq.count
+            let capsBytes = self._capabilities.count
+            self.stateLock.unlock()
+
+            os_log(.info, log: Self.log,
+                   "[diag] frames cart=%{public}llu(%{public}lluB) relay=%{public}llu(%{public}lluB) outbound=%{public}llu(%{public}lluB) deaths=%{public}llu stats=%{public}llu queue=%{public}d rxids_in=%{public}d rids_out=%{public}d in2peer_keys=%{public}d in2peer_sum=%{public}d max_seq=%{public}d caps_bytes=%{public}d",
+                   cFrames, cBytes, rFrames, rBytes, oFrames, oBytes, dEvents, sRefresh,
+                   qDepth, inRxids, outRids, inToPeer, inToPeerSum, outMaxSeq, capsBytes)
+        }
+        diagTimer.resume()
+
         // On exit (clean or via thrown error), match the Rust
         // reference (capdag/src/bifaci/host_runtime.rs:989
         // `self.kill_all_cartridges().await`): kill every managed
@@ -1024,6 +1093,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // silently buffered against a stale FD.
         defer {
             statsTimer.cancel()
+            diagTimer.cancel()
             killAllCartridgesOnRunExit()
             outboundLock.lock()
             outboundWriter = nil
@@ -1033,7 +1103,18 @@ public final class CartridgeHost: @unchecked Sendable {
             os_log(.info, log: Self.log, "[run] EXIT elapsed_ms=%d residual_event_queue=%d", elapsedMs, queueDepth)
         }
 
-        // Main loop: wait for events from any source (relay or cartridges)
+        // Main loop: wait for events from any source (relay or cartridges).
+        //
+        // Per-iteration `autoreleasepool` is essential here: this loop
+        // runs on a bare `Thread { }` started from
+        // `CartridgeXPCServiceImplementation.handleEngineConnection`,
+        // and the dispatch into handleRelayFrame / handleCartridgeFrame
+        // / sendToRelay touches Foundation calls (FileHandle writes,
+        // CBOR encode allocations) that emit autoreleased objects.
+        // Without an inner pool those would pile up for the lifetime
+        // of the relay session and produce the same multi-GB heap
+        // growth we saw in the cartridge stdout reader. Same fix
+        // class as the reader threads.
         while true {
             eventSemaphore.wait()
 
@@ -1045,33 +1126,56 @@ public final class CartridgeHost: @unchecked Sendable {
             let event = eventQueue.removeFirst()
             eventLock.unlock()
 
-            switch event {
-            case .relayFrame(let frame):
-                handleRelayFrame(frame)
-            case .relayClosed:
-                // Clean shutdown
-                stateLock.lock()
-                closed = true
-                stateLock.unlock()
-                return
-            case .frame(let cartridgeIdx, let frame):
-                handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
-            case .death(let cartridgeIdx):
-                handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
-            case .statsRefresh:
-                // Re-emit RelayNotify only when at least one cartridge is
-                // running, so an idle host doesn't burn bandwidth. Runtime
-                // stats for non-running cartridges change only at
-                // spawn/death boundaries which already trigger a rebuild.
-                stateLock.lock()
-                let anyRunning = cartridges.contains { $0.running }
-                stateLock.unlock()
-                if anyRunning {
+            let shouldExit: Bool = autoreleasepool {
+                switch event {
+                case .relayFrame(let frame):
+                    let payloadBytes = UInt64(frame.payload?.count ?? 0)
+                    diagLock.lock()
+                    diagFramesFromRelayTotal &+= 1
+                    diagFramesFromRelayBytesTotal &+= payloadBytes
+                    diagLock.unlock()
+                    handleRelayFrame(frame)
+                    return false
+                case .relayClosed:
+                    // Clean shutdown
                     stateLock.lock()
-                    rebuildCapabilities()
+                    closed = true
                     stateLock.unlock()
+                    return true
+                case .frame(let cartridgeIdx, let frame):
+                    let payloadBytes = UInt64(frame.payload?.count ?? 0)
+                    diagLock.lock()
+                    diagFramesFromCartridgeTotal &+= 1
+                    diagFramesFromCartridgeBytesTotal &+= payloadBytes
+                    diagLock.unlock()
+                    handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+                    return false
+                case .death(let cartridgeIdx):
+                    diagLock.lock()
+                    diagDeathEventsTotal &+= 1
+                    diagLock.unlock()
+                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
+                    return false
+                case .statsRefresh:
+                    diagLock.lock()
+                    diagStatsRefreshTotal &+= 1
+                    diagLock.unlock()
+                    // Re-emit RelayNotify only when at least one cartridge is
+                    // running, so an idle host doesn't burn bandwidth. Runtime
+                    // stats for non-running cartridges change only at
+                    // spawn/death boundaries which already trigger a rebuild.
+                    stateLock.lock()
+                    let anyRunning = cartridges.contains { $0.running }
+                    stateLock.unlock()
+                    if anyRunning {
+                        stateLock.lock()
+                        rebuildCapabilities()
+                        stateLock.unlock()
+                    }
+                    return false
                 }
             }
+            if shouldExit { return }
         }
     }
 
@@ -1630,19 +1734,34 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Start a background reader thread for a cartridge.
     private func startCartridgeReaderThread(cartridgeIdx: Int, reader: FrameReader) {
         let thread = Thread { [weak self] in
+            // Foundation reads (NSConcreteFileHandle.readDataOfLength)
+            // return autoreleased NSConcreteData. A bare `Thread { }`
+            // closure does NOT get an outer autorelease pool — the
+            // autoreleased payloads accumulate forever as the loop
+            // spins. With cartridges streaming MB-sized chunks this
+            // turns into multi-GB heap growth that no Swift ARC
+            // release path can touch (root cause confirmed via mfmon
+            // diag counters: 15 KB total Frame.payload bytes flowed
+            // through the queue while heap held GBs of
+            // NSConcreteData).  Per-iteration pool keeps each read's
+            // autoreleased objects scoped to one frame.
             while true {
-                do {
-                    guard let frame = try reader.read() else {
-                        // EOF — cartridge closed stdout
+                let shouldBreak: Bool = autoreleasepool {
+                    do {
+                        guard let frame = try reader.read() else {
+                            // EOF — cartridge closed stdout
+                            self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
+                            return true
+                        }
+                        self?.pushEvent(.frame(cartridgeIdx: cartridgeIdx, frame: frame))
+                        return false
+                    } catch {
+                        // Read error — treat as death
                         self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
-                        break
+                        return true
                     }
-                    self?.pushEvent(.frame(cartridgeIdx: cartridgeIdx, frame: frame))
-                } catch {
-                    // Read error — treat as death
-                    self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
-                    break
                 }
+                if shouldBreak { break }
             }
         }
         thread.name = "CartridgeHost.cartridge[\(cartridgeIdx)]"
@@ -1697,6 +1816,11 @@ public final class CartridgeHost: @unchecked Sendable {
         if frame.frameType != .log {
             os_log(.debug, log: Self.log, "[sendToRelay] %{public}@ id=%{public}@ xid=%{public}@", String(describing: frame.frameType), String(describing: frame.id), String(describing: frame.routingId))
         }
+        let payloadBytes = UInt64(frame.payload?.count ?? 0)
+        diagLock.lock()
+        diagFramesToRelayTotal &+= 1
+        diagFramesToRelayBytesTotal &+= payloadBytes
+        diagLock.unlock()
         outboundLock.lock()
         defer { outboundLock.unlock() }
         guard let w = outboundWriter else {

@@ -97,7 +97,18 @@ public final class RelaySlave: @unchecked Sendable {
         var firstError: Error?
 
         // Thread 1: Socket -> Local (master -> slave direction)
-        // Uses ReorderBuffer to validate and reorder incoming frames from master
+        // Uses ReorderBuffer to validate and reorder incoming frames from master.
+        //
+        // The per-iteration `autoreleasepool` is essential. Both
+        // socketReader.read() and localWriter.write() funnel into
+        // NSConcreteFileHandle, which returns autoreleased
+        // NSConcreteData on every read. Dispatch worker threads do
+        // NOT have an automatic outer autorelease pool, so without
+        // the inner pool every chunk-sized payload would accumulate
+        // for the lifetime of the relay session — the root cause of
+        // the multi-GB NSConcreteData heap growth confirmed by
+        // mfmon's diag counters (15 KB total Frame.payload routed,
+        // yet ~10 GB NSConcreteData on heap).
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // Create reorder buffer for socket -> local direction
@@ -111,42 +122,62 @@ public final class RelaySlave: @unchecked Sendable {
                 // This causes the host's relay reader thread to get EOF -> relayClosed.
                 try? localWriter.handle.close()
             }
+            // Pump-loop step result — the autoreleasepool closure
+            // returns this so we can move the mutation of `firstError`
+            // outside the pool closure (Sendable-checking flags an
+            // inherited capture inside the closure-in-closure).
+            enum PumpStep {
+                case keepGoing
+                case stop
+                case stopWithError(Error)
+            }
             while true {
-                do {
-                    guard let frame = try socketReader.read() else {
-                        return // Socket closed by master
-                    }
-
-                    // Intercept RelayState frames
-                    if frame.frameType == .relayState {
-                        if let payload = frame.payload {
-                            resourceStateLock.lock()
-                            _resourceState = payload
-                            resourceStateLock.unlock()
+                let step: PumpStep = autoreleasepool {
+                    do {
+                        guard let frame = try socketReader.read() else {
+                            return .stop // Socket closed by master
                         }
-                        continue
-                    }
 
-                    // RelayNotify from master is a protocol error — ignore
-                    if frame.frameType == .relayNotify {
-                        continue
-                    }
+                        // Intercept RelayState frames
+                        if frame.frameType == .relayState {
+                            if let payload = frame.payload {
+                                resourceStateLock.lock()
+                                _resourceState = payload
+                                resourceStateLock.unlock()
+                            }
+                            return .keepGoing
+                        }
 
-                    // Pass through reorder buffer
-                    let readyFrames = try reorderBuffer.accept(frame)
-                    for readyFrame in readyFrames {
-                        // Cleanup flow state after terminal frames
-                        if readyFrame.frameType == .end || readyFrame.frameType == .err {
-                            let key = FlowKey.fromFrame(readyFrame)
-                            reorderBuffer.cleanupFlow(key)
+                        // RelayNotify from master is a protocol error — ignore
+                        if frame.frameType == .relayNotify {
+                            return .keepGoing
                         }
-                        if readyFrame.frameType != .log {
-                            os_log(.debug, log: RelaySlave.log, "[t1 socket→local] %{public}@ id=%{public}@ xid=%{public}@", String(describing: readyFrame.frameType), String(describing: readyFrame.id), String(describing: readyFrame.routingId))
+
+                        // Pass through reorder buffer
+                        let readyFrames = try reorderBuffer.accept(frame)
+                        for readyFrame in readyFrames {
+                            // Cleanup flow state after terminal frames
+                            if readyFrame.frameType == .end || readyFrame.frameType == .err {
+                                let key = FlowKey.fromFrame(readyFrame)
+                                reorderBuffer.cleanupFlow(key)
+                            }
+                            if readyFrame.frameType != .log {
+                                os_log(.debug, log: RelaySlave.log, "[t1 socket→local] %{public}@ id=%{public}@ xid=%{public}@", String(describing: readyFrame.frameType), String(describing: readyFrame.id), String(describing: readyFrame.routingId))
+                            }
+                            try localWriter.write(readyFrame)
                         }
-                        try localWriter.write(readyFrame)
+                        return .keepGoing
+                    } catch {
+                        os_log(.error, log: RelaySlave.log, "[t1 socket→local] error: %{public}@", String(describing: error))
+                        return .stopWithError(error)
                     }
-                } catch {
-                    os_log(.error, log: RelaySlave.log, "[t1 socket→local] error: %{public}@", String(describing: error))
+                }
+                switch step {
+                case .keepGoing:
+                    continue
+                case .stop:
+                    return
+                case .stopWithError(let error):
                     errorLock.lock()
                     if firstError == nil { firstError = error }
                     errorLock.unlock()
@@ -155,8 +186,8 @@ public final class RelaySlave: @unchecked Sendable {
             }
         }
 
-        // Thread 2: Local -> Socket (slave -> master direction)
-        // Uses ReorderBuffer to validate incoming seq from CartridgeHost
+        // Thread 2: Local -> Socket (slave -> master direction).
+        // Same autoreleasepool reasoning as Thread 1 above.
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // Create reorder buffer for local -> socket direction
@@ -168,33 +199,49 @@ public final class RelaySlave: @unchecked Sendable {
                 // Close socket write to signal master that slave is gone.
                 try? socketWrite.close()
             }
+            enum PumpStep {
+                case keepGoing
+                case stop
+                case stopWithError(Error)
+            }
             while true {
-                do {
-                    guard let frame = try localReader.read() else {
-                        return // Local side closed (host shut down)
-                    }
-
-                    // Forward all frames, including RelayNotify (capability updates from CartridgeHost)
-                    // RelayState from local is dropped (deprecated/unused)
-                    if frame.frameType == .relayState {
-                        continue
-                    }
-
-                    // Pass through reorder buffer to validate seq
-                    let readyFrames = try reorderBuffer.accept(frame)
-                    for readyFrame in readyFrames {
-                        // Cleanup flow state after terminal frames
-                        if readyFrame.frameType == .end || readyFrame.frameType == .err {
-                            let key = FlowKey.fromFrame(readyFrame)
-                            reorderBuffer.cleanupFlow(key)
+                let step: PumpStep = autoreleasepool {
+                    do {
+                        guard let frame = try localReader.read() else {
+                            return .stop // Local side closed (host shut down)
                         }
-                        if readyFrame.frameType != .log {
-                            os_log(.debug, log: RelaySlave.log, "[t2 local→socket] %{public}@ id=%{public}@ xid=%{public}@", String(describing: readyFrame.frameType), String(describing: readyFrame.id), String(describing: readyFrame.routingId))
+
+                        // Forward all frames, including RelayNotify (capability updates from CartridgeHost)
+                        // RelayState from local is dropped (deprecated/unused)
+                        if frame.frameType == .relayState {
+                            return .keepGoing
                         }
-                        try socketWriter.write(readyFrame)
+
+                        // Pass through reorder buffer to validate seq
+                        let readyFrames = try reorderBuffer.accept(frame)
+                        for readyFrame in readyFrames {
+                            // Cleanup flow state after terminal frames
+                            if readyFrame.frameType == .end || readyFrame.frameType == .err {
+                                let key = FlowKey.fromFrame(readyFrame)
+                                reorderBuffer.cleanupFlow(key)
+                            }
+                            if readyFrame.frameType != .log {
+                                os_log(.debug, log: RelaySlave.log, "[t2 local→socket] %{public}@ id=%{public}@ xid=%{public}@", String(describing: readyFrame.frameType), String(describing: readyFrame.id), String(describing: readyFrame.routingId))
+                            }
+                            try socketWriter.write(readyFrame)
+                        }
+                        return .keepGoing
+                    } catch {
+                        os_log(.error, log: RelaySlave.log, "[t2 local→socket] error: %{public}@", String(describing: error))
+                        return .stopWithError(error)
                     }
-                } catch {
-                    os_log(.error, log: RelaySlave.log, "[t2 local→socket] error: %{public}@", String(describing: error))
+                }
+                switch step {
+                case .keepGoing:
+                    continue
+                case .stop:
+                    return
+                case .stopWithError(let error):
                     errorLock.lock()
                     if firstError == nil { firstError = error }
                     errorLock.unlock()
