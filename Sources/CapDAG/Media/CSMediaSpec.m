@@ -32,8 +32,25 @@ NSString * const CSMediaVoid = @"media:void";
 // Semantic content types
 NSString * const CSMediaPng = @"media:image;png";
 NSString * const CSMediaImage = @"media:image;png"; // alias for CSMediaPng
+NSString * const CSMediaJpeg = @"media:jpeg;image";
+NSString * const CSMediaGif = @"media:gif;image";
+NSString * const CSMediaBmp = @"media:bmp;image";
+NSString * const CSMediaTiff = @"media:tiff;image";
+NSString * const CSMediaWebp = @"media:webp;image";
 NSString * const CSMediaAudio = @"media:wav;audio";
+NSString * const CSMediaWav = @"media:wav;audio"; // alias for CSMediaAudio
+NSString * const CSMediaMp3 = @"media:mp3;audio";
+NSString * const CSMediaFlac = @"media:flac;audio";
+NSString * const CSMediaOgg = @"media:ogg;audio";
+NSString * const CSMediaAac = @"media:aac;audio";
+NSString * const CSMediaM4a = @"media:m4a;audio";
+NSString * const CSMediaAiff = @"media:aiff;audio";
+NSString * const CSMediaOpus = @"media:opus;audio";
 NSString * const CSMediaVideo = @"media:video";
+NSString * const CSMediaMp4 = @"media:mp4;video";
+NSString * const CSMediaMov = @"media:mov;video";
+NSString * const CSMediaWebm = @"media:webm;video";
+NSString * const CSMediaMkv = @"media:mkv;video";
 // Semantic AI input types
 NSString * const CSMediaAudioSpeech = @"media:audio;wav;speech";
 NSString * const CSMediaTextablePage = @"media:textable;page";
@@ -260,20 +277,9 @@ BOOL CSMediaUrnIsBool(NSString *mediaUrn) {
     return CSMediaUrnHasTag(mediaUrn, @"bool");
 }
 
-/// Public function to check if a media URN represents a single file path.
-/// Must have file-path marker AND NOT have list marker.
+/// Public function to check if a media URN represents a file path.
+/// Cardinality (single file vs many) is carried by is_sequence, not URN tags.
 BOOL CSMediaUrnIsFilePath(NSString *mediaUrn) {
-    return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path") && !CSMediaUrnHasMarkerTag(mediaUrn, @"list");
-}
-
-/// Public function to check if a media URN represents a file path array.
-/// Must have file-path marker AND list marker.
-BOOL CSMediaUrnIsFilePathArray(NSString *mediaUrn) {
-    return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path") && CSMediaUrnHasMarkerTag(mediaUrn, @"list");
-}
-
-/// Public function to check if a media URN represents any file path (scalar or array).
-BOOL CSMediaUrnIsAnyFilePath(NSString *mediaUrn) {
     return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path");
 }
 

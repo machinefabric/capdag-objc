@@ -6,6 +6,7 @@
 //
 
 #import <Foundation/Foundation.h>
+#import "CSCap.h"
 
 @class CSCap;
 
@@ -47,13 +48,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, strong) NSString *name;
 @property (nonatomic, strong) NSString *version;
-/// Distribution channel the cartridge was built for ("release" or
-/// "nightly"). `(registryURL, channel, name, version)` is the
-/// cartridge's full identity — each (registry, channel) is an
-/// independent namespace. The Rust SDK reads `MFR_CARTRIDGE_CHANNEL`
-/// at compile time; Swift cartridges set it via the same
-/// compile-time mechanism. Required.
-@property (nonatomic, strong) NSString *channel;
+/// Distribution channel the cartridge was built for.
+/// `(registryURL, channel, name, version)` is the cartridge's full
+/// identity — each (registry, channel) is an independent namespace.
+/// The Rust SDK reads `MFR_CARTRIDGE_CHANNEL` at compile time; Swift
+/// cartridges set it via the same compile-time mechanism. Required;
+/// a missing or unrecognized value is a hard parse error.
+@property (nonatomic, assign) CSCartridgeChannel channel;
 /// Verbatim URL of the registry the cartridge was built for, or
 /// `nil` for dev builds (`MFR_REGISTRY_URL` unset). Compared
 /// byte-wise; never normalized. Required-but-nullable on the wire:
@@ -68,14 +69,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithName:(NSString *)name
                      version:(NSString *)version
-                     channel:(NSString *)channel
+                     channel:(CSCartridgeChannel)channel
                  registryURL:(nullable NSString *)registryURL
           manifestDescription:(NSString *)manifestDescription
                capGroups:(NSArray<CSCapGroup *> *)capGroups;
 
 + (instancetype)manifestWithName:(NSString *)name
                          version:(NSString *)version
-                         channel:(NSString *)channel
+                         channel:(CSCartridgeChannel)channel
                      registryURL:(nullable NSString *)registryURL
                      description:(NSString *)description
                        capGroups:(NSArray<CSCapGroup *> *)capGroups;

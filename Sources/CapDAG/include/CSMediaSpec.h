@@ -52,8 +52,25 @@ FOUNDATION_EXPORT NSString * const CSMediaVoid;         // media:void
 // Semantic content types
 FOUNDATION_EXPORT NSString * const CSMediaPng;          // media:image;png
 FOUNDATION_EXPORT NSString * const CSMediaImage;        // media:image;png (alias for CSMediaPng)
+FOUNDATION_EXPORT NSString * const CSMediaJpeg;         // media:jpeg;image
+FOUNDATION_EXPORT NSString * const CSMediaGif;          // media:gif;image
+FOUNDATION_EXPORT NSString * const CSMediaBmp;          // media:bmp;image
+FOUNDATION_EXPORT NSString * const CSMediaTiff;         // media:tiff;image
+FOUNDATION_EXPORT NSString * const CSMediaWebp;         // media:webp;image
 FOUNDATION_EXPORT NSString * const CSMediaAudio;        // media:wav;audio
+FOUNDATION_EXPORT NSString * const CSMediaWav;          // media:wav;audio (alias for CSMediaAudio)
+FOUNDATION_EXPORT NSString * const CSMediaMp3;          // media:mp3;audio
+FOUNDATION_EXPORT NSString * const CSMediaFlac;         // media:flac;audio
+FOUNDATION_EXPORT NSString * const CSMediaOgg;          // media:ogg;audio
+FOUNDATION_EXPORT NSString * const CSMediaAac;          // media:aac;audio
+FOUNDATION_EXPORT NSString * const CSMediaM4a;          // media:m4a;audio
+FOUNDATION_EXPORT NSString * const CSMediaAiff;         // media:aiff;audio
+FOUNDATION_EXPORT NSString * const CSMediaOpus;         // media:opus;audio
 FOUNDATION_EXPORT NSString * const CSMediaVideo;        // media:video
+FOUNDATION_EXPORT NSString * const CSMediaMp4;          // media:mp4;video
+FOUNDATION_EXPORT NSString * const CSMediaMov;          // media:mov;video
+FOUNDATION_EXPORT NSString * const CSMediaWebm;         // media:webm;video
+FOUNDATION_EXPORT NSString * const CSMediaMkv;          // media:mkv;video
 // Semantic AI input types
 FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;wav;speech
 FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:textable;page
@@ -431,28 +448,13 @@ BOOL CSMediaUrnIsNumeric(NSString *mediaUrn);
 BOOL CSMediaUrnIsBool(NSString *mediaUrn);
 
 /**
- * Check if a media URN represents a single file path (has file-path marker AND scalar).
+ * Check if a media URN represents a file path (has file-path marker tag).
  * This is a pure syntax check - no resolution required.
- * @param mediaUrn The media URN to check (must be non-empty)
- * @return YES if the media URN has the 'file-path' marker tag AND no 'list' marker
- */
-BOOL CSMediaUrnIsFilePath(NSString *mediaUrn);
-
-/**
- * Check if a media URN represents a file path array (has file-path marker AND list).
- * This is a pure syntax check - no resolution required.
- * @param mediaUrn The media URN to check (must be non-empty)
- * @return YES if the media URN has the 'file-path' marker tag AND 'list' marker
- */
-BOOL CSMediaUrnIsFilePathArray(NSString *mediaUrn);
-
-/**
- * Check if a media URN represents any file path (scalar or array).
- * This is a pure syntax check - no resolution required.
+ * Cardinality (single file vs many) is carried by is_sequence, not URN tags.
  * @param mediaUrn The media URN to check (must be non-empty)
  * @return YES if the media URN has the 'file-path' marker tag
  */
-BOOL CSMediaUrnIsAnyFilePath(NSString *mediaUrn);
+BOOL CSMediaUrnIsFilePath(NSString *mediaUrn);
 
 /**
  * Check if a media URN represents a model specification (has model-spec marker).

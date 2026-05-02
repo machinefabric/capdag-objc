@@ -47,6 +47,18 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark - CSArgSource
 
 /**
+ * Distribution channel for a cartridge — mirrors capdag's CartridgeChannel.
+ *
+ * A missing or unrecognized channel value is a hard parse error; there are
+ * no defaults. The wire representation is lowercase: "release" / "nightly".
+ * `(registryURL, channel, name, version)` is the cartridge's full identity.
+ */
+typedef NS_ENUM(NSInteger, CSCartridgeChannel) {
+    CSCartridgeChannelRelease,
+    CSCartridgeChannelNightly,
+};
+
+/**
  * Source type enum for CSArgSource
  */
 typedef NS_ENUM(NSInteger, CSArgSourceType) {
@@ -382,6 +394,14 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 /// Registration attribution - who registered this capability and when
 @property (nonatomic, readonly, nullable) CSRegisteredBy *registeredBy;
+
+/// Model types this cap supports (JSON: `supported_model_types`).
+/// Omitted from serialization when empty.
+@property (nonatomic, readonly) NSArray<NSString *> *supportedModelTypes;
+
+/// Default model spec string (JSON: `default_model_spec`).
+/// Omitted from serialization when nil.
+@property (nonatomic, readonly, nullable) NSString *defaultModelSpec;
 
 
 /**

@@ -869,6 +869,20 @@
         }
     }
 
+    // Parse supported_model_types (optional; omitted when empty)
+    NSArray<NSString *> *supportedModelTypes = @[];
+    NSArray *supportedModelTypesRaw = dictionary[@"supported_model_types"];
+    if (supportedModelTypesRaw && [supportedModelTypesRaw isKindOfClass:[NSArray class]]) {
+        supportedModelTypes = (NSArray<NSString *> *)supportedModelTypesRaw;
+    }
+
+    // Parse default_model_spec (optional; omitted when nil)
+    NSString *defaultModelSpec = nil;
+    id defaultModelSpecRaw = dictionary[@"default_model_spec"];
+    if (defaultModelSpecRaw && [defaultModelSpecRaw isKindOfClass:[NSString class]]) {
+        defaultModelSpec = (NSString *)defaultModelSpecRaw;
+    }
+
     CSCap *cap = [self capWithUrn:capUrn
                             title:title
                           command:command
@@ -880,6 +894,8 @@
                            output:output
                      metadataJSON:metadataJSON];
     cap->_registeredBy = registeredBy;
+    cap->_supportedModelTypes = [supportedModelTypes copy];
+    cap->_defaultModelSpec = [defaultModelSpec copy];
     return cap;
 }
 
@@ -924,6 +940,14 @@
 
     if (self.registeredBy) {
         dict[@"registered_by"] = [self.registeredBy toDictionary];
+    }
+
+    if (self.supportedModelTypes && self.supportedModelTypes.count > 0) {
+        dict[@"supported_model_types"] = self.supportedModelTypes;
+    }
+
+    if (self.defaultModelSpec) {
+        dict[@"default_model_spec"] = self.defaultModelSpec;
     }
 
     return [dict copy];
@@ -1028,6 +1052,14 @@
     if ((self.registeredBy == nil) != (other.registeredBy == nil)) return NO;
     if (self.registeredBy && ![self.registeredBy isEqual:other.registeredBy]) return NO;
 
+    // SupportedModelTypes
+    if ((self.supportedModelTypes == nil) != (other.supportedModelTypes == nil)) return NO;
+    if (self.supportedModelTypes && ![self.supportedModelTypes isEqualToArray:other.supportedModelTypes]) return NO;
+
+    // DefaultModelSpec
+    if ((self.defaultModelSpec == nil) != (other.defaultModelSpec == nil)) return NO;
+    if (self.defaultModelSpec && ![self.defaultModelSpec isEqualToString:other.defaultModelSpec]) return NO;
+
     return YES;
 }
 
@@ -1042,6 +1074,8 @@
     hash ^= [self.output hash];
     hash ^= [self.metadataJSON hash];
     hash ^= [self.registeredBy hash];
+    hash ^= [self.supportedModelTypes hash];
+    hash ^= [self.defaultModelSpec hash];
     return hash;
 }
 
@@ -1061,6 +1095,8 @@
                             output:self.output
                       metadataJSON:self.metadataJSON];
     copy->_registeredBy = [self.registeredBy copy];
+    copy->_supportedModelTypes = [self.supportedModelTypes copy];
+    copy->_defaultModelSpec = [self.defaultModelSpec copy];
     return copy;
 }
 
@@ -1076,6 +1112,8 @@
     [coder encodeObject:self.output forKey:@"output"];
     [coder encodeObject:self.metadataJSON forKey:@"metadataJSON"];
     [coder encodeObject:self.registeredBy forKey:@"registeredBy"];
+    [coder encodeObject:self.supportedModelTypes forKey:@"supportedModelTypes"];
+    [coder encodeObject:self.defaultModelSpec forKey:@"defaultModelSpec"];
 }
 
 - (nullable instancetype)initWithCoder:(NSCoder *)coder {
@@ -1096,6 +1134,9 @@
         return nil;
     }
 
+    NSArray<NSString *> *supportedModelTypes = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [NSString class], nil] forKey:@"supportedModelTypes"];
+    NSString *defaultModelSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"defaultModelSpec"];
+
     CSCap *cap = [CSCap capWithUrn:capUrn
                             title:title
                           command:command
@@ -1107,6 +1148,8 @@
                            output:output
                      metadataJSON:metadataJSON];
     cap->_registeredBy = registeredBy;
+    cap->_supportedModelTypes = supportedModelTypes ?: @[];
+    cap->_defaultModelSpec = defaultModelSpec;
     return cap;
 }
 
@@ -1151,6 +1194,8 @@
     cap->_args = [args copy];
     cap->_output = output;
     cap->_metadataJSON = [metadataJSON copy];
+    cap->_supportedModelTypes = @[];
+    cap->_defaultModelSpec = nil;
     return cap;
 }
 

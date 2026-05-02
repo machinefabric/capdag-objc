@@ -75,7 +75,7 @@
 
 - (instancetype)initWithName:(NSString *)name
                      version:(NSString *)version
-                     channel:(NSString *)channel
+                     channel:(CSCartridgeChannel)channel
                  registryURL:(nullable NSString *)registryURL
           manifestDescription:(NSString *)manifestDescription
                capGroups:(NSArray<CSCapGroup *> *)capGroups {
@@ -83,7 +83,7 @@
     if (self) {
         _name = [name copy];
         _version = [version copy];
-        _channel = [channel copy];
+        _channel = channel;
         _registryURL = [registryURL copy];
         _manifestDescription = [manifestDescription copy];
         _capGroups = [capGroups copy];
@@ -93,7 +93,7 @@
 
 + (instancetype)manifestWithName:(NSString *)name
                          version:(NSString *)version
-                         channel:(NSString *)channel
+                         channel:(CSCartridgeChannel)channel
                      registryURL:(nullable NSString *)registryURL
                      description:(NSString *)description
                        capGroups:(NSArray<CSCapGroup *> *)capGroups {
@@ -108,11 +108,11 @@
 + (nullable instancetype)manifestWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
     NSString *name = dictionary[@"name"];
     NSString *version = dictionary[@"version"];
-    NSString *channel = dictionary[@"channel"];
+    NSString *channelString = dictionary[@"channel"];
     NSString *description = dictionary[@"description"];
     NSArray *capGroupsArray = dictionary[@"cap_groups"];
 
-    if (!name || !version || !channel || !description || !capGroupsArray) {
+    if (!name || !version || !channelString || !description || !capGroupsArray) {
         if (error) {
             *error = [NSError errorWithDomain:@"CSCapManifestError"
                                          code:1007
@@ -146,14 +146,19 @@
         }
         registryURL = (NSString *)rawRegistryURL;
     }
-    // Channel is part of the cartridge's identity. Reject anything
-    // outside the closed enum {release, nightly} so a typo never
-    // silently masquerades as a known channel.
-    if (![channel isEqualToString:@"release"] && ![channel isEqualToString:@"nightly"]) {
+    // Channel is part of the cartridge's identity. Parse the wire string
+    // into the CSCartridgeChannel enum. Reject anything outside the
+    // closed set {release, nightly} — a typo must never silently pass.
+    CSCartridgeChannel channel;
+    if ([channelString isEqualToString:@"release"]) {
+        channel = CSCartridgeChannelRelease;
+    } else if ([channelString isEqualToString:@"nightly"]) {
+        channel = CSCartridgeChannelNightly;
+    } else {
         if (error) {
             *error = [NSError errorWithDomain:@"CSCapManifestError"
                                          code:1023
-                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Manifest 'channel' is '%@'; expected 'release' or 'nightly'", channel]}];
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Manifest 'channel' is '%@'; expected 'release' or 'nightly'", channelString]}];
         }
         return nil;
     }
