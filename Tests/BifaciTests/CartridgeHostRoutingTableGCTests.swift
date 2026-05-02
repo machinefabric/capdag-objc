@@ -171,7 +171,16 @@ final class CartridgeHostRoutingTableGCTests: XCTestCase {
     /// grow without bound between bursts.
     func testGcSecondaryPassEnforcesHardCap() {
         let host = CartridgeHost()
-        let preCount = CartridgeHost.routingTableHardCapForTest + 1024
+        // Size the seed so a SINGLE eviction-fraction pass is NOT
+        // enough to bring the table under the hard cap. We need
+        // `pre * (1 - evictionFraction) >= hardCap`, i.e.
+        // `pre >= hardCap / (1 - evictionFraction)`. With
+        // hardCap=8192, evictionFraction=0.25, that's pre >= 10923.
+        // Add an extra 256 of headroom so a small change to the
+        // eviction fraction doesn't accidentally make the test
+        // pass via the primary pass alone.
+        let oneMinusFraction = 1.0 - CartridgeHost.routingTableGcEvictionFractionForTest
+        let preCount = Int(ceil(Double(CartridgeHost.routingTableHardCapForTest) / oneMinusFraction)) + 256
         for i in 0..<preCount {
             host.seedIncomingRxidForTest(
                 key: RxidKey(xid: .uint(UInt64(i)), rid: .uint(UInt64(i))),
