@@ -442,7 +442,7 @@
 
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"TestComponent"
                                                        version:@"0.1.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"A test component for validation"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
@@ -475,7 +475,7 @@
 
     CSCapManifest *manifest = [[CSCapManifest manifestWithName:@"TestComponent"
                                                        version:@"0.1.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"A test component for validation"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
@@ -505,7 +505,7 @@
 
     CSCapManifest *manifest = [[[CSCapManifest manifestWithName:@"TestComponent"
                                                        version:@"0.1.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"A test component for validation"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
@@ -618,7 +618,7 @@
 
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"MultiCapComponent"
                                                        version:@"1.0.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"Component with multiple caps"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
@@ -634,7 +634,7 @@
 - (void)testCapManifestEmptyCaps {
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"EmptyComponent"
                                                        version:@"1.0.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"Component with no caps"
                                                      capGroups:@[]];
@@ -678,7 +678,7 @@
 
     CSCapManifest *manifestWithoutAuthor = [CSCapManifest manifestWithName:@"ValidatorComponent"
                                                        version:@"1.0.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"File validation component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
@@ -738,7 +738,7 @@
     // Create manifest similar to what a cartridge would have
     CSCapManifest *cartridgeStyleManifest = [CSCapManifest manifestWithName:@"CartridgeComponent"
                                                        version:@"0.1.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"Cartridge-style component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
@@ -748,7 +748,7 @@
     // Create manifest similar to what a provider would have
     CSCapManifest *providerStyleManifest = [CSCapManifest manifestWithName:@"ProviderComponent"
                                                        version:@"0.1.0"
-                                                       channel:@"release"
+                                                       channel:CSCartridgeChannelRelease
                                                    registryURL:nil
                                                    description:@"Provider-style component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
