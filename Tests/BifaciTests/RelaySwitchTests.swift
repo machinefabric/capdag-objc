@@ -9,10 +9,32 @@ import CapDAG
 final class CborRelaySwitchTests: XCTestCase {
 
     // Helper to send RelayNotify payload with capability URNs and installed cartridge identities.
+    //
+    // The wire schema embeds caps inside `installed_cartridges[*].cap_groups`, so the
+    // helper wraps the test's flat cap-URN list in a single synthetic
+    // installed-cartridge whose lone group declares all of them.
     private func sendNotify(writer: FrameWriter, capabilities: [String], limits: Limits) throws {
+        let groupCaps: [[String: Any]] = capabilities.map { urn in
+            return [
+                "urn": urn,
+                "title": "test",
+                "command": "test",
+                "args": [] as [Any],
+            ]
+        }
         let manifestBytes = try JSONSerialization.data(withJSONObject: [
-            "caps": capabilities,
-            "installed_cartridges": []
+            "installed_cartridges": [[
+                "registry_url": NSNull(),
+                "channel": "release",
+                "id": "test-cartridge",
+                "version": "0.0.0",
+                "sha256": String(repeating: "0", count: 64),
+                "cap_groups": [[
+                    "name": "test",
+                    "caps": groupCaps,
+                    "adapter_urns": [] as [String],
+                ]],
+            ]]
         ])
         let notify = Frame.relayNotify(
             manifest: manifestBytes,

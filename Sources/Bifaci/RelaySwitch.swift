@@ -99,17 +99,30 @@ private struct RoutingEntry {
 }
 
 public struct RelayNotifyCapabilitiesPayload: Codable {
-    public let caps: [String]
     public let installedCartridges: [InstalledCartridgeIdentity]
 
     enum CodingKeys: String, CodingKey {
-        case caps
         case installedCartridges = "installed_cartridges"
     }
 
-    public init(caps: [String], installedCartridges: [InstalledCartridgeIdentity]) {
-        self.caps = caps
+    public init(installedCartridges: [InstalledCartridgeIdentity]) {
         self.installedCartridges = installedCartridges
+    }
+
+    /// Flat cap-URN union across every cartridge in the payload,
+    /// deduplicated while preserving first-seen order. Computed view —
+    /// not stored on the wire.
+    public func capUrns() -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for cart in installedCartridges {
+            for urn in cart.capUrns() {
+                if seen.insert(urn).inserted {
+                    out.append(urn)
+                }
+            }
+        }
+        return out
     }
 }
 
@@ -226,7 +239,7 @@ public final class RelaySwitch: @unchecked Sendable {
             }
 
             var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-            var caps = notifyPayload.caps
+            var caps = notifyPayload.capUrns()
 
             // Per-master SeqAssigner that persists into the MasterConnection
             // regardless of whether we run the identity probe.
@@ -289,7 +302,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         if let manifest = frame.relayNotifyManifest {
                             capsPayload = manifest
                             notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                            caps = notifyPayload.caps
+                            caps = notifyPayload.capUrns()
                         }
                         if let newLimits = frame.relayNotifyLimits {
                             masterLimits = newLimits
@@ -402,7 +415,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         let payload = try Self.parseRelayNotifyPayload(manifest)
                         masters[masterIdx].manifest = manifest
                         masters[masterIdx].limits = limits
-                        masters[masterIdx].caps = payload.caps
+                        masters[masterIdx].caps = payload.capUrns()
                         masters[masterIdx].installedCartridges = payload.installedCartridges
                         rebuildCapTable()
                         rebuildCapabilities()
@@ -493,7 +506,7 @@ public final class RelaySwitch: @unchecked Sendable {
         }
 
         var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-        var caps = notifyPayload.caps
+        var caps = notifyPayload.capUrns()
 
         let seqAssigner = SeqAssigner()
 
@@ -551,7 +564,7 @@ public final class RelaySwitch: @unchecked Sendable {
                     if let manifest = frame.relayNotifyManifest {
                         capsPayload = manifest
                         notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                        caps = notifyPayload.caps
+                        caps = notifyPayload.capUrns()
                     }
                     if let newLimits = frame.relayNotifyLimits {
                         masterLimits = newLimits
@@ -1041,7 +1054,7 @@ public final class RelaySwitch: @unchecked Sendable {
             if let manifest = frame.relayNotifyManifest,
                let newLimits = frame.relayNotifyLimits {
                 let payload = try Self.parseRelayNotifyPayload(manifest)
-                masters[sourceIdx].caps = payload.caps
+                masters[sourceIdx].caps = payload.capUrns()
                 masters[sourceIdx].installedCartridges = payload.installedCartridges
                 masters[sourceIdx].manifest = manifest
                 masters[sourceIdx].limits = newLimits
@@ -1136,22 +1149,42 @@ public final class RelaySwitch: @unchecked Sendable {
     }
 
     private func rebuildCapabilities() {
+        // Caps stay a Set<String> — strings are Hashable. Installed
+        // cartridges, on the other hand, can no longer be Hashable
+        // (their `capGroups` carry CapDefinitions whose URNs are
+        // 3D mixed-variance partial orders — see capdag/docs/02 §18.5
+        // on why Cap URNs intentionally have no total/Hashable order).
+        // We dedupe by identity tuple manually using a dictionary
+        // keyed by `(registryURL, channel, id, version, sha256)`,
+        // matching the Rust relay's `dedup_by` rule.
         var allCaps = Set<String>()
-        var allInstalledCartridges = Set<InstalledCartridgeIdentity>()
+        var byIdentity: [String: InstalledCartridgeIdentity] = [:]
         for master in masters {
             if master.healthy {
                 allCaps.formUnion(master.caps)
-                allInstalledCartridges.formUnion(master.installedCartridges)
+                for cart in master.installedCartridges {
+                    byIdentity[Self.identityKey(cart)] = cart
+                }
             }
         }
 
         let capsArray = Array(allCaps).sorted()
-        aggregateInstalledCartridges = Array(allInstalledCartridges).sorted {
+        aggregateInstalledCartridges = byIdentity.values.sorted {
             if $0.id != $1.id { return $0.id < $1.id }
             if $0.version != $1.version { return $0.version < $1.version }
             return $0.sha256 < $1.sha256
         }
         aggregateCapabilities = (try? JSONSerialization.data(withJSONObject: capsArray)) ?? Data()
+    }
+
+    /// Stable inventory key — the same five fields the Rust side
+    /// uses for `dedup_by`. `\u{1F}` (US — Unit Separator) is the
+    /// natural ASCII delimiter for combining fixed-position fields
+    /// and never appears in any of the field values (URLs, IDs,
+    /// version strings, SHA hex digests).
+    private static func identityKey(_ cart: InstalledCartridgeIdentity) -> String {
+        let registry = cart.registryURL ?? ""
+        return "\(registry)\u{1F}\(cart.channel)\u{1F}\(cart.id)\u{1F}\(cart.version)\u{1F}\(cart.sha256)"
     }
 
     private func rebuildLimits() {
@@ -1188,18 +1221,17 @@ public final class RelaySwitch: @unchecked Sendable {
         do {
             payload = try JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         } catch {
-            throw RelaySwitchError.protocolError("RelayNotify payload must contain caps and installed_cartridges: \(error)")
+            throw RelaySwitchError.protocolError("RelayNotify payload must contain installed_cartridges: \(error)")
         }
 
         // If the host advertises any caps, CAP_IDENTITY must be among them —
         // that is the contract that makes end-to-end identity verification
-        // meaningful. An empty cap set is a valid state meaning "this host
-        // has no cartridges that passed the attachment checklist"; the
-        // `installed_cartridges` list may still report attachment failures
-        // the UI needs to surface.
-        if !payload.caps.isEmpty {
+        // meaningful. The cap-urn list is computed from cap_groups inside
+        // every installed cartridge; a non-empty list must include identity.
+        let capUrns = payload.capUrns()
+        if !capUrns.isEmpty {
             let identityUrn = try? CSCapUrn.fromString(CSCapIdentity)
-            let hasIdentity = payload.caps.contains { capStr in
+            let hasIdentity = capUrns.contains { capStr in
                 guard let capUrn = try? CSCapUrn.fromString(capStr),
                       let identity = identityUrn else { return false }
                 return identity.conforms(to: capUrn)
@@ -1318,7 +1350,23 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     }
 }
 
-public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
+/// Order/Hash-theoretic note: this struct conforms to `Codable` and
+/// `Sendable` but NOT to `Equatable` or `Hashable`. The reason: the
+/// `capGroups` field carries `CapDefinition`s whose `urn` strings
+/// represent Cap URNs — a 3-dimensional product `(in, out, y)` with
+/// mixed variance (input contravariant, output covariant, y-tags
+/// refinement). Cap URNs are intentionally NOT one-dimensional and
+/// have no canonical structural equality or hash beyond exact byte
+/// identity of the canonical form (which would conflate equivalent
+/// URNs that differ only in tag order). See `capdag/docs/02-FORMAL-FOUNDATIONS.md`
+/// §18.5 — "treating Cap URNs as one-dimensional" is a documented
+/// failure mode.
+///
+/// Code that needs to dedupe installs uses the identity tuple
+/// `(registryURL, channel, id, version, sha256)` directly — five
+/// flat strings/enums that DO have an unambiguous total order and
+/// hash. See `RelaySwitch.identityKey(_:)` for the convention.
+public struct InstalledCartridgeIdentity: Codable, Sendable {
     /// Verbatim URL of the registry the cartridge was published from.
     /// `nil` ⇔ dev install (built locally without a registry URL).
     /// Compared byte-wise; never normalized. `(registryURL, channel,
@@ -1332,6 +1380,13 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
     public let channel: String
     public let version: String
     public let sha256: String
+    /// Cap groups exactly as the cartridge declared them in its
+    /// manifest. Each group bundles caps with the `adapter_urns` it
+    /// volunteers to inspect. Empty when the cartridge failed
+    /// attachment before its manifest could be parsed. The flat cap
+    /// snapshot is computed from these groups, not stored alongside
+    /// them on the wire.
+    public let capGroups: [CapGroup]
     /// Present when the cartridge failed to attach; absent when healthy.
     public let attachmentError: CartridgeAttachmentError?
     /// Live runtime statistics from the host that owns this cartridge.
@@ -1345,6 +1400,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
         case channel
         case version
         case sha256
+        case capGroups = "cap_groups"
         case attachmentError = "attachment_error"
         case runtimeStats = "runtime_stats"
     }
@@ -1355,6 +1411,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
         channel: String,
         version: String,
         sha256: String,
+        capGroups: [CapGroup] = [],
         attachmentError: CartridgeAttachmentError? = nil,
         runtimeStats: CartridgeRuntimeStats? = nil
     ) {
@@ -1363,6 +1420,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
         self.channel = channel
         self.version = version
         self.sha256 = sha256
+        self.capGroups = capGroups
         self.attachmentError = attachmentError
         self.runtimeStats = runtimeStats
     }
@@ -1390,6 +1448,7 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
         self.channel = try c.decode(String.self, forKey: .channel)
         self.version = try c.decode(String.self, forKey: .version)
         self.sha256 = try c.decode(String.self, forKey: .sha256)
+        self.capGroups = try c.decodeIfPresent([CapGroup].self, forKey: .capGroups) ?? []
         self.attachmentError = try c.decodeIfPresent(CartridgeAttachmentError.self, forKey: .attachmentError)
         self.runtimeStats = try c.decodeIfPresent(CartridgeRuntimeStats.self, forKey: .runtimeStats)
     }
@@ -1404,7 +1463,26 @@ public struct InstalledCartridgeIdentity: Codable, Hashable, Sendable {
         try c.encode(channel, forKey: .channel)
         try c.encode(version, forKey: .version)
         try c.encode(sha256, forKey: .sha256)
+        if !capGroups.isEmpty {
+            try c.encode(capGroups, forKey: .capGroups)
+        }
         try c.encodeIfPresent(attachmentError, forKey: .attachmentError)
         try c.encodeIfPresent(runtimeStats, forKey: .runtimeStats)
+    }
+
+    /// Flat cap-URN view across this cartridge's groups, deduplicated
+    /// while preserving the order in which urns first appear. Computed
+    /// — never stored on the wire.
+    public func capUrns() -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for group in capGroups {
+            for cap in group.caps {
+                if seen.insert(cap.urn).inserted {
+                    out.append(cap.urn)
+                }
+            }
+        }
+        return out
     }
 }

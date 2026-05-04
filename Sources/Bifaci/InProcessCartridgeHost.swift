@@ -259,37 +259,106 @@ struct HandlerEntry {
 /// Cap table entry: (cap_urn_string, handler_index).
 typealias CapTable = [(String, Int)]
 
+/// Identity values an `InProcessCartridgeHost` advertises in its
+/// RelayNotify payload. The host has no on-disk cartridge directory,
+/// so the embedding application must supply the same four-tuple
+/// identity (`registryURL`, `channel`, `id`, `version`) it would
+/// have read from a cartridge.json — plus a content-derived `sha256`
+/// so the engine treats the in-process provider indistinguishably
+/// from any other installed cartridge.
+///
+/// Engine-side consumers (`CapService.get_installed_cartridges`)
+/// require non-empty `sha256` and a stable id+version pair; feeding
+/// real values via this struct keeps the in-process entry compatible
+/// with every assertion an on-disk install satisfies.
+public struct InProcessHostIdentity {
+    public let registryURL: String?
+    public let channel: String
+    public let id: String
+    public let version: String
+    public let sha256: String
+
+    public init(
+        registryURL: String?,
+        channel: String,
+        id: String,
+        version: String,
+        sha256: String
+    ) {
+        self.registryURL = registryURL
+        self.channel = channel
+        self.id = id
+        self.version = version
+        self.sha256 = sha256
+    }
+
+    /// Identity values for unit/integration tests. Carries a
+    /// fixed-bytes sha256 so engine-side non-empty-hash assertions
+    /// pass; tests that need to distinguish multiple in-process
+    /// hosts pass distinct ids via this builder.
+    public static func forTest(id: String) -> InProcessHostIdentity {
+        return InProcessHostIdentity(
+            registryURL: nil,
+            channel: "release",
+            id: id,
+            version: "0.0.0-test",
+            sha256: String(repeating: "0", count: 64)
+        )
+    }
+}
+
 /// A cartridge host that dispatches to in-process FrameHandler implementations.
 ///
 /// Speaks the Frame protocol to a RelaySlave, but routes requests to
 /// `FrameHandler` protocol conformers via frame channels — no accumulation
 /// at the host level, handlers own the streaming.
 public final class InProcessCartridgeHost {
+    private let identity: InProcessHostIdentity
     private let handlers: [HandlerEntry]
 
     /// Create a new in-process cartridge host with the given handlers.
     ///
+    /// `identity` declares the host's on-the-wire identity. The
+    /// embedding binary supplies it, mirroring an on-disk cartridge's
+    /// `(registryURL, channel, id, version, sha256)` — see
+    /// `InProcessHostIdentity` for the rationale.
     /// Each handler is a tuple of (name, caps, handler).
-    public init(handlers: [(name: String, caps: [CSCap], handler: FrameHandler)]) {
+    public init(
+        identity: InProcessHostIdentity,
+        handlers: [(name: String, caps: [CSCap], handler: FrameHandler)]
+    ) {
+        self.identity = identity
         self.handlers = handlers.map { HandlerEntry(name: $0.name, caps: $0.caps, handler: $0.handler) }
     }
 
     /// Build the aggregate RelayNotify payload.
-    /// Always includes CAP_IDENTITY as the first cap entry.
+    ///
+    /// Wraps the handler set in a single `InstalledCartridgeIdentity`
+    /// whose values come from the `InProcessHostIdentity` the embedder
+    /// supplied at construction. The wire format is symmetric with
+    /// out-of-process hosts: the engine reads `cap_groups` from
+    /// `installed_cartridges` and derives the flat cap list.
     internal func buildManifest() -> Data {
-        var capUrns: [String] = [CSCapIdentity]
+        var caps: [CapDefinition] = [
+            CapDefinition(urn: CSCapIdentity, title: "Identity", command: "identity"),
+        ]
         for entry in handlers {
             for cap in entry.caps {
                 let urn = cap.capUrn.toString()
                 if urn != CSCapIdentity {
-                    capUrns.append(urn)
+                    caps.append(CapDefinition(urn: urn, title: cap.title, command: cap.command))
                 }
             }
         }
-        let payload = RelayNotifyCapabilitiesPayload(
-            caps: capUrns,
-            installedCartridges: []
+        let cartridge = InstalledCartridgeIdentity(
+            registryURL: identity.registryURL,
+            id: identity.id,
+            channel: identity.channel,
+            version: identity.version,
+            sha256: identity.sha256,
+            capGroups: [CapGroup(name: identity.id, caps: caps, adapterUrns: [])]
         )
+        let payload = RelayNotifyCapabilitiesPayload(installedCartridges: [cartridge])
         return try! JSONEncoder().encode(payload)
     }
 

@@ -268,10 +268,23 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Cartridge Registration & Routing (TEST413-414, TEST425)
 
+    /// Build a single synthetic CapGroup whose `caps` list mirrors the
+    /// given flat cap-URN array. The host carries cap_groups end-to-end
+    /// (engine reads them from the wire); tests that only need the
+    /// flat URN view wrap the URNs through this helper to satisfy the
+    /// new schema without re-stating the structural hierarchy each
+    /// time.
+    private func capGroupsFromUrns(_ urns: [String]) -> [CapGroup] {
+        let caps = urns.map {
+            CapDefinition(urn: $0, title: "test", command: "test")
+        }
+        return [CapGroup(name: "test", caps: caps)]
+    }
+
     // TEST413: Register cartridge adds entries to cap_table
     func test413_registerCartridgeAddsToCaptable() {
         let host = CartridgeHost()
-        host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", knownCaps: ["cap:op=convert"])
+        host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=convert"]))
         XCTAssertNotNil(host.findCartridgeForCap("cap:op=convert"), "Registered cap must be found")
         XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"), "Unregistered cap must not be found")
     }
@@ -288,7 +301,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // TEST425: find_cartridge_for_cap returns None for unregistered cap
     func test425_findCartridgeForCapUnknown() {
         let host = CartridgeHost()
-        host.registerCartridge(path: "/test", cartridgeDir: "", knownCaps: ["cap:op=known"])
+        host.registerCartridge(path: "/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=known"]))
         XCTAssertNotNil(host.findCartridgeForCap("cap:op=known"))
         XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"))
     }
@@ -666,7 +679,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let hostToEngine = Pipe()
 
         let host = CartridgeHost()
-        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, knownCaps: ["cap:op=spawn-test"])
+        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, capGroups: capGroupsFromUrns(["cap:op=spawn-test"]))
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -1083,7 +1096,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register a cartridge by path (not running, just known caps)
-        host.registerCartridge(path: "/nonexistent/cartridge", cartridgeDir: "", knownCaps: ["cap:op=respawn-test"])
+        host.registerCartridge(path: "/nonexistent/cartridge", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=respawn-test"]))
 
         // Should find the cartridge by cap
         XCTAssertNotNil(host.findCartridgeForCap("cap:op=respawn-test"), "Known caps must be findable before spawn")
@@ -1100,8 +1113,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register multiple cartridges with different caps
-        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", knownCaps: ["cap:op=cap1"])
-        host.registerCartridge(path: "/nonexistent/p2", cartridgeDir: "", knownCaps: ["cap:op=cap2", "cap:op=cap3"])
+        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=cap1"]))
+        host.registerCartridge(path: "/nonexistent/p2", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=cap2", "cap:op=cap3"]))
 
         let caps = host.capabilities
         if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
@@ -1172,7 +1185,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register with known_caps, but cartridge will advertise different caps via manifest
-        host.registerCartridge(path: "/fake/path", cartridgeDir: "", knownCaps: ["cap:op=known-cap"])
+        host.registerCartridge(path: "/fake/path", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=known-cap"]))
 
         // Before attach: known_cap should be findable
         XCTAssertNotNil(host.findCartridgeForCap("cap:op=known-cap"), "Known cap must be findable before attach")
@@ -1209,7 +1222,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register a non-running cartridge
-        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", knownCaps: ["cap:op=dormant"])
+        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=dormant"]))
 
         // Attach a running cartridge
         try host.attachCartridge(
@@ -1217,9 +1230,11 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
-        // Both caps should be findable via cap table
-        // Running cartridge: uses manifest caps (from HELLO)
-        // Dormant cartridge: uses known_caps (from registerCartridge)
+        // Both caps should be findable via cap table.
+        // Running cartridge: uses manifest cap_groups (from HELLO)
+        // Dormant cartridge: uses cap_groups passed at registration
+        // (the host derives its flat URN view from those groups; we
+        // no longer carry a separate `knownCaps` field).
         XCTAssertNotNil(host.findCartridgeForCap("cap:op=running"), "Running cartridge cap must be findable")
         XCTAssertNotNil(host.findCartridgeForCap("cap:op=dormant"), "Dormant cartridge cap must be findable")
 

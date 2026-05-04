@@ -118,7 +118,10 @@ final class InProcessCartridgeHostTests: XCTestCase {
             ("echo", [cap], EchoHandler())
         ]
 
-        let host = InProcessCartridgeHost(handlers: handlers)
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: handlers
+        )
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -137,9 +140,15 @@ final class InProcessCartridgeHostTests: XCTestCase {
         XCTAssertEqual(notify.frameType, .relayNotify)
         let manifest = notify.relayNotifyManifest!
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
-        XCTAssertTrue(payload.caps.count >= 2) // identity + echo cap
-        XCTAssertEqual(payload.caps[0], CSCapIdentity)
-        XCTAssertEqual(payload.installedCartridges, [])
+        let caps = payload.capUrns()
+        XCTAssertTrue(caps.count >= 2) // identity + echo cap
+        XCTAssertEqual(caps[0], CSCapIdentity)
+        // The InProcessCartridgeHost wraps its handlers in one
+        // installed-cartridge entry whose identity is the
+        // `InProcessHostIdentity` the test passed at construction
+        // (here, `forTest(id: "in-process-test")`).
+        XCTAssertEqual(payload.installedCartridges.count, 1)
+        XCTAssertEqual(payload.installedCartridges[0].id, "in-process-test")
 
         // Send a REQ + STREAM_START + CHUNK (CBOR-encoded) + STREAM_END + END
         let rid = MessageId.newUUID()
@@ -187,7 +196,10 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST655: InProcessCartridgeHost handles identity verification (echo nonce)
     func test655_identityVerification() throws {
-        let host = InProcessCartridgeHost(handlers: [])
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: []
+        )
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -245,7 +257,10 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
     func test656_noHandlerReturnsErr() throws {
-        let host = InProcessCartridgeHost(handlers: [])
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: []
+        )
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -286,20 +301,31 @@ final class InProcessCartridgeHostTests: XCTestCase {
     func test657_manifestIncludesAllCaps() throws {
         let capUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
         let cap = makeTestCap(capUrn)
-        let host = InProcessCartridgeHost(handlers: [
-            ("thumb", [cap], EchoHandler())
-        ])
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "thumb-host"),
+            handlers: [
+                ("thumb", [cap], EchoHandler())
+            ]
+        )
 
         let manifest = host.buildManifest()
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
-        XCTAssertEqual(payload.caps[0], CSCapIdentity)
-        XCTAssertTrue(payload.caps.contains { $0.contains("thumbnail") })
-        XCTAssertEqual(payload.installedCartridges, [])
+        let caps = payload.capUrns()
+        XCTAssertEqual(caps[0], CSCapIdentity)
+        XCTAssertTrue(caps.contains { $0.contains("thumbnail") })
+        XCTAssertEqual(payload.installedCartridges.count, 1)
+        // Identity round-trips: the manifest carries whatever id the
+        // embedder supplied, here `forTest(id: "thumb-host")`.
+        XCTAssertEqual(payload.installedCartridges[0].id, "thumb-host")
+        XCTAssertEqual(payload.installedCartridges[0].capGroups.count, 1)
     }
 
     // TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID
     func test658_heartbeatResponse() throws {
-        let host = InProcessCartridgeHost(handlers: [])
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: []
+        )
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()
@@ -384,7 +410,10 @@ final class InProcessCartridgeHostTests: XCTestCase {
             ("specific", [specificCap], TaggedHandler(tag: "specific")),
         ]
 
-        let host = InProcessCartridgeHost(handlers: handlers)
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: handlers
+        )
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()

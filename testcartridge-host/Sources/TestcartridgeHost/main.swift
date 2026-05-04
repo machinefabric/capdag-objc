@@ -525,7 +525,16 @@ let toHostPipe = Pipe()
 let fromHostPipe = Pipe()
 
 let host = CartridgeHost()
-host.registerCartridge(path: cartridgePath, cartridgeDir: "", knownCaps: [memoryHogCapUrn])
+// Single synthetic cap group with the test's memory-hog cap. The host
+// derives its flat URN view from cap_groups; there is no separate
+// `knownCaps` field anymore.
+let testCapGroups = [
+    CapGroup(
+        name: "test",
+        caps: [CapDefinition(urn: memoryHogCapUrn, title: "test", command: "test")]
+    )
+]
+host.registerCartridge(path: cartridgePath, cartridgeDir: "", capGroups: testCapGroups)
 
 let hostThread = Thread {
     do {
