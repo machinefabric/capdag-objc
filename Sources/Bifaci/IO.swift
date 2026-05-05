@@ -284,10 +284,24 @@ public func decodeFrame(_ data: Data) throws -> Frame {
 
 // MARK: - Length-Prefixed I/O
 
-/// Write a length-prefixed CBOR frame with buffering
-/// Matches Rust's BufWriter behavior: accumulates in 8KB buffer, flushes when full
+/// Encode a frame and append its length-prefixed bytes to `buffer`,
+/// then drain the buffer to `fd` via POSIX `write(2)`.
+///
+/// `fd` must be the cached file descriptor from a `FrameWriter` —
+/// callers never derive `fd` from a `FileHandle` at write time, since
+/// `FileHandle.fileDescriptor` raises `NSFileHandleOperationException`
+/// when invoked on a closed handle and Swift cannot catch ObjC
+/// exceptions, which crashes the entire process. `FrameWriter` snapshots
+/// the fd once at construction (while the handle is guaranteed open)
+/// and switches to `-1` on `close()`; passing `-1` here is a programming
+/// error in the writer state machine and is rejected with a clean
+/// `FrameError.ioError`.
 @available(macOS 10.15.4, iOS 13.4, *)
-public func writeFrame(_ frame: Frame, to handle: FileHandle, limits: Limits, buffer: inout Data) throws {
+public func writeFrame(_ frame: Frame, toFD fd: Int32, limits: Limits, buffer: inout Data) throws {
+    if fd < 0 {
+        throw FrameError.ioError("writer closed")
+    }
+
     let data = try encodeFrame(frame)
 
     if data.count > limits.maxFrame {
@@ -309,11 +323,10 @@ public func writeFrame(_ frame: Frame, to handle: FileHandle, limits: Limits, bu
     buffer.append(lengthBytes)
     buffer.append(data)
 
-    // Use POSIX write() directly to bypass FileHandle buffering
-    // FileHandle.write() may internally buffer data, causing frames to not reach
-    // the pipe reader immediately. POSIX write() is unbuffered and writes directly
-    // to the file descriptor, ensuring data reaches the reader without delay.
-    let fd = handle.fileDescriptor
+    // Use POSIX write() directly to bypass FileHandle buffering.
+    // FileHandle.write() may internally buffer data, causing frames
+    // to not reach the pipe reader immediately; POSIX write() is
+    // unbuffered and writes directly to the file descriptor.
     try buffer.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.baseAddress else { return }
         var totalWritten = 0
@@ -395,36 +408,71 @@ public class FrameReader: @unchecked Sendable {
     }
 }
 
-/// CBOR frame writer
+/// CBOR frame writer.
+///
+/// Owns a `FileHandle` and a cached POSIX file descriptor. The
+/// descriptor is read **once** at construction, while the handle is
+/// guaranteed open by the caller's lifetime contract; thereafter all
+/// I/O uses the cached `Int32` directly. This is required to avoid
+/// `NSFileHandleOperationException` from `-[NSConcreteFileHandle
+/// fileDescriptor]` on a closed handle: that exception is an Objective-C
+/// `NSException`, which Swift cannot catch — it tears down the entire
+/// process. A single cartridge dying must never bring down the host,
+/// so the writer must not invoke that accessor under any circumstance.
+///
+/// The writer has two states:
+///   - **open**: `fd >= 0`, writes/flushes go through; `handle` is
+///     retained but never accessed.
+///   - **closed**: `fd == -1`, all writes/flushes throw
+///     `FrameError.ioError("writer closed")` cleanly. Reaching the
+///     closed state is irreversible.
+///
+/// `close()` transitions open → closed under the writer's lock; it
+/// also closes the underlying handle exactly once. Callers must always
+/// close the writer (not the handle directly) to keep the cached fd
+/// and handle state consistent.
+///
+/// `deinit` does no I/O. A destructor must not write to file
+/// descriptors because the descriptor's lifetime is no longer pinned
+/// at that point (e.g. the peer pipe may have been closed under us).
+/// Buffered data left at deinit is dropped — callers that care about
+/// flush durability must call `flush()` before releasing the writer.
 @available(macOS 10.15.4, iOS 13.4, *)
 public class FrameWriter: @unchecked Sendable {
-    public let handle: FileHandle
+    /// Underlying handle, retained for the lifetime of the writer.
+    /// Not exposed as `public` because callers must never invoke
+    /// `.fileDescriptor` on it (that accessor raises an Objective-C
+    /// exception on a closed handle and aborts the process). All I/O
+    /// flows through the cached fd inside this class.
+    private let handle: FileHandle
+    private var cachedFD: Int32
     private var limits: Limits
     private let lock = NSLock()
     private var buffer: Data = Data()  // 8KB buffer matching Rust's BufWriter
 
     public init(handle: FileHandle, limits: Limits = Limits()) {
         self.handle = handle
-        self.limits = limits
-    }
-
-    /// Destructor: flush any remaining buffered data before object is destroyed
-    deinit {
-        lock.lock()
-        defer { lock.unlock() }
-        if !buffer.isEmpty {
-            // Use POSIX write() directly to ensure data reaches pipe
-            let fd = handle.fileDescriptor
-            buffer.withUnsafeBytes { rawBuffer in
-                guard let baseAddress = rawBuffer.baseAddress else { return }
-                var totalWritten = 0
-                while totalWritten < buffer.count {
-                    let result = Darwin.write(fd, baseAddress.advanced(by: totalWritten), buffer.count - totalWritten)
-                    if result <= 0 { break }
-                    totalWritten += result
-                }
-            }
+        // Snapshot the descriptor while the handle is open. After this
+        // point we never call `handle.fileDescriptor` again, so a
+        // later close on the same handle (or the underlying fd) cannot
+        // raise NSFileHandleOperationException through this writer.
+        let fd = handle.fileDescriptor
+        // Suppress SIGPIPE on this descriptor. A write() to a pipe
+        // whose reader has closed (e.g. the peer cartridge OOM-died)
+        // returns EPIPE — but by default the kernel also raises
+        // SIGPIPE on the writer process, which would terminate the
+        // host. With F_SETNOSIGPIPE the write just returns -1/EPIPE
+        // and we surface a clean `FrameError.ioError("write failed:
+        // ...")` to the caller, who can fail the in-flight request
+        // and move on. This must be set per-fd at construction
+        // because Foundation's FileHandle does not set it for
+        // arbitrary descriptors and the global signal handler is
+        // process-wide policy we don't want to impose.
+        if fd >= 0 {
+            _ = fcntl(fd, F_SETNOSIGPIPE, 1)
         }
+        self.cachedFD = fd
+        self.limits = limits
     }
 
     /// Update limits (after handshake)
@@ -441,33 +489,75 @@ public class FrameWriter: @unchecked Sendable {
         return limits
     }
 
-    /// Write a frame (buffered)
+    /// Whether the writer has been closed. Once closed, all writes
+    /// and flushes fail with `FrameError.ioError("writer closed")`.
+    public var isClosed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cachedFD < 0
+    }
+
+    /// Close the writer: drop any buffered data, close the underlying
+    /// handle (best-effort), and transition to the closed state.
+    /// Idempotent — second and subsequent calls are no-ops. After
+    /// `close()`, all writes and flushes throw cleanly.
+    ///
+    /// Callers must use this in preference to closing the handle
+    /// directly: closing the handle while the writer still believes
+    /// its cached fd is valid invites a write into a closed (or
+    /// recycled) descriptor, which is silent corruption rather than
+    /// a clean error.
+    public func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if cachedFD < 0 {
+            return
+        }
+        cachedFD = -1
+        buffer.removeAll(keepingCapacity: false)
+        try? handle.close()
+    }
+
+    /// Write a frame (buffered).
+    /// Throws `FrameError.ioError("writer closed")` if the writer
+    /// has been closed.
     public func write(_ frame: Frame) throws {
         lock.lock()
         defer { lock.unlock() }
-        try writeFrame(frame, to: handle, limits: limits, buffer: &buffer)
+        try writeFrame(frame, toFD: cachedFD, limits: limits, buffer: &buffer)
     }
 
-    /// Flush buffered data
+    /// Flush buffered data.
+    /// Throws `FrameError.ioError("writer closed")` if the writer
+    /// has been closed; throws `FrameError.ioError("write failed: ...")`
+    /// on POSIX write failure.
     public func flush() throws {
         lock.lock()
         defer { lock.unlock() }
-        if !buffer.isEmpty {
-            // Use POSIX write() directly to ensure data reaches pipe
-            let fd = handle.fileDescriptor
-            try buffer.withUnsafeBytes { rawBuffer in
-                guard let baseAddress = rawBuffer.baseAddress else { return }
-                var totalWritten = 0
-                while totalWritten < buffer.count {
-                    let result = Darwin.write(fd, baseAddress.advanced(by: totalWritten), buffer.count - totalWritten)
-                    if result < 0 {
-                        throw FrameError.ioError("write failed: \(String(cString: strerror(errno)))")
-                    }
-                    totalWritten += result
-                }
+        if buffer.isEmpty {
+            // Even with nothing to flush, an explicit flush on a
+            // closed writer is a programmer error worth surfacing.
+            if cachedFD < 0 {
+                throw FrameError.ioError("writer closed")
             }
-            buffer.removeAll(keepingCapacity: true)
+            return
         }
+        if cachedFD < 0 {
+            throw FrameError.ioError("writer closed")
+        }
+        let fd = cachedFD
+        try buffer.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            var totalWritten = 0
+            while totalWritten < buffer.count {
+                let result = Darwin.write(fd, baseAddress.advanced(by: totalWritten), buffer.count - totalWritten)
+                if result < 0 {
+                    throw FrameError.ioError("write failed: \(String(cString: strerror(errno)))")
+                }
+                totalWritten += result
+            }
+        }
+        buffer.removeAll(keepingCapacity: true)
     }
 
     /// Write a large payload as multiple chunks for multiplexed streaming.
@@ -492,7 +582,7 @@ public class FrameWriter: @unchecked Sendable {
             frame.len = 0
             frame.offset = 0
             frame.eof = true
-            try writeFrame(frame, to: handle, limits: limits, buffer: &buffer)
+            try writeFrame(frame, toFD: cachedFD, limits: limits, buffer: &buffer)
             return
         }
 
@@ -520,7 +610,7 @@ public class FrameWriter: @unchecked Sendable {
                 frame.eof = true
             }
 
-            try writeFrame(frame, to: handle, limits: limits, buffer: &buffer)
+            try writeFrame(frame, toFD: cachedFD, limits: limits, buffer: &buffer)
 
             chunkIndex += 1
             offset += chunkSize

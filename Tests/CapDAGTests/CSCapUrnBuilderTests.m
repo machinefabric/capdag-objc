@@ -26,7 +26,7 @@
     XCTAssertNotNil(capUrn);
     XCTAssertNil(error);
     // Alphabetical order: format, in, op, out, type
-    XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;op=transform;out=\"media:record;textable\";type=data_processing");
+    XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;transform;out=\"media:record;textable\";type=data_processing");
 }
 
 - (void)testBuilderFluentAPI {
@@ -189,7 +189,7 @@
     XCTAssertNil(error);
 
     // Alphabetical order: codec, format, framerate, in, op, out, output, quality, target, type
-    NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;in=media:;op=transcode;out=media:;output=binary;quality=1080p;target=video;type=media";
+    NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;in=media:;transcode;out=media:;output=binary;quality=1080p;target=video;type=media";
     XCTAssertEqualObjects([cap toString], expected);
 
     XCTAssertEqualObjects([cap getTag:@"type"], @"media");
@@ -219,7 +219,7 @@
 
     // Wildcards: in/out are "media:" now (not "*")
     // Alphabetical order: ext, in, op, out, quality
-    XCTAssertEqualObjects([cap toString], @"cap:ext;in=media:;op=convert;out=media:;quality");
+    XCTAssertEqualObjects([cap toString], @"cap:ext;in=media:;convert;out=media:;quality");
     XCTAssertEqual([cap specificity], 1); // Only op is specific (media: wildcard contributes 0)
 
     XCTAssertEqualObjects([cap getTag:@"ext"], @"*");

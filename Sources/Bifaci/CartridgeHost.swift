@@ -80,12 +80,67 @@ private func sha256Hex(for data: Data) -> String {
     return digest.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Errors raised by `computeCartridgeDirectoryHash` and
+/// `computeFileSHA256`. Each variant names the operation and the path
+/// that failed so the caller can surface the real cause instead of a
+/// generic "unhashable" message.
+public enum CartridgeDirectoryHashError: Error, CustomStringConvertible {
+    /// `FileManager.enumerator(atPath:)` returned nil — the directory
+    /// itself is unreadable (does not exist, no permission, mid-rename).
+    case directoryUnreadable(path: String)
+    /// `open(2)` failed for a file inside the directory.
+    case openFailed(path: String, errno: Int32)
+    /// `read(2)` returned -1 partway through hashing a file.
+    case readFailed(path: String, errno: Int32)
+
+    public var description: String {
+        switch self {
+        case .directoryUnreadable(let path):
+            return "cartridge directory unreadable at \(path)"
+        case .openFailed(let path, let err):
+            return "open() failed for \(path): \(String(cString: strerror(err)))"
+        case .readFailed(let path, let err):
+            return "read() failed for \(path): \(String(cString: strerror(err)))"
+        }
+    }
+}
+
+/// SHA256 chunk size for streaming file content into the hash context.
+/// Chosen to fit comfortably under any plausible sandbox memory ceiling
+/// (XPC services have tighter limits than full apps) while still
+/// amortising the per-call syscall overhead. 1 MiB is large enough that
+/// a 200 MB cartridge binary takes ~200 reads — negligible — and small
+/// enough that we never need a Data allocation that approaches the
+/// sandbox memory budget.
+public let cartridgeHashStreamChunk: Int = 1 << 20
+
 /// Compute a deterministic SHA256 hash of a cartridge directory tree.
-/// Walks all files recursively, sorts by relative path, hashes (path + content).
-/// Excludes cartridge.json (install-time metadata that varies between installs).
-private func computeCartridgeDirectoryHash(atPath dirPath: String) -> String? {
+///
+/// Walks all files recursively, sorts by relative path, then for each
+/// file feeds its UTF-8 relative path and its byte content into a
+/// single SHA256 context. Excludes `cartridge.json` (install-time
+/// metadata that varies between installs).
+///
+/// File content is streamed through `read(2)` in fixed-size chunks
+/// rather than slurped into memory with `FileManager.contents(atPath:)`.
+/// The slurp form was the original failure mode: a 200+ MB cartridge
+/// binary inside the sandboxed XPC service hit a memory ceiling and
+/// `contents(atPath:)` returned nil, which the caller turned into a
+/// generic `fatalError`. Streamed chunks make the function's memory
+/// footprint constant in file size, so any cartridge directory — no
+/// matter how big its binary or asset bundles — hashes successfully
+/// as long as the files are readable.
+///
+/// On real failure (directory missing, permission denied, read I/O
+/// error mid-walk) this throws a `CartridgeDirectoryHashError` whose
+/// message names the offending path and underlying errno. Callers must
+/// not paper over those with `try?`/`?? ""` in the healthy path —
+/// surface the error so operators see what's actually wrong.
+public func computeCartridgeDirectoryHash(atPath dirPath: String) throws -> String {
     let fileManager = FileManager.default
-    guard let enumerator = fileManager.enumerator(atPath: dirPath) else { return nil }
+    guard let enumerator = fileManager.enumerator(atPath: dirPath) else {
+        throw CartridgeDirectoryHashError.directoryUnreadable(path: dirPath)
+    }
 
     var files: [(relativePath: String, fullPath: String)] = []
 
@@ -107,21 +162,84 @@ private func computeCartridgeDirectoryHash(atPath dirPath: String) -> String? {
     var context = CC_SHA256_CTX()
     CC_SHA256_Init(&context)
 
+    var chunk = [UInt8](repeating: 0, count: cartridgeHashStreamChunk)
+
     for file in files {
         if let pathData = file.relativePath.data(using: .utf8) {
             pathData.withUnsafeBytes { bytes in
                 CC_SHA256_Update(&context, bytes.baseAddress, CC_LONG(pathData.count))
             }
         }
-        guard let data = fileManager.contents(atPath: file.fullPath) else { return nil }
-        data.withUnsafeBytes { bytes in
-            CC_SHA256_Update(&context, bytes.baseAddress, CC_LONG(data.count))
+
+        let fd = open(file.fullPath, O_RDONLY)
+        if fd < 0 {
+            throw CartridgeDirectoryHashError.openFailed(path: file.fullPath, errno: errno)
+        }
+        defer { Darwin.close(fd) }
+
+        while true {
+            let bytesRead = chunk.withUnsafeMutableBufferPointer { buf -> ssize_t in
+                Darwin.read(fd, buf.baseAddress, buf.count)
+            }
+            if bytesRead < 0 {
+                throw CartridgeDirectoryHashError.readFailed(path: file.fullPath, errno: errno)
+            }
+            if bytesRead == 0 {
+                break
+            }
+            chunk.withUnsafeBufferPointer { buf in
+                CC_SHA256_Update(&context, buf.baseAddress, CC_LONG(bytesRead))
+            }
         }
     }
 
     var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
     CC_SHA256_Final(&hash, &context)
 
+    return hash.map { String(format: "%02x", $0) }.joined()
+}
+
+/// Compute SHA256 of a single file by streaming its content through
+/// `read(2)` in `cartridgeHashStreamChunk`-sized chunks. Used for
+/// quarantine identity tracking (the hash of a cartridge binary is
+/// what tells the host whether a quarantined cartridge has been
+/// replaced by a new build) and for any other place where we need the
+/// hash of a single on-disk file without loading it whole into memory.
+///
+/// Throws `CartridgeDirectoryHashError.openFailed` / `.readFailed`
+/// with the path and errno on real I/O failure. Callers that have
+/// good reason to swallow the error (e.g. already-failing recovery
+/// paths where the binary may be gone) can `try?` it to a sentinel
+/// string, but healthy paths must propagate the error so operators
+/// see the actual cause.
+public func computeFileSHA256(atPath path: String) throws -> String {
+    let fd = open(path, O_RDONLY)
+    if fd < 0 {
+        throw CartridgeDirectoryHashError.openFailed(path: path, errno: errno)
+    }
+    defer { Darwin.close(fd) }
+
+    var ctx = CC_SHA256_CTX()
+    CC_SHA256_Init(&ctx)
+
+    var chunk = [UInt8](repeating: 0, count: cartridgeHashStreamChunk)
+    while true {
+        let bytesRead = chunk.withUnsafeMutableBufferPointer { buf -> ssize_t in
+            Darwin.read(fd, buf.baseAddress, buf.count)
+        }
+        if bytesRead < 0 {
+            throw CartridgeDirectoryHashError.readFailed(path: path, errno: errno)
+        }
+        if bytesRead == 0 {
+            break
+        }
+        chunk.withUnsafeBufferPointer { buf in
+            CC_SHA256_Update(&ctx, buf.baseAddress, CC_LONG(bytesRead))
+        }
+    }
+
+    var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+    CC_SHA256_Final(&hash, &ctx)
     return hash.map { String(format: "%02x", $0) }.joined()
 }
 
@@ -296,9 +414,15 @@ private class ManagedCartridge {
     /// This is the anchor — the entry point is relative to this directory.
     let cartridgeDir: String
     var pid: pid_t?
-    var stdinHandle: FileHandle?
     var stdoutHandle: FileHandle?
     var stderrHandle: FileHandle?
+    /// Writer over the cartridge's stdin pipe. Sole owner of the
+    /// stdin FileHandle's lifetime — no other field references that
+    /// handle. Mutations of this property MUST happen under
+    /// `writerLock`, and teardown MUST go through `writer.close()`
+    /// before nil-ing the property; closing the underlying pipe by
+    /// any other route would race a concurrent `writer.write(...)`
+    /// onto a closed/recycled fd.
     var writer: FrameWriter?
     let writerLock = NSLock()
     var manifest: Data
@@ -460,7 +584,7 @@ private class ManagedCartridge {
         // If the cartridge is healthy, hashing must succeed; failure there
         // is a broken invariant.
         if let error = attachmentError {
-            let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) ?? ""
+            let sha256 = (try? computeCartridgeDirectoryHash(atPath: cartridgeDir)) ?? ""
             return InstalledCartridgeIdentity(
                 registryURL: identity.registryURL,
                 id: identity.id,
@@ -482,8 +606,17 @@ private class ManagedCartridge {
             )
         }
 
-        guard let sha256 = computeCartridgeDirectoryHash(atPath: cartridgeDir) else {
-            fatalError("BUG: healthy installed cartridge directory must be hashable at \(cartridgeDir)")
+        let sha256: String
+        do {
+            sha256 = try computeCartridgeDirectoryHash(atPath: cartridgeDir)
+        } catch {
+            // Healthy cartridges have to be hashable. If we can't read
+            // the directory or one of its files, surface the actual
+            // path + errno in the abort message so the operator sees
+            // what to fix instead of a generic "must be hashable".
+            fatalError(
+                "BUG: healthy installed cartridge directory must be hashable at \(cartridgeDir): \(error)"
+            )
         }
 
         return InstalledCartridgeIdentity(
@@ -962,9 +1095,9 @@ public final class CartridgeHost: @unchecked Sendable {
                 cartridge.shutdownReason = .appExit
                 cartridge.killProcess()
                 cartridge.writerLock.lock()
+                cartridge.writer?.close()
                 cartridge.writer = nil
                 cartridge.writerLock.unlock()
-                cartridge.stdinHandle = nil
                 cartridge.stdoutHandle = nil
                 cartridge.stderrHandle = nil
                 // Do NOT append to `retained` — this cartridge is gone.
@@ -1057,11 +1190,14 @@ public final class CartridgeHost: @unchecked Sendable {
         // Perform identity verification - send nonce, expect echo
         try Self.verifyCartridgeIdentity(reader: reader, writer: writer)
 
-        // Create managed cartridge
+        // Create managed cartridge. The writer is the sole owner of
+        // the stdin handle from this point — nothing else holds a
+        // reference to it.
         let cartridge = ManagedCartridge.attached(manifest: manifest, limits: negotiatedLimits, capGroups: capGroups)
-        cartridge.stdinHandle = stdinHandle
         cartridge.stdoutHandle = stdoutHandle
+        cartridge.writerLock.lock()
         cartridge.writer = writer
+        cartridge.writerLock.unlock()
 
         stateLock.lock()
         let idx = cartridges.count
@@ -1283,7 +1419,15 @@ public final class CartridgeHost: @unchecked Sendable {
             statsTimer.cancel()
             heartbeatTimer.cancel()
             killAllCartridgesOnRunExit()
+            // Close the per-session outbound writer atomically with
+            // dropping the reference. This transitions the writer to
+            // its closed state so any late frame pushed by an
+            // in-flight cartridge reader thread fails fast with
+            // `FrameError.ioError("writer closed")` instead of being
+            // silently buffered (or worse, written into the recycled
+            // FD of a different relay session).
             outboundLock.lock()
+            outboundWriter?.close()
             outboundWriter = nil
             outboundLock.unlock()
         }
@@ -1360,14 +1504,16 @@ public final class CartridgeHost: @unchecked Sendable {
         var deathNotifications: [(idx: Int, pid: pid_t?, name: String)] = []
         stateLock.lock()
         for (idx, cartridge) in cartridges.enumerated() {
+            // Close the writer first — that closes the stdin handle
+            // and atomically transitions the writer to the closed
+            // state, so any racing `writeFrame()` returns
+            // `FrameError.ioError("writer closed")` cleanly instead
+            // of writing into a recycled fd.
             cartridge.writerLock.lock()
+            cartridge.writer?.close()
             cartridge.writer = nil
             cartridge.writerLock.unlock()
 
-            if let stdin = cartridge.stdinHandle {
-                try? stdin.close()
-                cartridge.stdinHandle = nil
-            }
             if let stderr = cartridge.stderrHandle {
                 try? stderr.close()
                 cartridge.stderrHandle = nil
@@ -1761,7 +1907,16 @@ public final class CartridgeHost: @unchecked Sendable {
         let observerPidAtDeath = cartridge.pid
         let observerName = (cartridge.path as NSString).lastPathComponent
         cartridge.running = false
+        // Close the writer atomically with nil-ing the property:
+        // `writeFrame()` (CartridgeHost.ManagedCartridge.writeFrame)
+        // takes `writerLock` and calls into the writer, so this race
+        // window must be sealed. `writer.close()` also closes the
+        // underlying stdin pipe, so no separate handle close is
+        // needed.
+        cartridge.writerLock.lock()
+        cartridge.writer?.close()
         cartridge.writer = nil
+        cartridge.writerLock.unlock()
         // One completed death (any reason) counts as one restart cycle.
         // The next on-demand spawn increments it again with a fresh process.
         cartridge.restartCount &+= 1
@@ -1826,10 +1981,9 @@ public final class CartridgeHost: @unchecked Sendable {
             cartridge.stderrHandle = nil
         }
 
-        if let stdinHandle = cartridge.stdinHandle {
-            try? stdinHandle.close()
-            cartridge.stdinHandle = nil
-        }
+        // stdin handle is owned by `cartridge.writer` and was already
+        // closed in lockstep above when we transitioned the writer to
+        // the closed state.
 
         // Clean up routing tables regardless of death cause.
         // outgoingRids: peer requests the cartridge initiated
@@ -2330,7 +2484,12 @@ public final class CartridgeHost: @unchecked Sendable {
         let stdoutHandle = outputPipe.fileHandleForReading
         let stderrHandle = errorPipe.fileHandleForReading
 
-        // HELLO handshake (blocking — stateLock NOT held)
+        // HELLO handshake (blocking — stateLock NOT held).
+        // From this point on, `writer` owns `stdinHandle`'s lifetime.
+        // All teardown paths must go through `writer.close()`, never
+        // through `stdinHandle.closeFile()` directly, otherwise the
+        // writer's cached fd outlives the open handle and a concurrent
+        // write would target a closed/recycled descriptor.
         let reader = FrameReader(handle: stdoutHandle)
         let writer = FrameWriter(handle: stdinHandle)
 
@@ -2341,7 +2500,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // HELLO failure → permanent removal (binary is broken)
             kill(pid, SIGKILL)
             _ = waitpid(pid, nil, 0)
-            stdinHandle.closeFile()
+            writer.close()
             stdoutHandle.closeFile()
             stderrHandle.closeFile()
 
@@ -2363,7 +2522,7 @@ public final class CartridgeHost: @unchecked Sendable {
         } catch let extractErr as ManifestExtractError {
             kill(pid, SIGKILL)
             _ = waitpid(pid, nil, 0)
-            stdinHandle.closeFile()
+            writer.close()
             stdoutHandle.closeFile()
             stderrHandle.closeFile()
 
@@ -2390,7 +2549,7 @@ public final class CartridgeHost: @unchecked Sendable {
         } catch {
             kill(pid, SIGKILL)
             _ = waitpid(pid, nil, 0)
-            stdinHandle.closeFile()
+            writer.close()
             stdoutHandle.closeFile()
             stderrHandle.closeFile()
 
@@ -2407,14 +2566,16 @@ public final class CartridgeHost: @unchecked Sendable {
         // Flatten cap-urns out of the groups for routing.
         let capUrns = capGroups.flatMap { $0.caps.map { $0.urn } }
 
-        // Update cartridge state under lock
+        // Update cartridge state under lock. The writer is the sole
+        // owner of stdin; we don't store the handle separately.
         stateLock.lock()
         let cartridge = cartridges[idx]
         cartridge.pid = pid
-        cartridge.stdinHandle = stdinHandle
         cartridge.stdoutHandle = stdoutHandle
         cartridge.stderrHandle = stderrHandle
+        cartridge.writerLock.lock()
         cartridge.writer = writer
+        cartridge.writerLock.unlock()
         cartridge.manifest = handshakeResult.manifest ?? Data()
         cartridge.limits = handshakeResult.limits
         cartridge.capGroups = capGroups
@@ -2565,16 +2726,17 @@ public final class CartridgeHost: @unchecked Sendable {
         // Fire callbacks after releasing the lock.
         var deathNotifications: [(idx: Int, pid: pid_t?, name: String)] = []
 
-        // Kill all running cartridges
+        // Kill all running cartridges. Close each cartridge's writer
+        // (which closes stdin) under writerLock atomically with
+        // nil-ing it, so any concurrent `writeFrame()` either
+        // completes before the close or fails cleanly with
+        // `FrameError.ioError("writer closed")`.
         for (idx, cartridge) in cartridges.enumerated() {
             cartridge.writerLock.lock()
+            cartridge.writer?.close()
             cartridge.writer = nil
             cartridge.writerLock.unlock()
 
-            if let stdin = cartridge.stdinHandle {
-                try? stdin.close()
-                cartridge.stdinHandle = nil
-            }
             if let stderr = cartridge.stderrHandle {
                 try? stderr.close()
                 cartridge.stderrHandle = nil

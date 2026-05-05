@@ -109,24 +109,24 @@
         @"flv": @[@"media:flv;video"],
         @"wmv": @[@"media:wmv;video"],
         @"ogv": @[@"media:ogv;video"],
-        @"3gp": @[@"media:3gp;video"],
+        @"3gp": @[@"media:threegp;video"],
 
         // Data interchange (require content inspection)
         @"json": @[@"media:json;textable"],
         @"ndjson": @[@"media:ndjson;list;textable"],
         @"jsonl": @[@"media:ndjson;list;textable"],
-        @"csv": @[@"media:csv;list;textable"],
+        @"csv": @[@"media:csv;list;record;textable"],
         @"tsv": @[@"media:tsv;list;textable"],
         @"psv": @[@"media:psv;list;textable"],
         @"yaml": @[@"media:yaml;textable"],
         @"yml": @[@"media:yaml;textable"],
-        @"toml": @[@"media:toml;record;textable"],
-        @"ini": @[@"media:ini;record;textable"],
+        @"toml": @[@"media:textable;toml"],
+        @"ini": @[@"media:ini;textable"],
         @"cfg": @[@"media:conf;record;textable"],
         @"conf": @[@"media:conf;record;textable"],
         @"config": @[@"media:conf;record;textable"],
-        @"properties": @[@"media:properties;record;textable"],
-        @"env": @[@"media:env;record;textable"],
+        @"properties": @[@"media:properties;textable"],
+        @"env": @[@"media:env;textable"],
         @"xml": @[@"media:xml;textable"],
         @"plist": @[@"media:plist;record"],
 
@@ -224,8 +224,8 @@
         @"makefile": @[@"media:makefile;textable"],
         @"cmake": @[@"media:cmake;textable"],
         @"dockerfile": @[@"media:dockerfile;textable"],
-        @"gitignore": @[@"media:gitignore;list;textable"],
-        @"dockerignore": @[@"media:dockerignore;list;textable"],
+        @"gitignore": @[@"media:gitignore;textable"],
+        @"dockerignore": @[@"media:dockerignore;textable"],
         @"editorconfig": @[@"media:editorconfig;textable"],
 
         // Archives
@@ -237,7 +237,7 @@
         @"xz": @[@"media:xz;archive"],
         @"zst": @[@"media:zstd;archive"],
         @"zstd": @[@"media:zstd;archive"],
-        @"7z": @[@"media:7z;archive"],
+        @"7z": @[@"media:archive;sevenz"],
         @"rar": @[@"media:rar;archive"],
         @"jar": @[@"media:jar;archive"],
         @"war": @[@"media:war;archive"],
@@ -324,7 +324,7 @@
         @"vcf": @[@"media:vcf;textable"],
 
         // Requirements
-        @"requirements": @[@"media:requirements;list;textable"],
+        @"requirements": @[@"media:requirements;textable"],
     };
 }
 

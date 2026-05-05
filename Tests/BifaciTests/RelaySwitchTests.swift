@@ -175,7 +175,7 @@ final class CborRelaySwitchTests: XCTestCase {
             var reader = FrameReader(handle: pair2_2.read, limits: Limits())
             let writer = FrameWriter(handle: pair2_1.write, limits: Limits())
 
-            let caps: [String] = ["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]
+            let caps: [String] = ["cap:in=media:;out=media:", "cap:in=\"media:void\";double;out=\"media:void\""]
             try! self.sendNotify(writer: writer, capabilities: caps, limits: Limits())
             done2.signal()
 
@@ -213,7 +213,7 @@ final class CborRelaySwitchTests: XCTestCase {
         // Send REQ for double cap → routes to master 2
         let req2 = Frame.req(
             id: MessageId.uint(2),
-            capUrn: "cap:in=\"media:void\";op=double;out=\"media:void\"",
+            capUrn: "cap:in=\"media:void\";double;out=\"media:void\"",
             payload: Data(),
             contentType: "text/plain"
         )
@@ -255,7 +255,7 @@ final class CborRelaySwitchTests: XCTestCase {
         // Send REQ for unknown cap
         let req = Frame.req(
             id: MessageId.uint(1),
-            capUrn: "cap:in=\"media:void\";op=unknown;out=\"media:void\"",
+            capUrn: "cap:in=\"media:void\";unknown;out=\"media:void\"",
             payload: Data(),
             contentType: "text/plain"
         )
@@ -294,7 +294,7 @@ final class CborRelaySwitchTests: XCTestCase {
         DispatchQueue.global().async {
             var reader = FrameReader(handle: pair2_2.read)  // slave2 reads from pair2_2
             let writer = FrameWriter(handle: pair2_1.write)  // slave2 writes to pair2_1
-            let caps: [String] = ["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]
+            let caps: [String] = ["cap:in=media:;out=media:", "cap:in=\"media:void\";double;out=\"media:void\""]
             try! self.sendNotify(writer: writer, capabilities: caps, limits: Limits())
             done2.signal()
             try! self.handleIdentityVerification(reader: reader, writer: writer)
@@ -408,7 +408,7 @@ final class CborRelaySwitchTests: XCTestCase {
             var reader = FrameReader(handle: pair2.read)
             let writer = FrameWriter(handle: pair1.write)
 
-            let caps: [String] = ["cap:in=media:;out=media:", "cap:in=\"media:void\";op=test;out=\"media:void\""]
+            let caps: [String] = ["cap:in=media:;out=media:", "cap:in=\"media:void\";test;out=\"media:void\""]
             try! self.sendNotify(writer: writer, capabilities: caps, limits: Limits())
             done.signal()
 
@@ -441,7 +441,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let reqId = MessageId.uint(1)
 
         // Send REQ
-        let req = Frame.req(id: reqId, capUrn: "cap:in=\"media:void\";op=test;out=\"media:void\"", payload: Data(), contentType: "text/plain")
+        let req = Frame.req(id: reqId, capUrn: "cap:in=\"media:void\";test;out=\"media:void\"", payload: Data(), contentType: "text/plain")
         try switch_.sendToMaster(req)
 
         // Send CHUNK continuation
@@ -495,7 +495,7 @@ final class CborRelaySwitchTests: XCTestCase {
             let writer = FrameWriter(handle: pair1_1.write)
             let caps: [String] = [
                 "cap:in=media:;out=media:",
-                "cap:in=\"media:void\";op=double;out=\"media:void\""
+                "cap:in=\"media:void\";double;out=\"media:void\""
             ]
             try! self.sendNotify(writer: writer, capabilities: caps, limits: Limits())
             done1.signal()
@@ -507,7 +507,7 @@ final class CborRelaySwitchTests: XCTestCase {
             let writer = FrameWriter(handle: pair2_1.write)
             let caps: [String] = [
                 "cap:in=media:;out=media:",  // Duplicate
-                "cap:in=\"media:void\";op=triple;out=\"media:void\""
+                "cap:in=\"media:void\";triple;out=\"media:void\""
             ]
             try! self.sendNotify(writer: writer, capabilities: caps, limits: Limits())
             done2.signal()
@@ -526,9 +526,9 @@ final class CborRelaySwitchTests: XCTestCase {
 
         // Should have 3 unique caps (echo appears twice but deduplicated)
         XCTAssertEqual(capList.count, 3)
-        XCTAssertTrue(capList.contains("cap:in=\"media:void\";op=double;out=\"media:void\""))
+        XCTAssertTrue(capList.contains("cap:in=\"media:void\";double;out=\"media:void\""))
         XCTAssertTrue(capList.contains("cap:in=media:;out=media:"))
-        XCTAssertTrue(capList.contains("cap:in=\"media:void\";op=triple;out=\"media:void\""))
+        XCTAssertTrue(capList.contains("cap:in=\"media:void\";triple;out=\"media:void\""))
 
         // Cleanup
         switch_.shutdown()
@@ -593,7 +593,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let slaveDone = DispatchSemaphore(value: 0)
 
         // Master advertises a specific cap
-        let registeredCap = "cap:in=\"media:text;utf8\";op=process;out=\"media:text;utf8\""
+        let registeredCap = "cap:in=\"media:text;utf8\";process;out=\"media:text;utf8\""
 
         DispatchQueue.global().async {
             var reader = FrameReader(handle: pair2.read)
@@ -630,7 +630,7 @@ final class CborRelaySwitchTests: XCTestCase {
         // Output (covariant): provider's "media:text;utf8" conforms to request's "media:text".
         let req2 = Frame.req(
             id: MessageId.uint(2),
-            capUrn: "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"",
+            capUrn: "cap:in=\"media:text;utf8;normalized\";process;out=\"media:text\"",
             payload: Data(),
             contentType: "text/plain"
         )
@@ -641,7 +641,7 @@ final class CborRelaySwitchTests: XCTestCase {
         // Request with INCOMPATIBLE input (different type family) must NOT match.
         let req3 = Frame.req(
             id: MessageId.uint(3),
-            capUrn: "cap:in=\"media:image;png\";op=process;out=\"media:text\"",
+            capUrn: "cap:in=\"media:image;png\";process;out=\"media:text\"",
             payload: Data(),
             contentType: "text/plain"
         )

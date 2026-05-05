@@ -38,7 +38,7 @@ Add the `Sources/CapDAG` directory to your Xcode project.
 
 // Parse a Cap URN
 NSError *error = nil;
-CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:binary\";op=extract;out=\"media:object\"" error:&error];
+CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:binary\";extract;out=\"media:object\"" error:&error];
 if (cap) {
     NSLog(@"Input: %@", cap.inSpec);      // "media:binary"
     NSLog(@"Output: %@", cap.outSpec);    // "media:object"
@@ -53,7 +53,7 @@ CSCapUrn *built = [[[[CSCapUrnBuilder builder]
     build:&error];
 
 // Check matching
-CSCapUrn *pattern = [CSCapUrn fromString:@"cap:in=\"media:binary\";op=extract;out=\"media:object\"" error:&error];
+CSCapUrn *pattern = [CSCapUrn fromString:@"cap:in=\"media:binary\";extract;out=\"media:object\"" error:&error];
 if ([cap accepts:pattern]) {
     NSLog(@"Cap accepts pattern");
 }
@@ -66,7 +66,7 @@ import CapDAG
 
 // Parse a Cap URN
 do {
-    let cap = try CSCapUrn.fromString("cap:in=\"media:binary\";op=extract;out=\"media:object\"")
+    let cap = try CSCapUrn.fromString("cap:in=\"media:binary\";extract;out=\"media:object\"")
     print("Input: \(cap.inSpec)")        // "media:binary"
     print("Output: \(cap.outSpec)")      // "media:object"
     print("Op: \(cap.getTag("op") ?? "nil")") // "extract"
@@ -82,7 +82,7 @@ let built = try CSCapUrnBuilder.builder()
     .build()
 
 // Check matching
-let pattern = try CSCapUrn.fromString("cap:in=\"media:binary\";op=extract;out=\"media:object\"")
+let pattern = try CSCapUrn.fromString("cap:in=\"media:binary\";extract;out=\"media:object\"")
 if cap.accepts(pattern) {
     print("Cap accepts pattern")
 }

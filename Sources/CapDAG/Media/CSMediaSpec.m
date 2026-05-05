@@ -75,6 +75,10 @@ NSString * const CSMediaModelArchList = @"media:model-arch-list;json;record;text
 NSString * const CSMediaModelSearchRequest = @"media:model-search-request;json;record;textable";
 NSString * const CSMediaModelSearchResponse = @"media:model-search-response;json;record;textable";
 NSString * const CSMediaModelFilterResolution = @"media:model-filter-resolution;json;record;textable";
+// Backend-narrowed model-spec supertypes
+NSString * const CSMediaModelSpecCandle = @"media:candle;model-spec;textable";
+NSString * const CSMediaModelSpecGguf = @"media:gguf;model-spec;textable";
+NSString * const CSMediaModelSpecMlx = @"media:mlx;model-spec;textable";
 // Backend+use-case specific model-spec variants
 NSString * const CSMediaModelSpecGgufVision = @"media:model-spec;gguf;textable;vision";
 NSString * const CSMediaModelSpecGgufLlm = @"media:model-spec;gguf;textable;llm";
@@ -115,7 +119,7 @@ NSString * const CSMediaYamlRecord = @"media:record;textable;yaml";
 NSString * const CSMediaYamlList = @"media:list;textable;yaml";
 NSString * const CSMediaYamlListRecord = @"media:list;record;textable;yaml";
 NSString * const CSMediaCsv = @"media:csv;list;record;textable";
-NSString * const CSMediaCsvList = @"media:csv;list;textable";
+NSString * const CSMediaCsvList = @"media:csv;list;record;textable";
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION

@@ -95,6 +95,13 @@ FOUNDATION_EXPORT NSString * const CSMediaModelArchList;          // media:model
 FOUNDATION_EXPORT NSString * const CSMediaModelSearchRequest;     // media:model-search-request;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaModelSearchResponse;    // media:model-search-response;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaModelFilterResolution;  // media:model-filter-resolution;json;record;textable
+// Backend-narrowed model-spec supertypes (each backend's adapter
+// handler returns one of these to claim a model-spec text input as
+// its backend's). Narrower than CSMediaModelSpec; broader than the
+// per-task variants below.
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecCandle;             // media:candle;model-spec;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecGguf;               // media:gguf;model-spec;textable
+FOUNDATION_EXPORT NSString * const CSMediaModelSpecMlx;                // media:mlx;model-spec;textable
 // Backend+use-case specific model-spec variants
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufVision;         // media:model-spec;gguf;textable;vision
 FOUNDATION_EXPORT NSString * const CSMediaModelSpecGgufLlm;            // media:model-spec;gguf;textable;llm
@@ -135,7 +142,7 @@ FOUNDATION_EXPORT NSString * const CSMediaYamlRecord;      // media:record;texta
 FOUNDATION_EXPORT NSString * const CSMediaYamlList;        // media:list;textable;yaml
 FOUNDATION_EXPORT NSString * const CSMediaYamlListRecord;  // media:list;record;textable;yaml
 FOUNDATION_EXPORT NSString * const CSMediaCsv;             // media:csv;list;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;textable
+FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;record;textable
 
 // ============================================================================
 // STANDARD CAP URN CONSTANTS

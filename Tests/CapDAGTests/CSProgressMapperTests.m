@@ -184,7 +184,7 @@
 
     for (int i = 0; i < 100000; i++) {
         float p = (float)(i % 1001) / 1000.0f;
-        [mapper report:p capUrn:@"cap:op=test" message:@"fast"];
+        [mapper report:p capUrn:@"cap:test" message:@"fast"];
     }
 
     XCTAssertEqual(count, 100000u);

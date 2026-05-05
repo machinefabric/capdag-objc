@@ -118,7 +118,7 @@ func log(_ msg: String) {
 
 // MARK: - Cap Invocation
 
-let memoryHogCapUrn = "cap:in=\"media:void\";op=test_memory_hog;out=\"media:textable\""
+let memoryHogCapUrn = "cap:in=\"media:void\";test-memory-hog;out=\"media:textable\""
 let hogSizeMediaUrn = "media:hog-size-mb;textable;numeric"
 let hogHoldMediaUrn = "media:hog-hold-seconds;textable;numeric"
 

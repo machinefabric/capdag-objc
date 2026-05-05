@@ -25,7 +25,7 @@ final class StandardCapsTests: XCTestCase {
 
         // CAP_DISCARD should accept any cap with void output
         let voidCap1 = try CSCapUrn.fromString("cap:in=media:text;out=media:void")
-        let voidCap2 = try CSCapUrn.fromString("cap:op=delete;in=media:;out=media:void")
+        let voidCap2 = try CSCapUrn.fromString("cap:delete;in=media:;out=media:void")
 
         XCTAssertTrue(discardPattern.accepts(voidCap1), "CAP_DISCARD must accept text->void cap")
         XCTAssertTrue(discardPattern.accepts(voidCap2), "CAP_DISCARD must accept any->void cap")
@@ -54,7 +54,7 @@ final class StandardCapsTests: XCTestCase {
 
     // TEST476: CapManifest::validate() fails when CAP_IDENTITY is missing
     func test476_manifestValidateFailsWithoutIdentity() throws {
-        let otherUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
+        let otherUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
         let otherCap = CSCap(urn: otherUrn, title: "Test", command: "test")
         let group = CSCapGroup(name: "default", caps: [otherCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
@@ -70,7 +70,7 @@ final class StandardCapsTests: XCTestCase {
     // Mirror-specific coverage: Manifest.ensureIdentity() adds if missing, idempotent if present
     func testmanifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
-        let testUrn = try CSCapUrn.fromString("cap:op=test;in=media:;out=media:")
+        let testUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
         let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")
         let group = CSCapGroup(name: "default", caps: [cap1], adapterUrns: [])
         let manifestWithout = CSCapManifest(name: "TestCartridge",

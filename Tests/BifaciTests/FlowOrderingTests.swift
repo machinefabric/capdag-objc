@@ -12,7 +12,7 @@ final class FlowOrderingTests: XCTestCase {
         var assigner = SeqAssigner()
         let rid = MessageId.newUUID()
 
-        var f0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var f0 = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
         var f1 = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:")
         var f2 = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         var f3 = Frame.end(id: rid, finalPayload: nil)
@@ -34,8 +34,8 @@ final class FlowOrderingTests: XCTestCase {
         let ridA = MessageId.newUUID()
         let ridB = MessageId.newUUID()
 
-        var a0 = Frame.req(id: ridA, capUrn: "cap:op=a;in=media:;out=media:", payload: Data(), contentType: "")
-        var b0 = Frame.req(id: ridB, capUrn: "cap:op=b;in=media:;out=media:", payload: Data(), contentType: "")
+        var a0 = Frame.req(id: ridA, capUrn: "cap:a;in=media:;out=media:", payload: Data(), contentType: "")
+        var b0 = Frame.req(id: ridB, capUrn: "cap:b;in=media:;out=media:", payload: Data(), contentType: "")
         var a1 = Frame.chunk(reqId: ridA, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         var b1 = Frame.chunk(reqId: ridB, streamId: "s2", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         var a2 = Frame.end(id: ridA, finalPayload: nil)
@@ -80,14 +80,14 @@ final class FlowOrderingTests: XCTestCase {
         let xid = MessageId.newUUID()
 
         // Flow 1: (rid, nil) — cartridge peer invoke
-        var f0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var f0 = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
         var f1 = Frame.end(id: rid, finalPayload: nil)
         assigner.assign(&f0)
         assigner.assign(&f1)
         XCTAssertEqual(f1.seq, 1)
 
         // Flow 2: (rid, Some(xid)) — relay response
-        var g0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var g0 = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
         g0.routingId = xid
         var g1 = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         g1.routingId = xid
@@ -100,7 +100,7 @@ final class FlowOrderingTests: XCTestCase {
         assigner.remove(FlowKey(rid: rid, xid: nil))
 
         // Flow 1 restarts at 0
-        var f2 = Frame.req(id: rid, capUrn: "cap:op=test2;in=media:;out=media:", payload: Data(), contentType: "")
+        var f2 = Frame.req(id: rid, capUrn: "cap:test2;in=media:;out=media:", payload: Data(), contentType: "")
         assigner.assign(&f2)
         XCTAssertEqual(f2.seq, 0, "After remove(rid, nil), that flow restarts at 0")
 
@@ -119,17 +119,17 @@ final class FlowOrderingTests: XCTestCase {
         let xidB = MessageId.uint(2)
 
         // Flow A: (rid, xidA)
-        var a0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var a0 = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
         a0.routingId = xidA
         var a1 = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         a1.routingId = xidA
 
         // Flow B: (rid, xidB)
-        var b0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var b0 = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
         b0.routingId = xidB
 
         // Flow C: (rid, nil)
-        var c0 = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var c0 = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
 
         assigner.assign(&a0)
         assigner.assign(&b0)
@@ -147,7 +147,7 @@ final class FlowOrderingTests: XCTestCase {
         var assigner = SeqAssigner()
         let rid = MessageId.newUUID()
 
-        var req = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        var req = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
         var log = Frame.log(id: rid, level: "info", message: "progress")
         var chunk = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         var end = Frame.end(id: rid, finalPayload: nil)
@@ -180,7 +180,7 @@ final class FlowOrderingTests: XCTestCase {
     // TEST448: FlowKey::from_frame extracts (rid, None) when routing_id absent
     func test448_flowKeyWithoutXid() {
         let rid = MessageId.newUUID()
-        let frame = Frame.req(id: rid, capUrn: "cap:op=test;in=media:;out=media:", payload: Data(), contentType: "")
+        let frame = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
 
         let key = FlowKey.fromFrame(frame)
         XCTAssertEqual(key.rid, rid, "FlowKey rid must match frame id")
@@ -464,10 +464,7 @@ final class FlowOrderingTests: XCTestCase {
         let pipe1 = Pipe()
         let cartridgeHello = Frame.helloWithManifest(limits: cartridgeLimits, manifest: manifestData)
         var buffer1 = Data()
-        try writeFrame(cartridgeHello, to: pipe1.fileHandleForWriting, limits: cartridgeLimits, buffer: &buffer1)
-        if !buffer1.isEmpty {
-            try pipe1.fileHandleForWriting.write(contentsOf: buffer1)
-        }
+        try writeFrame(cartridgeHello, toFD: pipe1.fileHandleForWriting.fileDescriptor, limits: cartridgeLimits, buffer: &buffer1)
         pipe1.fileHandleForWriting.closeFile()
 
         // Write host's HELLO to a pipe (default: max_reorder_buffer=64)
@@ -475,10 +472,7 @@ final class FlowOrderingTests: XCTestCase {
         let hostLimits = Limits() // Default has max_reorder_buffer=64
         let hostHello = Frame.hello(limits: hostLimits)
         var buffer2 = Data()
-        try writeFrame(hostHello, to: pipe2.fileHandleForWriting, limits: hostLimits, buffer: &buffer2)
-        if !buffer2.isEmpty {
-            try pipe2.fileHandleForWriting.write(contentsOf: buffer2)
-        }
+        try writeFrame(hostHello, toFD: pipe2.fileHandleForWriting.fileDescriptor, limits: hostLimits, buffer: &buffer2)
         pipe2.fileHandleForWriting.closeFile()
 
         // Host reads cartridge's HELLO

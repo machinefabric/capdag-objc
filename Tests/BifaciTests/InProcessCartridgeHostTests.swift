@@ -112,7 +112,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response
     func test654_routesReqToHandler() throws {
-        let capUrn = "cap:in=\"media:text\";op=echo;out=\"media:text\""
+        let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
         let cap = makeTestCap(capUrn)
         let handlers: [(name: String, caps: [CSCap], handler: FrameHandler)] = [
             ("echo", [cap], EchoHandler())
@@ -279,7 +279,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let rid = MessageId.newUUID()
         var req = Frame.req(
             id: rid,
-            capUrn: "cap:in=\"media:pdf\";op=unknown;out=\"media:text\"",
+            capUrn: "cap:in=\"media:pdf\";unknown;out=\"media:text\"",
             payload: Data(),
             contentType: "application/cbor"
         )
@@ -299,7 +299,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps
     func test657_manifestIncludesAllCaps() throws {
-        let capUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
+        let capUrn = "cap:in=\"media:pdf\";thumbnail;out=\"media:image;png\""
         let cap = makeTestCap(capUrn)
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "thumb-host"),
@@ -356,7 +356,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST659: InProcessCartridgeHost handler error returns ERR frame
     func test659_handlerErrorReturnsErrFrame() throws {
-        let capUrn = "cap:in=\"media:void\";op=fail;out=\"media:void\""
+        let capUrn = "cap:in=\"media:void\";fail;out=\"media:void\""
         let cap = makeTestCap(capUrn)
         let host = InProcessCartridgeHost(handlers: [
             ("fail", [cap], FailHandler())
@@ -399,8 +399,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity
     func test660_closestSpecificityRouting() throws {
-        let specificUrn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
-        let genericUrn = "cap:in=\"media:image\";op=thumbnail;out=\"media:image;png\""
+        let specificUrn = "cap:in=\"media:pdf\";thumbnail;out=\"media:image;png\""
+        let genericUrn = "cap:in=\"media:image\";thumbnail;out=\"media:image;png\""
 
         let specificCap = makeTestCap(specificUrn)
         let genericCap = makeTestCap(genericUrn)

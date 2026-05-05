@@ -37,9 +37,9 @@ NS_ASSUME_NONNULL_BEGIN
  * - A wildcard "*" for pattern matching
  *
  * Examples:
- * - cap:in="media:void";op=generate;out="media:binary";target=thumbnail
- * - cap:in="media:binary";op=extract;out="media:object";target=metadata
- * - cap:in="media:string";op=embed;out="media:number-array"
+ * - cap:in="media:void";generate;out="media:binary";target=thumbnail
+ * - cap:in="media:binary";extract;out="media:object";target=metadata
+ * - cap:in="media:string";embed;out="media:number-array"
  */
 @interface CSCapUrn : NSObject <NSCopying, NSSecureCoding>
 
@@ -59,7 +59,7 @@ NS_ASSUME_NONNULL_BEGIN
  *
  * Uses CSTaggedUrn for parsing to ensure consistency with tagged-urn library.
  *
- * @param string The cap URN string (e.g., "cap:in=\"media:void\";op=generate;out=\"media:object\"")
+ * @param string The cap URN string (e.g., "cap:in=\"media:void\";generate;out=\"media:object\"")
  * @param error Error if the string format is invalid or in/out missing/invalid
  * @return A new CSCapUrn instance or nil if invalid
  */

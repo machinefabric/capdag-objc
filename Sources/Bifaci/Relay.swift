@@ -110,9 +110,15 @@ public final class RelaySlave: @unchecked Sendable {
 
             defer {
                 group.leave()
-                // Close local writer to signal CartridgeHost that relay is gone.
-                // This causes the host's relay reader thread to get EOF -> relayClosed.
-                try? localWriter.handle.close()
+                // Close local writer to signal CartridgeHost that relay
+                // is gone. This causes the host's relay reader thread
+                // to get EOF -> relayClosed. Closing through the
+                // writer (rather than `handle.close()`) is mandatory:
+                // the writer caches the underlying fd at construction
+                // and must transition to the closed state in lockstep
+                // with the handle, otherwise a concurrent `write(...)`
+                // would call POSIX `write(2)` on a closed/recycled fd.
+                localWriter.close()
             }
             // Pump-loop step result — the autoreleasepool closure
             // returns this so we can move the mutation of `firstError`
@@ -188,8 +194,12 @@ public final class RelaySlave: @unchecked Sendable {
 
             defer {
                 group.leave()
-                // Close socket write to signal master that slave is gone.
-                try? socketWrite.close()
+                // Close socket write to signal master that slave is
+                // gone. Going through `socketWriter.close()` is
+                // mandatory for the same reason as `localWriter` above:
+                // the writer's cached fd and the handle must
+                // transition to closed atomically.
+                socketWriter.close()
             }
             enum PumpStep {
                 case keepGoing

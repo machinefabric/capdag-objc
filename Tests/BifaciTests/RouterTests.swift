@@ -17,7 +17,7 @@ final class RouterTests: XCTestCase {
         // All cap URNs should be rejected
         let testCaps = [
             "cap:in=media:;out=media:",
-            "cap:op=test",
+            "cap:test",
             "cap:in=text:;out=text:",
             "cap:in=image:;out=audio:",
         ]

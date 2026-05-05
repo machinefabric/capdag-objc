@@ -17,7 +17,7 @@ class CborRelayTests: XCTestCase {
 
     // TEST404: Slave sends RelayNotify on connect (initial_notify parameter)
     func test404_slaveSendsRelayNotifyOnConnect() throws {
-        let manifest = "{\"caps\":[\"cap:op=test\"]}".data(using: .utf8)!
+        let manifest = "{\"caps\":[\"cap:test\"]}".data(using: .utf8)!
         let limits = Limits()
 
         // Socket: slave writes -> master reads
@@ -48,7 +48,7 @@ class CborRelayTests: XCTestCase {
 
     // TEST405: Master reads RelayNotify and extracts manifest + limits
     func test405_masterReadsRelayNotify() throws {
-        let manifest = "{\"caps\":[\"cap:op=convert\"]}".data(using: .utf8)!
+        let manifest = "{\"caps\":[\"cap:convert\"]}".data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 64_000)
 
         let socket = createPipe()
@@ -119,7 +119,7 @@ class CborRelayTests: XCTestCase {
         let slaveLocalWriter = FrameWriter(handle: slaveToRuntime.write)
 
         // Master sends a REQ through the socket
-        let req = Frame.req(id: reqId, capUrn: "cap:op=test", payload: "hello".data(using: .utf8)!, contentType: "text/plain")
+        let req = Frame.req(id: reqId, capUrn: "cap:test", payload: "hello".data(using: .utf8)!, contentType: "text/plain")
         try masterWriter.write(req)
         masterToSlave.write.closeFile()
 
@@ -147,7 +147,7 @@ class CborRelayTests: XCTestCase {
         let runtimeReader = FrameReader(handle: slaveToRuntime.read)
         let runtimeFrame = try runtimeReader.read()!
         XCTAssertEqual(runtimeFrame.frameType, .req)
-        XCTAssertEqual(runtimeFrame.cap, "cap:op=test")
+        XCTAssertEqual(runtimeFrame.cap, "cap:test")
         XCTAssertEqual(runtimeFrame.payload, "hello".data(using: .utf8)!)
 
         // Master reads the forwarded CHUNK
@@ -174,7 +174,7 @@ class CborRelayTests: XCTestCase {
         try masterWriter.write(state)
 
         // Send normal REQ (should pass through)
-        let req = Frame.req(id: .newUUID(), capUrn: "cap:op=test", payload: Data(), contentType: "text/plain")
+        let req = Frame.req(id: .newUUID(), capUrn: "cap:test", payload: Data(), contentType: "text/plain")
         try masterWriter.write(req)
         socketPipe.write.closeFile()
 
@@ -201,7 +201,7 @@ class CborRelayTests: XCTestCase {
         let limits = Limits()
 
         // Send initial RelayNotify
-        let initial = "{\"caps\":[\"cap:op=test\"]}".data(using: .utf8)!
+        let initial = "{\"caps\":[\"cap:test\"]}".data(using: .utf8)!
         try RelaySlave.sendNotify(socketWriter: socketWriter, manifest: initial, limits: limits)
 
         // Forward a normal CHUNK frame
@@ -210,7 +210,7 @@ class CborRelayTests: XCTestCase {
         try socketWriter.write(chunk)
 
         // Inject updated RelayNotify (new cap discovered)
-        let updated = "{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}".data(using: .utf8)!
+        let updated = "{\"caps\":[\"cap:test\",\"cap:convert\"]}".data(using: .utf8)!
         try RelaySlave.sendNotify(socketWriter: socketWriter, manifest: updated, limits: limits)
         socketPipe.write.closeFile()
 
@@ -240,7 +240,7 @@ class CborRelayTests: XCTestCase {
         let limits = Limits(maxFrame: 2_000_000, maxChunk: 100_000)
 
         // Initial RelayNotify
-        let initialManifest = "{\"caps\":[{\"urn\":\"cap:in=media:;out=media:\",\"title\":\"Identity\",\"command\":\"identity\"},{\"urn\":\"cap:in=media:;op=a;out=media:\",\"title\":\"A\",\"command\":\"a\"}]}".data(using: .utf8)!
+        let initialManifest = "{\"caps\":[{\"urn\":\"cap:in=media:;out=media:\",\"title\":\"Identity\",\"command\":\"identity\"},{\"urn\":\"cap:in=media:;a;out=media:\",\"title\":\"A\",\"command\":\"a\"}]}".data(using: .utf8)!
         let initial = Frame.relayNotify(manifest: initialManifest, limits: limits)
         try socketWriter.write(initial)
 
@@ -249,7 +249,7 @@ class CborRelayTests: XCTestCase {
         try socketWriter.write(end1)
 
         // Updated RelayNotify with new limits
-        let updatedManifest = "{\"caps\":[{\"urn\":\"cap:in=media:;out=media:\",\"title\":\"Identity\",\"command\":\"identity\"},{\"urn\":\"cap:in=media:;op=a;out=media:\",\"title\":\"A\",\"command\":\"a\"},{\"urn\":\"cap:in=media:;op=b;out=media:\",\"title\":\"B\",\"command\":\"b\"}]}".data(using: .utf8)!
+        let updatedManifest = "{\"caps\":[{\"urn\":\"cap:in=media:;out=media:\",\"title\":\"Identity\",\"command\":\"identity\"},{\"urn\":\"cap:in=media:;a;out=media:\",\"title\":\"A\",\"command\":\"a\"},{\"urn\":\"cap:in=media:;b;out=media:\",\"title\":\"B\",\"command\":\"b\"}]}".data(using: .utf8)!
         let updatedLimits = Limits(maxFrame: 3_000_000, maxChunk: 200_000, maxReorderBuffer: 64)
         let updated = Frame.relayNotify(manifest: updatedManifest, limits: updatedLimits)
         try socketWriter.write(updated)
@@ -322,8 +322,8 @@ class CborRelayTests: XCTestCase {
         let masterReader = FrameReader(handle: slaveToMaster.read)
 
         // Master writes 2 REQ frames
-        let req1 = Frame.req(id: reqId1, capUrn: "cap:op=a", payload: "data-a".data(using: .utf8)!, contentType: "text/plain")
-        let req2 = Frame.req(id: reqId2, capUrn: "cap:op=b", payload: "data-b".data(using: .utf8)!, contentType: "text/plain")
+        let req1 = Frame.req(id: reqId1, capUrn: "cap:a", payload: "data-a".data(using: .utf8)!, contentType: "text/plain")
+        let req2 = Frame.req(id: reqId2, capUrn: "cap:b", payload: "data-b".data(using: .utf8)!, contentType: "text/plain")
         try masterWriter.write(req1)
         try masterWriter.write(req2)
         masterToSlave.write.closeFile()

@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -284,9 +284,9 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // TEST413: Register cartridge adds entries to cap_table
     func test413_registerCartridgeAddsToCaptable() {
         let host = CartridgeHost()
-        host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=convert"]))
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=convert"), "Registered cap must be found")
-        XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"), "Unregistered cap must not be found")
+        host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:convert"]))
+        XCTAssertNotNil(host.findCartridgeForCap("cap:convert"), "Registered cap must be found")
+        XCTAssertNil(host.findCartridgeForCap("cap:unknown"), "Unregistered cap must not be found")
     }
 
     // TEST414: capabilities() returns empty JSON initially (no running cartridges)
@@ -301,9 +301,9 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // TEST425: find_cartridge_for_cap returns None for unregistered cap
     func test425_findCartridgeForCapUnknown() {
         let host = CartridgeHost()
-        host.registerCartridge(path: "/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=known"]))
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=known"))
-        XCTAssertNil(host.findCartridgeForCap("cap:op=unknown"))
+        host.registerCartridge(path: "/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known"]))
+        XCTAssertNotNil(host.findCartridgeForCap("cap:known"))
+        XCTAssertNil(host.findCartridgeForCap("cap:unknown"))
     }
 
     // MARK: - Full Path Tests (TEST416-420, TEST426)
@@ -329,7 +329,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         )
 
         // After attach, the cap should be registered
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=test"), "Attached cartridge's cap must be found")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:test"), "Attached cartridge's cap must be found")
 
         // Capabilities should be non-empty
         let caps = host.capabilities
@@ -359,7 +359,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
             // Read REQ + streams + END from host
             let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
-            guard cap == "cap:op=test" else { throw CartridgeHostError.protocolError("Expected cap:op=test, got \(cap)") }
+            guard cap == "cap:test" else { throw CartridgeHostError.protocolError("Expected cap:op=test, got \(cap)") }
 
             // Write response
             try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "hello-from-cartridge".data(using: .utf8)!)
@@ -386,7 +386,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
         // Frames from relay must have routingId (XID) — RelaySwitch stamps these in real deployment
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=test", payload: Data(), contentType: "application/cbor"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:test", payload: Data(), contentType: "application/cbor"), xid: xid)
         let sid = "arg-0"
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: reqId, streamId: sid, mediaUrn: "media:"), xid: xid)
         let payload1 = "request-data".data(using: .utf8)!
@@ -463,7 +463,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=test", payload: Data(), contentType: "application/cbor"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:test", payload: Data(), contentType: "application/cbor"), xid: xid)
         let sid = "arg-0"
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: reqId, streamId: sid, mediaUrn: "media:"), xid: xid)
         let emptyPayload = Data()
@@ -503,8 +503,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let manifestA = CborRuntimeTests.makeManifest(name: "CartridgeA", caps: ["cap:op=alpha"])
-        let manifestB = CborRuntimeTests.makeManifest(name: "CartridgeB", caps: ["cap:op=beta"])
+        let manifestA = CborRuntimeTests.makeManifest(name: "CartridgeA", caps: ["cap:alpha"])
+        let manifestB = CborRuntimeTests.makeManifest(name: "CartridgeB", caps: ["cap:beta"])
 
         let cartridgeAReader = FrameReader(handle: hostToCartridgeA.fileHandleForReading)
         let cartridgeAWriter = FrameWriter(handle: cartridgeAToHost.fileHandleForWriting)
@@ -516,7 +516,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeAWriter.write(CborRuntimeTests.helloWith(manifest: manifestA))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeAReader, writer: cartridgeAWriter)
             let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeAReader)
-            guard cap == "cap:op=alpha" else { throw CartridgeHostError.protocolError("Expected alpha, got \(cap)") }
+            guard cap == "cap:alpha" else { throw CartridgeHostError.protocolError("Expected alpha, got \(cap)") }
             try CborRuntimeTests.writeResponse(writer: cartridgeAWriter, reqId: reqId, payload: "from-A".data(using: .utf8)!)
         }
 
@@ -525,7 +525,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeBWriter.write(CborRuntimeTests.helloWith(manifest: manifestB))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeBReader, writer: cartridgeBWriter)
             let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeBReader)
-            guard cap == "cap:op=beta" else { throw CartridgeHostError.protocolError("Expected beta, got \(cap)") }
+            guard cap == "cap:beta" else { throw CartridgeHostError.protocolError("Expected beta, got \(cap)") }
             try CborRuntimeTests.writeResponse(writer: cartridgeBWriter, reqId: reqId, payload: "from-B".data(using: .utf8)!)
         }
 
@@ -546,7 +546,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // Send REQ for alpha (with XID)
         let alphaId = MessageId.newUUID()
         let alphaXid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: alphaId, capUrn: "cap:op=alpha", payload: Data(), contentType: "application/cbor"), xid: alphaXid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: alphaId, capUrn: "cap:alpha", payload: Data(), contentType: "application/cbor"), xid: alphaXid)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: alphaId, streamId: "a0", mediaUrn: "media:"), xid: alphaXid)
         var alphaChunk = Frame.chunk(reqId: alphaId, streamId: "a0", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         alphaChunk.routingId = alphaXid
@@ -559,7 +559,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // Send REQ for beta (with XID)
         let betaId = MessageId.newUUID()
         let betaXid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: betaId, capUrn: "cap:op=beta", payload: Data(), contentType: "application/cbor"), xid: betaXid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: betaId, capUrn: "cap:beta", payload: Data(), contentType: "application/cbor"), xid: betaXid)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: betaId, streamId: "b0", mediaUrn: "media:"), xid: betaXid)
         let betaPayload = Data()
         var betaChunk = Frame.chunk(reqId: betaId, streamId: "b0", seq: 0, payload: betaPayload, chunkIndex: 0, checksum: Frame.computeChecksum(betaPayload))
@@ -630,7 +630,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // Send REQ for unknown cap (with XID — relay always stamps XID)
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=nonexistent", payload: Data(), contentType: "text/plain"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:nonexistent", payload: Data(), contentType: "text/plain"), xid: xid)
 
         // Should receive ERR with NO_HANDLER (skip relayNotify)
         let frame = try Self.readProtocolFrame(engineReader)
@@ -651,11 +651,11 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let runtime = CartridgeRuntime(manifest: CborRuntimeTests.testManifestData)
 
         runtime.register_op_type(capUrn: "cap:in=media:;out=media:", make: EchoAllBytesOp.init)
-        runtime.register_op_type(capUrn: "cap:op=transform", make: TransformOp.init)
+        runtime.register_op_type(capUrn: "cap:transform", make: TransformOp.init)
 
         XCTAssertNotNil(runtime.findHandler(capUrn: "cap:in=media:;out=media:"), "echo handler must be found")
-        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:op=transform"), "transform handler must be found")
-        XCTAssertNil(runtime.findHandler(capUrn: "cap:op=unknown"), "unknown handler must be nil")
+        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:transform"), "transform handler must be found")
+        XCTAssertNil(runtime.findHandler(capUrn: "cap:unknown"), "unknown handler must be nil")
     }
 
     // MARK: - Gap Tests (TEST415, TEST418, TEST420-422, TEST424)
@@ -679,7 +679,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let hostToEngine = Pipe()
 
         let host = CartridgeHost()
-        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, capGroups: capGroupsFromUrns(["cap:op=spawn-test"]))
+        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, capGroups: capGroupsFromUrns(["cap:spawn-test"]))
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -693,7 +693,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=spawn-test", payload: Data(), contentType: "text/plain"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:spawn-test", payload: Data(), contentType: "text/plain"), xid: xid)
 
         let frame = try Self.readProtocolFrame(engineReader)
         XCTAssertNotNil(frame, "Must receive ERR frame for failed spawn")
@@ -717,7 +717,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "ContCartridge", caps: ["cap:op=cont"])
+                manifest: CborRuntimeTests.makeManifest(name: "ContCartridge", caps: ["cap:cont"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
@@ -766,7 +766,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=cont", payload: Data(), contentType: "text/plain"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:cont", payload: Data(), contentType: "text/plain"), xid: xid)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: reqId, streamId: "arg-0", mediaUrn: "media:"), xid: xid)
         let chunkPayload = "payload-data".data(using: .utf8)!
         var chunkFrame = Frame.chunk(reqId: reqId, streamId: "arg-0", seq: 0, payload: chunkPayload, chunkIndex: 0, checksum: Frame.computeChecksum(chunkPayload))
@@ -803,7 +803,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "FwdCartridge", caps: ["cap:op=fwd"])
+                manifest: CborRuntimeTests.makeManifest(name: "FwdCartridge", caps: ["cap:fwd"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
@@ -836,7 +836,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=fwd", payload: Data(), contentType: "text/plain"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:fwd", payload: Data(), contentType: "text/plain"), xid: xid)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: reqId, streamId: "a0", mediaUrn: "media:"), xid: xid)
         let emptyPayload = Data()
         var chunkFrame = Frame.chunk(reqId: reqId, streamId: "a0", seq: 0, payload: emptyPayload, chunkIndex: 0, checksum: Frame.computeChecksum(emptyPayload))
@@ -877,7 +877,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "DieCartridge", caps: ["cap:op=die"])
+                manifest: CborRuntimeTests.makeManifest(name: "DieCartridge", caps: ["cap:die"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             // Die immediately by closing write end
@@ -891,7 +891,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         )
 
         // Before death: cap should be present
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=die"), "Cap must be found before death")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:die"), "Cap must be found before death")
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -912,7 +912,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // After death: capabilities should not include the dead cartridge's caps
         let capsAfter = host.capabilities
         if !capsAfter.isEmpty, let capsStr = String(data: capsAfter, encoding: .utf8) {
-            XCTAssertFalse(capsStr.contains("cap:op=die"), "Dead cartridge's caps must be removed")
+            XCTAssertFalse(capsStr.contains("cap:die"), "Dead cartridge's caps must be removed")
         }
     }
 
@@ -929,7 +929,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "DieCartridge", caps: ["cap:op=die"])
+                manifest: CborRuntimeTests.makeManifest(name: "DieCartridge", caps: ["cap:die"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             // Read actual test REQ (first frame after identity), then die without responding
@@ -955,7 +955,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let reqId = MessageId.newUUID()
         let xid = MessageId.newUUID()
-        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:op=die", payload: Data(), contentType: "text/plain"), xid: xid)
+        try Self.writeWithXid(engineWriter, Frame.req(id: reqId, capUrn: "cap:die", payload: Data(), contentType: "text/plain"), xid: xid)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: reqId, streamId: "a0", mediaUrn: "media:"), xid: xid)
         let chunkPayload = "hello".data(using: .utf8)!
         var chunkFrame = Frame.chunk(reqId: reqId, streamId: "a0", seq: 0, payload: chunkPayload, chunkIndex: 0, checksum: Frame.computeChecksum(chunkPayload))
@@ -996,7 +996,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "ConcCartridge", caps: ["cap:op=conc"])
+                manifest: CborRuntimeTests.makeManifest(name: "ConcCartridge", caps: ["cap:conc"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
 
@@ -1032,7 +1032,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let xid1 = MessageId.newUUID()
 
         // Send both requests with XIDs
-        try Self.writeWithXid(engineWriter, Frame.req(id: id0, capUrn: "cap:op=conc", payload: Data(), contentType: "text/plain"), xid: xid0)
+        try Self.writeWithXid(engineWriter, Frame.req(id: id0, capUrn: "cap:conc", payload: Data(), contentType: "text/plain"), xid: xid0)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: id0, streamId: "a0", mediaUrn: "media:"), xid: xid0)
         let payload0 = Data()
         var chunk0 = Frame.chunk(reqId: id0, streamId: "a0", seq: 0, payload: payload0, chunkIndex: 0, checksum: Frame.computeChecksum(payload0))
@@ -1041,7 +1041,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try Self.writeWithXid(engineWriter, Frame.streamEnd(reqId: id0, streamId: "a0", chunkCount: 1), xid: xid0)
         try Self.writeWithXid(engineWriter, Frame.end(id: id0, finalPayload: nil), xid: xid0)
 
-        try Self.writeWithXid(engineWriter, Frame.req(id: id1, capUrn: "cap:op=conc", payload: Data(), contentType: "text/plain"), xid: xid1)
+        try Self.writeWithXid(engineWriter, Frame.req(id: id1, capUrn: "cap:conc", payload: Data(), contentType: "text/plain"), xid: xid1)
         try Self.writeWithXid(engineWriter, Frame.streamStart(reqId: id1, streamId: "a1", mediaUrn: "media:"), xid: xid1)
         let payload1 = Data()
         var chunk1 = Frame.chunk(reqId: id1, streamId: "a1", seq: 0, payload: payload1, chunkIndex: 0, checksum: Frame.computeChecksum(payload1))
@@ -1096,15 +1096,15 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register a cartridge by path (not running, just known caps)
-        host.registerCartridge(path: "/nonexistent/cartridge", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=respawn-test"]))
+        host.registerCartridge(path: "/nonexistent/cartridge", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:respawn-test"]))
 
         // Should find the cartridge by cap
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=respawn-test"), "Known caps must be findable before spawn")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:respawn-test"), "Known caps must be findable before spawn")
 
         // The cap should be advertised (registered cartridges are advertised)
         let caps = host.capabilities
         if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
-            XCTAssertTrue(capsStr.contains("cap:op=respawn-test"), "Known caps must be in capabilities")
+            XCTAssertTrue(capsStr.contains("cap:respawn-test"), "Known caps must be in capabilities")
         }
     }
 
@@ -1113,14 +1113,14 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register multiple cartridges with different caps
-        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=cap1"]))
-        host.registerCartridge(path: "/nonexistent/p2", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=cap2", "cap:op=cap3"]))
+        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:cap1"]))
+        host.registerCartridge(path: "/nonexistent/p2", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:cap2", "cap:cap3"]))
 
         let caps = host.capabilities
         if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
-            XCTAssertTrue(capsStr.contains("cap:op=cap1"), "cap1 must be in capabilities")
-            XCTAssertTrue(capsStr.contains("cap:op=cap2"), "cap2 must be in capabilities")
-            XCTAssertTrue(capsStr.contains("cap:op=cap3"), "cap3 must be in capabilities")
+            XCTAssertTrue(capsStr.contains("cap:cap1"), "cap1 must be in capabilities")
+            XCTAssertTrue(capsStr.contains("cap:cap2"), "cap2 must be in capabilities")
+            XCTAssertTrue(capsStr.contains("cap:cap3"), "cap3 must be in capabilities")
         }
     }
 
@@ -1173,9 +1173,9 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
-            // Cartridge advertises "cap:op=manifest-cap" in its manifest
+            // Cartridge advertises "cap:manifest-cap" in its manifest
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "ManifestCartridge", caps: ["cap:op=manifest-cap"])
+                manifest: CborRuntimeTests.makeManifest(name: "ManifestCartridge", caps: ["cap:manifest-cap"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             // Keep connection alive
@@ -1185,10 +1185,10 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register with known_caps, but cartridge will advertise different caps via manifest
-        host.registerCartridge(path: "/fake/path", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=known-cap"]))
+        host.registerCartridge(path: "/fake/path", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known-cap"]))
 
         // Before attach: known_cap should be findable
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=known-cap"), "Known cap must be findable before attach")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:known-cap"), "Known cap must be findable before attach")
 
         // Attach the actual cartridge
         try host.attachCartridge(
@@ -1197,7 +1197,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         )
 
         // After attach: manifest caps should take precedence
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=manifest-cap"), "Manifest cap must be findable after attach")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:manifest-cap"), "Manifest cap must be findable after attach")
 
         try? await cartridgeTask.value
     }
@@ -1213,7 +1213,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let cartridgeTask = Task.detached { @Sendable in
             guard let _ = try cartridgeReader.read() else { throw CartridgeHostError.receiveFailed("") }
             try cartridgeWriter.write(CborRuntimeTests.helloWith(
-                manifest: CborRuntimeTests.makeManifest(name: "RunningCartridge", caps: ["cap:op=running"])
+                manifest: CborRuntimeTests.makeManifest(name: "RunningCartridge", caps: ["cap:running"])
             ))
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
             try await Task.sleep(nanoseconds: 500_000_000)
@@ -1222,7 +1222,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost()
 
         // Register a non-running cartridge
-        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:op=dormant"]))
+        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:dormant"]))
 
         // Attach a running cartridge
         try host.attachCartridge(
@@ -1235,8 +1235,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         // Dormant cartridge: uses cap_groups passed at registration
         // (the host derives its flat URN view from those groups; we
         // no longer carry a separate `knownCaps` field).
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=running"), "Running cartridge cap must be findable")
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=dormant"), "Dormant cartridge cap must be findable")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:running"), "Running cartridge cap must be findable")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:dormant"), "Dormant cartridge cap must be findable")
 
         // Capabilities includes both running and non-running cartridges
         // (Note: running cartridge's caps come from manifest, not known_caps)
@@ -1244,7 +1244,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let capsStr = String(data: caps, encoding: .utf8) ?? "[]"
 
         // At minimum, dormant caps should be present
-        XCTAssertTrue(capsStr.contains("cap:op=dormant"), "Dormant cartridge cap must be in capabilities")
+        XCTAssertTrue(capsStr.contains("cap:dormant"), "Dormant cartridge cap must be in capabilities")
         // Running cartridge's manifest caps may or may not be merged into capabilities
         // depending on when capabilities is called relative to handshake completion
 
@@ -1342,7 +1342,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             // Send cartridge HELLO with manifest
             let manifest = CborRuntimeTests.makeManifest(name: "IdentityTestCartridge", caps: [
                 "cap:in=media:;out=media:",  // Identity cap
-                "cap:in=media:;op=test;out=media:"
+                "cap:in=media:;test;out=media:"
             ])
             try cartridgeWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
 
@@ -1392,7 +1392,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         // Verify cartridge is registered and has caps
         XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;out=media:"), "Must find identity cap")
-        XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;op=test;out=media:"), "Must find test cap")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;test;out=media:"), "Must find test cap")
 
         try await cartridgeTask.value
     }
@@ -1464,7 +1464,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let cartridge1Task = Task.detached { @Sendable in
             guard let _ = try cartridge1Reader.read() else { throw CartridgeHostError.receiveFailed("") }
-            let manifest = CborRuntimeTests.makeManifest(name: "Cartridge1", caps: ["cap:op=cartridge1"])
+            let manifest = CborRuntimeTests.makeManifest(name: "Cartridge1", caps: ["cap:cartridge1"])
             try cartridge1Writer.write(CborRuntimeTests.helloWith(manifest: manifest))
 
             // Handle identity verification - read streaming request
@@ -1502,7 +1502,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let cartridge2Task = Task.detached { @Sendable in
             guard let _ = try cartridge2Reader.read() else { throw CartridgeHostError.receiveFailed("") }
-            let manifest = CborRuntimeTests.makeManifest(name: "Cartridge2", caps: ["cap:op=cartridge2"])
+            let manifest = CborRuntimeTests.makeManifest(name: "Cartridge2", caps: ["cap:cartridge2"])
             try cartridge2Writer.write(CborRuntimeTests.helloWith(manifest: manifest))
 
             // Handle identity verification - read streaming request
@@ -1532,8 +1532,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(idx2, 1, "Second cartridge must be index 1")
 
         // Both cartridges should be findable by their caps
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=cartridge1"), "Cartridge 1 cap must be findable")
-        XCTAssertNotNil(host.findCartridgeForCap("cap:op=cartridge2"), "Cartridge 2 cap must be findable")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:cartridge1"), "Cartridge 1 cap must be findable")
+        XCTAssertNotNil(host.findCartridgeForCap("cap:cartridge2"), "Cartridge 2 cap must be findable")
 
         try await cartridge1Task.value
         try await cartridge2Task.value

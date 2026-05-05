@@ -24,7 +24,7 @@ import Foundation
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
 // `channel` is part of every cartridge's identity (release/nightly).
 private let testManifest = """
-{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
 """.data(using: .utf8)!
 
 final class CborIntegrationTests: XCTestCase {
@@ -178,7 +178,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let requestId = MessageId.newUUID()
-        try writer.write(Frame.req(id: requestId, capUrn: "cap:op=stream",
+        try writer.write(Frame.req(id: requestId, capUrn: "cap:stream",
                                        payload: Data("go".utf8),
                                        contentType: "application/json"))
 
@@ -324,7 +324,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let requestId = MessageId.newUUID()
-        try writer.write(Frame.req(id: requestId, capUrn: "cap:op=binary",
+        try writer.write(Frame.req(id: requestId, capUrn: "cap:binary",
                                        payload: binaryData,
                                        contentType: "application/octet-stream"))
 
@@ -379,7 +379,7 @@ final class CborIntegrationTests: XCTestCase {
 
         for _ in 0..<3 {
             let requestId = MessageId.newUUID()
-            try writer.write(Frame.req(id: requestId, capUrn: "cap:op=test",
+            try writer.write(Frame.req(id: requestId, capUrn: "cap:test",
                                            payload: Data(),
                                            contentType: "application/json"))
             _ = try reader.read()
@@ -429,7 +429,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let requestId = MessageId.newUUID()
-        try writer.write(Frame.req(id: requestId, capUrn: "cap:op=empty",
+        try writer.write(Frame.req(id: requestId, capUrn: "cap:empty",
                                        payload: Data(),
                                        contentType: "application/json"))
 
@@ -897,7 +897,7 @@ final class CborIntegrationTests: XCTestCase {
 
         // Send first request
         let id1 = MessageId.newUUID()
-        try writer.write(Frame.req(id: id1, capUrn: "cap:op=op1", payload: Data(), contentType: ""))
+        try writer.write(Frame.req(id: id1, capUrn: "cap:op1", payload: Data(), contentType: ""))
 
         var data1 = Data()
         while true {
@@ -908,7 +908,7 @@ final class CborIntegrationTests: XCTestCase {
 
         // Send second request
         let id2 = MessageId.newUUID()
-        try writer.write(Frame.req(id: id2, capUrn: "cap:op=op2", payload: Data(), contentType: ""))
+        try writer.write(Frame.req(id: id2, capUrn: "cap:op2", payload: Data(), contentType: ""))
 
         var data2 = Data()
         while true {
@@ -919,8 +919,8 @@ final class CborIntegrationTests: XCTestCase {
 
         XCTAssertEqual(cartridgeSemaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
 
-        XCTAssertEqual(String(data: data1, encoding: .utf8), "response-for-cap:op=op1")
-        XCTAssertEqual(String(data: data2, encoding: .utf8), "response-for-cap:op=op2")
+        XCTAssertEqual(String(data: data1, encoding: .utf8), "response-for-cap:op1")
+        XCTAssertEqual(String(data: data2, encoding: .utf8), "response-for-cap:op2")
     }
 
     // TEST483: verify_identity fails when connection closes before response

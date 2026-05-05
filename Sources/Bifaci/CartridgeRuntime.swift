@@ -16,7 +16,7 @@
 //  Usage:
 //  ```swift
 //  let runtime = CartridgeRuntime(manifest: manifestData)
-//  runtime.register(capUrn: "cap:op=my_op") { payload, emitter, peer in
+//  runtime.register(capUrn: "cap:my-op") { payload, emitter, peer in
 //      emitter.emitStatus(operation: "processing", details: "Working...")
 //      // Optionally invoke host caps via peer.invoke()
 //      emitter.emit(chunk: someData)

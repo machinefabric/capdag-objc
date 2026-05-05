@@ -155,7 +155,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // MARK: - Test Constants
 
     static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;op=test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
     """
     static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -165,11 +165,11 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test248_registerAndFindHandler() {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
-        runtime.register_op(capUrn: "cap:in=*;op=test;out=*") {
+        runtime.register_op(capUrn: "cap:in=*;test;out=*") {
             AnyOp(EmitCborBytesOp(bytes: Array("result".utf8)))
         }
 
-        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:in=*;op=test;out=*"),
+        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:in=*;test;out=*"),
             "handler must be found by exact URN")
     }
 
@@ -177,9 +177,9 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test249_rawHandler() throws {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
-        runtime.register_op(capUrn: "cap:op=raw") { AnyOp(EchoAllBytesOp()) }
+        runtime.register_op(capUrn: "cap:raw") { AnyOp(EchoAllBytesOp()) }
 
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: "cap:op=raw"))
+        let factory = try XCTUnwrap(runtime.findHandler(capUrn: "cap:raw"))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
 
@@ -199,7 +199,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // TEST252: Test find_handler returns None for unregistered cap URNs
     func test252_findHandlerUnknownCap() {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
-        XCTAssertNil(runtime.findHandler(capUrn: "cap:op=nonexistent"),
+        XCTAssertNil(runtime.findHandler(capUrn: "cap:nonexistent"),
             "unregistered cap must return nil")
     }
 
@@ -207,26 +207,26 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test270_multipleHandlers() throws {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
-        runtime.register_op(capUrn: "cap:op=alpha") { AnyOp(WriteFixedOp(data: Data("a".utf8))) }
-        runtime.register_op(capUrn: "cap:op=beta")  { AnyOp(WriteFixedOp(data: Data("b".utf8))) }
-        runtime.register_op(capUrn: "cap:op=gamma") { AnyOp(WriteFixedOp(data: Data("g".utf8))) }
+        runtime.register_op(capUrn: "cap:alpha") { AnyOp(WriteFixedOp(data: Data("a".utf8))) }
+        runtime.register_op(capUrn: "cap:beta")  { AnyOp(WriteFixedOp(data: Data("b".utf8))) }
+        runtime.register_op(capUrn: "cap:gamma") { AnyOp(WriteFixedOp(data: Data("g".utf8))) }
 
         let emptyStream = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
 
-        let fAlpha = try XCTUnwrap(runtime.findHandler(capUrn: "cap:op=alpha"))
+        let fAlpha = try XCTUnwrap(runtime.findHandler(capUrn: "cap:alpha"))
         let collectorA = OutputCollector()
         let outputA = createCollectingOutputStream(collector: collectorA)
         try invokeOp(fAlpha, input: streamToInputPackage(emptyStream), output: outputA)
         XCTAssertEqual(collectorA.getData(), "a".data(using: .utf8)!)
 
-        let fBeta = try XCTUnwrap(runtime.findHandler(capUrn: "cap:op=beta"))
+        let fBeta = try XCTUnwrap(runtime.findHandler(capUrn: "cap:beta"))
         let collectorB = OutputCollector()
         let outputB = createCollectingOutputStream(collector: collectorB)
         let emptyStream2 = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
         try invokeOp(fBeta, input: streamToInputPackage(emptyStream2), output: outputB)
         XCTAssertEqual(collectorB.getData(), "b".data(using: .utf8)!)
 
-        let fGamma = try XCTUnwrap(runtime.findHandler(capUrn: "cap:op=gamma"))
+        let fGamma = try XCTUnwrap(runtime.findHandler(capUrn: "cap:gamma"))
         let collectorG = OutputCollector()
         let outputG = createCollectingOutputStream(collector: collectorG)
         let emptyStream3 = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
@@ -238,10 +238,10 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test271_handlerReplacement() throws {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
 
-        runtime.register_op(capUrn: "cap:op=test") { AnyOp(WriteFixedOp(data: Data("first".utf8))) }
-        runtime.register_op(capUrn: "cap:op=test") { AnyOp(WriteFixedOp(data: Data("second".utf8))) }
+        runtime.register_op(capUrn: "cap:test") { AnyOp(WriteFixedOp(data: Data("first".utf8))) }
+        runtime.register_op(capUrn: "cap:test") { AnyOp(WriteFixedOp(data: Data("second".utf8))) }
 
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: "cap:op=test"))
+        let factory = try XCTUnwrap(runtime.findHandler(capUrn: "cap:test"))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
         let emptyStream = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
@@ -256,7 +256,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test254_noPeerInvoker() {
         let noPeer = NoPeerInvoker()
 
-        XCTAssertThrowsError(try noPeer.call(capUrn: "cap:op=test")) { error in
+        XCTAssertThrowsError(try noPeer.call(capUrn: "cap:test")) { error in
             if let runtimeError = error as? CartridgeRuntimeError,
                case .peerRequestError(let msg) = runtimeError {
                 XCTAssertTrue(msg.lowercased().contains("not supported"),
@@ -271,7 +271,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test255_noPeerInvokerWithArguments() {
         let noPeer = NoPeerInvoker()
 
-        XCTAssertThrowsError(try noPeer.call(capUrn: "cap:op=test"),
+        XCTAssertThrowsError(try noPeer.call(capUrn: "cap:test"),
             "must throw error")
     }
 
@@ -281,7 +281,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test256_withManifestJson() {
         let runtime = CartridgeRuntime(manifestJSON: Self.testManifestJSON)
         XCTAssertFalse(runtime.manifestData.isEmpty, "manifestData must be populated")
-        // Note: "cap:op=test" may or may not parse as valid Manifest depending on validation
+        // Note: "cap:test" may or may not parse as valid Manifest depending on validation
     }
 
     // TEST257: Test CartridgeRuntime::new with invalid JSON still creates runtime (manifest is None)
@@ -295,7 +295,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test258_withManifestStruct() {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
         XCTAssertFalse(runtime.manifestData.isEmpty)
-        // parsedManifest may or may not be nil depending on whether "cap:op=test" validates
+        // parsedManifest may or may not be nil depending on whether "cap:test" validates
         // The key behavior is that manifestData is stored
     }
 
@@ -303,7 +303,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST259: Test extract_effective_payload with non-CBOR content_type returns raw payload unchanged
     func test259_extractEffectivePayloadNonCbor() throws {
-        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";test;out=\"media:void\"", args: [])
         let payload = "raw data".data(using: .utf8)!
         let result = try extractEffectivePayload(payload: payload, contentType: "application/json", cap: cap, isCliMode: true)
         XCTAssertEqual(result, payload)
@@ -311,7 +311,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST260: Test extract_effective_payload with empty content_type returns raw payload unchanged
     func test260_extractEffectivePayloadNoContentType() throws {
-        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";test;out=\"media:void\"", args: [])
         let payload = "raw data".data(using: .utf8)!
         let result = try extractEffectivePayload(payload: payload, contentType: nil, cap: cap, isCliMode: true)
         XCTAssertEqual(result, payload)
@@ -328,7 +328,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:string;textable\";op=test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:string;textable\";test;out=\"media:void\"", args: [])
         let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
         // NEW REGIME: result is full CBOR array; extract value from matching argument
         guard let decoded = try CBOR.decode([UInt8](result)),
@@ -351,7 +351,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:string;textable\";op=test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:string;textable\";test;out=\"media:void\"", args: [])
         XCTAssertThrowsError(try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)) { error in
             if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
@@ -362,7 +362,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST263: Test extract_effective_payload with invalid CBOR bytes returns deserialization error
     func test263_extractEffectivePayloadInvalidCbor() {
-        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";test;out=\"media:void\"", args: [])
         XCTAssertThrowsError(try extractEffectivePayload(
             payload: "not cbor".data(using: .utf8)!,
             contentType: "application/cbor",
@@ -376,7 +376,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         let cborMap: CBOR = .map([:])
         let payload = Data(cborMap.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:void\";op=test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:void\";test;out=\"media:void\"", args: [])
         XCTAssertThrowsError(try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)) { error in
             if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
@@ -399,7 +399,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:model-spec;textable\";op=infer;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:model-spec;textable\";infer;out=\"media:void\"", args: [])
         let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
         // Handler matches against in_spec to find main input.
         guard let decoded = try CBOR.decode([UInt8](result)),
@@ -434,7 +434,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:pdf\";process;out=\"media:void\"", args: [])
         let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
         guard let decoded = try CBOR.decode([UInt8](result)),
               case .array(let arr) = decoded,
@@ -454,8 +454,8 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST268: Test RuntimeError variants display correct messages
     func test268_runtimeErrorDisplay() {
-        let err1 = CartridgeRuntimeError.noHandler("cap:op=missing")
-        XCTAssertTrue((err1.errorDescription ?? "").contains("cap:op=missing"))
+        let err1 = CartridgeRuntimeError.noHandler("cap:missing")
+        XCTAssertTrue((err1.errorDescription ?? "").contains("cap:missing"))
 
         let err2 = CartridgeRuntimeError.missingArgument("model")
         XCTAssertTrue((err2.errorDescription ?? "").contains("model"))
@@ -712,7 +712,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process PDF",
             command: "process",
             args: [createArg(
@@ -752,7 +752,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:void\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:void\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -782,7 +782,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: [createArg(
@@ -819,7 +819,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try Data("content2".utf8).write(to: file2)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Batch",
             command: "batch",
             args: [createArg(
@@ -845,7 +845,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST340: File not found error provides clear message
     func test340_file_not_found_clear_error() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -881,7 +881,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Stdin source comes BEFORE position source.
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -910,7 +910,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -932,7 +932,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // Mirrors Rust test343_non_file_path_args_unaffected.
     func test343_non_file_path_args_unaffected() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:void\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:void\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -956,7 +956,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // silently swallow user mistakes like typos or wrong directories.
     func test344_file_path_array_invalid_json_fails() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -989,7 +989,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let missingPath = tempDir.appendingPathComponent("test345_missing.txt")
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -1025,7 +1025,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try largeData.write(to: testFile)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1058,7 +1058,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1086,7 +1086,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Position source BEFORE stdin source.
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1111,7 +1111,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try Data("content 349".utf8).write(to: testFile)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1145,7 +1145,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:result;textable\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:result;textable\"",
             title: "Process PDF",
             command: "process",
             args: [createArg(
@@ -1181,7 +1181,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // args. Mirrors Rust test351_file_path_array_empty_array.
     func test351_file_path_array_empty_array() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -1220,7 +1220,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: testFile.path)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1252,7 +1252,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST353: CBOR payload format matches between CLI and CBOR mode
     func test353_cbor_payload_format_consistency() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:text;textable\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:text;textable\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1317,7 +1317,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let tempDir = FileManager.default.temporaryDirectory
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -1353,7 +1353,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try Data("content1".utf8).write(to: file1)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -1392,7 +1392,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try Data("json".utf8).write(to: file2)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -1450,7 +1450,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: linkFile, withDestinationURL: realFile)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1484,7 +1484,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try binaryData.write(to: testFile)
 
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=test;out=\"media:void\"",
+            urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
             command: "test",
             args: [createArg(
@@ -1511,7 +1511,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // Mirrors Rust test359_invalid_glob_pattern_fails.
     func test359_invalid_glob_pattern_fails() {
         let cap = createCap(
-            urn: "cap:in=\"media:\";op=batch;out=\"media:void\"",
+            urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
             command: "batch",
             args: [createArg(
@@ -1544,7 +1544,7 @@ final class CborFilePathConversionTests: XCTestCase {
         try pdfContent.write(to: testFile)
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: [createArg(
@@ -1591,7 +1591,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST395: Small payload (< max_chunk) produces correct CBOR arguments
     func test395_build_payload_small() throws {
         let cap = CapDefinition(
-            urn: "cap:in=\"media:\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: []
@@ -1629,7 +1629,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST396: Large payload (> max_chunk) accumulates across chunks correctly
     func test396_build_payload_large() throws {
         let cap = CapDefinition(
-            urn: "cap:in=\"media:\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: []
@@ -1659,7 +1659,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST397: Empty reader produces valid empty CBOR arguments
     func test397_build_payload_empty() throws {
         let cap = CapDefinition(
-            urn: "cap:in=\"media:\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: []
@@ -1717,7 +1717,7 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST398: IO error from reader propagates as RuntimeError::Io
     func test398_build_payload_io_error() {
         let cap = CapDefinition(
-            urn: "cap:in=\"media:\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: []
@@ -1744,7 +1744,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: [createArg(
@@ -1780,7 +1780,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Create cap that accepts stdin
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: [createArg(
@@ -1851,7 +1851,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let resultHolder = ResultHolder()
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: [createArg(
@@ -1921,7 +1921,7 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
+            urn: "cap:in=\"media:pdf\";process;out=\"media:void\"",
             title: "Process",
             command: "process",
             args: [createArg(

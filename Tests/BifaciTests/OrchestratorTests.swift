@@ -31,26 +31,26 @@ final class TestcartridgeRegistry: CapRegistryProtocol, @unchecked Sendable {
             }
             let cap = CSCap(
                 urn: capUrn,
-                title: "Test \(capUrn.getTag("op") ?? "unknown")",
+                title: "Test \(urnStr)",
                 command: "testcartridge"
             )
             caps[capUrn.toString()] = cap
         }
 
         // Register all testcartridge caps
-        addCap(#"cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable""#)
-        addCap(#"cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable""#)
-        addCap(#"cap:in="media:node3;textable";op=test_edge3;out="media:node4;list;textable""#)
-        addCap(#"cap:in="media:node4;list;textable";op=test_edge4;out="media:node5;textable""#)
-        addCap(#"cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable""#)
-        addCap(#"cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable""#)
-        addCap(#"cap:in="media:node7;textable";op=test_edge9;out="media:node8;textable""#)
-        addCap(#"cap:in="media:node8;textable";op=test_edge10;out="media:node1;textable""#)
-        addCap(#"cap:in="media:void";op=test_large;out="media:""#)
-        addCap(#"cap:in="media:node1;textable";op=test_peer;out="media:node3;textable""#)
+        addCap(#"cap:in="media:node1;textable";test-edge1;out="media:node2;textable""#)
+        addCap(#"cap:in="media:node2;textable";test-edge2;out="media:node3;textable""#)
+        addCap(#"cap:in="media:node3;textable";test-edge3;out="media:node4;list;textable""#)
+        addCap(#"cap:in="media:node4;list;textable";test-edge4;out="media:node5;textable""#)
+        addCap(#"cap:in="media:node3;textable";test-edge7;out="media:node6;textable""#)
+        addCap(#"cap:in="media:node6;textable";test-edge8;out="media:node7;textable""#)
+        addCap(#"cap:in="media:node7;textable";test-edge9;out="media:node8;textable""#)
+        addCap(#"cap:in="media:node8;textable";test-edge10;out="media:node1;textable""#)
+        addCap(#"cap:in="media:void";test-large;out="media:""#)
+        addCap(#"cap:in="media:node1;textable";test-peer;out="media:node3;textable""#)
 
         // Add identity cap for cycle testing
-        addCap(#"cap:in="media:node1;textable";op=identity;out="media:node1;textable""#)
+        addCap(#"cap:in="media:node1;textable";identity;out="media:node1;textable""#)
     }
 
     func lookup(_ urn: String) async throws -> CSCap {
@@ -84,7 +84,7 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
             }
         """#
 
@@ -102,7 +102,7 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                input -> output [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
+                input -> output [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
             }
         """#
 
@@ -120,8 +120,8 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
             }
         """#
 
@@ -141,10 +141,10 @@ final class OrchestratorTests: XCTestCase {
         // Two parallel paths that merge
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-                C -> D [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-                B -> E [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-                D -> E [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                C -> D [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                B -> E [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
+                D -> E [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
             }
         """#
 
@@ -166,7 +166,7 @@ final class OrchestratorTests: XCTestCase {
         // Create a self-loop using identity cap
         let dot = #"""
             digraph G {
-                A -> A [label="cap:in=\"media:node1;textable\";op=identity;out=\"media:node1;textable\""];
+                A -> A [label="cap:in=\"media:node1;textable\";identity;out=\"media:node1;textable\""];
             }
         """#
 
@@ -226,7 +226,7 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:unknown\";op=nonexistent;out=\"media:unknown\""];
+                A -> B [label="cap:in=\"media:unknown\";nonexistent;out=\"media:unknown\""];
             }
         """#
 
@@ -252,10 +252,10 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-                C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
-                D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
+                C -> D [label="cap:in=\"media:node3;textable\";test-edge7;out=\"media:node6;textable\""];
+                D -> E [label="cap:in=\"media:node6;textable\";test-edge8;out=\"media:node7;textable\""];
             }
         """#
 
@@ -276,11 +276,11 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-                C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
-                D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
-                E -> F [label="cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
+                C -> D [label="cap:in=\"media:node3;textable\";test-edge7;out=\"media:node6;textable\""];
+                D -> E [label="cap:in=\"media:node6;textable\";test-edge8;out=\"media:node7;textable\""];
+                E -> F [label="cap:in=\"media:node7;textable\";test-edge9;out=\"media:node8;textable\""];
             }
         """#
 
@@ -302,12 +302,12 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-                C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
-                D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
-                E -> F [label="cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\""];
-                F -> G [label="cap:in=\"media:node8;textable\";op=test_edge10;out=\"media:node1;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
+                C -> D [label="cap:in=\"media:node3;textable\";test-edge7;out=\"media:node6;textable\""];
+                D -> E [label="cap:in=\"media:node6;textable\";test-edge8;out=\"media:node7;textable\""];
+                E -> F [label="cap:in=\"media:node7;textable\";test-edge9;out=\"media:node8;textable\""];
+                F -> G [label="cap:in=\"media:node8;textable\";test-edge10;out=\"media:node1;textable\""];
             }
         """#
 
@@ -413,7 +413,7 @@ final class OrchestratorTests: XCTestCase {
     func testDotParserCapUrnLabel() throws {
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";op=test;out=\"media:node2;textable\""];
+                A -> B [label="cap:in=\"media:node1;textable\";test;out=\"media:node2;textable\""];
             }
         """#
 

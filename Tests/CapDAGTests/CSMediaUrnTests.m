@@ -27,7 +27,7 @@
 - (void)test853_lub_no_common_tags {
     NSError *error;
     CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
-    CSMediaUrn *png = [CSMediaUrn fromString:@"media:png" error:&error];
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
     XCTAssertNotNil(pdf);
     XCTAssertNotNil(png);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf, png]];
