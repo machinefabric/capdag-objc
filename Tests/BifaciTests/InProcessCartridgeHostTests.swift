@@ -11,16 +11,6 @@ import SwiftCBOR
 @testable import Bifaci
 @testable import CapDAG
 
-private struct RelayNotifyCapabilitiesPayload: Decodable {
-    let caps: [String]
-    let installedCartridges: [InstalledCartridgeIdentity]
-
-    enum CodingKeys: String, CodingKey {
-        case caps
-        case installedCartridges = "installed_cartridges"
-    }
-}
-
 final class InProcessCartridgeHostTests: XCTestCase {
 
     // MARK: - Test Helpers
@@ -358,9 +348,12 @@ final class InProcessCartridgeHostTests: XCTestCase {
     func test659_handlerErrorReturnsErrFrame() throws {
         let capUrn = "cap:in=\"media:void\";fail;out=\"media:void\""
         let cap = makeTestCap(capUrn)
-        let host = InProcessCartridgeHost(handlers: [
-            ("fail", [cap], FailHandler())
-        ])
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "fail-host"),
+            handlers: [
+                ("fail", [cap], FailHandler())
+            ]
+        )
 
         let (hostRead, testWrite) = Pipe.socketPair()
         let (testRead, hostWrite) = Pipe.socketPair()

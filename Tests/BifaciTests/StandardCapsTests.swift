@@ -44,7 +44,7 @@ final class StandardCapsTests: XCTestCase {
         let group = CSCapGroup(name: "default", caps: [identityCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
-                                     channel: "release",
+                                     channel: .release,
                                      registryURL: nil,
                                      manifestDescription: "Test",
                                      capGroups: [group])
@@ -59,7 +59,7 @@ final class StandardCapsTests: XCTestCase {
         let group = CSCapGroup(name: "default", caps: [otherCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
-                                     channel: "release",
+                                     channel: .release,
                                      registryURL: nil,
                                      manifestDescription: "Test",
                                      capGroups: [group])
@@ -75,7 +75,7 @@ final class StandardCapsTests: XCTestCase {
         let group = CSCapGroup(name: "default", caps: [cap1], adapterUrns: [])
         let manifestWithout = CSCapManifest(name: "TestCartridge",
                                             version: "1.0.0",
-                                            channel: "release",
+                                            channel: .release,
                                             registryURL: nil,
                                             manifestDescription: "Test",
                                             capGroups: [group])

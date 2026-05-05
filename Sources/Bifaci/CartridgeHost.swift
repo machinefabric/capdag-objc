@@ -243,6 +243,154 @@ public func computeFileSHA256(atPath path: String) throws -> String {
     return hash.map { String(format: "%02x", $0) }.joined()
 }
 
+// ---------------------------------------------------------------------------
+// Installed-cartridge identity assembly
+// ---------------------------------------------------------------------------
+
+/// Identity tuple parsed from a cartridge's `cartridge.json`.
+/// `internal` so unit tests can drive `resolveLocalCartridgeRecord`
+/// directly without standing up a host.
+struct LocalCartridgeRecord {
+    let registryURL: String?
+    let id: String
+    let channel: String
+    let version: String
+}
+
+/// Read `(registryURL, id, channel, version)` from a cartridge's
+/// `cartridge.json`. Returns nil when the file is missing,
+/// malformed, or omits a required field.
+///
+/// **No layout fallback.** Cartridge identity comes from
+/// `cartridge.json` only — the directory tree is a placement
+/// convention, not an identity source. A cartridge whose
+/// `cartridge.json` doesn't parse is treated as broken: the host
+/// returns nil here, and the discovery scanner is expected to
+/// grace-period-delete the directory on a separate code path. Any
+/// mismatch between `cartridge.json` and the on-disk slug/channel/
+/// name/version is the scanner's job to detect, not this function's.
+internal func resolveLocalCartridgeRecord(cartridgeDir: String) -> LocalCartridgeRecord? {
+    let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
+    guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let name = json["name"] as? String,
+          let channel = json["channel"] as? String,
+          let version = json["version"] as? String,
+          channel == "release" || channel == "nightly",
+          json.keys.contains("registry_url") else {
+        return nil
+    }
+    let registryURL: String?
+    if json["registry_url"] is NSNull {
+        registryURL = nil
+    } else if let s = json["registry_url"] as? String {
+        registryURL = s
+    } else {
+        return nil
+    }
+    return LocalCartridgeRecord(
+        registryURL: registryURL,
+        id: name.lowercased(),
+        channel: channel,
+        version: version
+    )
+}
+
+/// Build the `InstalledCartridgeRecord` (sans live runtime stats)
+/// for a managed cartridge whose on-disk anchor is `cartridgeDir`.
+/// Pure function over the inputs + the file system; no host or
+/// cartridge-instance state. Hoisted out of `ManagedCartridge` so
+/// unit tests can drive every branch.
+///
+/// Returns nil when `cartridge.json` is missing or malformed —
+/// cartridge identity is sourced from the manifest only, and a
+/// cartridge whose manifest can't be read is treated as gone for
+/// the purposes of this RelayNotify pass. The discovery scanner
+/// owns the grace-period delete on a separate code path.
+///
+/// Behaviour matrix (when cartridge.json IS readable):
+///   * `attachmentError != nil` → identity carries the existing
+///     error verbatim; sha256 is best-effort (empty on hash
+///     failure), since the cartridge is already broken and an
+///     unhashable anchor here is a corollary, not a new problem.
+///   * `attachmentError == nil`, hash succeeds → identity with the
+///     real sha256 and no error.
+///   * `attachmentError == nil`, hash throws
+///     `CartridgeDirectoryHashError` → identity with sha256 = ""
+///     and a freshly-minted `entryPointMissing` attachment error.
+///     This is the "directory disappeared after attach" path that
+///     used to `fatalError` the host (CartridgeHost.swift original
+///     line 617). Now it surfaces as a per-cartridge failure
+///     record: the host stays alive and the engine sees the
+///     cartridge as broken until the next discovery scan corrects
+///     the inventory.
+///   * Hash throws something other than `CartridgeDirectoryHashError`
+///     → fatalError. The hash function's error type is part of its
+///     contract; an unknown variant here means the function evolved
+///     and this site didn't keep up — a programmer-broken
+///     invariant we want to surface.
+internal func buildInstalledCartridgeRecord(
+    cartridgeDir: String,
+    attachmentError: CartridgeAttachmentError?
+) -> InstalledCartridgeRecord? {
+    guard let identity = resolveLocalCartridgeRecord(cartridgeDir: cartridgeDir) else {
+        return nil
+    }
+
+    if let error = attachmentError {
+        let sha256 = (try? computeCartridgeDirectoryHash(atPath: cartridgeDir)) ?? ""
+        return InstalledCartridgeRecord(
+            registryURL: identity.registryURL,
+            id: identity.id,
+            channel: identity.channel,
+            version: identity.version,
+            sha256: sha256,
+            attachmentError: error,
+            // Failed-state record: lifecycle is irrelevant per the
+            // mutual-exclusivity contract. Use `.discovered` as the
+            // safe sentinel (never `.operational`).
+            lifecycle: .discovered
+        )
+    }
+
+    let sha256: String
+    do {
+        sha256 = try computeCartridgeDirectoryHash(atPath: cartridgeDir)
+    } catch let error as CartridgeDirectoryHashError {
+        return InstalledCartridgeRecord(
+            registryURL: identity.registryURL,
+            id: identity.id,
+            channel: identity.channel,
+            version: identity.version,
+            sha256: "",
+            attachmentError: .now(
+                kind: .entryPointMissing,
+                message: "cartridge directory at \(cartridgeDir) is no longer hashable: \(error)"
+            ),
+            lifecycle: .discovered
+        )
+    } catch {
+        fatalError(
+            "BUG: unexpected error type from computeCartridgeDirectoryHash at \(cartridgeDir): \(error)"
+        )
+    }
+
+    // Hash succeeded; the engine-side host has not yet attached
+    // (HELLO etc.), and the registry has not been verified.
+    // Engine treats this record as "registered, not yet
+    // dispatchable"; the XPC service overrides the lifecycle to
+    // `.inspecting` / `.verifying` / `.operational` as it works.
+    return InstalledCartridgeRecord(
+        registryURL: identity.registryURL,
+        id: identity.id,
+        channel: identity.channel,
+        version: identity.version,
+        sha256: sha256,
+        attachmentError: nil,
+        lifecycle: .discovered
+    )
+}
+
 // MARK: - Activity Timeout Constants
 
 /// Default timeout (seconds) for inactivity during cap execution.
@@ -405,6 +553,13 @@ enum ShutdownReason {
     case oomKill
     /// Request was cancelled. Pending requests get ERR frames with code "CANCELLED".
     case cancelled
+    /// Operator disabled this cartridge through the host UI. The
+    /// process is killed immediately (yanked out of the system),
+    /// pending requests get ERR frames with code "DISABLED" so
+    /// callers can fail fast with an operator-recognisable reason
+    /// (distinct from a request cancel and from an unexpected
+    /// crash). Re-enabling requires a UI-driven operator action.
+    case disabled
 }
 
 private class ManagedCartridge {
@@ -450,6 +605,14 @@ private class ManagedCartridge {
     }
     var running: Bool
     var helloFailed: Bool
+    /// Positive lifecycle phase. Distinct from `attachmentError`:
+    /// when `attachmentError != nil` this field is irrelevant
+    /// (consumers must check the error first). When
+    /// `attachmentError == nil`, the cartridge is dispatchable iff
+    /// `lifecycle == .operational`. Defaults to `.discovered`
+    /// (the safe sentinel — the host has not yet inspected /
+    /// verified / attached this cartridge).
+    var lifecycle: CartridgeLifecycle
     var readerThread: Thread?
     var pendingHeartbeats: [MessageId: Date]
     /// Last death error message (includes stderr if available). Used for ERR frames
@@ -471,7 +634,7 @@ private class ManagedCartridge {
     /// Number of times this cartridge has been respawned after death.
     var restartCount: UInt64
 
-    init(path: String, cartridgeDir: String, capGroups: [CapGroup]) {
+    init(path: String, cartridgeDir: String, capGroups: [CapGroup], lifecycle: CartridgeLifecycle = .discovered) {
         self.path = path
         self.cartridgeDir = cartridgeDir
         self.manifest = Data()
@@ -479,6 +642,7 @@ private class ManagedCartridge {
         self.capGroups = capGroups
         self.running = false
         self.helloFailed = false
+        self.lifecycle = lifecycle
         self.pendingHeartbeats = [:]
         self.lastDeathMessage = nil
         self.shutdownReason = nil
@@ -491,10 +655,10 @@ private class ManagedCartridge {
 
     /// Per-cartridge attachment failure, if any. Set by `recordAttachmentError` at
     /// the HELLO / identity / spawn failure sites, surfaced up through
-    /// `installedCartridgeIdentity()` into RelayNotify.
+    /// `installedCartridgeRecord()` into RelayNotify.
     var attachmentError: CartridgeAttachmentError?
 
-    func installedCartridgeIdentity() -> InstalledCartridgeIdentity? {
+    func installedCartridgeRecord() -> InstalledCartridgeRecord? {
         // Attached cartridges (no on-disk anchor) are pre-connected for
         // in-process / test use — they never hold an attachment error in
         // production. If a caller tags one with an attachment error it's a
@@ -506,127 +670,29 @@ private class ManagedCartridge {
             }
             return nil
         }
-
-        // (registryURL, id, channel, version) come from the managed
-        // cartridge layout. We pull them from cartridge.json when
-        // available; when cartridge.json is malformed we fall back
-        // to the directory names from the layout — the one
-        // authoritative piece of identity information still present
-        // on disk. The installed-cartridges layout is
-        //   `{root}/{registry_slug}/{channel}/{name}/{version}/cartridge.json`
-        // so the layout fallback reconstructs channel from the
-        // great-grandparent and name from the grandparent. The slug
-        // alone can't recover the registry URL (the slug is
-        // one-way), so layout-fallback emits `nil` for registryURL —
-        // the consumer treats that as "registry unknown" and
-        // surfaces a failure record.
-        let cartridgeJsonPath = (cartridgeDir as NSString).appendingPathComponent("cartridge.json")
-        struct LocalIdentity {
-            let registryURL: String?
-            let id: String
-            let channel: String
-            let version: String
+        guard var record = buildInstalledCartridgeRecord(
+            cartridgeDir: cartridgeDir,
+            attachmentError: attachmentError
+        ) else {
+            return nil
         }
-        let jsonIdentity: LocalIdentity? = {
-            guard let data = FileManager.default.contents(atPath: cartridgeJsonPath),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let name = json["name"] as? String,
-                  let channel = json["channel"] as? String,
-                  let version = json["version"] as? String,
-                  channel == "release" || channel == "nightly",
-                  json.keys.contains("registry_url") else {
-                return nil
-            }
-            let registryURL: String?
-            if json["registry_url"] is NSNull {
-                registryURL = nil
-            } else if let s = json["registry_url"] as? String {
-                registryURL = s
-            } else {
-                return nil
-            }
-            return LocalIdentity(
-                registryURL: registryURL,
-                id: name.lowercased(),
-                channel: channel,
-                version: version
-            )
-        }()
-
-        let layoutIdentity: LocalIdentity = {
-            let versionName = (cartridgeDir as NSString).lastPathComponent
-            let nameDir = (cartridgeDir as NSString).deletingLastPathComponent
-            let nameComponent = (nameDir as NSString).lastPathComponent
-            // Walk up: cartridgeDir/version → nameDir/name →
-            // channelDir/channel → slugDir/{slug}.
-            let channelDir = (nameDir as NSString).deletingLastPathComponent
-            let channelName = (channelDir as NSString).lastPathComponent
-            let channel = (channelName == "release" || channelName == "nightly") ? channelName : ""
-            // The slug folder is one above the channel folder. We
-            // cannot reverse the slug into a URL — that lives only
-            // in cartridge.json — so layout-fallback always emits
-            // nil registryURL. Consumers downstream (the engine)
-            // treat the resulting record as a failure-with-unknown-
-            // registry and surface it for operator inspection.
-            return LocalIdentity(
-                registryURL: nil,
-                id: nameComponent.lowercased(),
-                channel: channel,
-                version: versionName
-            )
-        }()
-
-        let identity = jsonIdentity ?? layoutIdentity
-
-        // If we have an attachment error, we report whatever identity we
-        // could salvage and an empty sha256 (the directory may be unreadable
-        // — that's precisely the kind of failure we're trying to surface).
-        // If the cartridge is healthy, hashing must succeed; failure there
-        // is a broken invariant.
-        if let error = attachmentError {
-            let sha256 = (try? computeCartridgeDirectoryHash(atPath: cartridgeDir)) ?? ""
-            return InstalledCartridgeIdentity(
-                registryURL: identity.registryURL,
-                id: identity.id,
-                channel: identity.channel,
-                version: identity.version,
-                sha256: sha256,
-                attachmentError: error
-            )
-        }
-
-        // Healthy cartridges MUST come with a parseable cartridge.json
-        // — the host enforced this at HELLO time, and a cartridge
-        // that reached "healthy" without a valid channel is a broken
-        // invariant. Fail hard rather than ship an empty channel
-        // through RelayNotify.
-        guard !identity.channel.isEmpty else {
-            fatalError(
-                "BUG: healthy cartridge at \(cartridgeDir) has no channel — cartridge.json must declare 'channel' (release|nightly)"
-            )
-        }
-
-        let sha256: String
-        do {
-            sha256 = try computeCartridgeDirectoryHash(atPath: cartridgeDir)
-        } catch {
-            // Healthy cartridges have to be hashable. If we can't read
-            // the directory or one of its files, surface the actual
-            // path + errno in the abort message so the operator sees
-            // what to fix instead of a generic "must be hashable".
-            fatalError(
-                "BUG: healthy installed cartridge directory must be hashable at \(cartridgeDir): \(error)"
-            )
-        }
-
-        return InstalledCartridgeIdentity(
-            registryURL: identity.registryURL,
-            id: identity.id,
-            channel: identity.channel,
-            version: identity.version,
-            sha256: sha256,
-            attachmentError: nil
+        // Override the builder's default lifecycle (which is
+        // `.discovered`, the safe sentinel) with the per-cartridge
+        // tracked phase. The builder doesn't know about the host's
+        // `ManagedCartridge` state — so we layer the host-side
+        // truth on top here.
+        record = InstalledCartridgeRecord(
+            registryURL: record.registryURL,
+            id: record.id,
+            channel: record.channel,
+            version: record.version,
+            sha256: record.sha256,
+            capGroups: record.capGroups,
+            attachmentError: record.attachmentError,
+            runtimeStats: record.runtimeStats,
+            lifecycle: lifecycle
         )
+        return record
     }
 
     /// Record a per-cartridge attachment failure and mark the cartridge as
@@ -986,17 +1052,35 @@ public final class CartridgeHost: @unchecked Sendable {
 
     /// Outcome of probing one cartridge directory during discovery.
     ///
+    /// - `.inProgress`: cartridge is mid-lifecycle (`.inspecting`,
+    ///   `.verifying`). No caps registered with the engine; UI shows
+    ///   the in-progress badge. The host keeps an entry so the next
+    ///   `syncDiscoveryOutcomes` call doesn't drop the cartridge as
+    ///   "removed from disk".
     /// - `.discovered`: HELLO + manifest-parse succeeded; the host can
-    ///   spawn it on demand.
+    ///   spawn it on demand. Lifecycle is `.operational` from the
+    ///   moment this outcome is published.
     /// - `.failed`: Discovery-time probe failed (manifest invalid, HELLO
-    ///   timed out, entry point missing, quarantined). The cartridge is
-    ///   kept as a non-spawnable entry so the attachment error surfaces
-    ///   through `RelayNotify`.
+    ///   timed out, entry point missing, quarantined, etc.). The
+    ///   cartridge is kept as a non-spawnable entry so the attachment
+    ///   error surfaces through `RelayNotify`.
     public enum DiscoveredCartridgeOutcome {
+        /// Cartridge is still progressing through the lifecycle —
+        /// hash being computed, registry verdict pending, etc. No
+        /// caps are registered with the engine while in this state;
+        /// the host's `installed_cartridges` snapshot includes the
+        /// cartridge with its current `lifecycle` so the UI can
+        /// render the in-progress badge.
+        case inProgress(
+            path: String,
+            cartridgeDir: String,
+            lifecycle: CartridgeLifecycle
+        )
         /// Discovery probe succeeded. `capGroups` carries the
         /// cartridge's full manifest structure (parsed from HELLO at
         /// probe time). The host derives the flat cap-URN list from
         /// these groups when needed (cap-table / RelayNotify).
+        /// Lifecycle is implicitly `.operational`.
         case discovered(
             path: String,
             cartridgeDir: String,
@@ -1011,6 +1095,7 @@ public final class CartridgeHost: @unchecked Sendable {
 
         var path: String {
             switch self {
+            case .inProgress(let path, _, _): return path
             case .discovered(let path, _, _): return path
             case .failed(let path, _, _, _): return path
             }
@@ -1018,6 +1103,7 @@ public final class CartridgeHost: @unchecked Sendable {
 
         var cartridgeDir: String {
             switch self {
+            case .inProgress(_, let dir, _): return dir
             case .discovered(_, let dir, _): return dir
             case .failed(_, let dir, _, _): return dir
             }
@@ -1073,6 +1159,21 @@ public final class CartridgeHost: @unchecked Sendable {
             if let outcomeIdx = outcomeByPath[cartridge.path] {
                 matchedOutcomeIndices.insert(outcomeIdx)
                 switch outcomes[outcomeIdx] {
+                case .inProgress(_, _, let lifecycle):
+                    // Mid-lifecycle update: cartridge is now in
+                    // `.inspecting` / `.verifying` etc. Don't
+                    // touch capGroups (they may already be empty
+                    // — they will be populated when the host
+                    // promotes this cartridge to `.discovered` /
+                    // operational). Don't set helloFailed —
+                    // in-progress is not a failure state. Clear
+                    // any stale attachment error from a prior
+                    // pass so the UI doesn't show the old reason
+                    // alongside the in-progress badge.
+                    cartridge.capGroups = []
+                    cartridge.helloFailed = false
+                    cartridge.attachmentError = nil
+                    cartridge.lifecycle = lifecycle
                 case .discovered(_, _, let capGroups):
                     // Clear any prior attachment error — the probe succeeded
                     // this time around. Update cap_groups so the host's
@@ -1082,11 +1183,15 @@ public final class CartridgeHost: @unchecked Sendable {
                     cartridge.capGroups = capGroups
                     cartridge.helloFailed = false
                     cartridge.attachmentError = nil
+                    cartridge.lifecycle = .operational
                 case .failed(_, _, let kind, let message):
                     // Still broken on this pass — refresh the error so the
-                    // latest detected reason propagates.
+                    // latest detected reason propagates. Lifecycle is
+                    // irrelevant per the mutual-exclusivity contract;
+                    // keep the safe sentinel.
                     cartridge.capGroups = []
                     cartridge.recordAttachmentError(kind: kind, message: message)
+                    cartridge.lifecycle = .discovered
                 }
                 retained.append(cartridge)
             } else {
@@ -1108,9 +1213,14 @@ public final class CartridgeHost: @unchecked Sendable {
         // Append genuinely new outcomes (path not yet tracked by the host).
         for (i, outcome) in outcomes.enumerated() where !matchedOutcomeIndices.contains(i) {
             switch outcome {
+            case .inProgress(let path, let dir, let lifecycle):
+                let cartridge = ManagedCartridge(
+                    path: path, cartridgeDir: dir, capGroups: [], lifecycle: lifecycle
+                )
+                cartridges.append(cartridge)
             case .discovered(let path, let dir, let capGroups):
                 let cartridge = ManagedCartridge(
-                    path: path, cartridgeDir: dir, capGroups: capGroups
+                    path: path, cartridgeDir: dir, capGroups: capGroups, lifecycle: .operational
                 )
                 cartridges.append(cartridge)
             case .failed(let path, let dir, let kind, let message):
@@ -1123,11 +1233,19 @@ public final class CartridgeHost: @unchecked Sendable {
         }
 
         // Rebuild capTable from scratch — covers new, updated, and removed
-        // cartridges. Failed cartridges contribute no caps. The flat
-        // cap-URN list comes from each cartridge's `capUrns` view over
-        // its `capGroups` (the source of truth).
+        // cartridges. Only `.operational` cartridges contribute caps;
+        // `.discovered` / `.inspecting` / `.verifying` cartridges have
+        // capGroups == [] anyway (the host populates capGroups only on
+        // `.discovered`/`.operational` outcomes), but we filter
+        // explicitly so a future code path that pre-populates capGroups
+        // can't accidentally expose an un-verified cartridge for
+        // dispatch. Failed cartridges (helloFailed) also contribute no
+        // caps. The flat cap-URN list comes from each cartridge's
+        // `capUrns` view over its `capGroups` (the source of truth).
         capTable.removeAll()
-        for (idx, cartridge) in cartridges.enumerated() where !cartridge.helloFailed {
+        for (idx, cartridge) in cartridges.enumerated()
+            where !cartridge.helloFailed && cartridge.lifecycle == .operational
+        {
             for cap in cartridge.capUrns {
                 capTable.append((cap, idx))
             }
@@ -1576,7 +1694,7 @@ public final class CartridgeHost: @unchecked Sendable {
             if let targetId = targetCartridgeId {
                 // Direct routing by cartridge identity
                 if let foundIdx = cartridges.firstIndex(where: {
-                    $0.installedCartridgeIdentity()?.id == targetId
+                    $0.installedCartridgeRecord()?.id == targetId
                 }) {
                     if cartridges[foundIdx].helloFailed {
                         stateLock.unlock()
@@ -2046,6 +2164,19 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = "Cartridge \(cartridgePath) killed by cancel request."
             errInfo = (code: "CANCELLED", message: msg)
             cartridge.lastDeathMessage = msg
+        case .disabled:
+            // Operator-disabled kill — ERR "DISABLED" for all
+            // pending work. Distinct from CANCELLED so operators
+            // can tell "I cancelled this request" from "the
+            // cartridge handling this request was disabled out
+            // from under me." The XPC service triggers a fresh
+            // discovery scan after the disable, so the next
+            // dispatch will see no provider for the affected
+            // caps and refuse new requests at the cap-table
+            // layer rather than spawning the cartridge again.
+            let msg = "Cartridge \(cartridgePath) killed because the operator disabled it."
+            errInfo = (code: "DISABLED", message: msg)
+            cartridge.lastDeathMessage = msg
         case .appExit:
             // Clean shutdown — no ERR frames, relay is closing
             errInfo = nil
@@ -2191,7 +2322,7 @@ public final class CartridgeHost: @unchecked Sendable {
     /// cartridge process state. Must be called with stateLock held. One
     /// source of truth: the engine sees what the host sees, with no time
     /// skew beyond the send itself.
-    private func buildInstalledCartridgeIdentitiesLocked() -> [InstalledCartridgeIdentity] {
+    private func buildInstalledCartridgeRecordsLocked() -> [InstalledCartridgeRecord] {
         var activeCounts: [Int: UInt64] = [:]
         for idx in incomingRxids.values {
             activeCounts[idx, default: 0] += 1
@@ -2201,10 +2332,10 @@ public final class CartridgeHost: @unchecked Sendable {
             peerCounts[idx, default: 0] += 1
         }
 
-        var result: [InstalledCartridgeIdentity] = []
+        var result: [InstalledCartridgeRecord] = []
         result.reserveCapacity(cartridges.count)
         for (idx, cartridge) in cartridges.enumerated() {
-            guard let base = cartridge.installedCartridgeIdentity() else { continue }
+            guard let base = cartridge.installedCartridgeRecord() else { continue }
             let pid = cartridge.pid.map { UInt32($0) }
             let stats = CartridgeRuntimeStats(
                 running: cartridge.running,
@@ -2216,7 +2347,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 lastHeartbeatUnixSeconds: cartridge.lastHeartbeatUnixSeconds,
                 restartCount: cartridge.restartCount
             )
-            result.append(InstalledCartridgeIdentity(
+            result.append(InstalledCartridgeRecord(
                 registryURL: base.registryURL,
                 id: base.id,
                 channel: base.channel,
@@ -2224,7 +2355,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 sha256: base.sha256,
                 capGroups: cartridge.capGroups,
                 attachmentError: base.attachmentError,
-                runtimeStats: stats
+                runtimeStats: stats,
+                lifecycle: base.lifecycle
             ))
         }
         return result
@@ -2259,7 +2391,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // callers (e.g. `capabilities()`) that want the flat list
         // without re-decoding the wire bytes; we compute it the same way
         // the engine would.
-        let installedCartridges = buildInstalledCartridgeIdentitiesLocked()
+        let installedCartridges = buildInstalledCartridgeRecordsLocked()
         let payload = RelayNotifyCapabilitiesPayload(installedCartridges: installedCartridges)
         let capsData: Data
         do {
@@ -2804,5 +2936,45 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.unlock()
         cartridge.killProcess()
         return true
+    }
+
+    /// Kill any cartridge whose on-disk anchor (`cartridgeDir`,
+    /// the version directory) matches `versionDir`. Used by the
+    /// XPC service to "yank" a cartridge when the operator
+    /// disables it: pending requests targeted at this cartridge
+    /// fail hard with `CARTRIDGE_DIED` (the matching shutdownReason
+    /// branch), giving the caller a clear failure rather than a
+    /// silent hang.
+    ///
+    /// `cartridgeDir` is the unique identity for an installed
+    /// cartridge within one host — the XPC service indexes by it
+    /// throughout the discovery scan. Path comparison is
+    /// byte-equal: callers MUST pass the same canonical form the
+    /// host registered (typically the absolute path the
+    /// `register_cartridge_dir` call used).
+    ///
+    /// Returns `true` if any matching cartridge was found and
+    /// killed. Best-effort: a cartridge that isn't currently
+    /// running (never spawned, already exited, mid-spawn) is a
+    /// no-op for that entry.
+    @discardableResult
+    public func killCartridgesAtCartridgeDir(_ versionDir: String) -> Bool {
+        stateLock.lock()
+        let matching = cartridges.filter { $0.cartridgeDir == versionDir && $0.running }
+        for cartridge in matching {
+            // `.disabled` shutdownReason → death handler emits ERR
+            // "DISABLED" for every pending request. Distinct from
+            // `.cancelled` (which is "the caller cancelled their
+            // request") and from `.oomKill` (watchdog event) and
+            // `.appExit` (clean shutdown — no ERR frames). Gives
+            // the caller an operator-recognisable reason to
+            // surface in the UI / logs.
+            cartridge.shutdownReason = .disabled
+        }
+        stateLock.unlock()
+        for cartridge in matching {
+            cartridge.killProcess()
+        }
+        return !matching.isEmpty
     }
 }

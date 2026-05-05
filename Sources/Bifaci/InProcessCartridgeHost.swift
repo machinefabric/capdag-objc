@@ -333,7 +333,7 @@ public final class InProcessCartridgeHost {
 
     /// Build the aggregate RelayNotify payload.
     ///
-    /// Wraps the handler set in a single `InstalledCartridgeIdentity`
+    /// Wraps the handler set in a single `InstalledCartridgeRecord`
     /// whose values come from the `InProcessHostIdentity` the embedder
     /// supplied at construction. The wire format is symmetric with
     /// out-of-process hosts: the engine reads `cap_groups` from
@@ -350,13 +350,18 @@ public final class InProcessCartridgeHost {
                 }
             }
         }
-        let cartridge = InstalledCartridgeIdentity(
+        let cartridge = InstalledCartridgeRecord(
             registryURL: identity.registryURL,
             id: identity.id,
             channel: identity.channel,
             version: identity.version,
             sha256: identity.sha256,
-            capGroups: [CapGroup(name: identity.id, caps: caps, adapterUrns: [])]
+            capGroups: [CapGroup(name: identity.id, caps: caps, adapterUrns: [])],
+            // In-process cartridges have no on-disk presence to
+            // inspect and no registry to verify against — the
+            // embedder constructed them directly. Operational from
+            // the moment the host advertises them.
+            lifecycle: .operational
         )
         let payload = RelayNotifyCapabilitiesPayload(installedCartridges: [cartridge])
         return try! JSONEncoder().encode(payload)

@@ -99,13 +99,13 @@ private struct RoutingEntry {
 }
 
 public struct RelayNotifyCapabilitiesPayload: Codable {
-    public let installedCartridges: [InstalledCartridgeIdentity]
+    public let installedCartridges: [InstalledCartridgeRecord]
 
     enum CodingKeys: String, CodingKey {
         case installedCartridges = "installed_cartridges"
     }
 
-    public init(installedCartridges: [InstalledCartridgeIdentity]) {
+    public init(installedCartridges: [InstalledCartridgeRecord]) {
         self.installedCartridges = installedCartridges
     }
 
@@ -150,10 +150,10 @@ private final class MasterConnection: @unchecked Sendable {
     var manifest: Data
     var limits: Limits
     var caps: [String]
-    var installedCartridges: [InstalledCartridgeIdentity]
+    var installedCartridges: [InstalledCartridgeRecord]
     var healthy: Bool
 
-    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeIdentity], healthy: Bool) {
+    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], healthy: Bool) {
         self.socketWriter = socketWriter
         self.seqAssigner = seqAssigner
         self.manifest = manifest
@@ -188,7 +188,7 @@ public final class RelaySwitch: @unchecked Sendable {
     private var xidCounter: UInt64 = 0
 
     private var aggregateCapabilities: Data = Data()
-    private var aggregateInstalledCartridges: [InstalledCartridgeIdentity] = []
+    private var aggregateInstalledCartridges: [InstalledCartridgeRecord] = []
     private var negotiatedLimits: Limits = Limits()
     private let lock = NSLock()
     private var frameChannel: [(masterIdx: Int, frame: Frame?, error: Error?)] = []
@@ -1158,7 +1158,7 @@ public final class RelaySwitch: @unchecked Sendable {
         // keyed by `(registryURL, channel, id, version, sha256)`,
         // matching the Rust relay's `dedup_by` rule.
         var allCaps = Set<String>()
-        var byIdentity: [String: InstalledCartridgeIdentity] = [:]
+        var byIdentity: [String: InstalledCartridgeRecord] = [:]
         for master in masters {
             if master.healthy {
                 allCaps.formUnion(master.caps)
@@ -1182,7 +1182,7 @@ public final class RelaySwitch: @unchecked Sendable {
     /// natural ASCII delimiter for combining fixed-position fields
     /// and never appears in any of the field values (URLs, IDs,
     /// version strings, SHA hex digests).
-    private static func identityKey(_ cart: InstalledCartridgeIdentity) -> String {
+    private static func identityKey(_ cart: InstalledCartridgeRecord) -> String {
         let registry = cart.registryURL ?? ""
         return "\(registry)\u{1F}\(cart.channel)\u{1F}\(cart.id)\u{1F}\(cart.version)\u{1F}\(cart.sha256)"
     }
@@ -1210,7 +1210,7 @@ public final class RelaySwitch: @unchecked Sendable {
 
     // MARK: - Helper Functions
 
-    public func installedCartridges() -> [InstalledCartridgeIdentity] {
+    public func installedCartridges() -> [InstalledCartridgeRecord] {
         lock.lock()
         defer { lock.unlock() }
         return aggregateInstalledCartridges
@@ -1255,6 +1255,39 @@ public enum CartridgeAttachmentErrorKind: String, Codable, Hashable, Sendable {
     case identityRejected = "identity_rejected"
     case entryPointMissing = "entry_point_missing"
     case quarantined
+    /// The on-disk install context (slug folder, channel folder,
+    /// name/version directory components) disagrees with what
+    /// `cartridge.json` declares. The cartridge is structurally
+    /// well-formed but cannot be trusted because its placement on
+    /// disk does not match what it claims to be. Hosts grace-period
+    /// the offending directory and then delete it; the record is
+    /// surfaced so the operator sees what landed where before it
+    /// disappears. Distinct from `quarantined` (host decided after a
+    /// crash) and from `manifestInvalid` (cartridge.json itself is
+    /// unreadable or schema-broken).
+    case badInstallation = "bad_installation"
+    /// Operator explicitly disabled this cartridge through the host
+    /// UI. The cartridge is on disk and would otherwise have
+    /// attached cleanly; the host treats it as if the binary were
+    /// yanked out of the system. Re-enabling is a UI-driven
+    /// operator action. Enforced at the host level (machfab-mac's
+    /// XPC service); the engine doesn't act on it differently from
+    /// any other failed attachment, but preserves the kind so
+    /// consumers can render the right reason and offer the right
+    /// recovery action.
+    case disabled
+    /// The cartridge declares a non-null `registry_url`, but the
+    /// host could not reach that registry to verify the cartridge
+    /// is listed. Distinct from `.badInstallation` (= registry
+    /// confirmed the version is missing) — `.registryUnreachable`
+    /// means we don't know. Recovery is "check network + retry"
+    /// rather than "rebuild as dev". The cartridge is held back
+    /// from attaching until verification succeeds. Network fetch
+    /// is performed by the main app (which has outbound network
+    /// entitlement) and pushed to the XPC service as a verdict
+    /// map; the XPC service is sandboxed and cannot fetch
+    /// registries directly.
+    case registryUnreachable = "registry_unreachable"
 }
 
 /// Structured per-cartridge attachment failure. Mirrors the Rust
@@ -1350,6 +1383,38 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     }
 }
 
+/// Positive lifecycle phase that runs BEFORE a cartridge becomes
+/// dispatchable. Mirrors the Rust `CartridgeLifecycle` and the
+/// `CartridgeLifecycle` enum in `cartridge.proto`.
+///
+/// Mutually exclusive with `attachmentError` on
+/// `InstalledCartridgeRecord`: when the cartridge has a failed
+/// terminal classification, `attachmentError` is `non-nil` and
+/// `lifecycle` is irrelevant. When `attachmentError` is `nil`, the
+/// cartridge is in one of the in-progress phases or has reached
+/// `.operational`; only `.operational` cartridges are dispatchable.
+///
+/// See `machfab-mac/docs/cartridge state machine.md` for the
+/// canonical state diagram.
+public enum CartridgeLifecycle: String, Codable, Hashable, Sendable {
+    /// Discovery scan has found the version directory and is about
+    /// to inspect it. Transient — the host normally moves to
+    /// `.inspecting` in the same scan tick.
+    case discovered
+    /// Reading `cartridge.json`, computing directory hash,
+    /// validating on-disk install context. Hashing can take
+    /// seconds for large model cartridges; runs on a background
+    /// queue so other cartridges' inspections proceed in parallel.
+    case inspecting
+    /// Inspection succeeded. Awaiting a verdict from the registry
+    /// verifier service. Skipped for dev cartridges
+    /// (`registry_url == nil`) and bundle cartridges.
+    case verifying
+    /// Cleared every gate. Caps are registered with the engine
+    /// and dispatch can route requests to this cartridge.
+    case operational
+}
+
 /// Order/Hash-theoretic note: this struct conforms to `Codable` and
 /// `Sendable` but NOT to `Equatable` or `Hashable`. The reason: the
 /// `capGroups` field carries `CapDefinition`s whose `urn` strings
@@ -1366,7 +1431,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 /// `(registryURL, channel, id, version, sha256)` directly — five
 /// flat strings/enums that DO have an unambiguous total order and
 /// hash. See `RelaySwitch.identityKey(_:)` for the convention.
-public struct InstalledCartridgeIdentity: Codable, Sendable {
+public struct InstalledCartridgeRecord: Codable, Sendable {
     /// Verbatim URL of the registry the cartridge was published from.
     /// `nil` ⇔ dev install (built locally without a registry URL).
     /// Compared byte-wise; never normalized. `(registryURL, channel,
@@ -1393,6 +1458,17 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
     /// `nil` for cartridges that aren't host-tracked (e.g. identities
     /// emitted by an in-process host with no routing tables).
     public let runtimeStats: CartridgeRuntimeStats?
+    /// Positive lifecycle phase. Mutually exclusive with
+    /// `attachmentError`: when the cartridge has a failed terminal
+    /// classification, `attachmentError` is non-nil and this field
+    /// is irrelevant. When `attachmentError` is nil, the cartridge
+    /// is dispatchable iff `lifecycle == .operational`.
+    ///
+    /// Defaults to `.discovered` when missing on the wire (a
+    /// producer that forgets to set it never accidentally appears
+    /// as `.operational`). Producers MUST set this explicitly;
+    /// relying on the default is a bug.
+    public let lifecycle: CartridgeLifecycle
 
     enum CodingKeys: String, CodingKey {
         case registryURL = "registry_url"
@@ -1403,6 +1479,7 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
         case capGroups = "cap_groups"
         case attachmentError = "attachment_error"
         case runtimeStats = "runtime_stats"
+        case lifecycle
     }
 
     public init(
@@ -1413,7 +1490,8 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
         sha256: String,
         capGroups: [CapGroup] = [],
         attachmentError: CartridgeAttachmentError? = nil,
-        runtimeStats: CartridgeRuntimeStats? = nil
+        runtimeStats: CartridgeRuntimeStats? = nil,
+        lifecycle: CartridgeLifecycle = .discovered
     ) {
         self.registryURL = registryURL
         self.id = id
@@ -1423,6 +1501,7 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
         self.capGroups = capGroups
         self.attachmentError = attachmentError
         self.runtimeStats = runtimeStats
+        self.lifecycle = lifecycle
     }
 
     public init(from decoder: Decoder) throws {
@@ -1437,7 +1516,7 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
                 DecodingError.Context(
                     codingPath: c.codingPath,
                     debugDescription:
-                        "InstalledCartridgeIdentity is missing required `registry_url` field. "
+                        "InstalledCartridgeRecord is missing required `registry_url` field. "
                         + "It must be present, with value null for dev installs or a URL "
                         + "string for registry installs."
                 )
@@ -1451,6 +1530,11 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
         self.capGroups = try c.decodeIfPresent([CapGroup].self, forKey: .capGroups) ?? []
         self.attachmentError = try c.decodeIfPresent(CartridgeAttachmentError.self, forKey: .attachmentError)
         self.runtimeStats = try c.decodeIfPresent(CartridgeRuntimeStats.self, forKey: .runtimeStats)
+        // Missing `lifecycle` defaults to `.discovered` rather
+        // than `.operational` — the safe-default rule. A producer
+        // that forgets to emit the field never accidentally
+        // exposes an un-inspected cartridge for dispatch.
+        self.lifecycle = try c.decodeIfPresent(CartridgeLifecycle.self, forKey: .lifecycle) ?? .discovered
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1468,6 +1552,7 @@ public struct InstalledCartridgeIdentity: Codable, Sendable {
         }
         try c.encodeIfPresent(attachmentError, forKey: .attachmentError)
         try c.encodeIfPresent(runtimeStats, forKey: .runtimeStats)
+        try c.encode(lifecycle, forKey: .lifecycle)
     }
 
     /// Flat cap-URN view across this cartridge's groups, deduplicated

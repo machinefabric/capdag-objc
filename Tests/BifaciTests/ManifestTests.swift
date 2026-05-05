@@ -50,7 +50,7 @@ final class ManifestTests: XCTestCase {
         let csManifest = CSCapManifest(
             name: "test-cartridge",
             version: "1.0.0",
-            channel: "release",
+            channel: .release,
             registryURL: nil,
             manifestDescription: "A test cartridge",
             capGroups: []
@@ -191,7 +191,7 @@ final class ManifestTests: XCTestCase {
         let manifestNoAuthor = CSCapManifest(
             name: "test",
             version: "1.0.0",
-            channel: "release",
+            channel: .release,
             registryURL: nil,
             manifestDescription: "test",
             capGroups: []
@@ -212,7 +212,7 @@ final class ManifestTests: XCTestCase {
         let manifest = CSCapManifest(
             name: "test-component",
             version: "1.0.0",
-            channel: "release",
+            channel: .release,
             registryURL: nil,
             manifestDescription: "Test component",
             capGroups: [group]
@@ -220,7 +220,7 @@ final class ManifestTests: XCTestCase {
 
         XCTAssertEqual(manifest.name, "test-component")
         XCTAssertEqual(manifest.version, "1.0.0")
-        XCTAssertEqual(manifest.channel, "release")
+        XCTAssertEqual(manifest.channel, .release)
         XCTAssertEqual(manifest.manifestDescription, "Test component")
         XCTAssertEqual(manifest.capGroups.count, 1)
         XCTAssertEqual(manifest.capGroups[0].caps.count, 1)
@@ -232,7 +232,7 @@ final class ManifestTests: XCTestCase {
         let manifest = CSCapManifest(
             name: "cartridge-with-url",
             version: "1.0.0",
-            channel: "release",
+            channel: .release,
             registryURL: nil,
             manifestDescription: "Cartridge with page URL",
             capGroups: []
