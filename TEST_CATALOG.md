@@ -1,8 +1,8 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 752
+**Total Tests:** 762
 
-**Numbered Tests:** 625
+**Numbered Tests:** 635
 
 **Unnumbered Tests:** 127
 
@@ -404,13 +404,13 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test555 | `test555_with_tag_and_without_tag` | TEST555: with_tag adds a tag and without_tag removes it | Tests/CapDAGTests/CSMediaUrnTests.m:292 |
 | test558 | `test558_predicate_constant_consistency` | TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates | Tests/CapDAGTests/CSMediaUrnTests.m:310 |
 | test638 | `test638_noPeerRouterRejectsAll` | TEST638: Verify NoPeerRouter rejects all requests with PeerInvokeNotSupported | Tests/BifaciTests/RouterTests.swift:14 |
-| test654 | `test654_routesReqToHandler` | TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response | Tests/BifaciTests/InProcessCartridgeHostTests.swift:114 |
-| test655 | `test655_identityVerification` | TEST655: InProcessCartridgeHost handles identity verification (echo nonce) | Tests/BifaciTests/InProcessCartridgeHostTests.swift:198 |
-| test656 | `test656_noHandlerReturnsErr` | TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap | Tests/BifaciTests/InProcessCartridgeHostTests.swift:259 |
-| test657 | `test657_manifestIncludesAllCaps` | TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps | Tests/BifaciTests/InProcessCartridgeHostTests.swift:301 |
-| test658 | `test658_heartbeatResponse` | TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID | Tests/BifaciTests/InProcessCartridgeHostTests.swift:324 |
-| test659 | `test659_handlerErrorReturnsErrFrame` | TEST659: InProcessCartridgeHost handler error returns ERR frame | Tests/BifaciTests/InProcessCartridgeHostTests.swift:358 |
-| test660 | `test660_closestSpecificityRouting` | TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity | Tests/BifaciTests/InProcessCartridgeHostTests.swift:401 |
+| test654 | `test654_routesReqToHandler` | TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response | Tests/BifaciTests/InProcessCartridgeHostTests.swift:104 |
+| test655 | `test655_identityVerification` | TEST655: InProcessCartridgeHost handles identity verification (echo nonce) | Tests/BifaciTests/InProcessCartridgeHostTests.swift:188 |
+| test656 | `test656_noHandlerReturnsErr` | TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap | Tests/BifaciTests/InProcessCartridgeHostTests.swift:249 |
+| test657 | `test657_manifestIncludesAllCaps` | TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps | Tests/BifaciTests/InProcessCartridgeHostTests.swift:291 |
+| test658 | `test658_heartbeatResponse` | TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID | Tests/BifaciTests/InProcessCartridgeHostTests.swift:314 |
+| test659 | `test659_handlerErrorReturnsErrFrame` | TEST659: InProcessCartridgeHost handler error returns ERR frame | Tests/BifaciTests/InProcessCartridgeHostTests.swift:348 |
+| test660 | `test660_closestSpecificityRouting` | TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity | Tests/BifaciTests/InProcessCartridgeHostTests.swift:394 |
 | test661 | `test661_cartridgeDeathKeepsKnownCapsAdvertised` | TEST661: Cartridge death keeps known_caps advertised for on-demand respawn | Tests/BifaciTests/RuntimeTests.swift:1095 |
 | test662 | `test662_rebuildCapabilitiesIncludesNonRunningCartridges` | TEST662: rebuild_capabilities includes non-running cartridges' known_caps | Tests/BifaciTests/RuntimeTests.swift:1112 |
 | test663 | `test663_helloFailedCartridgeRemovedFromCapabilities` | TEST663: Cartridge with hello_failed is permanently removed from capabilities | Tests/BifaciTests/RuntimeTests.swift:1128 |
@@ -641,6 +641,16 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1605 | `test1605_fileSHA256MatchesKnownVector` | TEST1605: computeFileSHA256 streams a single file (used for quarantine identity tracking) and produces the standard SHA256 of the file's bytes. Verifies multi-chunk read correctness against a known SHA256 of `"abc"` from the FIPS-180-2 test vectors. | Tests/BifaciTests/CartridgeDirectoryHashTests.swift:172 |
 | test1606 | `test1606_fileSHA256StreamsAcrossChunks` | TEST1606: computeFileSHA256 streams arbitrarily large files without loading the whole file into memory. Hashes a file roughly 3.5 chunks long and verifies the result against a single-shot CC_SHA256 over the same buffer — proving the chunk loop is correct across multiple read iterations. | Tests/BifaciTests/CartridgeDirectoryHashTests.swift:184 |
 | test1607 | `test1607_fileSHA256ThrowsOnMissingPath` | TEST1607: computeFileSHA256 throws openFailed on a missing path with the offending path attached. Replaces the previous silent `return nil` so callers can surface the actual cause to the operator. | Tests/BifaciTests/CartridgeDirectoryHashTests.swift:204 |
+| test1700 | `test1700_healthyAnchorHashesAndCarriesNoError` | / TEST1700: A healthy cartridge whose directory exists hashes / successfully and the resulting identity has the same name / / version / channel as the cartridge.json, a non-empty sha256, / and NO attachment error. Pins the happy path so a future / refactor that breaks healthy-case hashing surfaces here. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:94 |
+| test1701 | `test1701_missingManifestReturnsNil` | / TEST1701: A cartridge whose `cartridge.json` has been / deleted (e.g. the operator uninstalled, or the directory / got swept up by a `dx clear --cartridges`) returns nil from / `buildInstalledCartridgeRecord`. There is no layout / fallback — cartridge.json IS the identity, and a cartridge / without a manifest is considered gone for this RelayNotify / pass. The host stays alive; the discovery scanner picks up / the change on its next scan. / / Regression test for the field crash: /   Bifaci/CartridgeHost.swift:617: Fatal error: /   BUG: healthy installed cartridge directory must be /   hashable at .../pdfcartridge/0.182.450 / Before the fix this code path aborted the whole XPC service. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:131 |
+| test1702 | `test1702_malformedManifestReturnsNil` | / TEST1702: Cartridge.json that's present-but-malformed (e.g. / the file got truncated mid-write) also returns nil. There / is no salvage path — a cartridge whose manifest can't be / parsed is not a cartridge. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:154 |
+| test1703 | `test1703_oldSchemaManifestMissingRegistryUrlReturnsNil` | / TEST1703: A cartridge.json that omits the required / `registry_url` key (old-schema file) returns nil. / `registry_url` is required-but-nullable in the manifest / schema; absent-key surfaces here as nil identity, surfaces / downstream as the cartridge being filtered out of / RelayNotify, and forces the operator to reinstall on the / new schema. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:179 |
+| test1704 | `test1704_existingAttachmentErrorRoundTrips` | / TEST1704: A cartridge that already carries an attachment / error from upstream (e.g. failed HELLO) round-trips that / error verbatim — the identity-build path does NOT mint a / fresh error or override it. The sha256 is the real hash / because the directory is still healthy; the error / describes a different problem (the failed HELLO) than the / hash function could surface. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:215 |
+| test1705 | `test1705_missingManifestWinsOverExistingError` | / TEST1705: An attached cartridge whose manifest has gone / missing returns nil regardless of any prior attachment / error. The contract is "manifest is identity"; a cartridge / without a manifest is gone for this RelayNotify pass — / even if it had a previously-recorded HELLO failure, the / disappeared anchor wins. The discovery scanner removes the / stale tree on its next pass. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:254 |
+| test1710 | `test1710_kindRawValuesMatchProtoSnakeCase` | / TEST1710: Every variant's `rawValue` must be its / snake_case proto name. New variants must be added here AND / to `cartridge.proto`'s `CartridgeAttachmentErrorKind`. This / test fails with a clear "expected X for Y" message rather / than a "unknown enum case" runtime crash if the two sides / drift. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:31 |
+| test1711 | `test1711_attachmentErrorJSONRoundTripsForEveryKind` | / TEST1711: A `CartridgeAttachmentError` round-trips through / `JSONEncoder` → bytes → `JSONDecoder` unchanged for every / kind. RelayNotify's wire payload is JSON; if any variant / fails to deserialize, the engine's aggregate parse fails / and ALL cartridges from that host disappear from the / inventory — including the healthy ones. This test / covers each variant individually so a single-variant / regression doesn't hide behind a passing healthy-case. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:59 |
+| test1712 | `test1712_decodesWireFormatJSONIntoExpectedVariants` | / TEST1712: An on-the-wire JSON payload using the snake_case / raw values decodes into the right Swift variant. This is / the engine → Swift path: the engine emits / `{"kind":"bad_installation",...}` and the Swift side must / resolve it to `.badInstallation`. Asserts the lookup table / the decoder synthesises for `String`-backed enums actually / covers the new variants. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:90 |
+| test1713 | `test1713_unknownWireKindFailsToDecode` | / TEST1713: An unknown wire kind FAILS to decode. The two / new variants are wire-additive — older Swift binaries that / don't know `bad_installation` or `disabled` will see those / strings and reject them, which is correct: silently / coercing an unknown variant to a fallback would hide the / version-skew bug. The fatalError sites in / CartridgeGRPCAdapter and InstalledCartridgesStore rely on / this — they expect decode to throw / produce a known / variant, never silently pick a default. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:127 |
 | | | | |
 | unnumbered | `test198b_limitsNegotiation` | TEST198 (continued): Limits negotiation picks minimum of both sides | Tests/BifaciTests/FrameTests.swift:307 |
 | unnumbered | `test205b_allFrameTypesRoundtrip` | Covers all frame types in a single loop for comprehensive roundtrip verification | Tests/BifaciTests/FrameTests.swift:894 |
@@ -906,8 +916,8 @@ The following tests are cataloged but do not currently participate in numeric te
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 752*
-*Total numbered tests: 625*
+*Total tests: 762*
+*Total numbered tests: 635*
 *Total unnumbered tests: 127*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*
