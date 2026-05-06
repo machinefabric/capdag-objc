@@ -109,6 +109,19 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)hasTag:(NSString * _Nonnull)key withValue:(NSString * _Nonnull)value;
 
 /**
+ * Check whether a marker tag (a tag whose value is "*") is present at the
+ * given key. Equivalent to `[self hasTag:tagName withValue:@"*"]` but
+ * expresses authorial intent: this tag is present as a marker (a
+ * wildcard-valued tag that serializes as just the key), not as a
+ * key=value pair. Example: `cap:constrained;...` has marker tag
+ * "constrained".
+ *
+ * @param tagName The marker key
+ * @return YES if the tag exists with value "*"
+ */
+- (BOOL)hasMarkerTag:(NSString * _Nonnull)tagName;
+
+/**
  * Create a new cap URN with an added or updated tag
  * NOTE: For "in" or "out" keys, silently returns self unchanged.
  *       Use withInSpec: or withOutSpec: to change direction.
@@ -324,6 +337,17 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
  * @return This builder instance for chaining
  */
 - (CSCapUrnBuilder * _Nonnull)tag:(NSString * _Nonnull)key value:(NSString * _Nonnull)value;
+
+/**
+ * Add a marker tag (a wildcard-valued tag that serializes as just the key).
+ * Equivalent to `[self tag:key value:@"*"]` but expresses authorial intent:
+ * this tag is present as a marker, not a key=value pair. Attempts to use
+ * `in` or `out` as a marker key are silently ignored — direction specs
+ * are set via `inSpec:` / `outSpec:`.
+ * @param key The marker key
+ * @return This builder instance for chaining
+ */
+- (CSCapUrnBuilder * _Nonnull)marker:(NSString * _Nonnull)key;
 
 /**
  * Build the final CapUrn

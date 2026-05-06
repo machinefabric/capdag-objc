@@ -33,7 +33,7 @@
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [[[[[[builder inSpec:@"media:void"] outSpec:@"media:record;textable"]
-        tag:@"op" value:@"generate"]
+        marker:@"generate"]
        tag:@"target" value:@"thumbnail"]
       tag:@"format" value:@"pdf"]
      tag:@"output" value:@"binary"];
@@ -42,7 +42,7 @@
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
 
-    XCTAssertEqualObjects([cap getTag:@"op"], @"generate");
+    XCTAssertTrue([cap hasMarkerTag:@"generate"]);
     XCTAssertEqualObjects([cap getTag:@"target"], @"thumbnail");
     XCTAssertEqualObjects([cap getTag:@"format"], @"pdf");
     XCTAssertEqualObjects([cap getTag:@"output"], @"binary");
@@ -55,7 +55,7 @@
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:string"];
     [builder outSpec:@"media:"];
-    [builder tag:@"op" value:@"process"];
+    [builder marker:@"process"];
     CSCapUrn *cap = [builder build:&error];
 
     XCTAssertNotNil(cap);
@@ -176,7 +176,7 @@
     [builder inSpec:@"media:"];
     [builder outSpec:@"media:"];
     [builder tag:@"type" value:@"media"];
-    [builder tag:@"op" value:@"transcode"];
+    [builder marker:@"transcode"];
     [builder tag:@"target" value:@"video"];
     [builder tag:@"format" value:@"mp4"];
     [builder tag:@"codec" value:@"h264"];
@@ -188,12 +188,12 @@
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
 
-    // Alphabetical order: codec, format, framerate, in, op, out, output, quality, target, type
-    NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;in=media:;transcode;out=media:;output=binary;quality=1080p;target=video;type=media";
+    // Alphabetical order: codec, format, framerate, in, out, output, quality, target, transcode, type
+    NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;in=media:;out=media:;output=binary;quality=1080p;target=video;transcode;type=media";
     XCTAssertEqualObjects([cap toString], expected);
 
     XCTAssertEqualObjects([cap getTag:@"type"], @"media");
-    XCTAssertEqualObjects([cap getTag:@"op"], @"transcode");
+    XCTAssertTrue([cap hasMarkerTag:@"transcode"]);
     XCTAssertEqualObjects([cap getTag:@"target"], @"video");
     XCTAssertEqualObjects([cap getTag:@"format"], @"mp4");
     XCTAssertEqualObjects([cap getTag:@"codec"], @"h264");
@@ -201,7 +201,11 @@
     XCTAssertEqualObjects([cap getTag:@"framerate"], @"30fps");
     XCTAssertEqualObjects([cap getTag:@"output"], @"binary");
 
-    XCTAssertEqual([cap specificity], 8); // 8 non-wildcard tags (in/out as media: contribute 0)
+    // CapUrn specificity counts non-wildcard tags: 7 keyed tags (type,
+    // target, format, codec, quality, framerate, output) contribute 1
+    // each; the `transcode` marker has value "*" so it contributes 0;
+    // `media:` direction specs contribute 0.
+    XCTAssertEqual([cap specificity], 7);
 }
 
 - (void)testBuilderWildcards {

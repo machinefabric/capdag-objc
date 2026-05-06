@@ -404,6 +404,17 @@ static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pa
     return tagValue && [tagValue isEqualToString:value];
 }
 
+- (BOOL)hasMarkerTag:(NSString *)tagName {
+    NSString *keyLower = [tagName lowercaseString];
+    // Marker semantics live on the tag map only — direction specs (in/out)
+    // are not markers.
+    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"]) {
+        return NO;
+    }
+    NSString *tagValue = self.mutableTags[keyLower];
+    return tagValue && [tagValue isEqualToString:@"*"];
+}
+
 - (CSCapUrn *)withTag:(NSString *)key value:(NSString *)value {
     NSString *keyLower = [key lowercaseString];
     // Silently ignore attempts to set in/out via withTag - use withInSpec/withOutSpec instead
@@ -826,6 +837,16 @@ static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pa
     }
     // Key lowercase, value preserved
     self.tags[keyLower] = value;
+    return self;
+}
+
+- (CSCapUrnBuilder *)marker:(NSString *)key {
+    NSString *keyLower = [key lowercaseString];
+    // Silently ignore in/out keys - direction specs are set via inSpec:/outSpec:
+    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"]) {
+        return self;
+    }
+    self.tags[keyLower] = @"*";
     return self;
 }
 

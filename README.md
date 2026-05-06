@@ -40,16 +40,16 @@ Add the `Sources/CapDAG` directory to your Xcode project.
 NSError *error = nil;
 CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:binary\";extract;out=\"media:object\"" error:&error];
 if (cap) {
-    NSLog(@"Input: %@", cap.inSpec);      // "media:binary"
-    NSLog(@"Output: %@", cap.outSpec);    // "media:object"
-    NSLog(@"Op: %@", [cap getTag:@"op"]); // "extract"
+    NSLog(@"Input: %@", cap.inSpec);                                          // "media:binary"
+    NSLog(@"Output: %@", cap.outSpec);                                        // "media:object"
+    NSLog(@"Has extract marker: %@", [cap hasMarkerTag:@"extract"] ? @"YES" : @"NO");
 }
 
 // Build a Cap URN
 CSCapUrn *built = [[[[CSCapUrnBuilder builder]
     inSpec:@"media:void"]
     outSpec:@"media:object"]
-    tag:@"op" value:@"generate"]
+    marker:@"generate"]
     build:&error];
 
 // Check matching
@@ -69,7 +69,7 @@ do {
     let cap = try CSCapUrn.fromString("cap:in=\"media:binary\";extract;out=\"media:object\"")
     print("Input: \(cap.inSpec)")        // "media:binary"
     print("Output: \(cap.outSpec)")      // "media:object"
-    print("Op: \(cap.getTag("op") ?? "nil")") // "extract"
+    print("Has extract marker: \(cap.hasMarkerTag("extract"))")
 } catch {
     print("Parse error: \(error)")
 }
@@ -78,7 +78,7 @@ do {
 let built = try CSCapUrnBuilder.builder()
     .inSpec("media:void")
     .outSpec("media:object")
-    .tag("op", value: "generate")
+    .marker("generate")
     .build()
 
 // Check matching

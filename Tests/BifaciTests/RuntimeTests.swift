@@ -359,7 +359,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
             // Read REQ + streams + END from host
             let (reqId, cap, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
-            guard cap == "cap:test" else { throw CartridgeHostError.protocolError("Expected cap:op=test, got \(cap)") }
+            guard cap == "cap:test" else { throw CartridgeHostError.protocolError("Expected cap:test, got \(cap)") }
 
             // Write response
             try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "hello-from-cartridge".data(using: .utf8)!)
