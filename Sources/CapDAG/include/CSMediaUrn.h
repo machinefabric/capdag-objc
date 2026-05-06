@@ -143,9 +143,18 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn is_text(&self) -> bool
 - (BOOL)isText;
 
-/// Check if this represents void (void marker tag present).
+/// Check if this represents void (void marker tag present) — the
+/// **unit type** in the type-theoretic reading. media:void is the
+/// nullary value; NOT "invalid" or "absent".
 /// Mirrors Rust: pub fn is_void(&self) -> bool
 - (BOOL)isVoid;
+
+/// True if this is the **top** media URN — the universal wildcard
+/// `media:` with no tags. Order-theoretically, every other media URN
+/// conformsTo this one. Distinct from isVoid: top means "any data
+/// type accepted here," void means "no data flows here."
+/// Mirrors Rust: pub fn is_top(&self) -> bool
+- (BOOL)isTop;
 
 /// Check if this represents image data (image marker tag present).
 /// Mirrors Rust: pub fn is_image(&self) -> bool

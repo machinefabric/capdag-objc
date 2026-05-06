@@ -177,6 +177,10 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return [self getTag:@"void"] != nil;
 }
 
+- (BOOL)isTop {
+    return self.inner.tags.count == 0;
+}
+
 - (BOOL)isImage {
     return [self getTag:@"image"] != nil;
 }

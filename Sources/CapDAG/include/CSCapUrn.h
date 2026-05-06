@@ -25,6 +25,38 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class CSTaggedUrn;
 
+/// Functional category of a cap, derived from all three axes
+/// (`in`, `out`, and the remaining tags). The classification is
+/// **logical** — the dispatch protocol does not branch on `CSCapKind`.
+/// Exposed so tools, UIs, planners, and tests can reason about a
+/// cap's role without re-deriving the rules.
+///
+/// `media:void` is the **unit type** (no meaningful value).
+/// `media:` is the **top type** (universal wildcard). With those
+/// anchors the five kinds fall out:
+///
+///   Identity    in=media:, out=media:, no other tags  →  A → A
+///   Source      in=media:void, out!=void              →  () → B
+///   Sink        in!=void, out=media:void              →  A → ()
+///   Effect      in=media:void, out=media:void         →  () → ()
+///   Transform   anything else
+///
+/// Identity is the **fully generic** cap on every axis: input wide
+/// open, output wide open, no operation/metadata tags. Adding any
+/// tag specifies something on the third axis and demotes the
+/// morphism to a Transform whose in/out happen to be the wildcards.
+typedef NS_ENUM(NSInteger, CSCapKind) {
+    CSCapKindIdentity,
+    CSCapKindSource,
+    CSCapKindSink,
+    CSCapKindEffect,
+    CSCapKindTransform,
+};
+
+/// Stable wire/log/UI label for a CSCapKind value (snake_case to
+/// match other capdag enum serializations on the wire).
+FOUNDATION_EXPORT NSString *CSCapKindToString(CSCapKind kind);
+
 /**
  * A cap URN with required direction (in→out) and optional tags
  *
@@ -86,6 +118,18 @@ NS_ASSUME_NONNULL_BEGIN
  * @return The output spec ID
  */
 - (NSString *)getOutSpec;
+
+/**
+ * Functional category of this cap, derived from all three axes:
+ * `in`, `out`, and the rest of the tags. See CSCapKind doc for the
+ * full taxonomy. Identity requires every axis to be in its most
+ * generic form.
+ *
+ * Aborts (NSAssert) if either side is not a valid media URN — that
+ * only happens on internally inconsistent state since CSCapUrn
+ * construction validates both sides.
+ */
+- (CSCapKind)kind;
 
 /**
  * Get the value of a specific tag

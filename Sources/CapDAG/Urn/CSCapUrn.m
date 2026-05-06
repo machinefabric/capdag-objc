@@ -379,6 +379,51 @@ static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pa
     return self.outSpec;
 }
 
+- (CSCapKind)kind {
+    NSError *err = nil;
+    CSMediaUrn *inMedia = [CSMediaUrn fromString:self.inSpec error:&err];
+    NSAssert(inMedia != nil, @"CSCapUrn.kind: in spec '%@' is not a valid media URN: %@",
+             self.inSpec, err.localizedDescription);
+    CSMediaUrn *outMedia = [CSMediaUrn fromString:self.outSpec error:&err];
+    NSAssert(outMedia != nil, @"CSCapUrn.kind: out spec '%@' is not a valid media URN: %@",
+             self.outSpec, err.localizedDescription);
+
+    BOOL inVoid = [inMedia isVoid];
+    BOOL outVoid = [outMedia isVoid];
+    BOOL inTop = [inMedia isTop];
+    BOOL outTop = [outMedia isTop];
+    // self.tags is the dict of tags BEYOND in/out (those live in
+    // self.inSpec / self.outSpec). Empty here means "fully generic on
+    // the operation/metadata axis."
+    BOOL noExtraTags = self.tags.count == 0;
+
+    if (inTop && outTop && noExtraTags) {
+        return CSCapKindIdentity;
+    }
+    if (inVoid && outVoid) {
+        return CSCapKindEffect;
+    }
+    if (inVoid) {
+        return CSCapKindSource;
+    }
+    if (outVoid) {
+        return CSCapKindSink;
+    }
+    return CSCapKindTransform;
+}
+
+NSString *CSCapKindToString(CSCapKind kind) {
+    switch (kind) {
+        case CSCapKindIdentity: return @"identity";
+        case CSCapKindSource: return @"source";
+        case CSCapKindSink: return @"sink";
+        case CSCapKindEffect: return @"effect";
+        case CSCapKindTransform: return @"transform";
+    }
+    NSCAssert(NO, @"CSCapKindToString: unknown CSCapKind value %ld", (long)kind);
+    return @"";
+}
+
 - (nullable NSString *)getTag:(NSString *)key {
     NSString *keyLower = [key lowercaseString];
     if ([keyLower isEqualToString:@"in"]) {
@@ -726,12 +771,21 @@ static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pa
 }
 
 - (NSString *)toString {
-    // Build complete tags map including in and out
+    // `in` and `out` segments are emitted only when they refine beyond
+    // the trivial wildcard `media:`. A cap whose in/out are both
+    // `media:` and which has no other tags has the canonical form
+    // `cap:` — the bare identity URN. Same morphism whether written as
+    // `cap:` or `cap:in=media:;out=media:`; the canonicalizer collapses
+    // both to one representative so byte-equality matches semantic
+    // identity across language ports.
     NSMutableDictionary *allTags = [self.mutableTags mutableCopy];
-    allTags[@"in"] = self.inSpec;
-    allTags[@"out"] = self.outSpec;
+    if (![self.inSpec isEqualToString:@"media:"]) {
+        allTags[@"in"] = self.inSpec;
+    }
+    if (![self.outSpec isEqualToString:@"media:"]) {
+        allTags[@"out"] = self.outSpec;
+    }
 
-    // Use CSTaggedUrn for serialization
     NSError *error = nil;
     CSTaggedUrn *taggedUrn = [CSTaggedUrn fromPrefix:@"cap" tags:allTags error:&error];
     NSAssert(taggedUrn != nil, @"CSTaggedUrn serialization failed: %@", error.localizedDescription);

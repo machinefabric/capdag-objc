@@ -1399,4 +1399,132 @@ static NSString* testUrn(NSString *tags) {
                   @"Thumbnail fallback with void input should match");
 }
 
+#pragma mark - CapKind classifier tests (test1800–test1805)
+//
+// Mirrored across every language port (Rust, Go, Python, Swift/ObjC,
+// JS) under the SAME numbers. Any divergence is a wire-level
+// inconsistency — the kind taxonomy is part of the protocol's public
+// surface, not a per-port detail.
+
+// TEST1800: Identity classifier — only the bare cap: form qualifies.
+// Adding any tag (even one that doesn't constrain in/out) demotes
+// the cap to Transform because the operation/metadata axis is no
+// longer fully generic.
+- (void)test1800_kind_identity_only_for_bare_cap {
+    NSError *error = nil;
+
+    CSCapUrn *identity = [CSCapUrn fromString:@"cap:" error:&error];
+    XCTAssertNotNil(identity, @"%@", error.localizedDescription);
+    XCTAssertEqual([identity kind], CSCapKindIdentity);
+
+    NSArray<NSString *> *spellings = @[
+        @"cap:in=media:;out=media:",
+        @"cap:in=*;out=*",
+        @"cap:in=media:",
+        @"cap:out=media:",
+    ];
+    for (NSString *spelling in spellings) {
+        CSCapUrn *cap = [CSCapUrn fromString:spelling error:&error];
+        XCTAssertNotNil(cap, @"%@: %@", spelling, error.localizedDescription);
+        XCTAssertEqual([cap kind], CSCapKindIdentity,
+                       @"%@ should classify as Identity (canonical form is `cap:`)",
+                       spelling);
+    }
+
+    CSCapUrn *withOp = [CSCapUrn fromString:@"cap:passthrough" error:&error];
+    XCTAssertNotNil(withOp);
+    XCTAssertEqual([withOp kind], CSCapKindTransform,
+                   @"cap:passthrough specifies the operation axis — not Identity");
+}
+
+// TEST1801: Source classifier — in=media:void, out non-void.
+- (void)test1801_kind_source_when_input_is_void {
+    NSError *error = nil;
+
+    CSCapUrn *warm = [CSCapUrn fromString:@"cap:in=\"media:void\";out=\"media:model-artifact\";warm" error:&error];
+    XCTAssertNotNil(warm);
+    XCTAssertEqual([warm kind], CSCapKindSource);
+
+    CSCapUrn *gen = [CSCapUrn fromString:@"cap:in=media:void;out=media:textable" error:&error];
+    XCTAssertNotNil(gen);
+    XCTAssertEqual([gen kind], CSCapKindSource);
+}
+
+// TEST1802: Sink classifier — out=media:void, in non-void.
+- (void)test1802_kind_sink_when_output_is_void {
+    NSError *error = nil;
+
+    CSCapUrn *discard = [CSCapUrn fromString:@"cap:discard;in=media:;out=media:void" error:&error];
+    XCTAssertNotNil(discard);
+    XCTAssertEqual([discard kind], CSCapKindSink);
+
+    CSCapUrn *log = [CSCapUrn fromString:@"cap:in=\"media:json;textable\";log;out=media:void" error:&error];
+    XCTAssertNotNil(log);
+    XCTAssertEqual([log kind], CSCapKindSink);
+}
+
+// TEST1803: Effect classifier — both sides void. Reads as `() → ()`.
+- (void)test1803_kind_effect_when_both_sides_void {
+    NSError *error = nil;
+
+    CSCapUrn *ping = [CSCapUrn fromString:@"cap:in=media:void;out=media:void;ping" error:&error];
+    XCTAssertNotNil(ping);
+    XCTAssertEqual([ping kind], CSCapKindEffect);
+
+    CSCapUrn *bare = [CSCapUrn fromString:@"cap:in=media:void;out=media:void" error:&error];
+    XCTAssertNotNil(bare);
+    XCTAssertEqual([bare kind], CSCapKindEffect);
+}
+
+// TEST1804: Transform classifier — at least one side non-void, and
+// the cap is not the bare identity.
+- (void)test1804_kind_transform_for_normal_data_processors {
+    NSError *error = nil;
+
+    CSCapUrn *extract = [CSCapUrn fromString:@"cap:extract;in=media:pdf;out=\"media:record;textable\"" error:&error];
+    XCTAssertNotNil(extract);
+    XCTAssertEqual([extract kind], CSCapKindTransform);
+
+    CSCapUrn *labeled = [CSCapUrn fromString:@"cap:passthrough;in=media:;out=media:" error:&error];
+    XCTAssertNotNil(labeled);
+    XCTAssertEqual([labeled kind], CSCapKindTransform);
+}
+
+// TEST1805: Kind is invariant under canonicalization. The same
+// morphism written in many surface forms must classify the same way
+// once parsed.
+- (void)test1805_kind_invariant_under_canonical_spellings {
+    NSError *error = nil;
+
+    NSArray *cases = @[
+        @[@"cap:", @"cap:in=media:;out=media:", @(CSCapKindIdentity)],
+        @[@"cap:extract;in=media:pdf;out=media:textable",
+          @"cap:extract;in=\"media:pdf\";out=\"media:textable\"",
+          @(CSCapKindTransform)],
+        @[@"cap:in=media:void;out=media:textable;warm",
+          @"cap:warm;out=media:textable;in=media:void",
+          @(CSCapKindSource)],
+    ];
+
+    for (NSArray *c in cases) {
+        NSString *a = c[0];
+        NSString *b = c[1];
+        CSCapKind expected = (CSCapKind)[c[2] integerValue];
+
+        CSCapUrn *capA = [CSCapUrn fromString:a error:&error];
+        XCTAssertNotNil(capA, @"%@", a);
+        CSCapUrn *capB = [CSCapUrn fromString:b error:&error];
+        XCTAssertNotNil(capB, @"%@", b);
+
+        CSCapKind kindA = [capA kind];
+        CSCapKind kindB = [capB kind];
+
+        XCTAssertEqual(kindA, expected, @"%@ should classify as %@", a, CSCapKindToString(expected));
+        XCTAssertEqual(kindB, expected, @"%@ should classify as %@", b, CSCapKindToString(expected));
+        XCTAssertEqual(kindA, kindB,
+                       @"%@ and %@ parse to the same cap and must classify identically",
+                       a, b);
+    }
+}
+
 @end

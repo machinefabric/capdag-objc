@@ -666,17 +666,17 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testBuilderComplex` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:173 |
 | unnumbered | `testBuilderCustomTags` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:70 |
 | unnumbered | `testBuilderDirectionAccess` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:53 |
-| unnumbered | `testBuilderDirectionMismatchNoMatch` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:286 |
+| unnumbered | `testBuilderDirectionMismatchNoMatch` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:290 |
 | unnumbered | `testBuilderEmptyBuildFailsWithMissingInSpec` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:131 |
 | unnumbered | `testBuilderFluentAPI` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:32 |
-| unnumbered | `testBuilderMatchingWithBuiltCap` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:240 |
+| unnumbered | `testBuilderMatchingWithBuiltCap` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:244 |
 | unnumbered | `testBuilderMinimalValid` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:158 |
 | unnumbered | `testBuilderMissingInSpecFails` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:105 |
 | unnumbered | `testBuilderMissingOutSpecFails` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:118 |
-| unnumbered | `testBuilderStaticFactory` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:231 |
+| unnumbered | `testBuilderStaticFactory` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:235 |
 | unnumbered | `testBuilderTagIgnoresInOut` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:140 |
 | unnumbered | `testBuilderTagOverrides` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:88 |
-| unnumbered | `testBuilderWildcards` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:207 |
+| unnumbered | `testBuilderWildcards` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:211 |
 | unnumbered | `testBuiltinSpecIdsResolve` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:541 |
 | unnumbered | `testCanonicalArgumentsDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:215 |
 | unnumbered | `testCanonicalDictionaryDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:168 |
@@ -799,17 +799,17 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testBuilderComplex` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:173
 - `testBuilderCustomTags` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:70
 - `testBuilderDirectionAccess` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:53
-- `testBuilderDirectionMismatchNoMatch` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:286
+- `testBuilderDirectionMismatchNoMatch` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:290
 - `testBuilderEmptyBuildFailsWithMissingInSpec` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:131
 - `testBuilderFluentAPI` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:32
-- `testBuilderMatchingWithBuiltCap` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:240
+- `testBuilderMatchingWithBuiltCap` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:244
 - `testBuilderMinimalValid` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:158
 - `testBuilderMissingInSpecFails` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:105
 - `testBuilderMissingOutSpecFails` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:118
-- `testBuilderStaticFactory` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:231
+- `testBuilderStaticFactory` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:235
 - `testBuilderTagIgnoresInOut` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:140
 - `testBuilderTagOverrides` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:88
-- `testBuilderWildcards` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:207
+- `testBuilderWildcards` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:211
 - `testBuiltinSpecIdsResolve` — Tests/CapDAGTests/CSSchemaValidationTests.m:541
 - `testCanonicalArgumentsDeserialization` — Tests/CapDAGTests/CSCapTests.m:215
 - `testCanonicalDictionaryDeserialization` — Tests/CapDAGTests/CSCapTests.m:168
