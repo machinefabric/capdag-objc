@@ -19,14 +19,14 @@
     [builder inSpec:@"media:void"];
     [builder outSpec:@"media:record;textable"];
     [builder tag:@"type" value:@"data_processing"];
-    [builder tag:@"op" value:@"transform"];
+    [builder marker:@"transform"];
     [builder tag:@"format" value:@"json"];
     CSCapUrn *capUrn = [builder build:&error];
 
     XCTAssertNotNil(capUrn);
     XCTAssertNil(error);
-    // Alphabetical order: format, in, op, out, type
-    XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;transform;out=\"media:record;textable\";type=data_processing");
+    // Alphabetical order: format, in, out, transform, type.
+    XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;out=\"media:record;textable\";transform;type=data_processing");
 }
 
 - (void)testBuilderFluentAPI {
@@ -167,7 +167,11 @@
     XCTAssertNil(error);
     XCTAssertEqualObjects([cap toString], @"cap:in=media:void;out=\"media:record;textable\"");
     XCTAssertEqual(cap.tags.count, 0);
-    XCTAssertEqual([cap specificity], 3); // void(1) + object(2)
+    // Cap-URN spec: 10000 * spec_U(out) + 100 * spec_U(in) + spec_U(y).
+    //   out = media:record;textable -> 2 markers, score 4
+    //   in  = media:void           -> 1 marker, score 2
+    //   y   = empty                -> 0
+    XCTAssertEqual([cap specificity], 10000 * 4 + 100 * 2 + 0);
 }
 
 - (void)testBuilderComplex {
@@ -188,8 +192,11 @@
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
 
-    // Alphabetical order: codec, format, framerate, in, out, output, quality, target, transcode, type
-    NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;in=media:;out=media:;output=binary;quality=1080p;target=video;transcode;type=media";
+    // `media:` direction specs (top of the order, no tags) collapse
+    // out of the canonical serialization. Alphabetical order across
+    // the remaining y-tags: codec, format, framerate, output, quality,
+    // target, transcode, type.
+    NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;output=binary;quality=1080p;target=video;transcode;type=media";
     XCTAssertEqualObjects([cap toString], expected);
 
     XCTAssertEqualObjects([cap getTag:@"type"], @"media");
@@ -201,11 +208,11 @@
     XCTAssertEqualObjects([cap getTag:@"framerate"], @"30fps");
     XCTAssertEqualObjects([cap getTag:@"output"], @"binary");
 
-    // CapUrn specificity counts non-wildcard tags: 7 keyed tags (type,
-    // target, format, codec, quality, framerate, output) contribute 1
-    // each; the `transcode` marker has value "*" so it contributes 0;
-    // `media:` direction specs contribute 0.
-    XCTAssertEqual([cap specificity], 7);
+    // Cap-URN spec: 10000 * spec_U(out) + 100 * spec_U(in) + spec_U(y).
+    //   out = media: -> 0
+    //   in  = media: -> 0
+    //   y   = 7 exact tags × 4 + 1 marker (transcode) × 2 = 28 + 2 = 30
+    XCTAssertEqual([cap specificity], 10000 * 0 + 100 * 0 + 30);
 }
 
 - (void)testBuilderWildcards {
@@ -213,23 +220,24 @@
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"*"]; // Wildcard in
     [builder outSpec:@"*"]; // Wildcard out
-    [builder tag:@"op" value:@"convert"];
-    [builder tag:@"ext" value:@"*"]; // Wildcard format
-    [builder tag:@"quality" value:@"*"]; // Wildcard quality
+    [builder marker:@"convert"];
+    [builder marker:@"ext"];     // bare marker, value=*
+    [builder marker:@"quality"]; // bare marker, value=*
     CSCapUrn *cap = [builder build:&error];
 
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
 
-    // Wildcards: in/out are "media:" now (not "*")
-    // Alphabetical order: ext, in, op, out, quality
-    XCTAssertEqualObjects([cap toString], @"cap:ext;in=media:;convert;out=media:;quality");
-    XCTAssertEqual([cap specificity], 1); // Only op is specific (media: wildcard contributes 0)
+    // `media:` collapses out of the canonical serialization. Three
+    // markers, alphabetical: convert, ext, quality.
+    XCTAssertEqualObjects([cap toString], @"cap:convert;ext;quality");
+    // Cap-URN spec: out=0, in=0, y = 3 markers × 2 = 6.
+    XCTAssertEqual([cap specificity], 6);
 
     XCTAssertEqualObjects([cap getTag:@"ext"], @"*");
     XCTAssertEqualObjects([cap getTag:@"quality"], @"*");
-    XCTAssertEqualObjects([cap getInSpec], @"media:");  // Wildcard is media: now
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");  // Wildcard is media: now
+    XCTAssertEqualObjects([cap getInSpec], @"media:");
+    XCTAssertEqualObjects([cap getOutSpec], @"media:");
 }
 
 - (void)testBuilderStaticFactory {
@@ -280,11 +288,15 @@
     // Wildcard request (pattern) should accept specific cap (instance)
     XCTAssertTrue([wildcardRequest accepts:specificCap]);
 
-    // Check specificity (includes in + out now)
+    // Cap-URN spec: 10000 * spec_U(out) + 100 * spec_U(in) + spec_U(y).
     XCTAssertTrue([specificCap isMoreSpecificThan:generalRequest]);
-    XCTAssertEqual([specificCap specificity], 7); // void(1) + object(2) + op + target + format + ext
-    XCTAssertEqual([generalRequest specificity], 4); // void(1) + object(2) + op
-    XCTAssertEqual([wildcardRequest specificity], 5); // void(1) + object(2) + op + target (ext=* doesn't count)
+    //   specificCap: out=record;textable (4), in=void (2),
+    //   y = op=generate(4)+target=thumbnail(4)+format=pdf(4)+ext=pdf(4) = 16
+    XCTAssertEqual([specificCap specificity], 10000 * 4 + 100 * 2 + 16);
+    //   generalRequest: out=4, in=2, y = op=generate(4) = 4
+    XCTAssertEqual([generalRequest specificity], 10000 * 4 + 100 * 2 + 4);
+    //   wildcardRequest: out=4, in=2, y = op=generate(4)+target=thumbnail(4)+ext=*(2) = 10
+    XCTAssertEqual([wildcardRequest specificity], 10000 * 4 + 100 * 2 + 10);
 }
 
 - (void)testBuilderDirectionMismatchNoMatch {

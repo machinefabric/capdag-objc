@@ -2335,6 +2335,12 @@ public final class CartridgeHost: @unchecked Sendable {
         var result: [InstalledCartridgeRecord] = []
         result.reserveCapacity(cartridges.count)
         for (idx, cartridge) in cartridges.enumerated() {
+            // Match Rust: cartridges that have permanently failed
+            // HELLO are not advertised, even if they have a resolvable
+            // identity record.
+            if cartridge.helloFailed {
+                continue
+            }
             guard let base = cartridge.installedCartridgeRecord() else { continue }
             let pid = cartridge.pid.map { UInt32($0) }
             let stats = CartridgeRuntimeStats(

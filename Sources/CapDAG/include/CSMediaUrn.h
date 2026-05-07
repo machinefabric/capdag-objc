@@ -16,7 +16,12 @@ FOUNDATION_EXPORT NSErrorDomain const CSMediaUrnErrorDomain;
 
 typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
     CSMediaUrnErrorInvalidPrefix = 1,
-    CSMediaUrnErrorParse = 2
+    CSMediaUrnErrorParse = 2,
+    /// `media:void` was combined with one or more other tags. The
+    /// unit type is atomic — there is no lattice underneath it.
+    /// Reasons for "why void was used" belong on the cap URN's
+    /// non-directional tags or in the cap's args.
+    CSMediaUrnErrorVoidNotAtomic = 3
 };
 
 /// Media URN - a TaggedUrn with required "media:" prefix

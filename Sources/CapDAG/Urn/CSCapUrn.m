@@ -11,6 +11,14 @@
 
 NSErrorDomain const CSCapUrnErrorDomain = @"CSCapUrnErrorDomain";
 
+// Per-tag truth-table specificity scoring is owned by the TaggedUrn
+// module — the same scorer applies uniformly to media-URN tags,
+// cap-tag y-axis, and any other Tagged URN dimension. Local alias
+// kept for readability inside this file.
+static NSUInteger CSCapUrnScoreTagValue(NSString *value) {
+    return CSTaggedUrnScoreTagValue(value);
+}
+
 /// Check if a media URN instance conforms to a media URN pattern using TaggedUrn matching.
 /// Delegates directly to [CSTaggedUrn conformsTo:error:] — all tag semantics (*, !, ?, exact, missing) apply.
 static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pattern) {
@@ -544,34 +552,20 @@ NSString *CSCapKindToString(CSCapKind kind) {
         }
     }
 
-    // Check all tags that the pattern (self) requires.
-    // The instance (request param) must satisfy every pattern constraint.
-    // Missing tag in instance → instance doesn't satisfy constraint → reject.
-    for (NSString *selfKey in self.mutableTags) {
-        NSString *selfValue = self.mutableTags[selfKey];
-        NSString *reqValue = request.mutableTags[selfKey];
-
-        if (!reqValue) {
-            // Instance missing a tag the pattern requires
-            return NO;
-        }
-
-        if ([selfValue isEqualToString:@"*"]) {
-            // Pattern accepts any value for this tag
-            continue;
-        }
-
-        if ([reqValue isEqualToString:@"*"]) {
-            // Instance has wildcard for this tag
-            continue;
-        }
-
-        if (![selfValue isEqualToString:reqValue]) {
-            // Values don't match
+    // Y-axis: every tag's per-key match runs through the six-form
+    // truth table (CSTaggedUrn valuesMatchInst:patt:). Walk the union
+    // of all keys appearing on either side so missing-on-pattern and
+    // missing-on-instance cells both get evaluated.
+    NSMutableSet<NSString *> *allKeys = [NSMutableSet set];
+    [allKeys addObjectsFromArray:self.mutableTags.allKeys];
+    [allKeys addObjectsFromArray:request.mutableTags.allKeys];
+    for (NSString *key in allKeys) {
+        NSString *patt = self.mutableTags[key];   // self is the pattern
+        NSString *inst = request.mutableTags[key]; // request is the instance
+        if (![CSTaggedUrn valuesMatchInst:inst patt:patt]) {
             return NO;
         }
     }
-
     return YES;
 }
 
@@ -692,30 +686,41 @@ NSString *CSCapKindToString(CSCapKind kind) {
 }
 
 - (NSUInteger)specificity {
-    NSUInteger count = 0;
+    // Weighted sum of the per-tag truth-table score across the three
+    // axes (out, in, y), each axis scored as a Tagged URN. Per-tag
+    // ladder:
+    //   "?"            -> 0   (no constraint)
+    //   starts "?="    -> 1   (absent or not v)
+    //   "*"            -> 2   (must-have-any)
+    //   starts "!="    -> 3   (present and not v)
+    //   exact value    -> 4   (exact match)
+    //   "!"            -> 5   (must-not-have)
+    //
+    // Axis weighting:
+    //   spec_C(c) = WEIGHT_OUT * spec_U(c.out)
+    //             + WEIGHT_IN  * spec_U(c.in)
+    //             +              spec_U(c.y)
+    //
+    // Lexicographic priority (out, in, y) reflects the routing
+    // intent: producing different things is the largest semantic
+    // difference between two caps; consuming different things is
+    // next; descriptive y-axis metadata is last.
 
-    // Direction specs contribute their MediaUrn tag count (more tags = more specific)
-    // "media:" is the wildcard (contributes 0 to specificity)
-    if (![self.inSpec isEqualToString:@"media:"]) {
-        NSError *error = nil;
-        CSTaggedUrn *inUrn = [CSTaggedUrn fromString:self.inSpec error:&error];
-        NSAssert(inUrn != nil, @"CU2: Failed to parse in media URN '%@': %@", self.inSpec, error.localizedDescription);
-        count += inUrn.tags.count;
-    }
-    if (![self.outSpec isEqualToString:@"media:"]) {
-        NSError *error = nil;
-        CSTaggedUrn *outUrn = [CSTaggedUrn fromString:self.outSpec error:&error];
-        NSAssert(outUrn != nil, @"CU2: Failed to parse out media URN '%@': %@", self.outSpec, error.localizedDescription);
-        count += outUrn.tags.count;
-    }
+    NSError *error = nil;
+    CSTaggedUrn *inUrn = [CSTaggedUrn fromString:self.inSpec error:&error];
+    NSAssert(inUrn != nil, @"CU2: Failed to parse in media URN '%@': %@",
+             self.inSpec, error.localizedDescription);
+    CSTaggedUrn *outUrn = [CSTaggedUrn fromString:self.outSpec error:&error];
+    NSAssert(outUrn != nil, @"CU2: Failed to parse out media URN '%@': %@",
+             self.outSpec, error.localizedDescription);
 
-    // Count non-wildcard tags
+    NSUInteger yScore = 0;
     for (NSString *value in self.mutableTags.allValues) {
-        if (![value isEqualToString:@"*"]) {
-            count++;
-        }
+        yScore += CSCapUrnScoreTagValue(value);
     }
-    return count;
+    return CSCapUrnWeightOut * [outUrn specificity]
+         + CSCapUrnWeightIn  * [inUrn specificity]
+         + yScore;
 }
 
 - (BOOL)isMoreSpecificThan:(CSCapUrn *)other {

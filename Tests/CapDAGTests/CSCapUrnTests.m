@@ -54,9 +54,9 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNotNil(capUrn);
     XCTAssertNil(error);
 
-    // Should be sorted alphabetically: ext, in, op, out, target
-    // Note: out value contains ; so it must be quoted in the canonical form
-    XCTAssertEqualObjects([capUrn toString], @"cap:ext=pdf;in=media:void;generate;out=\"media:record;textable\";target=thumbnail");
+    // Should be sorted alphabetically: ext, generate, in, out, target.
+    // Note: out value contains ; so it must be quoted in the canonical form.
+    XCTAssertEqualObjects([capUrn toString], @"cap:ext=pdf;generate;in=media:void;out=\"media:record;textable\";target=thumbnail");
 }
 
 // TEST015: Test that cap: prefix is required and case-insensitive
@@ -280,21 +280,36 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap2 accepts:request2]);
 }
 
-// TEST020: Test specificity calculation (direction specs use MediaUrn tag count, wildcards don't count)
+// TEST020: Specificity is the sum of per-tag truth-table scores
+// across in/out/y. Marker tags (bare segments and `key=*`) score 2
+// (must-have-any), exact `key=value` tags score 3, missing/`?` score
+// 0, `!` scores 1.
+//
+// testUrn() builds "cap:in=media:void;out=media:record;textable;<tags>"
+// so the directional baseline is:
+//   in:  media:void              -> {void=*}              -> 2
+//   out: media:record;textable   -> {record=*, textable=*} -> 4
+// Total directional baseline: 6.
 - (void)test020_specificity {
     NSError *error;
-    // Specificity now includes in and out (if not wildcards)
+
     CSCapUrn *cap1 = [CSCapUrn fromString:@"cap:in=*;op;out=*" error:&error];
     XCTAssertNotNil(cap1);
-    CSCapUrn *cap2 = [CSCapUrn fromString:testUrn(@"generate") error:&error]; // in + out + op = 3
+    CSCapUrn *cap2 = [CSCapUrn fromString:testUrn(@"generate") error:&error];
     XCTAssertNotNil(cap2);
-    CSCapUrn *cap3 = [CSCapUrn fromString:@"cap:in=*;op;out=*;ext=pdf" error:&error]; // ext = 1
+    CSCapUrn *cap3 = [CSCapUrn fromString:@"cap:in=*;op;out=*;ext=pdf" error:&error];
     XCTAssertNotNil(cap3);
 
-    XCTAssertEqual([cap1 specificity], 0); // all wildcards
-    // Direction specs contribute MediaUrn tag count: void(1) + object(2) + op(1) = 4
-    XCTAssertEqual([cap2 specificity], 4); // void(1) + object(2) + generate(1)
-    XCTAssertEqual([cap3 specificity], 1); // only ext=pdf counts (direction wildcards contribute 0)
+    // testUrn() prepends in="media:void" (score 2) and
+    // out="media:record;textable" (score 2+2=4). Cap-URN spec is
+    // 10000*spec_U(out) + 100*spec_U(in) + spec_U(y).
+
+    // cap1: out=media:(0), in=media:(0), y=op marker(2) = 2
+    XCTAssertEqual([cap1 specificity], 10000*0 + 100*0 + 2);
+    // cap2: out=4, in=2, y=2 (generate marker)
+    XCTAssertEqual([cap2 specificity], 10000*4 + 100*2 + 2);
+    // cap3: out=0, in=0, y=2+4 (op marker, ext=pdf exact)
+    XCTAssertEqual([cap3 specificity], 10000*0 + 100*0 + 6);
 
     XCTAssertTrue([cap2 isMoreSpecificThan:cap1]);
 }
@@ -350,11 +365,12 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate") error:&error];
     CSCapUrn *modified = [original withTag:@"ext" value:@"pdf"];
 
-    // Direction preserved, new tag added in alphabetical order
-    XCTAssertEqualObjects([modified toString], @"cap:ext=pdf;in=media:void;generate;out=\"media:record;textable\"");
+    // Direction preserved, new tag added in alphabetical order:
+    // ext, generate, in, out.
+    XCTAssertEqualObjects([modified toString], @"cap:ext=pdf;generate;in=media:void;out=\"media:record;textable\"");
 
-    // Original should be unchanged
-    XCTAssertEqualObjects([original toString], @"cap:in=media:void;generate;out=\"media:record;textable\"");
+    // Original should be unchanged: generate, in, out.
+    XCTAssertEqualObjects([original toString], @"cap:generate;in=media:void;out=\"media:record;textable\"");
 }
 
 // TEST1407: withTag silently ignores attempts to set "in" or "out" tags (mirror-local)
@@ -396,10 +412,12 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
     CSCapUrn *modified = [original withoutTag:@"ext"];
 
-    XCTAssertEqualObjects([modified toString], @"cap:in=media:void;generate;out=\"media:record;textable\"");
+    // Tags sort alphabetically: generate, in, out.
+    XCTAssertEqualObjects([modified toString], @"cap:generate;in=media:void;out=\"media:record;textable\"");
 
-    // Original should be unchanged
-    XCTAssertEqualObjects([original toString], @"cap:ext=pdf;in=media:void;generate;out=\"media:record;textable\"");
+    // Original should be unchanged. Tags sort alphabetically:
+    // ext, generate, in, out.
+    XCTAssertEqualObjects([original toString], @"cap:ext=pdf;generate;in=media:void;out=\"media:record;textable\"");
 }
 
 // TEST1411: withoutTag silently ignores attempts to remove "in" or "out" tags (mirror-local)
@@ -606,9 +624,10 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap getTag:@"ext"], @"pdf");
     XCTAssertEqualObjects([cap getTag:@"target"], @"thumbnail");
 
-    // Key lookup is case-insensitive
-    XCTAssertEqualObjects([cap getTag:@"OP"], @"generate");
-    XCTAssertEqualObjects([cap getTag:@"Op"], @"generate");
+    // Key lookup is case-insensitive: uppercase variants of `ext`
+    // resolve to the same keyed tag.
+    XCTAssertEqualObjects([cap getTag:@"EXT"], @"pdf");
+    XCTAssertEqualObjects([cap getTag:@"Ext"], @"pdf");
 
     // Both URNs parse to same lowercase values
     error = nil;
@@ -967,12 +986,19 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *specificCap = [CSCapUrn fromString:@"cap:in=\"media:pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(specificCap, @"Failed to parse specific cap: %@", error);
 
-    // generic: (0) + image;png;thumbnail(3) + op(1) = 4
-    XCTAssertEqual([genericCap specificity], 4,
-        @"Generic cap specificity: (0) + image;png;thumbnail(3) + op(1)");
-    // specific: pdf(1) + image;png;thumbnail(3) + op(1) = 5
-    XCTAssertEqual([specificCap specificity], 5,
-        @"Specific cap specificity: pdf(1) + image;png;thumbnail(3) + op(1)");
+    // Cap-URN spec: 10000*spec_U(out) + 100*spec_U(in) + spec_U(y).
+    // generic:
+    //   out = media:image;png;thumbnail -> 3 markers, score 6
+    //   in  = media:                    -> 0
+    //   y   = generate-thumbnail marker -> 2
+    //   spec_C = 10000*6 + 100*0 + 2 = 60002
+    XCTAssertEqual([genericCap specificity], 10000 * 6 + 100 * 0 + 2);
+    // specific:
+    //   out = media:image;png;thumbnail -> 6
+    //   in  = media:pdf                 -> 2
+    //   y   = generate-thumbnail marker -> 2
+    //   spec_C = 10000*6 + 100*2 + 2 = 60202
+    XCTAssertEqual([specificCap specificity], 10000 * 6 + 100 * 2 + 2);
 
     XCTAssertGreaterThan([specificCap specificity], [genericCap specificity],
         @"pdf cap must be more specific than generic cap");
@@ -1291,7 +1317,7 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *cap = [[[[[[[CSCapUrnBuilder builder]
         inSpec:@"media:void"]
         outSpec:@"media:record;textable"]
-        tag:@"op" value:@"generate"]
+        marker:@"generate"]
         tag:@"target" value:@"thumbnail"]
         tag:@"ext" value:@"pdf"]
         build:&error];
@@ -1525,6 +1551,249 @@ static NSString* testUrn(NSString *tags) {
                        @"%@ and %@ parse to the same cap and must classify identically",
                        a, b);
     }
+}
+
+#pragma mark - Truth-table specificity tests (test1820–test1824)
+//
+// Mirrored across every language port (Rust, Go, Python, Swift/ObjC,
+// JS) under the SAME numbers. Specificity must be the truth-table
+// sum across all three axes using the six-form ladder:
+//
+//   ?x or missing     -> 0   (no constraint)
+//   x?=v              -> 1   (absent OR not v)
+//   x (=x=*) marker   -> 2   (must-have-any)
+//   x!=v              -> 3   (present and not v)
+//   x=v exact         -> 4   (must-have-this-value)
+//   !x                -> 5   (must-not-have)
+
+// TEST1820: A `?`-valued cap-tag scores 0. Same as missing.
+- (void)test1820_specificity_question_is_zero {
+    NSError *error = nil;
+
+    CSCapUrn *bare = [CSCapUrn fromString:@"cap:" error:&error];
+    XCTAssertNotNil(bare);
+    XCTAssertEqual([bare specificity], 0u);
+
+    CSCapUrn *withQ = [CSCapUrn fromString:@"cap:?target" error:&error];
+    XCTAssertNotNil(withQ);
+    XCTAssertEqual([withQ specificity], 0u,
+        @"?x must score 0 (explicit no-constraint, same as missing)");
+}
+
+// TEST1821: A `!`-valued cap-tag scores 5 (top of negative chain).
+- (void)test1821_specificity_must_not_have_is_five {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:!constrained" error:&error];
+    XCTAssertNotNil(cap);
+    XCTAssertEqual([cap specificity], 5u,
+        @"!constrained (must-not-have) must score 5");
+}
+
+// TEST1822: A `*`-valued cap-tag (including bare markers) scores 2.
+- (void)test1822_specificity_must_have_any_is_two {
+    NSError *error = nil;
+
+    CSCapUrn *bareMarker = [CSCapUrn fromString:@"cap:extract" error:&error];
+    XCTAssertNotNil(bareMarker);
+    XCTAssertEqual([bareMarker specificity], 2u,
+        @"bare `extract` parses as extract=* (must-have-any) and scores 2");
+
+    CSCapUrn *explicitStar = [CSCapUrn fromString:@"cap:extract=*" error:&error];
+    XCTAssertNotNil(explicitStar);
+    XCTAssertEqual([explicitStar specificity], 2u,
+        @"explicit key=* must score 2 (same as bare marker)");
+
+    XCTAssertEqual([bareMarker specificity], [explicitStar specificity],
+        @"bare marker and explicit key=* are the same form and must score identically");
+}
+
+// TEST1823: An exact-valued cap-tag scores 4.
+- (void)test1823_specificity_exact_value_is_four {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:target=metadata" error:&error];
+    XCTAssertNotNil(cap);
+    XCTAssertEqual([cap specificity], 4u,
+        @"target=metadata (exact value) must score 4");
+}
+
+// TEST1824: All six forms compose additively on a single cap.
+// y combining 0+1+2+3+4+5 must sum to 15.
+- (void)test1824_specificity_combined_y_axis {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft" error:&error];
+    XCTAssertNotNil(cap);
+    XCTAssertEqual([cap specificity], 15u,
+        @"y combining all six forms (0+1+2+3+4+5) must sum to 15");
+}
+
+#pragma mark - Six-form canonicalization tests (test1830–test1835)
+
+- (void)test1830_canonicalize_no_constraint {
+    NSError *error = nil;
+    NSString *canonical = @"cap:?x";
+    for (NSString *input in @[@"cap:?x", @"cap:x?", @"cap:x=?"]) {
+        CSCapUrn *cap = [CSCapUrn fromString:input error:&error];
+        XCTAssertNotNil(cap, @"input %@ must parse", input);
+        XCTAssertEqualObjects([cap toString], canonical,
+            @"input %@ must canonicalize to %@", input, canonical);
+    }
+}
+
+// TEST1831: ?x=v and x?=v both canonicalize to x?=v. The third
+// hypothetical form `x=?v` is NOT recognized as a qualifier — a
+// value starting with `?` is just an exact value beginning with
+// a `?` character.
+- (void)test1831_canonicalize_absent_or_not_value {
+    NSError *error = nil;
+    NSString *canonical = @"cap:x?=foo";
+    for (NSString *input in @[@"cap:?x=foo", @"cap:x?=foo"]) {
+        CSCapUrn *cap = [CSCapUrn fromString:input error:&error];
+        XCTAssertNotNil(cap, @"input %@ must parse", input);
+        XCTAssertEqualObjects([cap toString], canonical,
+            @"input %@ must canonicalize to %@", input, canonical);
+    }
+
+    // `x=?foo` is a plain exact tag whose value is the string `?foo`
+    // — NOT a canonicalization alias.
+    CSCapUrn *exact = [CSCapUrn fromString:@"cap:x=?foo" error:&error];
+    XCTAssertNotNil(exact);
+    XCTAssertEqualObjects([exact toString], @"cap:x=?foo");
+    XCTAssertEqualObjects([exact getTag:@"x"], @"?foo");
+}
+
+- (void)test1832_canonicalize_must_have_any {
+    NSError *error = nil;
+    NSString *canonical = @"cap:x";
+    for (NSString *input in @[@"cap:x", @"cap:x=*"]) {
+        CSCapUrn *cap = [CSCapUrn fromString:input error:&error];
+        XCTAssertNotNil(cap, @"input %@ must parse", input);
+        XCTAssertEqualObjects([cap toString], canonical,
+            @"input %@ must canonicalize to %@", input, canonical);
+    }
+}
+
+// TEST1833: !x=v and x!=v both canonicalize to x!=v. The third
+// hypothetical form `x=!v` is NOT recognized as a qualifier — a
+// value starting with `!` is just an exact value beginning with
+// a `!` character.
+- (void)test1833_canonicalize_present_not_value {
+    NSError *error = nil;
+    NSString *canonical = @"cap:x!=foo";
+    for (NSString *input in @[@"cap:!x=foo", @"cap:x!=foo"]) {
+        CSCapUrn *cap = [CSCapUrn fromString:input error:&error];
+        XCTAssertNotNil(cap, @"input %@ must parse", input);
+        XCTAssertEqualObjects([cap toString], canonical,
+            @"input %@ must canonicalize to %@", input, canonical);
+    }
+
+    // `x=!foo` is a plain exact tag whose value is the string `!foo`
+    // — NOT a canonicalization alias.
+    CSCapUrn *exact = [CSCapUrn fromString:@"cap:x=!foo" error:&error];
+    XCTAssertNotNil(exact);
+    XCTAssertEqualObjects([exact toString], @"cap:x=!foo");
+    XCTAssertEqualObjects([exact getTag:@"x"], @"!foo");
+}
+
+- (void)test1834_canonicalize_exact_value {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:x=foo" error:&error];
+    XCTAssertNotNil(cap);
+    XCTAssertEqualObjects([cap toString], @"cap:x=foo");
+}
+
+- (void)test1835_canonicalize_must_not_have {
+    NSError *error = nil;
+    NSString *canonical = @"cap:!x";
+    for (NSString *input in @[@"cap:!x", @"cap:x!", @"cap:x=!"]) {
+        CSCapUrn *cap = [CSCapUrn fromString:input error:&error];
+        XCTAssertNotNil(cap, @"input %@ must parse", input);
+        XCTAssertEqualObjects([cap toString], canonical,
+            @"input %@ must canonicalize to %@", input, canonical);
+    }
+}
+
+// TEST1842: Full 6×6 truth table.
+- (void)test1842_truth_table_full_cross_product {
+    NSError *error = nil;
+    NSArray *forms = @[@"", @"?x", @"x?=v", @"x", @"x!=v", @"x=v", @"!x"];
+    BOOL expected[7][7] = {
+        // miss   ?x    x?=v   x      x!=v   x=v    !x
+        {YES,  YES,  YES,  NO,    NO,    NO,    YES},   // missing
+        {YES,  YES,  YES,  YES,   YES,   YES,   YES},   // ?x
+        {YES,  YES,  YES,  NO,    NO,    NO,    YES},   // x?=v
+        {YES,  YES,  YES,  YES,   YES,   YES,   NO},    // x
+        {YES,  YES,  YES,  YES,   YES,   NO,    NO},    // x!=v
+        {YES,  YES,  NO,   YES,   NO,    YES,   NO},    // x=v
+        {YES,  YES,  YES,  NO,    NO,    NO,    YES},   // !x
+    };
+    for (NSUInteger i = 0; i < forms.count; i++) {
+        for (NSUInteger j = 0; j < forms.count; j++) {
+            NSString *instForm = forms[i];
+            NSString *pattForm = forms[j];
+            NSString *instStr = instForm.length == 0 ? @"cap:" : [@"cap:" stringByAppendingString:instForm];
+            NSString *pattStr = pattForm.length == 0 ? @"cap:" : [@"cap:" stringByAppendingString:pattForm];
+            CSCapUrn *inst = [CSCapUrn fromString:instStr error:&error];
+            CSCapUrn *patt = [CSCapUrn fromString:pattStr error:&error];
+            XCTAssertNotNil(inst);
+            XCTAssertNotNil(patt);
+            BOOL actual = [patt accepts:inst];
+            XCTAssertEqual(actual, expected[i][j],
+                @"cell (inst=%@, patt=%@) expected %d got %d",
+                instForm, pattForm, expected[i][j], actual);
+        }
+    }
+}
+
+// TEST1843: Invalid qualifier combinations must be rejected.
+- (void)test1843_reject_invalid_combinations {
+    NSError *error = nil;
+    NSArray *invalid = @[
+        @"cap:?x?=v", @"cap:!x!=v", @"cap:?!x", @"cap:!?x",
+        @"cap:?x=*", @"cap:!x=*",
+        @"cap:?x=?", @"cap:?x=!", @"cap:!x=?", @"cap:!x=!",
+        @"cap:?", @"cap:!",
+    ];
+    for (NSString *input in invalid) {
+        error = nil;
+        CSCapUrn *cap = [CSCapUrn fromString:input error:&error];
+        XCTAssertNil(cap, @"input %@ must be rejected", input);
+    }
+}
+
+// TEST1844: out-axis difference dominates combined in+y differences.
+- (void)test1844_axis_weighting_out_dominates {
+    NSError *error = nil;
+    CSCapUrn *bigOut = [CSCapUrn fromString:@"cap:in=media:;out=\"media:record;textable\"" error:&error];
+    XCTAssertNotNil(bigOut);
+    CSCapUrn *bigInAndY = [CSCapUrn fromString:
+        @"cap:in=media:pdf;out=media:record;!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft"
+        error:&error];
+    XCTAssertNotNil(bigInAndY);
+    XCTAssertGreaterThan([bigOut specificity], [bigInAndY specificity],
+        @"out-axis difference must dominate combined in+y differences");
+}
+
+// TEST1845: With equal out, in-axis dominates over y-axis.
+- (void)test1845_axis_weighting_in_dominates_y {
+    NSError *error = nil;
+    CSCapUrn *bigIn = [CSCapUrn fromString:@"cap:in=media:pdf;out=media:record" error:&error];
+    XCTAssertNotNil(bigIn);
+    CSCapUrn *bigY = [CSCapUrn fromString:
+        @"cap:in=media:;out=media:record;!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft"
+        error:&error];
+    XCTAssertNotNil(bigY);
+    XCTAssertGreaterThan([bigIn specificity], [bigY specificity],
+        @"in-axis difference must dominate y-axis");
+}
+
+// TEST1846: Decoded layout — 10000*out + 100*in + y.
+- (void)test1846_axis_weighting_decoded_layout {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:a;b\";out=\"media:a;b;c;d\";extract" error:&error];
+    XCTAssertNotNil(cap);
+    // out=4 markers (8), in=2 markers (4), y=1 marker (2)
+    // 10000*8 + 100*4 + 2 = 80402
+    XCTAssertEqual([cap specificity], (NSUInteger)(10000*8 + 100*4 + 2));
 }
 
 @end

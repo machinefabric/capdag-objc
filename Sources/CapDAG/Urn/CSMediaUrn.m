@@ -37,6 +37,30 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
         return nil;
     }
 
+    // Enforce media:void atomicity. The unit type has no lattice
+    // underneath it; refinements like media:void;text or
+    // media:void;reason=warmup are conceptually wrong. Reasons or
+    // labels belong on cap-tags or args.
+    if (urn.tags[@"void"] != nil && urn.tags.count > 1) {
+        NSMutableArray<NSString *> *extras = [NSMutableArray array];
+        for (NSString *key in urn.tags) {
+            if (![key isEqualToString:@"void"]) {
+                [extras addObject:key];
+            }
+        }
+        [extras sortUsingSelector:@selector(compare:)];
+        if (error) {
+            NSString *msg = [NSString stringWithFormat:
+                @"media:void is atomic and cannot be refined; got extra tag(s): %@. "
+                @"Move why/how this void is used into cap-tags or args, not the media URN.",
+                [extras componentsJoinedByString:@", "]];
+            *error = [NSError errorWithDomain:CSMediaUrnErrorDomain
+                                         code:CSMediaUrnErrorVoidNotAtomic
+                                     userInfo:@{NSLocalizedDescriptionKey: msg}];
+        }
+        return nil;
+    }
+
     CSMediaUrn *mediaUrn = [[CSMediaUrn alloc] init];
     mediaUrn->_inner = urn;
     return mediaUrn;

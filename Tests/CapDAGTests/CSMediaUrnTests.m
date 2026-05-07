@@ -473,4 +473,43 @@
         @"availability must not conform to path");
 }
 
+// TEST1810: media:void is atomic — refinements are parse errors.
+//
+// Mirrored across every language port (Rust, Go, Python, Swift/ObjC,
+// JS) under the SAME number. Any divergence is a wire-level
+// inconsistency — the unit type's atomicity is part of the protocol's
+// deepest layer, not a per-port detail.
+- (void)test1810_media_void_is_atomic {
+    NSError *error = nil;
+
+    // Bare void: must parse successfully.
+    CSMediaUrn *bare = [CSMediaUrn fromString:@"media:void" error:&error];
+    XCTAssertNotNil(bare, @"bare `media:void` must parse — it is the unit type");
+    XCTAssertTrue([bare isVoid]);
+
+    // Every refinement must fail with CSMediaUrnErrorVoidNotAtomic.
+    NSArray<NSString *> *badInputs = @[
+        @"media:void;text",
+        @"media:void;pdf",
+        @"media:void;audio",
+        @"media:void;reason=warmup",
+        @"media:void;heartbeat",
+        @"media:void;manual",
+        // Order must not matter — the parser canonicalizes tags.
+        @"media:warmup;void",
+        @"media:reason=foo;void",
+    ];
+    for (NSString *input in badInputs) {
+        NSError *err = nil;
+        CSMediaUrn *result = [CSMediaUrn fromString:input error:&err];
+        XCTAssertNil(result, @"%@: expected parse error, got %@", input, [result description]);
+        XCTAssertNotNil(err, @"%@: error must be populated", input);
+        XCTAssertEqualObjects(err.domain, CSMediaUrnErrorDomain,
+                              @"%@: wrong error domain", input);
+        XCTAssertEqual(err.code, CSMediaUrnErrorVoidNotAtomic,
+                       @"%@: expected CSMediaUrnErrorVoidNotAtomic, got code %ld (%@)",
+                       input, (long)err.code, err.localizedDescription);
+    }
+}
+
 @end

@@ -281,6 +281,33 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         return [CapGroup(name: "test", caps: caps)]
     }
 
+    /// Create a real on-disk cartridge directory with a valid
+    /// `cartridge.json` so the host can resolve the cartridge's
+    /// identity. Mirrors the Rust test fixture pattern (a temporary
+    /// binary file with a hashable filename) — Swift's identity flow
+    /// runs through `cartridge.json`, so we lay down the manifest
+    /// instead. Returns the directory path; the directory is owned
+    /// by the calling test and is cleaned up via the URL scope.
+    private func makeCartridgeFixture(id: String, version: String = "0.0.0") -> String {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capdag-test-\(UUID().uuidString)", isDirectory: true)
+        try! FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let manifest: [String: Any] = [
+            "name": id,
+            "version": version,
+            "channel": "release",
+            "registry_url": NSNull(),
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: manifest)
+        let cartridgeJsonURL = tmp.appendingPathComponent("cartridge.json")
+        try! data.write(to: cartridgeJsonURL)
+        // computeCartridgeDirectoryHash insists on a non-empty entry
+        // file; lay down a placeholder so hashing succeeds.
+        let entryURL = tmp.appendingPathComponent(id)
+        try! Data("placeholder".utf8).write(to: entryURL)
+        return tmp.path
+    }
+
     // TEST413: Register cartridge adds entries to cap_table
     func test413_registerCartridgeAddsToCaptable() {
         let host = CartridgeHost()
@@ -1091,37 +1118,60 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Cartridge Death and Known Caps Tests (TEST661-665)
 
-    // TEST661: Cartridge death keeps known_caps advertised for on-demand respawn
+    // TEST661: Cartridge death keeps known_caps advertised for on-demand respawn.
+    // Identity is the gating filter for advertisement; we provision a
+    // real cartridge directory with a valid `cartridge.json` so the
+    // cartridge has a resolvable identity. cap_table routes regardless
+    // of identity (in-process / attached cartridges still need to be
+    // dispatchable), but the relay payload only advertises cartridges
+    // with identity records.
     func test661_cartridgeDeathKeepsKnownCapsAdvertised() async throws {
+        let dir = makeCartridgeFixture(id: "respawn-fixture")
         let host = CartridgeHost()
 
-        // Register a cartridge by path (not running, just known caps)
-        host.registerCartridge(path: "/nonexistent/cartridge", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:respawn-test"]))
+        host.registerCartridge(
+            path: "\(dir)/respawn-fixture",
+            cartridgeDir: dir,
+            capGroups: capGroupsFromUrns(["cap:respawn-test"])
+        )
 
-        // Should find the cartridge by cap
+        // Cap routing table includes the cap.
         XCTAssertNotNil(host.findCartridgeForCap("cap:respawn-test"), "Known caps must be findable before spawn")
 
-        // The cap should be advertised (registered cartridges are advertised)
+        // Inventory advertised to the engine includes the cartridge
+        // with its registered cap_groups.
         let caps = host.capabilities
-        if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
-            XCTAssertTrue(capsStr.contains("cap:respawn-test"), "Known caps must be in capabilities")
-        }
+        XCTAssertFalse(caps.isEmpty, "registered cartridge with identity must produce capabilities")
+        let capsStr = String(data: caps, encoding: .utf8) ?? ""
+        XCTAssertTrue(capsStr.contains("cap:respawn-test"), "Registered cap must be advertised, got: \(capsStr)")
     }
 
-    // TEST662: rebuild_capabilities includes non-running cartridges' known_caps
+    // TEST662: rebuild_capabilities includes non-running cartridges'
+    // caps. cap_groups is the source of truth and advertisement does
+    // not gate on `running` — only on identity (cartridge.json
+    // present) and on `helloFailed`.
     func test662_rebuildCapabilitiesIncludesNonRunningCartridges() async throws {
+        let dir1 = makeCartridgeFixture(id: "fixture-one")
+        let dir2 = makeCartridgeFixture(id: "fixture-two")
         let host = CartridgeHost()
 
-        // Register multiple cartridges with different caps
-        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:cap1"]))
-        host.registerCartridge(path: "/nonexistent/p2", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:cap2", "cap:cap3"]))
+        host.registerCartridge(
+            path: "\(dir1)/fixture-one",
+            cartridgeDir: dir1,
+            capGroups: capGroupsFromUrns(["cap:cap1"])
+        )
+        host.registerCartridge(
+            path: "\(dir2)/fixture-two",
+            cartridgeDir: dir2,
+            capGroups: capGroupsFromUrns(["cap:cap2", "cap:cap3"])
+        )
 
         let caps = host.capabilities
-        if !caps.isEmpty, let capsStr = String(data: caps, encoding: .utf8) {
-            XCTAssertTrue(capsStr.contains("cap:cap1"), "cap1 must be in capabilities")
-            XCTAssertTrue(capsStr.contains("cap:cap2"), "cap2 must be in capabilities")
-            XCTAssertTrue(capsStr.contains("cap:cap3"), "cap3 must be in capabilities")
-        }
+        XCTAssertFalse(caps.isEmpty, "registered cartridges with identity must produce capabilities")
+        let capsStr = String(data: caps, encoding: .utf8) ?? ""
+        XCTAssertTrue(capsStr.contains("cap:cap1"), "cap1 must be in capabilities, got: \(capsStr)")
+        XCTAssertTrue(capsStr.contains("cap:cap2"), "cap2 must be in capabilities, got: \(capsStr)")
+        XCTAssertTrue(capsStr.contains("cap:cap3"), "cap3 must be in capabilities, got: \(capsStr)")
     }
 
     // TEST663: Cartridge with hello_failed is permanently removed from capabilities
@@ -1202,7 +1252,11 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await cartridgeTask.value
     }
 
-    // TEST665: Cap table uses manifest caps for running, known_caps for non-running
+    // TEST665: Cap table aggregates caps from every healthy cartridge
+    // — attached/running cartridges contribute their post-HELLO
+    // cap_groups; registered-but-not-yet-spawned cartridges contribute
+    // their probe-time cap_groups. Both flow through the same
+    // `cap_urns()` view derived from cap_groups.
     func test665_capTableMixedRunningAndNonRunning() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
@@ -1221,32 +1275,35 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         let host = CartridgeHost()
 
-        // Register a non-running cartridge
-        host.registerCartridge(path: "/nonexistent/p1", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:dormant"]))
+        // Register a non-running cartridge with a real on-disk anchor
+        // so it has a resolvable identity and contributes to the
+        // advertised inventory.
+        let dormantDir = makeCartridgeFixture(id: "dormant-fixture")
+        host.registerCartridge(
+            path: "\(dormantDir)/dormant-fixture",
+            cartridgeDir: dormantDir,
+            capGroups: capGroupsFromUrns(["cap:dormant"])
+        )
 
-        // Attach a running cartridge
+        // Attach a running cartridge (no on-disk anchor — pre-connected
+        // for in-process / test use; cap_table routes it but the
+        // identity-filtered inventory does not advertise it).
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
         )
 
-        // Both caps should be findable via cap table.
-        // Running cartridge: uses manifest cap_groups (from HELLO)
-        // Dormant cartridge: uses cap_groups passed at registration
-        // (the host derives its flat URN view from those groups; we
-        // no longer carry a separate `knownCaps` field).
+        // Cap routing table contains both cartridges' caps.
         XCTAssertNotNil(host.findCartridgeForCap("cap:running"), "Running cartridge cap must be findable")
         XCTAssertNotNil(host.findCartridgeForCap("cap:dormant"), "Dormant cartridge cap must be findable")
 
-        // Capabilities includes both running and non-running cartridges
-        // (Note: running cartridge's caps come from manifest, not known_caps)
+        // The advertised inventory contains the dormant cartridge
+        // (it has identity via cartridge.json). The attached
+        // cartridge has no on-disk anchor and does not appear.
         let caps = host.capabilities
-        let capsStr = String(data: caps, encoding: .utf8) ?? "[]"
-
-        // At minimum, dormant caps should be present
-        XCTAssertTrue(capsStr.contains("cap:dormant"), "Dormant cartridge cap must be in capabilities")
-        // Running cartridge's manifest caps may or may not be merged into capabilities
-        // depending on when capabilities is called relative to handshake completion
+        XCTAssertFalse(caps.isEmpty, "dormant cartridge with identity must produce capabilities")
+        let capsStr = String(data: caps, encoding: .utf8) ?? ""
+        XCTAssertTrue(capsStr.contains("cap:dormant"), "Dormant cartridge cap must be advertised, got: \(capsStr)")
 
         try? await cartridgeTask.value
     }

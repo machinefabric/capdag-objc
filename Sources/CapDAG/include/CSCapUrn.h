@@ -57,6 +57,13 @@ typedef NS_ENUM(NSInteger, CSCapKind) {
 /// match other capdag enum serializations on the wire).
 FOUNDATION_EXPORT NSString *CSCapKindToString(CSCapKind kind);
 
+/// Per-axis weights for cap-URN specificity. Two orders of magnitude
+/// separate each axis to keep them in distinct digit slots while
+/// folding into a single comparable integer.
+///   spec_C(c) = WeightOut*spec_U(out) + WeightIn*spec_U(in) + spec_U(y)
+static const NSUInteger CSCapUrnWeightOut = 10000;
+static const NSUInteger CSCapUrnWeightIn  = 100;
+
 /**
  * A cap URN with required direction (in→out) and optional tags
  *
