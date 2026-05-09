@@ -100,6 +100,41 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap2 accepts:cap1]);
 }
 
+// TEST939: The canonical form drops `in=media:` and `out=media:`
+// segments. Every spelling of "the same cap with wildcard in/out"
+// collapses to one byte-identical canonical string. This is the
+// contract that makes registry lookups work: the cap-publisher hashes
+// `<canonical-urn>` to compute the cache key, and every language
+// port (Rust, Go, Python, JS, ObjC) must agree on the canonical form
+// for cross-language lookups to land on the same key. A regression
+// that emitted the wildcard segments would silently move the
+// published cap to a different SHA-256 bucket, 404'ing every reader
+// that hashes the canonical form.
+- (void)test939_capUrnCanonicalFormDropsWildcardInOut {
+    NSString *canonical = @"cap:decimate-sequence";
+    NSArray<NSString *> *variants = @[
+        @"cap:decimate-sequence",
+        @"cap:decimate-sequence;in=media:;out=media:",
+        @"cap:in=media:;out=media:;decimate-sequence",
+        @"cap:in=media:;decimate-sequence;out=media:",
+    ];
+    for (NSString *v in variants) {
+        NSError *error = nil;
+        CSCapUrn *parsed = [CSCapUrn fromString:v error:&error];
+        XCTAssertNotNil(parsed, @"variant %@ must parse", v);
+        XCTAssertEqualObjects(
+            [parsed toString],
+            canonical,
+            @"input %@ canonicalized to %@, expected %@ — wildcard in/out segments must be elided so the registry SHA-256 key is stable across input spellings",
+            v, [parsed toString], canonical);
+    }
+    // Bare-identity round-trip.
+    NSError *error = nil;
+    CSCapUrn *identity = [CSCapUrn fromString:@"cap:in=media:;out=media:" error:&error];
+    XCTAssertNotNil(identity);
+    XCTAssertEqualObjects([identity toString], @"cap:");
+}
+
 // TEST001 variant: Test empty URN fails
 - (void)testInvalidCapUrn {
     NSError *error;
