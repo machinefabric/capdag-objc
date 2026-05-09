@@ -75,20 +75,24 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertFalse([registryURL containsString:@"%3B"], @"URL must not contain percent-encoded URN characters");
 }
 
-/// Equivalent URNs (different tag order, etc.) hash to the same key.
-/// This is the property that makes cross-language lookups land at the
-/// same registry object regardless of which capdag implementation
-/// issued the request.
-- (void)testSameCapDifferentSpellingsSameURL {
-    NSString *urlA = buildRegistryURL(@"cap:in=media:listing-id;use-grinder;out=media:task;id");
-    NSString *urlB = buildRegistryURL(@"cap:out=\"media:task;id\";in=media:listing-id;use-grinder");
+/// TEST140: Equivalent URNs (different tag order, etc.) hash to the
+/// same key. This is the property that makes cross-language lookups
+/// land at the same registry object regardless of which capdag
+/// implementation issued the request. Inputs MUST quote any
+/// multi-tag media URN value — the previous unquoted spelling
+/// `out=media:task;id` was actually a different URN (the bare
+/// `media:task` plus a separate `id` op tag), and treating those
+/// two URNs as equivalent here masked a real spec violation.
+- (void)test140_sameCapDifferentSpellingsSameURL {
+    NSString *urlA = buildRegistryURL(@"cap:in=\"media:listing-id\";use-grinder;out=\"media:task;id\"");
+    NSString *urlB = buildRegistryURL(@"cap:out=\"media:task;id\";in=\"media:listing-id\";use-grinder");
     XCTAssertEqualObjects(urlA, urlB, @"Equivalent URNs must hash to the same registry key");
 }
 
-/// URL has the right shape — protocol, host, /caps/ prefix, 64 hex
-/// chars, no extension.
-- (void)testPerCapURLShape {
-    NSString *registryURL = buildRegistryURL(@"cap:in=media:listing-id;use-grinder;out=media:task;id");
+/// TEST141: URL has the right shape — protocol, host, /caps/ prefix,
+/// 64 hex chars, no extension.
+- (void)test141_perCapURLShape {
+    NSString *registryURL = buildRegistryURL(@"cap:in=\"media:listing-id\";use-grinder;out=\"media:task;id\"");
 
     NSURL *url = [NSURL URLWithString:registryURL];
     XCTAssertNotNil(url, @"Generated URL must be valid");
@@ -98,11 +102,11 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertEqual(hashPart.length, 64u, @"SHA-256 hex digest is 64 characters");
 }
 
-/// Different tag orders normalise to the same URL — the canonicaliser
-/// strips the variation before hashing.
-- (void)testNormalizeHandlesDifferentTagOrders {
-    NSString *url1 = buildRegistryURL(@"cap:test;in=media:string;out=\"media:record;textable\"");
-    NSString *url2 = buildRegistryURL(@"cap:in=media:string;out=\"media:record;textable\";test");
+/// TEST142: Different tag orders normalise to the same URL — the
+/// canonicaliser strips the variation before hashing.
+- (void)test142_normalizeHandlesDifferentTagOrders {
+    NSString *url1 = buildRegistryURL(@"cap:test;in=\"media:string\";out=\"media:object\"");
+    NSString *url2 = buildRegistryURL(@"cap:in=\"media:string\";out=\"media:object\";test");
     XCTAssertEqualObjects(url1, url2, @"Different tag orders should produce the same URL");
 }
 

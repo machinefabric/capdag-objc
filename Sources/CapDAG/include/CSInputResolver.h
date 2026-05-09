@@ -167,24 +167,24 @@ BOOL CSInputResolverShouldExcludeDirectory(NSString *path);
 
 #pragma mark - Input Resolution Functions
 
-/// Resolve a single input path to files
-/// @param path Path to file, directory, or glob pattern
-/// @param error Output: error if resolution fails
-/// @return Resolved input set, or nil on error
-CSResolvedInputSet * _Nullable CSInputResolverResolvePath(NSString *path, NSError **error);
+/// Resolve a single input path to files using the supplied
+/// `CSFabricRegistry` for extension lookups.
+CSResolvedInputSet * _Nullable CSInputResolverResolvePath(NSString *path,
+                                                          CSFabricRegistry *registry,
+                                                          NSError **error);
 
-/// Resolve multiple input paths to files
-/// @param paths Array of paths (files, directories, or glob patterns)
-/// @param error Output: error if resolution fails
-/// @return Resolved input set, or nil on error
-CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *paths, NSError **error);
+/// Resolve multiple input paths to files using the supplied
+/// `CSFabricRegistry` for extension lookups.
+CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *paths,
+                                                           CSFabricRegistry *registry,
+                                                           NSError **error);
 
-/// Detect media type for a single file
-/// @param path File path
-/// @param structure Output: detected content structure
-/// @param error Output: error if detection fails
-/// @return Media URN string, or nil on error
-NSString * _Nullable CSInputResolverDetectFile(NSString *path, CSContentStructure *structure, NSError **error);
+/// Detect media type for a single file using the supplied
+/// `CSFabricRegistry` for extension lookups.
+NSString * _Nullable CSInputResolverDetectFile(NSString *path,
+                                               CSContentStructure *structure,
+                                               CSFabricRegistry *registry,
+                                               NSError **error);
 
 #pragma mark - Path Utilities
 

@@ -18,6 +18,14 @@
 
 @end
 
+static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    for (NSDictionary *spec in specs) {
+        [registry addMediaSpec:spec];
+    }
+    return registry;
+}
+
 @implementation CSCapTests
 
 - (void)testCapCreation {
@@ -895,7 +903,7 @@
     ];
 
     NSError *error;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:doc-test;textable", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(mediaSpecs), &error);
     XCTAssertNotNil(resolved, @"Resolution must succeed: %@", error);
     XCTAssertEqualObjects(resolved.documentation, body, @"documentation must propagate into CSMediaSpec");
     // The short description must remain distinct from the long markdown
@@ -906,7 +914,7 @@
     NSArray<NSDictionary *> *noDocSpecs = @[
         @{ @"urn": @"media:doc-test;textable", @"media_type": @"text/plain", @"title": @"No Doc" }
     ];
-    CSMediaSpec *noDoc = CSResolveMediaUrn(@"media:doc-test;textable", noDocSpecs, &error);
+    CSMediaSpec *noDoc = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(noDocSpecs), &error);
     XCTAssertNotNil(noDoc);
     XCTAssertNil(noDoc.documentation, @"Missing documentation must resolve to nil");
 
@@ -914,7 +922,7 @@
     NSArray<NSDictionary *> *emptyDocSpecs = @[
         @{ @"urn": @"media:doc-test;textable", @"media_type": @"text/plain", @"title": @"Empty", @"documentation": @"" }
     ];
-    CSMediaSpec *emptyDoc = CSResolveMediaUrn(@"media:doc-test;textable", emptyDocSpecs, &error);
+    CSMediaSpec *emptyDoc = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(emptyDocSpecs), &error);
     XCTAssertNotNil(emptyDoc);
     XCTAssertNil(emptyDoc.documentation, @"Empty string in documentation must collapse to nil");
 }

@@ -55,10 +55,6 @@ NS_ASSUME_NONNULL_BEGIN
 /** The current registry configuration */
 @property (nonatomic, readonly) CSFabricRegistryConfig *config;
 
-/// Shared singleton with default configuration. Used by callers that
-/// don't need a custom config (e.g. the InputResolver path).
-+ (CSFabricRegistry *)shared;
-
 /// Initialize with default configuration.
 - (instancetype)init;
 

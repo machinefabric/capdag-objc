@@ -277,15 +277,20 @@ NSArray<NSString *> * _Nullable CSInputResolverExpandGlob(NSString *pattern, NSE
 
 // OLD CSMediaAdapterRegistry implementation removed — see CSMediaAdapters.m
 // The following is the remainder of the file starting at Path Resolution.
-// Extension-based detection helper (sync, for preliminary UI queries)
-static NSString * _Nullable _detectMediaUrnByExtension(NSString *path, CSContentStructure *structure) {
+// Extension-based detection helper (sync, for preliminary UI queries).
+// Consults the supplied registry's in-memory extension index — no
+// hardcoded fallback. The registry hydrates on demand through cap and
+// media-spec fetch, so callers must seed it (or wait for fetches to
+// land) before extension lookups will yield specific URNs.
+static NSString * _Nullable _detectMediaUrnByExtension(NSString *path,
+                                                       CSContentStructure *structure,
+                                                       CSFabricRegistry *registry) {
     NSString *ext = [[path pathExtension] lowercaseString];
     if (ext.length == 0) {
         if (structure) *structure = CSContentStructureScalarOpaque;
         return @"media:";
     }
 
-    CSFabricRegistry *registry = [CSFabricRegistry shared];
     NSString *primaryUrn = [registry primaryMediaUrnForExtension:ext];
     if (!primaryUrn) {
         if (structure) *structure = CSContentStructureScalarOpaque;
@@ -482,11 +487,15 @@ static NSArray<NSString *> * _Nullable _resolvePaths(NSArray<NSString *> *paths,
 /// Size limit for content inspection (64KB)
 static const NSUInteger kInspectionBufferSize = 65536;
 
-CSResolvedInputSet * _Nullable CSInputResolverResolvePath(NSString *path, NSError **error) {
-    return CSInputResolverResolvePaths(@[path], error);
+CSResolvedInputSet * _Nullable CSInputResolverResolvePath(NSString *path,
+                                                          CSFabricRegistry *registry,
+                                                          NSError **error) {
+    return CSInputResolverResolvePaths(@[path], registry, error);
 }
 
-CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *paths, NSError **error) {
+CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *paths,
+                                                           CSFabricRegistry *registry,
+                                                           NSError **error) {
     // Check for empty input
     if (paths.count == 0) {
         if (error) {
@@ -530,7 +539,7 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
 
         // Detect media type by extension (preliminary, no content inspection)
         CSContentStructure structure = CSContentStructureScalarOpaque;
-        NSString *mediaUrn = _detectMediaUrnByExtension(filePath, &structure);
+        NSString *mediaUrn = _detectMediaUrnByExtension(filePath, &structure, registry);
         if (!mediaUrn) {
             return nil;
         }
@@ -575,10 +584,12 @@ CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *
                                 commonMedia:commonMedia];
 }
 
-NSString * _Nullable CSInputResolverDetectFile(NSString *path, CSContentStructure *structure, NSError **error) {
+NSString * _Nullable CSInputResolverDetectFile(NSString *path,
+                                               CSContentStructure *structure,
+                                               CSFabricRegistry *registry,
+                                               NSError **error) {
     NSFileManager *fm = [NSFileManager defaultManager];
 
-    // Check file exists
     BOOL isDir = NO;
     if (![fm fileExistsAtPath:path isDirectory:&isDir]) {
         if (error) {
@@ -602,8 +613,5 @@ NSString * _Nullable CSInputResolverDetectFile(NSString *path, CSContentStructur
         return nil;
     }
 
-    // Read content for inspection
-    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
-    // Detect media type by extension (preliminary, no content inspection)
-    return _detectMediaUrnByExtension(path, structure);
+    return _detectMediaUrnByExtension(path, structure, registry);
 }

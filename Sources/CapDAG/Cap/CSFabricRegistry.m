@@ -99,15 +99,6 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
 @implementation CSFabricRegistry
 
-+ (CSFabricRegistry *)shared {
-    static CSFabricRegistry *instance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        instance = [[CSFabricRegistry alloc] init];
-    });
-    return instance;
-}
-
 - (instancetype)init {
     return [self initWithConfig:[CSFabricRegistryConfig defaultConfig]];
 }

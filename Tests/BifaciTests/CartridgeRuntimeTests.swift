@@ -1051,10 +1051,22 @@ final class CborFilePathConversionTests: XCTestCase {
 
     // TEST347: Empty file reads as empty bytes.
     // Mirrors Rust test347_empty_file_reads_as_empty_bytes.
+    //
+    // The file is written non-atomically (`options: []`). The default
+    // `Data.write(to:)` overload uses an atomic save, which on macOS
+    // for a zero-byte Data on a fresh destination has been observed
+    // to throw NSCocoaErrorDomain Code=4 ("couldn't be removed",
+    // ENOENT) — Foundation tries to clean up a sibling temp file
+    // that was never created. The Rust reference uses
+    // `std::fs::write(...)` (non-atomic); matching that here keeps
+    // the cross-language test parity honest. Pre-removing any
+    // stale file from a prior aborted run keeps the create path
+    // clean.
     func test347_empty_file_reads_as_empty_bytes() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test347_empty.txt")
-        try Data().write(to: testFile)
+        try? FileManager.default.removeItem(at: testFile)
+        try Data().write(to: testFile, options: [])
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(

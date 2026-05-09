@@ -28,7 +28,6 @@ FOUNDATION_EXPORT NSErrorDomain const CSMediaSpecErrorDomain;
 /// Error codes for MediaSpec operations
 typedef NS_ERROR_ENUM(CSMediaSpecErrorDomain, CSMediaSpecError) {
     CSMediaSpecErrorUnresolvableMediaUrn = 1,
-    CSMediaSpecErrorDuplicateMediaUrn = 2
 };
 
 // ============================================================================

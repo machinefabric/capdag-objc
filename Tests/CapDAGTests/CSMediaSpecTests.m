@@ -217,54 +217,12 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // Duplicate URN validation tests
 
-- (void)testValidateNoMediaSpecDuplicatesPass {
-    // No duplicates should pass
-    NSArray<NSDictionary *> *mediaSpecs = @[
-        @{@"urn": @"media:text;textable", @"media_type": @"text/plain"},
-        @{@"urn": @"media:json;textable", @"media_type": @"application/json"}
-    ];
-
-    NSError *error = nil;
-    BOOL result = CSValidateNoMediaSpecDuplicates(mediaSpecs, &error);
-
-    XCTAssertTrue(result, @"Should pass validation with no duplicates");
-    XCTAssertNil(error, @"Should have no error");
-}
-
-- (void)testValidateNoMediaSpecDuplicatesFail {
-    // Duplicates should fail
-    NSArray<NSDictionary *> *mediaSpecs = @[
-        @{@"urn": @"media:text;textable", @"media_type": @"text/plain"},
-        @{@"urn": @"media:json;textable", @"media_type": @"application/json"},
-        @{@"urn": @"media:text;textable", @"media_type": @"text/html"}  // Duplicate URN
-    ];
-
-    NSError *error = nil;
-    BOOL result = CSValidateNoMediaSpecDuplicates(mediaSpecs, &error);
-
-    XCTAssertFalse(result, @"Should fail validation with duplicates");
-    XCTAssertNotNil(error, @"Should have error");
-    XCTAssertEqual(error.code, CSMediaSpecErrorDuplicateMediaUrn, @"Should be DUPLICATE_MEDIA_URN error");
-    XCTAssertTrue([error.localizedDescription containsString:@"media:text;textable"], @"Error should mention the duplicate URN");
-}
-
-- (void)testValidateNoMediaSpecDuplicatesEmpty {
-    // Empty array should pass
-    NSError *error = nil;
-    BOOL result = CSValidateNoMediaSpecDuplicates(@[], &error);
-
-    XCTAssertTrue(result, @"Should pass validation with empty array");
-    XCTAssertNil(error, @"Should have no error");
-}
-
-- (void)testValidateNoMediaSpecDuplicatesNil {
-    // Nil array should pass
-    NSError *error = nil;
-    BOOL result = CSValidateNoMediaSpecDuplicates(nil, &error);
-
-    XCTAssertTrue(result, @"Should pass validation with nil array");
-    XCTAssertNil(error, @"Should have no error");
-}
+// `CSValidateNoMediaSpecDuplicates` was removed when inline cap
+// `media_specs` arrays were dropped. The function validated an
+// inline-array invariant that no longer arises — caps reference
+// media URNs and the unified `CSFabricRegistry` is the source of
+// truth. The four duplicate-array tests that lived here are
+// intentionally absent.
 
 #pragma mark - ResolvedMediaSpec predicate tests
 

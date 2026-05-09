@@ -318,7 +318,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [CSInputValidator validateArguments:@[validUser] cap:cap registry:[CSFabricRegistry shared] error:&error];
+    BOOL result = [CSInputValidator validateArguments:@[validUser] cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertTrue(result, @"Input validation should succeed with valid schema data");
     XCTAssertNil(error, @"Error should be nil");
@@ -330,7 +330,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"email": @"invalid-email"
     };
 
-    result = [CSInputValidator validateArguments:@[invalidUser] cap:cap registry:[CSFabricRegistry shared] error:&error];
+    result = [CSInputValidator validateArguments:@[invalidUser] cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertFalse(result, @"Input validation should fail with invalid schema data");
     XCTAssertNotNil(error, @"Error should be present");
@@ -387,7 +387,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    BOOL result = [CSOutputValidator validateOutput:validOutput cap:cap registry:[CSFabricRegistry shared] error:&error];
+    BOOL result = [CSOutputValidator validateOutput:validOutput cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertTrue(result, @"Output validation should succeed with valid schema data");
     XCTAssertNil(error, @"Error should be nil");
@@ -397,7 +397,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @{@"id": @"item1"} // Missing 'value' field
     ];
 
-    result = [CSOutputValidator validateOutput:invalidOutput cap:cap registry:[CSFabricRegistry shared] error:&error];
+    result = [CSOutputValidator validateOutput:invalidOutput cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertFalse(result, @"Output validation should fail with invalid schema data");
     XCTAssertNotNil(error, @"Error should be present");
@@ -762,7 +762,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         }
     };
 
-    BOOL inputValid = [CSInputValidator validateArguments:@[validInput] cap:cap registry:[CSFabricRegistry shared] error:&error];
+    BOOL inputValid = [CSInputValidator validateArguments:@[validInput] cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
     XCTAssertTrue(inputValid, @"Valid input should pass: %@", error);
 
     // Test valid output
@@ -771,7 +771,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"byteCount": @24
     };
 
-    BOOL outputValid = [CSOutputValidator validateOutput:validOutputData cap:cap registry:[CSFabricRegistry shared] error:&error];
+    BOOL outputValid = [CSOutputValidator validateOutput:validOutputData cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
     XCTAssertTrue(outputValid, @"Valid output should pass: %@", error);
 }
 
