@@ -8,7 +8,7 @@
 //
 //  NOTE: All type information is conveyed via mediaSpec fields that
 //  contain spec IDs (e.g., "media:string") which resolve to
-//  MediaSpec definitions via the mediaSpecs table.
+//  Media specs are resolved through CSFabricRegistry, not embedded.
 //
 
 #import <Foundation/Foundation.h>
@@ -349,10 +349,11 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 #pragma mark - CSCap
 
 /**
- * Formal cap definition
+ * Formal cap definition.
  *
- * The mediaSpecs property is an array of media spec definitions.
- * Arguments and output use mediaUrn fields which resolve via this array.
+ * Caps reference media URNs only — media specs themselves are
+ * resolved through the unified `CSFabricRegistry`. Cap definitions
+ * never embed media specs.
  */
 @interface CSCap : NSObject <NSCopying, NSCoding>
 
@@ -380,9 +381,6 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Command string for CLI execution
 @property (nonatomic, readonly) NSString *command;
 
-/// Media specs array: each element is a dictionary with urn, media_type, profile_uri, etc.
-@property (nonatomic, readonly) NSArray<NSDictionary *> *mediaSpecs;
-
 /// Cap arguments (new unified args array)
 @property (nonatomic, readonly) NSArray<CSCapArg *> *args;
 
@@ -405,18 +403,10 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 
 /**
- * Create a fully specified cap
- * @param capUrn The cap URN
- * @param title The human-readable title (required)
- * @param command The command string
- * @param description The cap description
- * @param documentation Optional long-form markdown documentation
- * @param metadata The cap metadata
- * @param mediaSpecs Media spec array (each element has urn, media_type, profile_uri, etc.)
- * @param args The cap arguments array
- * @param output The output definition
- * @param metadataJSON Arbitrary metadata as JSON object
- * @return A new CSCap instance
+ * Create a fully specified cap.
+ *
+ * Caps reference media URNs only; the unified `CSFabricRegistry`
+ * resolves them. There is no inline media-specs parameter.
  */
 + (instancetype)capWithUrn:(CSCapUrn * _Nonnull)capUrn
                      title:(NSString * _Nonnull)title
@@ -424,7 +414,6 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
                description:(nullable NSString *)description
              documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> * _Nonnull)metadata
-                mediaSpecs:(NSArray<NSDictionary *> * _Nonnull)mediaSpecs
                       args:(NSArray<CSCapArg *> * _Nonnull)args
                     output:(nullable CSCapOutput *)output
               metadataJSON:(nullable NSDictionary *)metadataJSON;
@@ -580,14 +569,6 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  * Clear the metadata JSON
  */
 - (void)clearMetadataJSON;
-
-/**
- * Resolve a spec ID to a MediaSpec using this cap's mediaSpecs table
- * @param specId The spec ID (e.g., "media:string")
- * @param error Error if spec ID cannot be resolved
- * @return The resolved MediaSpec or nil on error
- */
-- (nullable CSMediaSpec *)resolveSpecId:(NSString * _Nonnull)specId error:(NSError * _Nullable * _Nullable)error;
 
 @end
 

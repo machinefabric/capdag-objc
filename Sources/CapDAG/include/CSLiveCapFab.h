@@ -99,7 +99,7 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
 /// Rebuild from cap URN strings using the registry.
 /// Looks up Cap definitions from the registry; skips identity caps.
 - (void)syncFromCapUrns:(NSArray<NSString *> *)capUrns
-               registry:(id<CSCapRegistryProtocol>)registry
+               registry:(id<CSFabricRegistryProtocol>)registry
              completion:(void (^)(void))completion;
 
 /// Add a single capability as an edge. Skips empty specs and identity caps.

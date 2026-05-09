@@ -20,7 +20,7 @@ import Foundation
 // MARK: - Mock Registry
 
 /// Mock registry for testcartridge caps
-final class TestcartridgeRegistry: CapRegistryProtocol, @unchecked Sendable {
+final class TestcartridgeRegistry: FabricRegistryProtocol, @unchecked Sendable {
     private var caps: [String: CSCap] = [:]
 
     init() {

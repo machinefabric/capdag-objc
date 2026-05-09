@@ -13,7 +13,7 @@
 #import <Foundation/Foundation.h>
 #import "CSCardinality.h"
 
-@class CSMediaUrnRegistry;
+@class CSFabricRegistry;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -132,7 +132,7 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// Create a new empty registry with the given media URN registry.
 /// No adapters are registered by default — cartridges register them
 /// via registerCapGroup:adapterUrns:cartridgeId:error:.
-- (instancetype)initWithMediaUrnRegistry:(CSMediaUrnRegistry *)mediaUrnRegistry;
+- (instancetype)initWithFabricRegistry:(CSFabricRegistry *)mediaUrnRegistry;
 
 /// Register a cap group's adapter URNs.
 /// Checks each new adapter URN against ALL existing registered URNs.

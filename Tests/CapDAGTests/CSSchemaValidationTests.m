@@ -9,6 +9,7 @@
 //
 
 #import <XCTest/XCTest.h>
+#import "CSFabricRegistry.h"
 #import "CapDAG.h"
 
 @interface CSSchemaValidationTests : XCTestCase
@@ -16,6 +17,15 @@
 @property (nonatomic, strong) CSFileSchemaResolver *resolver;
 @property (nonatomic, strong) NSString *tempDir;
 @end
+
+static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    for (NSDictionary *spec in specs) {
+        [registry addMediaSpec:spec];
+    }
+    return registry;
+}
+
 
 @implementation CSSchemaValidationTests
 
@@ -77,7 +87,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:validData mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:validData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertTrue(result, @"Validation should succeed for valid data");
     XCTAssertNil(error, @"Error should be nil for valid data");
@@ -116,7 +126,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:invalidData mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertFalse(result, @"Validation should fail for invalid data");
     XCTAssertNotNil(error, @"Error should be present for invalid data");
@@ -139,7 +149,7 @@
     NSDictionary *data = @{@"test": @"value"};
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:data mediaSpecs:@[] error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:data registry:registryWithSpecs(@[]) error:&error];
 
     XCTAssertFalse(result, @"Validation should fail for unresolvable spec ID");
     XCTAssertNotNil(error, @"Error should be present");
@@ -167,7 +177,7 @@
     NSString *value = @"test";
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:value mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:value registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertTrue(result, @"Non-structured types should skip schema validation");
     XCTAssertNil(error, @"Error should be nil");
@@ -213,7 +223,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateOutput:output withValue:validData mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateOutput:output withValue:validData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertTrue(result, @"Output validation should succeed for valid data");
     XCTAssertNil(error, @"Error should be nil for valid data");
@@ -248,7 +258,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateOutput:output withValue:invalidData mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateOutput:output withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertFalse(result, @"Output validation should fail for invalid data");
     XCTAssertNotNil(error, @"Error should be present for invalid data");
@@ -296,7 +306,6 @@
                        description:@"Process user data"
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:mediaSpecs
                               args:@[userArg]
                             output:nil
                       metadataJSON:nil];
@@ -309,7 +318,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [CSInputValidator validateArguments:@[validUser] cap:cap error:&error];
+    BOOL result = [CSInputValidator validateArguments:@[validUser] cap:cap registry:[CSFabricRegistry shared] error:&error];
 
     XCTAssertTrue(result, @"Input validation should succeed with valid schema data");
     XCTAssertNil(error, @"Error should be nil");
@@ -321,7 +330,7 @@
         @"email": @"invalid-email"
     };
 
-    result = [CSInputValidator validateArguments:@[invalidUser] cap:cap error:&error];
+    result = [CSInputValidator validateArguments:@[invalidUser] cap:cap registry:[CSFabricRegistry shared] error:&error];
 
     XCTAssertFalse(result, @"Input validation should fail with invalid schema data");
     XCTAssertNotNil(error, @"Error should be present");
@@ -367,7 +376,6 @@
                        description:@"Query data"
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:mediaSpecs
                               args:@[]
                             output:output
                       metadataJSON:nil];
@@ -379,7 +387,7 @@
     ];
 
     NSError *error = nil;
-    BOOL result = [CSOutputValidator validateOutput:validOutput cap:cap error:&error];
+    BOOL result = [CSOutputValidator validateOutput:validOutput cap:cap registry:[CSFabricRegistry shared] error:&error];
 
     XCTAssertTrue(result, @"Output validation should succeed with valid schema data");
     XCTAssertNil(error, @"Error should be nil");
@@ -389,7 +397,7 @@
         @{@"id": @"item1"} // Missing 'value' field
     ];
 
-    result = [CSOutputValidator validateOutput:invalidOutput cap:cap error:&error];
+    result = [CSOutputValidator validateOutput:invalidOutput cap:cap registry:[CSFabricRegistry shared] error:&error];
 
     XCTAssertFalse(result, @"Output validation should fail with invalid schema data");
     XCTAssertNotNil(error, @"Error should be present");
@@ -466,7 +474,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:validData mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:validData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertTrue(result, @"Complex nested schema validation should succeed");
     XCTAssertNil(error, @"Error should be nil for valid complex data");
@@ -484,7 +492,7 @@
         ]
     };
 
-    result = [self.validator validateArgument:argument withValue:invalidData mediaSpecs:mediaSpecs error:&error];
+    result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertFalse(result, @"Complex nested schema validation should fail for invalid data");
     XCTAssertNotNil(error, @"Error should be present for invalid complex data");
@@ -523,7 +531,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:invalidData mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
 
     XCTAssertFalse(result, @"Validation should fail");
     XCTAssertNotNil(error, @"Error should be present");
@@ -565,7 +573,7 @@
                                        defaultValue:nil];
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:strArg withValue:@"hello" mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:strArg withValue:@"hello" registry:registryWithSpecs(mediaSpecs) error:&error];
     XCTAssertTrue(result, @"String spec should validate string");
     XCTAssertNil(error);
 
@@ -575,7 +583,7 @@
                                    argDescription:@"Count value"
                                      defaultValue:nil];
 
-    result = [self.validator validateArgument:intArg withValue:@42 mediaSpecs:mediaSpecs error:&error];
+    result = [self.validator validateArgument:intArg withValue:@42 registry:registryWithSpecs(mediaSpecs) error:&error];
     XCTAssertTrue(result, @"Integer spec should validate integer");
     XCTAssertNil(error);
 
@@ -585,7 +593,7 @@
                                   argDescription:@"JSON data"
                                     defaultValue:nil];
 
-    result = [self.validator validateArgument:objArg withValue:@{@"key": @"value"} mediaSpecs:mediaSpecs error:&error];
+    result = [self.validator validateArgument:objArg withValue:@{@"key": @"value"} registry:registryWithSpecs(mediaSpecs) error:&error];
     XCTAssertTrue(result, @"Object spec should validate object");
     XCTAssertNil(error);
 }
@@ -611,7 +619,7 @@
     // Spec without schema skips schema validation
     // (schema validation is skipped when no schema is present)
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:@"hello world" mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:@"hello world" registry:registryWithSpecs(mediaSpecs) error:&error];
     XCTAssertTrue(result, @"Spec without schema should pass");
     XCTAssertNil(error);
 }
@@ -669,7 +677,7 @@
 
     [self measureBlock:^{
         NSError *error = nil;
-        BOOL result = [self.validator validateArgument:argument withValue:largeDataSet mediaSpecs:mediaSpecs error:&error];
+        BOOL result = [self.validator validateArgument:argument withValue:largeDataSet registry:registryWithSpecs(mediaSpecs) error:&error];
         XCTAssertTrue(result, @"Large data set validation should succeed");
     }];
 }
@@ -737,7 +745,6 @@
                        description:@"Transform JSON data"
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:mediaSpecs
                               args:@[inputArg]
                             output:output
                       metadataJSON:nil];
@@ -755,7 +762,7 @@
         }
     };
 
-    BOOL inputValid = [CSInputValidator validateArguments:@[validInput] cap:cap error:&error];
+    BOOL inputValid = [CSInputValidator validateArguments:@[validInput] cap:cap registry:[CSFabricRegistry shared] error:&error];
     XCTAssertTrue(inputValid, @"Valid input should pass: %@", error);
 
     // Test valid output
@@ -764,85 +771,12 @@
         @"byteCount": @24
     };
 
-    BOOL outputValid = [CSOutputValidator validateOutput:validOutputData cap:cap error:&error];
+    BOOL outputValid = [CSOutputValidator validateOutput:validOutputData cap:cap registry:[CSFabricRegistry shared] error:&error];
     XCTAssertTrue(outputValid, @"Valid output should pass: %@", error);
 }
 
-#pragma mark - XV5 Validation Tests
-
-// TEST054: XV5 - Test inline media spec redefinition of existing registry spec is detected and rejected
-- (void)test054_xv5InlineSpecRedefinitionDetected {
-    // Try to redefine CSMediaString which exists in the registry
-    // CSMediaString = @"media:textable"
-    NSArray<NSDictionary *> *mediaSpecs = @[
-        @{
-            @"urn": CSMediaString,
-            @"media_type": @"text/plain",
-            @"title": @"My Custom String",
-            @"description": @"Trying to redefine string"
-        }
-    ];
-
-    // Mock registry lookup that returns YES for CSMediaString (it exists in registry)
-    CSMediaUrnExistsInRegistryBlock mockRegistryLookup = ^BOOL(NSString *mediaUrn) {
-        return [mediaUrn isEqualToString:CSMediaString];
-    };
-
-    CSXV5ValidationResult *result = [CSXV5Validator validateNoInlineMediaSpecRedefinition:mediaSpecs
-                                                                        existsInRegistry:mockRegistryLookup];
-
-    XCTAssertFalse(result.valid, @"Should fail validation when redefining registry spec");
-    XCTAssertNotNil(result.error, @"Should have error message");
-    XCTAssertTrue([result.error containsString:@"XV5"], @"Error should mention XV5");
-    XCTAssertTrue([result.redefines containsObject:CSMediaString], @"Should identify CSMediaString as redefined");
-}
-
-// TEST055: XV5 - Test new inline media spec (not in registry) is allowed
-- (void)test055_xv5NewInlineSpecAllowed {
-    // Define a completely new media spec that doesn't exist in registry
-    NSArray<NSDictionary *> *mediaSpecs = @[
-        @{
-            @"urn": @"media:my-unique-custom-type-xyz123",
-            @"media_type": @"application/json",
-            @"title": @"My Custom Output",
-            @"description": @"A custom output type"
-        }
-    ];
-
-    // Mock registry lookup that returns NO (spec not in registry)
-    CSMediaUrnExistsInRegistryBlock mockRegistryLookup = ^BOOL(NSString *mediaUrn) {
-        return NO;
-    };
-
-    CSXV5ValidationResult *result = [CSXV5Validator validateNoInlineMediaSpecRedefinition:mediaSpecs
-                                                                        existsInRegistry:mockRegistryLookup];
-
-    XCTAssertTrue(result.valid, @"Should pass validation for new spec not in registry");
-    XCTAssertNil(result.error, @"Should not have error message");
-}
-
-// TEST056: XV5 - Test empty media_specs (no inline specs) passes XV5 validation
-- (void)test056_xv5EmptyMediaSpecsAllowed {
-    // Empty media_specs should pass (with or without registry lookup)
-    CSXV5ValidationResult *result = [CSXV5Validator validateNoInlineMediaSpecRedefinition:@[]
-                                                                        existsInRegistry:nil];
-    XCTAssertTrue(result.valid, @"Empty array should pass validation");
-
-    // Nil media_specs should pass
-    result = [CSXV5Validator validateNoInlineMediaSpecRedefinition:nil
-                                                  existsInRegistry:nil];
-    XCTAssertTrue(result.valid, @"Nil should pass validation");
-
-    // Graceful degradation: nil lookup function should allow
-    NSArray<NSDictionary *> *mediaSpecs = @[
-        @{
-            @"urn": CSMediaString,
-            @"media_type": @"text/plain",
-        }
-    ];
-    result = [CSXV5Validator validateNoInlineMediaSpecRedefinition:mediaSpecs
-                                                  existsInRegistry:nil];
-    XCTAssertTrue(result.valid, @"Should pass when registry lookup not available (graceful degradation)");
-}
+// XV5 (no-inline-media-spec-redefinition) tests removed: caps no
+// longer carry inline `mediaSpecs` arrays, so the situation the rule
+// guarded against is structurally impossible.
 
 @end

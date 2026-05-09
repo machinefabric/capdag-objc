@@ -8,7 +8,7 @@
 //
 
 #import "CSInputResolver.h"
-#import "CSMediaUrnRegistry.h"
+#import "CSFabricRegistry.h"
 #import "CSMediaUrn.h"
 
 // MARK: - Registered Adapter Entry
@@ -27,16 +27,16 @@
 
 @interface CSMediaAdapterRegistry ()
 @property (nonatomic, strong) NSMutableArray<CSRegisteredAdapter *> *registeredAdapters;
-@property (nonatomic, strong) CSMediaUrnRegistry *mediaUrnRegistry;
+@property (nonatomic, strong) CSFabricRegistry *fabricRegistry;
 @end
 
 @implementation CSMediaAdapterRegistry
 
-- (instancetype)initWithMediaUrnRegistry:(CSMediaUrnRegistry *)mediaUrnRegistry {
+- (instancetype)initWithFabricRegistry:(CSFabricRegistry *)fabricRegistry {
     self = [super init];
     if (self) {
         _registeredAdapters = [[NSMutableArray alloc] init];
-        _mediaUrnRegistry = mediaUrnRegistry;
+        _fabricRegistry = fabricRegistry;
     }
     return self;
 }
@@ -77,7 +77,7 @@
                         @"One conforms to the other, creating ambiguity.",
                         groupName, newAdapter.urnString, existing.urnString,
                         existing.groupName, existing.cartridgeId];
-                    *error = [NSError errorWithDomain:@"CSMediaAdapterRegistryError"
+                    *error = [NSError errorWithDomain:@"CSFabricRegistryError"
                                                  code:2001
                                              userInfo:@{NSLocalizedDescriptionKey: msg}];
                 }
@@ -100,7 +100,7 @@
                         @"Cap group '%@' rejected: adapter URN '%@' conflicts with '%@' "
                         @"within the same group in cartridge '%@'.",
                         groupName, a.urnString, b.urnString, cartridgeId];
-                    *error = [NSError errorWithDomain:@"CSMediaAdapterRegistryError"
+                    *error = [NSError errorWithDomain:@"CSFabricRegistryError"
                                                  code:2002
                                              userInfo:@{NSLocalizedDescriptionKey: msg}];
                 }
@@ -115,7 +115,7 @@
 }
 
 - (NSArray<NSString *> *)cartridgeIdsForExtension:(NSString *)extension {
-    NSArray<NSString *> *candidateStrings = [self.mediaUrnRegistry mediaUrnsForExtension:extension];
+    NSArray<NSString *> *candidateStrings = [self.fabricRegistry mediaUrnsForExtension:extension];
     if (!candidateStrings || candidateStrings.count == 0) {
         return @[];
     }

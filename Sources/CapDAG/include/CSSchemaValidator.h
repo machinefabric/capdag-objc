@@ -10,6 +10,8 @@
 #import <Foundation/Foundation.h>
 #import "CSCap.h"
 
+@class CSFabricRegistry;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /// Error domain for schema validation errors
@@ -105,44 +107,31 @@ typedef NS_ENUM(NSInteger, CSSchemaValidationErrorType) {
 + (instancetype)validatorWithResolver:(id<CSSchemaResolver>)resolver;
 
 /**
- * Validate an argument value against its schema
- * Schema is obtained by resolving the argument's mediaSpec to a MediaSpec with schema
- * @param argument The argument definition with mediaSpec
- * @param value The value to validate
- * @param mediaSpecs The mediaSpecs array for resolution
- * @param error Pointer to NSError for error reporting
- * @return YES if validation succeeds, NO if it fails
+ * Validate an argument value against its schema, resolved through the
+ * unified `CSFabricRegistry`.
  */
 - (BOOL)validateArgument:(CSCapArg *)argument
                withValue:(id)value
-              mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
+                registry:(CSFabricRegistry *)registry
                    error:(NSError **)error;
 
 /**
- * Validate an output value against its schema
- * Schema is obtained by resolving the output's mediaSpec to a MediaSpec with schema
- * @param output The output definition with mediaSpec
- * @param value The value to validate
- * @param mediaSpecs The mediaSpecs array for resolution
- * @param error Pointer to NSError for error reporting
- * @return YES if validation succeeds, NO if it fails
+ * Validate an output value against its schema, resolved through the
+ * unified `CSFabricRegistry`.
  */
 - (BOOL)validateOutput:(CSCapOutput *)output
              withValue:(id)value
-            mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
+              registry:(CSFabricRegistry *)registry
                  error:(NSError **)error;
 
 /**
- * Validate all arguments for a capability
- * @param cap The capability with argument definitions
- * @param positionalArgs Array of positional argument values
- * @param namedArgs Dictionary of named argument values
- * @param error Pointer to NSError for error reporting
- * @return YES if validation succeeds, NO if it fails
+ * Validate all arguments for a capability against schemas resolved
+ * through the unified `CSFabricRegistry`.
  */
 - (BOOL)validateArguments:(CSCap *)cap
           positionalArgs:(nullable NSArray *)positionalArgs
                namedArgs:(nullable NSDictionary<NSString *, id> *)namedArgs
+                 registry:(CSFabricRegistry *)registry
                    error:(NSError **)error;
 
 @end

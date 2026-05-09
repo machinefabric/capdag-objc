@@ -5,9 +5,19 @@
 
 #import <XCTest/XCTest.h>
 #import "CSMediaSpec.h"
+#import "CSFabricRegistry.h"
 
 @interface CSMediaSpecTests : XCTestCase
 @end
+
+static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    for (NSDictionary *spec in specs) {
+        [registry addMediaSpec:spec];
+    }
+    return registry;
+}
+
 
 @implementation CSMediaSpecTests
 
@@ -30,7 +40,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-setting", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-setting", registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -52,7 +62,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(CSMediaString, mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(CSMediaString, registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -79,7 +89,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:bounded-number;numeric", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:bounded-number;numeric", registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -98,7 +108,7 @@
 - (void)testResolveMediaUrnNotFound {
     // Should fail hard for unknown media URNs
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:unknown;type", @[], &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:unknown;type", registryWithSpecs(@[]), &error);
 
     XCTAssertNotNil(error, @"Should have error for unknown media URN");
     XCTAssertNil(resolved, @"Should not resolve unknown media URN");
@@ -121,7 +131,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:pdf", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:pdf", registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -141,7 +151,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:text;textable", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:text;textable", registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -169,7 +179,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-output", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-output", registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -195,7 +205,7 @@
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:image;jpeg", mediaSpecs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:image;jpeg", registryWithSpecs(mediaSpecs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -266,7 +276,7 @@
         @"title": @"Binary"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isBinary]);
     XCTAssertFalse([resolved isRecord]);
@@ -281,7 +291,7 @@
         @"title": @"Object"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:record;textable", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:record;textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isRecord]);
     XCTAssertFalse([resolved isBinary]);
@@ -297,7 +307,7 @@
         @"title": @"String"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isScalar]);
     XCTAssertFalse([resolved isRecord]);
@@ -312,7 +322,7 @@
         @"title": @"String Array"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:list;textable", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:list;textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isList]);
     XCTAssertFalse([resolved isRecord]);
@@ -327,7 +337,7 @@
         @"title": @"JSON"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:json;record;textable", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:json;record;textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isJSON]);
     XCTAssertTrue([resolved isRecord]);
@@ -342,7 +352,7 @@
         @"title": @"Text"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isText]);
     XCTAssertFalse([resolved isBinary]);
@@ -360,7 +370,7 @@
         @"profile_uri": @"https://example.com/schema"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-spec;json", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-spec;json", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertNil(error);
     XCTAssertEqualObjects(resolved.mediaUrn, @"media:custom-spec;json");
@@ -385,7 +395,7 @@
         @"schema": schema
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:json;output-spec;record", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:json;output-spec;record", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertEqualObjects(resolved.mediaUrn, @"media:json;output-spec;record");
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
@@ -403,7 +413,7 @@
         @"profile_uri": @"https://custom.example.com/str"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", specs, &error);
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertEqualObjects(resolved.profile, @"https://custom.example.com/str");

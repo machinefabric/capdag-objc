@@ -67,19 +67,16 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 // MARK: - CSMachinePlanBuilder Implementation
 
 @interface CSMachinePlanBuilder ()
-@property (nonatomic, strong) id<CSCapRegistryProtocol> capRegistry;
-@property (nonatomic, strong) id<CSMediaUrnRegistryProtocol> mediaRegistry;
+@property (nonatomic, strong) id<CSFabricRegistryProtocol> fabricRegistry;
 @property (nonatomic, strong, nullable) NSSet<NSString *> *availableCapUrns;
 @end
 
 @implementation CSMachinePlanBuilder
 
-- (instancetype)initWithCapRegistry:(id<CSCapRegistryProtocol>)capRegistry
-                      mediaRegistry:(id<CSMediaUrnRegistryProtocol>)mediaRegistry {
+- (instancetype)initWithFabricRegistry:(id<CSFabricRegistryProtocol>)fabricRegistry {
     self = [super init];
     if (self) {
-        _capRegistry = capRegistry;
-        _mediaRegistry = mediaRegistry;
+        _fabricRegistry = fabricRegistry;
         _availableCapUrns = nil;
     }
     return self;
@@ -137,10 +134,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
                   toTarget:(NSString *)targetMedia
                 completion:(void (^)(NSArray<NSString *> * _Nullable capUrns, NSError * _Nullable error))completion {
 
-    [self.capRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
+    [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
             completion(nil, [NSError errorWithDomain:CSPlannerErrorDomain
-                                                 code:CSPlannerErrorCodeRegistryError
+                                                 code:CSPlannerErrorCodeFabricRegistryError
                                              userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to list caps: %@", error.localizedDescription]}]);
             return;
         }
@@ -331,10 +328,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 - (void)getMachineInfo:(NSArray<NSString *> *)capUrns
              completion:(void (^)(NSArray<CSMachineInfo *> * _Nullable infos, NSError * _Nullable error))completion {
 
-    [self.capRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
+    [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
             completion(nil, [NSError errorWithDomain:CSPlannerErrorDomain
-                                                code:CSPlannerErrorCodeRegistryError
+                                                code:CSPlannerErrorCodeFabricRegistryError
                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to get caps: %@", error.localizedDescription]}]);
             return;
         }
@@ -569,10 +566,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
         inputCardinality:(CSInputCardinality)cardinality
               completion:(void (^)(CSMachinePlan * _Nullable plan, NSError * _Nullable error))completion {
 
-    [self.capRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
+    [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
             completion(nil, [NSError errorWithDomain:CSPlannerErrorDomain
-                                                code:CSPlannerErrorCodeRegistryError
+                                                code:CSPlannerErrorCodeFabricRegistryError
                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to get caps: %@", error.localizedDescription]}]);
             return;
         }
@@ -648,10 +645,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 - (void)getReachableTargetsFromSource:(NSString *)sourceMedia
                            completion:(void (^)(NSArray<NSString *> * _Nullable targets, NSError * _Nullable error))completion {
 
-    [self.capRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
+    [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
             completion(nil, [NSError errorWithDomain:CSPlannerErrorDomain
-                                                code:CSPlannerErrorCodeRegistryError
+                                                code:CSPlannerErrorCodeFabricRegistryError
                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to list caps: %@", error.localizedDescription]}]);
             return;
         }
@@ -751,10 +748,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
                                          maxDepth:(NSUInteger)maxDepth
                                        completion:(void (^)(NSArray<CSReachableTargetInfo *> * _Nullable targets, NSError * _Nullable error))completion {
 
-    [self.capRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
+    [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
             completion(nil, [NSError errorWithDomain:CSPlannerErrorDomain
-                                                code:CSPlannerErrorCodeRegistryError
+                                                code:CSPlannerErrorCodeFabricRegistryError
                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to list caps: %@", error.localizedDescription]}]);
             return;
         }
@@ -905,10 +902,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 - (void)analyzePathArgumentsForPath:(NSArray<NSString *> *)capUrns
                          completion:(void (^)(CSPathArgumentRequirements * _Nullable requirements, NSError * _Nullable error))completion {
 
-    [self.capRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
+    [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
             completion(nil, [NSError errorWithDomain:CSPlannerErrorDomain
-                                                code:CSPlannerErrorCodeRegistryError
+                                                code:CSPlannerErrorCodeFabricRegistryError
                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to get caps: %@", error.localizedDescription]}]);
             return;
         }

@@ -24,18 +24,16 @@ typedef NS_ENUM(NSInteger, CSPlannerErrorCode) {
     CSPlannerErrorCodeInvalidInput = 1,
     CSPlannerErrorCodeNotFound,
     CSPlannerErrorCodeInternal,
-    CSPlannerErrorCodeRegistryError
+    CSPlannerErrorCodeFabricRegistryError
 };
 
-// MARK: - Registry Protocols
+// MARK: - Registry Protocol
 
-/// Protocol for cap registry access
-@protocol CSCapRegistryProtocol <NSObject>
+/// Protocol for the unified fabric registry. The merged registry
+/// holds both cap definitions and media specs in one cache; the
+/// plan builder consumes both surfaces here.
+@protocol CSFabricRegistryProtocol <NSObject>
 - (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion;
-@end
-
-/// Protocol for media URN registry access
-@protocol CSMediaUrnRegistryProtocol <NSObject>
 - (void)getMediaSpec:(NSString *)urn completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
 @end
 
@@ -126,9 +124,8 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 /// Builder for creating cap execution plans
 @interface CSMachinePlanBuilder : NSObject
 
-/// Create a new plan builder with the given registries
-- (instancetype)initWithCapRegistry:(id<CSCapRegistryProtocol>)capRegistry
-                      mediaRegistry:(id<CSMediaUrnRegistryProtocol>)mediaRegistry;
+/// Create a new plan builder backed by the unified `CSFabricRegistry`.
+- (instancetype)initWithFabricRegistry:(id<CSFabricRegistryProtocol>)fabricRegistry;
 
 /// Set the filter for available cap URNs
 - (instancetype)withAvailableCaps:(NSSet<NSString *> *)availableCaps;

@@ -10,7 +10,7 @@
 #import "CSInputResolver.h"
 #import "CSMediaAdapters.h"
 #import "CSMediaUrn.h"
-#import "CSMediaUrnRegistry.h"
+#import "CSFabricRegistry.h"
 #import <glob.h>
 
 NSErrorDomain const CSInputResolverErrorDomain = @"CSInputResolverErrorDomain";
@@ -285,7 +285,7 @@ static NSString * _Nullable _detectMediaUrnByExtension(NSString *path, CSContent
         return @"media:";
     }
 
-    CSMediaUrnRegistry *registry = [CSMediaUrnRegistry shared];
+    CSFabricRegistry *registry = [CSFabricRegistry shared];
     NSString *primaryUrn = [registry primaryMediaUrnForExtension:ext];
     if (!primaryUrn) {
         if (structure) *structure = CSContentStructureScalarOpaque;

@@ -7,6 +7,7 @@
 
 #import "CSResponseWrapper.h"
 #import "CSMediaSpec.h"
+#import "CSFabricRegistry.h"
 
 @interface CSResponseWrapper ()
 @property (nonatomic, strong) NSData *rawBytes;
@@ -77,7 +78,9 @@
     return self.rawBytes.length;
 }
 
-- (BOOL)validateAgainstCap:(CSCap *)cap error:(NSError * _Nullable * _Nullable)error {
+- (BOOL)validateAgainstCap:(CSCap *)cap
+                  registry:(CSFabricRegistry *)registry
+                     error:(NSError * _Nullable * _Nullable)error {
     CSCapOutput *output = [cap getOutput];
     if (!output || !output.mediaUrn) {
         // No output definition, validation passes
@@ -86,7 +89,7 @@
 
     // Resolve the mediaUrn to determine expected type
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(output.mediaUrn, cap.mediaSpecs, &resolveError);
+    CSMediaSpec *mediaSpec = CSResolveMediaUrn(output.mediaUrn, registry, &resolveError);
     if (!mediaSpec) {
         // FAIL HARD on unresolvable spec ID
         if (error) {
@@ -160,7 +163,9 @@
 
 /// Checks if the response matches the expected output type based on the cap's output spec.
 /// Returns error if the output spec cannot be resolved - no fallbacks.
-- (BOOL)matchesOutputTypeForCap:(CSCap *)cap error:(NSError **)error {
+- (BOOL)matchesOutputTypeForCap:(CSCap *)cap
+                       registry:(CSFabricRegistry *)registry
+                          error:(NSError **)error {
     CSCapOutput *outputDef = [cap getOutput];
     if (!outputDef || !outputDef.mediaUrn) {
         if (error) {
@@ -174,7 +179,7 @@
 
     // Resolve the mediaUrn - fail hard if resolution fails
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, cap.mediaSpecs, &resolveError);
+    CSMediaSpec *mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
     if (!mediaSpec) {
         if (error) {
             NSString *message = [NSString stringWithFormat:@"Failed to resolve output spec ID '%@' for cap '%@': %@",

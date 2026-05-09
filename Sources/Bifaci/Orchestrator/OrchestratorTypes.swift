@@ -145,7 +145,7 @@ public struct ResolvedGraph: Equatable {
 /// Protocol for Cap registry abstraction
 ///
 /// This allows dependency injection and testing without network access
-public protocol CapRegistryProtocol: Sendable {
+public protocol FabricRegistryProtocol: Sendable {
     /// Look up a cap by URN
     func lookup(_ urn: String) async throws -> CSCap
 }

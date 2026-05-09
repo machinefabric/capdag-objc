@@ -31,7 +31,7 @@ import Foundation
 /// - Throws: ParseOrchestrationError if conversion fails
 public func planToResolvedGraph(
     _ plan: CSMachinePlan,
-    registry: any CapRegistryProtocol
+    registry: any FabricRegistryProtocol
 ) async throws -> ResolvedGraph {
     // Phase 1: Reject ForEach/Merge/Split — caller must decompose
     let topoOrder = try plan.topologicalOrder()

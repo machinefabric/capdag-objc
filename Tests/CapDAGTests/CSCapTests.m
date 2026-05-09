@@ -12,6 +12,7 @@
 #import "CSCapUrn.h"
 #import "CSCapManifest.h"
 #import "CSMediaSpec.h"
+#import "CSFabricRegistry.h"
 
 @interface CSCapTests : XCTestCase
 
@@ -31,7 +32,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -57,7 +57,6 @@
                        description:@"Parse JSON data"
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -79,7 +78,6 @@
                         description:@"Generate embeddings"
                       documentation:nil
                            metadata:@{}
-                         mediaSpecs:@[]
                           args:@[]
                              output:nil
                        metadataJSON:nil];
@@ -100,7 +98,6 @@
                         description:@"Generate embeddings"
                       documentation:nil
                            metadata:@{}
-                         mediaSpecs:@[]
                                args:@[stdinArg]
                              output:nil
                        metadataJSON:nil];
@@ -124,7 +121,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -154,7 +150,6 @@
                             description:@"Generate embeddings"
                           documentation:nil
                                metadata:@{@"model": @"sentence-transformer"}
-                             mediaSpecs:@[]
                                    args:@[stdinArg]
                                  output:nil
                            metadataJSON:nil];
@@ -339,10 +334,6 @@
     XCTAssertEqualObjects(cap.metadata[@"engine"], @"jq");
     XCTAssertEqualObjects(cap.metadata[@"performance"], @"high");
 
-    // Verify media_specs (array format)
-    XCTAssertEqual(cap.mediaSpecs.count, 1);
-    XCTAssertEqualObjects(cap.mediaSpecs[0][@"urn"], @"my:output.v1");
-
     // Verify arguments
     XCTAssertEqual([cap getRequiredArgs].count, 1);
     XCTAssertEqual([cap getOptionalArgs].count, 1);
@@ -358,68 +349,59 @@
     XCTAssertEqualObjects(cap.output.mediaUrn, @"my:output.v1");
 }
 
-- (void)testMediaSpecsResolution {
-    // Test that spec IDs can be resolved from the mediaSpecs array
+- (void)testMediaUrnResolutionThroughRegistry {
+    // Caps no longer carry inline media specs; the unified
+    // CSFabricRegistry is the only source. This test seeds three
+    // specs into a fresh registry and verifies each resolves through
+    // CSResolveMediaUrn, plus that an unseeded URN fails hard.
     NSError *error;
-    CSCapUrn *key = [CSCapUrn fromString:@"cap:in=media:void;test;out=\"media:record;textable\"" error:&error];
-    XCTAssertNotNil(key);
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
-        @{
-            @"urn": @"my:custom-output.v1",
-            @"media_type": @"application/json",
-            @"profile_uri": @"https://example.com/schema/custom-output",
-            @"schema": @{
-                @"type": @"object",
-                @"properties": @{
-                    @"result": @{@"type": @"string"}
-                },
-                @"required": @[@"result"]
-            }
-        },
-        @{
-            @"urn": @"my:text-input.v1",
-            @"media_type": @"text/plain",
-            @"profile_uri": @"https://example.com/schema/text-input"
-        },
-        @{
-            @"urn": CSMediaString,
-            @"media_type": @"text/plain",
-            @"profile_uri": @"https://capdag.com/schema/string"
+    [registry addMediaSpec:@{
+        @"urn": @"my:custom-output.v1",
+        @"media_type": @"application/json",
+        @"profile_uri": @"https://example.com/schema/custom-output",
+        @"schema": @{
+            @"type": @"object",
+            @"properties": @{
+                @"result": @{@"type": @"string"}
+            },
+            @"required": @[@"result"]
         }
-    ];
+    }];
+    [registry addMediaSpec:@{
+        @"urn": @"my:text-input.v1",
+        @"media_type": @"text/plain",
+        @"profile_uri": @"https://example.com/schema/text-input"
+    }];
+    [registry addMediaSpec:@{
+        @"urn": CSMediaString,
+        @"media_type": @"text/plain",
+        @"profile_uri": @"https://capdag.com/schema/string"
+    }];
 
-    CSCap *cap = [CSCap capWithUrn:key
-                             title:@"Test"
-                           command:@"test"
-                       description:nil
-                     documentation:nil
-                          metadata:@{}
-                        mediaSpecs:mediaSpecs
-                         args:@[]
-                            output:nil
-                      metadataJSON:nil];
-
-    // Resolve custom spec ID
-    CSMediaSpec *resolved = [cap resolveSpecId:@"my:custom-output.v1" error:&error];
-    XCTAssertNotNil(resolved, @"Should resolve custom spec ID from mediaSpecs: %@", error);
+    // Custom spec
+    CSMediaSpec *resolved = CSResolveMediaUrn(@"my:custom-output.v1", registry, &error);
+    XCTAssertNotNil(resolved, @"Should resolve custom URN through registry: %@", error);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertNotNil(resolved.schema);
 
-    // Resolve object-form spec
-    CSMediaSpec *resolvedText = [cap resolveSpecId:@"my:text-input.v1" error:&error];
-    XCTAssertNotNil(resolvedText, @"Should resolve spec ID: %@", error);
+    // Text spec
+    CSMediaSpec *resolvedText = CSResolveMediaUrn(@"my:text-input.v1", registry, &error);
+    XCTAssertNotNil(resolvedText, @"Should resolve text URN through registry: %@", error);
     XCTAssertEqualObjects(resolvedText.contentType, @"text/plain");
 
-    // Resolve media URN from mediaSpecs (no built-in resolution)
-    CSMediaSpec *resolvedFromArray = [cap resolveSpecId:CSMediaString error:&error];
-    XCTAssertNotNil(resolvedFromArray, @"Should resolve media URN from mediaSpecs: %@", error);
+    // Standard spec
+    CSMediaSpec *resolvedFromArray = CSResolveMediaUrn(CSMediaString, registry, &error);
+    XCTAssertNotNil(resolvedFromArray, @"Should resolve standard URN through registry: %@", error);
     XCTAssertEqualObjects(resolvedFromArray.contentType, @"text/plain");
 
-    // Fail on unknown spec ID
-    CSMediaSpec *unknown = [cap resolveSpecId:@"unknown:spec.v1" error:&error];
-    XCTAssertNil(unknown, @"Should fail on unknown spec ID");
-    XCTAssertNotNil(error, @"Should set error for unknown spec ID");
+    // Unseeded URN fails hard. Surfacing the failure is the only
+    // honest behaviour — fallbacks would hide the real issue.
+    error = nil;
+    CSMediaSpec *unknown = CSResolveMediaUrn(@"unknown:spec.v1", registry, &error);
+    XCTAssertNil(unknown, @"Unseeded URN should fail to resolve");
+    XCTAssertNotNil(error, @"Failure must set an error");
 }
 
 // MARK: - Cap Manifest Tests
@@ -436,7 +418,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -469,7 +450,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -499,7 +479,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -601,7 +580,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -612,7 +590,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{@"supports_outline": @"true"}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -672,7 +649,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -731,7 +707,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                          args:args
                             output:nil
                       metadataJSON:nil];
@@ -845,7 +820,6 @@
                        description:@"short"
                      documentation:body
                           metadata:@{}
-                        mediaSpecs:@[]
                               args:@[]
                             output:nil
                       metadataJSON:nil];
@@ -882,7 +856,6 @@
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
                               args:@[]
                             output:nil
                       metadataJSON:nil];

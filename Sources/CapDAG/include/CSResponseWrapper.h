@@ -9,6 +9,8 @@
 #import <Foundation/Foundation.h>
 #import "CSCap.h"
 
+@class CSFabricRegistry;
+
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, CSResponseContentType) {
@@ -74,27 +76,25 @@ typedef NS_ENUM(NSInteger, CSResponseContentType) {
 - (NSUInteger)size;
 
 /**
- * Validate response against cap output definition
- * @param cap The capability definition to validate against
- * @param error Pointer to error for validation errors
- * @return YES if validation passes, NO otherwise
+ * Validate response against cap output definition, resolving the
+ * output's media URN through the unified `CSFabricRegistry`.
  */
-- (BOOL)validateAgainstCap:(CSCap *)cap error:(NSError * _Nullable * _Nullable)error;
+- (BOOL)validateAgainstCap:(CSCap *)cap
+                  registry:(CSFabricRegistry *)registry
+                     error:(NSError * _Nullable * _Nullable)error;
 
 /**
  * Get content type as string
- * @return Content type string
  */
 - (NSString *)getContentTypeString;
 
 /**
- * Check if response matches expected output type.
- * Returns error if the output spec cannot be resolved - no fallbacks.
- * @param cap The capability definition
- * @param error Pointer to error for resolution/validation errors
- * @return YES if types match, NO otherwise (with error set if resolution fails)
+ * Check if response matches expected output type, resolving the
+ * output's media URN through the unified `CSFabricRegistry`.
  */
-- (BOOL)matchesOutputTypeForCap:(CSCap *)cap error:(NSError * _Nullable * _Nullable)error;
+- (BOOL)matchesOutputTypeForCap:(CSCap *)cap
+                       registry:(CSFabricRegistry *)registry
+                          error:(NSError * _Nullable * _Nullable)error;
 
 @end
 

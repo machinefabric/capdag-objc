@@ -18,6 +18,7 @@
 
 @class CSCapUrn;
 @class CSMediaValidation;
+@class CSFabricRegistry;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -132,6 +133,12 @@ FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:image-captio
 FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;textable;transcription
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;json;record
+// Fabric registry lookup wire types (consumed/produced by cap:lookup-cap;fabric
+// and cap:lookup-media-spec;fabric, both implemented by netaccesscartridge).
+FOUNDATION_EXPORT NSString * const CSMediaCapUrn;            // media:cap-urn;textable
+FOUNDATION_EXPORT NSString * const CSMediaMediaUrn;          // media:media-urn;textable
+FOUNDATION_EXPORT NSString * const CSMediaCapDefinition;     // media:cap-definition;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaMediaSpecDefinition; // media:media-spec-definition;json;record;textable
 // Format-specific variants for JSON, YAML, CSV
 FOUNDATION_EXPORT NSString * const CSMediaJsonValue;       // media:json;textable
 FOUNDATION_EXPORT NSString * const CSMediaJsonRecord;      // media:json;record;textable
@@ -151,6 +158,14 @@ FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;rec
 /// Standard echo capability URN
 /// Accepts any media type as input and outputs any media type
 FOUNDATION_EXPORT NSString * const CSCapIdentity;           // cap:in=media:;out=media:
+
+/// Fabric registry lookup caps. Implemented by netaccesscartridge.
+/// `CSCapLookupCapFabric` resolves a canonical cap URN to its full
+/// flattened cap definition; `CSCapLookupMediaSpecFabric` does the same
+/// for media specs. Both fetch from the public fabric registry with a
+/// two-level cache (memory + disk + 1-week TTL).
+FOUNDATION_EXPORT NSString * const CSCapLookupCapFabric;
+FOUNDATION_EXPORT NSString * const CSCapLookupMediaSpecFabric;
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION
@@ -340,23 +355,15 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
  * 2. If not found: FAIL HARD
  *
  * @param mediaUrn The media URN (e.g., "media:textable")
- * @param mediaSpecs The mediaSpecs array (can be nil)
+ * @param registry The unified `CSFabricRegistry` to resolve through.
+ *   The registry's in-memory media-spec cache is the only source —
+ *   there is no inline-spec fallback.
  * @param error Error if media URN cannot be resolved
  * @return The resolved MediaSpec or nil on error
  */
 CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
-                                          NSArray<NSDictionary *> * _Nullable mediaSpecs,
+                                          CSFabricRegistry *registry,
                                           NSError * _Nullable * _Nullable error);
-
-/**
- * Validate that there are no duplicate URNs in mediaSpecs array
- *
- * @param mediaSpecs The mediaSpecs array to validate
- * @param error Error if duplicate URNs are found
- * @return YES if no duplicates, NO if duplicates found
- */
-BOOL CSValidateNoMediaSpecDuplicates(NSArray<NSDictionary *> * _Nullable mediaSpecs,
-                                     NSError * _Nullable * _Nullable error);
 
 /**
  * Check if a media URN represents binary data by checking absence of 'textable' tag.
@@ -477,14 +484,15 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn);
 @interface CSMediaSpec (CapUrn)
 
 /**
- * Extract MediaSpec from a CapUrn's 'out' tag (which now contains a media URN)
+ * Extract MediaSpec from a CapUrn's 'out' tag (a media URN), resolved
+ * through the unified `CSFabricRegistry`.
  * @param capUrn The cap URN to extract from
- * @param mediaSpecs The mediaSpecs array for resolution (can be nil)
+ * @param registry The unified `CSFabricRegistry`
  * @param error Error if media URN not found or resolution fails
  * @return The resolved MediaSpec or nil if not found
  */
 + (nullable instancetype)fromCapUrn:(CSCapUrn *)capUrn
-                         mediaSpecs:(NSArray<NSDictionary *> * _Nullable)mediaSpecs
+                           registry:(CSFabricRegistry *)registry
                               error:(NSError * _Nullable * _Nullable)error;
 
 @end

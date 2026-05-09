@@ -91,7 +91,7 @@ private func checkStructureCompatibility(
 /// - Throws: ParseOrchestrationError for any validation failure
 public func parseDotToCapDag(
     _ dot: String,
-    registry: CapRegistryProtocol
+    registry: FabricRegistryProtocol
 ) async throws -> ResolvedGraph {
     // Step 1: Parse DOT
     let dotGraph = try DotParser.parse(dot)

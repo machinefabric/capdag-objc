@@ -141,7 +141,7 @@
 }
 
 - (void)syncFromCapUrns:(NSArray<NSString *> *)capUrns
-               registry:(id<CSCapRegistryProtocol>)registry
+               registry:(id<CSFabricRegistryProtocol>)registry
              completion:(void (^)(void))completion {
     [self clear];
 

@@ -7,6 +7,7 @@
 #import "CSCapUrn.h"
 #import "CSCap.h"
 #import "CSMediaUrn.h"
+#import "CSFabricRegistry.h"
 @import TaggedUrn;
 
 NSErrorDomain const CSMediaSpecErrorDomain = @"CSMediaSpecErrorDomain";
@@ -109,6 +110,16 @@ NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
 NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
 NSString * const CSMediaDecision = @"media:decision;json;record;textable";
 NSString * const CSMediaAdapterSelection = @"media:adapter-selection;json;record";
+// Fabric registry lookup wire types
+NSString * const CSMediaCapUrn = @"media:cap-urn;textable";
+NSString * const CSMediaMediaUrn = @"media:media-urn;textable";
+NSString * const CSMediaCapDefinition = @"media:cap-definition;json;record;textable";
+NSString * const CSMediaMediaSpecDefinition = @"media:media-spec-definition;json;record;textable";
+// Fabric lookup caps (implemented by netaccesscartridge)
+NSString * const CSCapLookupCapFabric =
+    @"cap:in=\"media:cap-urn;textable\";fabric;lookup-cap;out=\"media:cap-definition;json;record;textable\"";
+NSString * const CSCapLookupMediaSpecFabric =
+    @"cap:in=\"media:media-urn;textable\";fabric;lookup-media-spec;out=\"media:media-spec-definition;json;record;textable\"";
 // Format-specific variants for JSON, YAML, CSV
 NSString * const CSMediaJsonValue = @"media:json;textable";
 NSString * const CSMediaJsonRecord = @"media:json;record;textable";
@@ -403,100 +414,81 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
 // ============================================================================
 
 CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
-                                          NSArray<NSDictionary *> * _Nullable mediaSpecs,
+                                          CSFabricRegistry *registry,
                                           NSError * _Nullable * _Nullable error) {
-    // Find in the provided media_specs array
-    if (mediaSpecs) {
-        for (NSDictionary *def in mediaSpecs) {
-            NSString *urn = def[@"urn"];
-            if (urn && [urn isEqualToString:mediaUrn]) {
-                // Object form: { urn, media_type, profile_uri?, schema?, title?, description?, validation?, metadata?, extensions? }
-                NSString *mediaType = def[@"media_type"] ?: def[@"mediaType"];
-                NSString *profileUri = def[@"profile_uri"] ?: def[@"profileUri"];
-                NSDictionary *schema = def[@"schema"];
-                NSString *title = def[@"title"];
-                NSString *descriptionText = def[@"description"];
-                // Long-form markdown documentation. Snake_case in JSON to
-                // match the capfab schema; we accept it only as a
-                // non-empty NSString and discard empty strings so the
-                // absent/empty cases collapse to nil.
-                NSString *documentation = nil;
-                id documentationField = def[@"documentation"];
-                if ([documentationField isKindOfClass:[NSString class]] && [(NSString *)documentationField length] > 0) {
-                    documentation = (NSString *)documentationField;
-                }
-
-                // Parse validation if present
-                CSMediaValidation *validation = nil;
-                NSDictionary *validationDict = def[@"validation"];
-                if (validationDict && [validationDict isKindOfClass:[NSDictionary class]]) {
-                    NSError *validationError = nil;
-                    validation = [CSMediaValidation validationWithDictionary:validationDict error:&validationError];
-                    // Ignore validation parse errors - validation is optional
-                }
-
-                // Extract metadata if present
-                NSDictionary *metadata = nil;
-                id metadataValue = def[@"metadata"];
-                if (metadataValue && [metadataValue isKindOfClass:[NSDictionary class]]) {
-                    metadata = (NSDictionary *)metadataValue;
-                }
-
-                // Extract extensions array if present
-                NSArray<NSString *> *extensions = @[];
-                id extensionsValue = def[@"extensions"];
-                if (extensionsValue && [extensionsValue isKindOfClass:[NSArray class]]) {
-                    extensions = (NSArray<NSString *> *)extensionsValue;
-                }
-
-                if (!mediaType) {
-                    if (error) {
-                        *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                                     code:CSMediaSpecErrorUnresolvableMediaUrn
-                                                 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Media URN '%@' has invalid object definition: missing media_type", mediaUrn]}];
-                    }
-                    return nil;
-                }
-
-                CSMediaSpec *spec = [CSMediaSpec withContentType:mediaType profile:profileUri schema:schema title:title descriptionText:descriptionText documentation:documentation validation:validation metadata:metadata extensions:extensions];
-                spec.mediaUrn = mediaUrn;
-                return spec;
-            }
+    if (!registry) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
+                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+                                     userInfo:@{NSLocalizedDescriptionKey:
+                                                    [NSString stringWithFormat:@"Cannot resolve media URN '%@': no registry provided", mediaUrn]}];
         }
+        return nil;
     }
 
-    // FAIL HARD - media URN must be in mediaSpecs array
-    if (error) {
-        *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                     code:CSMediaSpecErrorUnresolvableMediaUrn
-                                 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Cannot resolve media URN: '%@'. Not found in mediaSpecs array.", mediaUrn]}];
-    }
-    return nil;
-}
-
-// Validate no duplicate URNs in mediaSpecs array
-BOOL CSValidateNoMediaSpecDuplicates(NSArray<NSDictionary *> * _Nullable mediaSpecs,
-                                     NSError * _Nullable * _Nullable error) {
-    if (!mediaSpecs) {
-        return YES;
-    }
-
-    NSMutableSet *seen = [NSMutableSet set];
-    for (NSDictionary *def in mediaSpecs) {
-        NSString *urn = def[@"urn"];
-        if (urn) {
-            if ([seen containsObject:urn]) {
-                if (error) {
-                    *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                                 code:CSMediaSpecErrorDuplicateMediaUrn
-                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Duplicate media URN '%@' in mediaSpecs array", urn]}];
-                }
-                return NO;
-            }
-            [seen addObject:urn];
+    NSDictionary *def = [registry getCachedMediaSpec:mediaUrn];
+    if (!def) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
+                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+                                     userInfo:@{NSLocalizedDescriptionKey:
+                                                    [NSString stringWithFormat:@"Cannot resolve media URN '%@': not in registry cache", mediaUrn]}];
         }
+        return nil;
     }
-    return YES;
+
+    NSString *mediaType = def[@"media_type"] ?: def[@"mediaType"];
+    NSString *profileUri = def[@"profile_uri"] ?: def[@"profileUri"];
+    NSDictionary *schema = def[@"schema"];
+    NSString *title = def[@"title"];
+    NSString *descriptionText = def[@"description"];
+
+    NSString *documentation = nil;
+    id documentationField = def[@"documentation"];
+    if ([documentationField isKindOfClass:[NSString class]] && [(NSString *)documentationField length] > 0) {
+        documentation = (NSString *)documentationField;
+    }
+
+    CSMediaValidation *validation = nil;
+    NSDictionary *validationDict = def[@"validation"];
+    if (validationDict && [validationDict isKindOfClass:[NSDictionary class]]) {
+        NSError *validationError = nil;
+        validation = [CSMediaValidation validationWithDictionary:validationDict error:&validationError];
+    }
+
+    NSDictionary *metadata = nil;
+    id metadataValue = def[@"metadata"];
+    if (metadataValue && [metadataValue isKindOfClass:[NSDictionary class]]) {
+        metadata = (NSDictionary *)metadataValue;
+    }
+
+    NSArray<NSString *> *extensions = @[];
+    id extensionsValue = def[@"extensions"];
+    if (extensionsValue && [extensionsValue isKindOfClass:[NSArray class]]) {
+        extensions = (NSArray<NSString *> *)extensionsValue;
+    }
+
+    if (!mediaType) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
+                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+                                     userInfo:@{NSLocalizedDescriptionKey:
+                                                    [NSString stringWithFormat:@"Media URN '%@' has invalid spec: missing media_type", mediaUrn]}];
+        }
+        return nil;
+    }
+
+    CSMediaSpec *spec = [CSMediaSpec withContentType:mediaType
+                                              profile:profileUri
+                                               schema:schema
+                                                title:title
+                                      descriptionText:descriptionText
+                                        documentation:documentation
+                                           validation:validation
+                                             metadata:metadata
+                                           extensions:extensions];
+    spec.mediaUrn = mediaUrn;
+    return spec;
 }
 
 // ============================================================================
@@ -506,13 +498,10 @@ BOOL CSValidateNoMediaSpecDuplicates(NSArray<NSDictionary *> * _Nullable mediaSp
 @implementation CSMediaSpec (CapUrn)
 
 + (nullable instancetype)fromCapUrn:(CSCapUrn *)capUrn
-                         mediaSpecs:(NSArray<NSDictionary *> * _Nullable)mediaSpecs
+                           registry:(CSFabricRegistry *)registry
                               error:(NSError * _Nullable * _Nullable)error {
-    // Use getOutSpec directly - outSpec is now a required first-class field containing a media URN
     NSString *mediaUrn = [capUrn getOutSpec];
 
-    // Note: Since outSpec is now required, this should never be nil for a valid capUrn
-    // But we keep the check for safety
     if (!mediaUrn) {
         if (error) {
             *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
@@ -522,8 +511,7 @@ BOOL CSValidateNoMediaSpecDuplicates(NSArray<NSDictionary *> * _Nullable mediaSp
         return nil;
     }
 
-    // Resolve the media URN to a MediaSpec
-    return CSResolveMediaUrn(mediaUrn, mediaSpecs, error);
+    return CSResolveMediaUrn(mediaUrn, registry, error);
 }
 
 @end

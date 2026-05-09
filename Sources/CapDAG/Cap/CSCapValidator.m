@@ -9,6 +9,7 @@
 #import "CSCapValidator.h"
 #import "CSSchemaValidator.h"
 #import "CSMediaSpec.h"
+#import "CSFabricRegistry.h"
 
 // Error domain
 NSErrorDomain const CSValidationErrorDomain = @"CSValidationErrorDomain";
@@ -227,14 +228,6 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                              userInfo:userInfo];
 }
 
-+ (instancetype)inlineMediaSpecRedefinesRegistryError:(NSString *)mediaUrn {
-    NSString *description = [NSString stringWithFormat:@"XV5: Inline media spec '%@' redefines existing registry spec", mediaUrn];
-    return [[self alloc] initWithType:CSValidationErrorTypeInlineMediaSpecRedefinesRegistry
-                         capUrn:@""
-                          description:description
-                             userInfo:@{NSLocalizedDescriptionKey: description}];
-}
-
 @end
 
 // Internal helper functions
@@ -243,16 +236,18 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 + (NSNumber *)getNumericValue:(id)value;
 + (BOOL)validateSingleArgument:(CSCapArg *)argDef
                          value:(id)value
-                    cap:(CSCap *)cap
+                           cap:(CSCap *)cap
+                      registry:(CSFabricRegistry *)registry
                          error:(NSError **)error;
 + (BOOL)validateArgumentType:(CSCapArg *)argDef
                        value:(id)value
-                  cap:(CSCap *)cap
+                         cap:(CSCap *)cap
+                    registry:(CSFabricRegistry *)registry
                        error:(NSError **)error;
 + (BOOL)validateMediaSpecRules:(CSCapArg *)argDef
                      mediaSpec:(CSMediaSpec *)mediaSpec
                          value:(id)value
-                    cap:(CSCap *)cap
+                           cap:(CSCap *)cap
                          error:(NSError **)error;
 @end
 
@@ -260,7 +255,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 + (BOOL)validateArguments:(NSArray *)arguments
                cap:(CSCap *)cap
-                    error:(NSError **)error {
+          registry:(CSFabricRegistry *)registry
+             error:(NSError **)error {
     NSString *capUrn = [cap urnString];
     NSArray<CSCapArg *> *requiredArgs = [cap getRequiredArgs];
     NSArray<CSCapArg *> *optionalArgs = [cap getOptionalArgs];
@@ -290,7 +286,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         CSCapArg *reqArg = requiredArgs[index];
         if (![self validateSingleArgument:reqArg
                                     value:arguments[index]
-                               cap:cap
+                                      cap:cap
+                                 registry:registry
                                     error:error]) {
             return NO;
         }
@@ -303,9 +300,10 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (argIndex < arguments.count) {
             CSCapArg *optArg = optionalArgs[index];
             if (![self validateSingleArgument:optArg
-                                        value:arguments[argIndex]
-                                   cap:cap
-                                        error:error]) {
+                                    value:arguments[argIndex]
+                                      cap:cap
+                                 registry:registry
+                                    error:error]) {
                 return NO;
             }
         }
@@ -316,20 +314,22 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 + (BOOL)validateNamedArguments:(NSArray *)namedArguments
                            cap:(CSCap *)cap
+                      registry:(CSFabricRegistry *)registry
                          error:(NSError **)error {
     // For now, delegate to regular validation
-    return [self validateArguments:namedArguments cap:cap error:error];
+    return [self validateArguments:namedArguments cap:cap registry:registry error:error];
 }
 
 + (BOOL)validateSingleArgument:(CSCapArg *)argDef
                          value:(id)value
-                    cap:(CSCap *)cap
+                           cap:(CSCap *)cap
+                      registry:(CSFabricRegistry *)registry
                          error:(NSError **)error {
     // Resolve mediaSpec first - needed for type validation and media spec validation
     CSMediaSpec *mediaSpec = nil;
     if (argDef.mediaUrn) {
         NSError *resolveError = nil;
-        mediaSpec = CSResolveMediaUrn(argDef.mediaUrn, cap.mediaSpecs, &resolveError);
+        mediaSpec = CSResolveMediaUrn(argDef.mediaUrn, registry, &resolveError);
         if (!mediaSpec) {
             // FAIL HARD on unresolvable spec ID
             if (error) {
@@ -343,7 +343,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // Type validation
-    if (![self validateArgumentType:argDef value:value cap:cap error:error]) {
+    if (![self validateArgumentType:argDef value:value cap:cap registry:registry error:error]) {
         return NO;
     }
 
@@ -359,7 +359,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         CSJSONSchemaValidator *schemaValidator = [CSJSONSchemaValidator validator];
         NSError *schemaError = nil;
 
-        if (![schemaValidator validateArgument:argDef withValue:value mediaSpecs:cap.mediaSpecs error:&schemaError]) {
+        if (![schemaValidator validateArgument:argDef withValue:value registry:registry error:&schemaError]) {
             if (error) {
                 NSString *capUrn = [cap urnString];
                 *error = [CSValidationError schemaValidationFailedError:capUrn
@@ -375,7 +375,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 + (BOOL)validateArgumentType:(CSCapArg *)argDef
                        value:(id)value
-                  cap:(CSCap *)cap
+                         cap:(CSCap *)cap
+                    registry:(CSFabricRegistry *)registry
                        error:(NSError **)error {
     NSString *capUrn = [cap urnString];
     NSString *actualType = [self getJsonTypeName:value];
@@ -387,7 +388,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
     // Resolve mediaSpec to determine expected type
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(argDef.mediaUrn, cap.mediaSpecs, &resolveError);
+    CSMediaSpec *mediaSpec = CSResolveMediaUrn(argDef.mediaUrn, registry, &resolveError);
     if (!mediaSpec) {
         // FAIL HARD on unresolvable spec ID
         if (error) {
@@ -455,7 +456,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 + (BOOL)validateMediaSpecRules:(CSCapArg *)argDef
                      mediaSpec:(CSMediaSpec *)mediaSpec
                          value:(id)value
-                    cap:(CSCap *)cap
+                           cap:(CSCap *)cap
                          error:(NSError **)error {
     NSString *capUrn = [cap urnString];
     CSMediaValidation *validation = mediaSpec.validation;
@@ -605,19 +606,21 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 @interface CSOutputValidator ()
 + (BOOL)validateOutputType:(CSCapOutput *)outputDef
                      value:(id)value
-                cap:(CSCap *)cap
+                       cap:(CSCap *)cap
+                  registry:(CSFabricRegistry *)registry
                      error:(NSError **)error;
 + (BOOL)validateOutputMediaSpecRules:(CSCapOutput *)outputDef
                            mediaSpec:(CSMediaSpec *)mediaSpec
                                value:(id)value
-                          cap:(CSCap *)cap
+                                 cap:(CSCap *)cap
                                error:(NSError **)error;
 @end
 
 @implementation CSOutputValidator
 
 + (BOOL)validateOutput:(id)output
-            cap:(CSCap *)cap
+                   cap:(CSCap *)cap
+              registry:(CSFabricRegistry *)registry
                  error:(NSError **)error {
     NSString *capUrn = [cap urnString];
 
@@ -631,7 +634,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     CSMediaSpec *mediaSpec = nil;
     if (outputDef.mediaUrn) {
         NSError *resolveError = nil;
-        mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, cap.mediaSpecs, &resolveError);
+        mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
         if (!mediaSpec) {
             // FAIL HARD on unresolvable spec ID
             if (error) {
@@ -644,7 +647,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // Type validation
-    if (![self validateOutputType:outputDef value:output cap:cap error:error]) {
+    if (![self validateOutputType:outputDef value:output cap:cap registry:registry error:error]) {
         return NO;
     }
 
@@ -660,7 +663,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         CSJSONSchemaValidator *schemaValidator = [CSJSONSchemaValidator validator];
         NSError *schemaError = nil;
 
-        if (![schemaValidator validateOutput:outputDef withValue:output mediaSpecs:cap.mediaSpecs error:&schemaError]) {
+        if (![schemaValidator validateOutput:outputDef withValue:output registry:registry error:&schemaError]) {
             if (error) {
                 *error = [CSValidationError schemaValidationFailedError:capUrn
                                                            argumentName:nil
@@ -675,7 +678,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 + (BOOL)validateOutputType:(CSCapOutput *)outputDef
                      value:(id)value
-                cap:(CSCap *)cap
+                       cap:(CSCap *)cap
+                  registry:(CSFabricRegistry *)registry
                      error:(NSError **)error {
     NSString *capUrn = [cap urnString];
     NSString *actualType = [CSInputValidator getJsonTypeName:value];
@@ -687,7 +691,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
     // Resolve mediaSpec to determine expected type
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, cap.mediaSpecs, &resolveError);
+    CSMediaSpec *mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
     if (!mediaSpec) {
         // FAIL HARD on unresolvable spec ID
         if (error) {
@@ -754,7 +758,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 + (BOOL)validateOutputMediaSpecRules:(CSCapOutput *)outputDef
                            mediaSpec:(CSMediaSpec *)mediaSpec
                                value:(id)value
-                          cap:(CSCap *)cap
+                                 cap:(CSCap *)cap
                                error:(NSError **)error {
     NSString *capUrn = [cap urnString];
     CSMediaValidation *validation = mediaSpec.validation;
@@ -944,7 +948,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 }
 
 - (BOOL)validateInputs:(NSArray *)arguments
-          capUrn:(NSString *)capUrn
+                capUrn:(NSString *)capUrn
+              registry:(CSFabricRegistry *)registry
                  error:(NSError **)error {
     CSCap *cap = [self getCap:capUrn];
     if (!cap) {
@@ -954,11 +959,12 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         return NO;
     }
 
-    return [CSInputValidator validateArguments:arguments cap:cap error:error];
+    return [CSInputValidator validateArguments:arguments cap:cap registry:registry error:error];
 }
 
 - (BOOL)validateOutput:(id)output
-          capUrn:(NSString *)capUrn
+                capUrn:(NSString *)capUrn
+              registry:(CSFabricRegistry *)registry
                  error:(NSError **)error {
     CSCap *cap = [self getCap:capUrn];
     if (!cap) {
@@ -968,11 +974,12 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         return NO;
     }
 
-    return [CSOutputValidator validateOutput:output cap:cap error:error];
+    return [CSOutputValidator validateOutput:output cap:cap registry:registry error:error];
 }
 
 - (BOOL)validateBinaryOutput:(NSData *)outputData
-                capUrn:(NSString *)capUrn
+                      capUrn:(NSString *)capUrn
+                    registry:(CSFabricRegistry *)registry
                        error:(NSError **)error {
     CSCap *cap = [self getCap:capUrn];
     if (!cap) {
@@ -992,7 +999,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     // Resolve mediaSpec to check if it's binary - fail hard if resolution fails
     if (output.mediaUrn) {
         NSError *resolveError = nil;
-        CSMediaSpec *mediaSpec = CSResolveMediaUrn(output.mediaUrn, cap.mediaSpecs, &resolveError);
+        CSMediaSpec *mediaSpec = CSResolveMediaUrn(output.mediaUrn, registry, &resolveError);
 
         if (!mediaSpec) {
             // FAIL HARD on unresolvable spec ID
@@ -1055,63 +1062,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 @end
 
-// ============================================================================
-// XV5 VALIDATION - No Redefinition of Registry Media Specs
-// ============================================================================
-
-@implementation CSXV5ValidationResult
-
-+ (instancetype)validResult {
-    CSXV5ValidationResult *result = [[CSXV5ValidationResult alloc] init];
-    result->_valid = YES;
-    result->_error = nil;
-    result->_redefines = nil;
-    return result;
-}
-
-+ (instancetype)invalidResultWithError:(NSString *)error redefines:(NSArray<NSString *> *)redefines {
-    CSXV5ValidationResult *result = [[CSXV5ValidationResult alloc] init];
-    result->_valid = NO;
-    result->_error = error;
-    result->_redefines = redefines;
-    return result;
-}
-
-@end
-
-@implementation CSXV5Validator
-
-+ (CSXV5ValidationResult *)validateNoInlineMediaSpecRedefinition:(NSArray<NSDictionary *> *)mediaSpecs
-                                               existsInRegistry:(CSMediaUrnExistsInRegistryBlock)existsInRegistry {
-    if (!mediaSpecs || mediaSpecs.count == 0) {
-        return [CSXV5ValidationResult validResult];
-    }
-
-    // If no registry check provided, degrade gracefully and allow
-    if (!existsInRegistry) {
-        return [CSXV5ValidationResult validResult];
-    }
-
-    NSMutableArray<NSString *> *redefines = [NSMutableArray array];
-
-    for (NSDictionary *spec in mediaSpecs) {
-        // Extract the URN from the spec object
-        NSString *mediaUrn = spec[@"urn"];
-        if (!mediaUrn) continue;
-
-        // Check if this media URN already exists in the registry
-        if (existsInRegistry(mediaUrn)) {
-            [redefines addObject:mediaUrn];
-        }
-    }
-
-    if (redefines.count > 0) {
-        NSString *error = [NSString stringWithFormat:@"XV5: Inline media specs redefine existing registry specs: %@",
-                           [redefines componentsJoinedByString:@", "]];
-        return [CSXV5ValidationResult invalidResultWithError:error redefines:redefines];
-    }
-
-    return [CSXV5ValidationResult validResult];
-}
-
-@end
+// XV5 (no-inline-media-spec-redefinition) was removed when inline
+// `cap.media_specs` arrays were dropped from the cap definition. The
+// situation it guarded against — a cap embedding a media spec that
+// conflicts with the registry — is now structurally impossible.

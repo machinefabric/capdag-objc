@@ -11,6 +11,7 @@
 
 #import "CSSchemaValidator.h"
 #import "CSMediaSpec.h"
+#import "CSFabricRegistry.h"
 
 // Error domain
 NSErrorDomain const CSSchemaValidationErrorDomain = @"CSSchemaValidationErrorDomain";
@@ -217,16 +218,14 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
 
 - (BOOL)validateArgument:(CSCapArg *)argument
                withValue:(id)value
-              mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
+                registry:(CSFabricRegistry *)registry
                    error:(NSError **)error {
-    // Resolve the mediaUrn to get the schema
-    NSDictionary *schema = [self resolveArgumentSchema:argument mediaSpecs:mediaSpecs error:error];
+    NSDictionary *schema = [self resolveArgumentSchema:argument registry:registry error:error];
     if (!schema) {
-        // If there's an error, it's already set
-        // If no schema, validation passes (no schema means no validation needed)
+        // If there's an error, it's already set.
+        // No schema in the resolved spec → no validation needed.
         return error == nil || *error == nil;
     }
-
     return [self validateValue:value
                  againstSchema:schema
                        context:[NSString stringWithFormat:@"argument '%@'", argument.mediaUrn]
@@ -235,16 +234,12 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
 
 - (BOOL)validateOutput:(CSCapOutput *)output
              withValue:(id)value
-            mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
+              registry:(CSFabricRegistry *)registry
                  error:(NSError **)error {
-    // Resolve the mediaUrn to get the schema
-    NSDictionary *schema = [self resolveOutputSchema:output mediaSpecs:mediaSpecs error:error];
+    NSDictionary *schema = [self resolveOutputSchema:output registry:registry error:error];
     if (!schema) {
-        // If there's an error, it's already set
-        // If no schema, validation passes
         return error == nil || *error == nil;
     }
-
     return [self validateValue:value
                  againstSchema:schema
                        context:@"output"
@@ -254,6 +249,7 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
 - (BOOL)validateArguments:(CSCap *)cap
           positionalArgs:(nullable NSArray *)positionalArgs
                namedArgs:(nullable NSDictionary<NSString *, id> *)namedArgs
+                 registry:(CSFabricRegistry *)registry
                    error:(NSError **)error {
     NSArray<CSCapArg *> *args = [cap getArgs];
     if (!args || args.count == 0) {
@@ -287,7 +283,7 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
         }
 
         if (found) {
-            if (![self validateArgument:argDef withValue:value mediaSpecs:cap.mediaSpecs error:error]) {
+            if (![self validateArgument:argDef withValue:value registry:registry error:error]) {
                 return NO;
             }
         }
@@ -316,7 +312,7 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
         }
 
         if (found) {
-            if (![self validateArgument:argDef withValue:value mediaSpecs:cap.mediaSpecs error:error]) {
+            if (![self validateArgument:argDef withValue:value registry:registry error:error]) {
                 return NO;
             }
         }
@@ -328,52 +324,38 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
 #pragma mark - Private Methods
 
 - (nullable NSDictionary *)resolveArgumentSchema:(CSCapArg *)argument
-                                      mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
+                                        registry:(CSFabricRegistry *)registry
                                            error:(NSError **)error {
-    // Get the media URN from the argument
     NSString *specId = argument.mediaUrn;
     if (!specId) {
-        // No mediaUrn, no schema validation needed
         return nil;
     }
-
-    // Resolve the spec ID to a MediaSpec
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(specId, mediaSpecs, &resolveError);
+    CSMediaSpec *mediaSpec = CSResolveMediaUrn(specId, registry, &resolveError);
     if (!mediaSpec) {
-        // FAIL HARD on unresolvable spec ID
         if (error && resolveError) {
             *error = resolveError;
         }
         return nil;
     }
-
-    // Return the schema from the resolved MediaSpec
     return mediaSpec.schema;
 }
 
 - (nullable NSDictionary *)resolveOutputSchema:(CSCapOutput *)output
-                                    mediaSpecs:(NSArray<NSDictionary *> *)mediaSpecs
+                                      registry:(CSFabricRegistry *)registry
                                          error:(NSError **)error {
-    // Get the media URN from the output
     NSString *specId = output.mediaUrn;
     if (!specId) {
-        // No mediaUrn, no schema validation needed
         return nil;
     }
-
-    // Resolve the spec ID to a MediaSpec
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(specId, mediaSpecs, &resolveError);
+    CSMediaSpec *mediaSpec = CSResolveMediaUrn(specId, registry, &resolveError);
     if (!mediaSpec) {
-        // FAIL HARD on unresolvable spec ID
         if (error && resolveError) {
             *error = resolveError;
         }
         return nil;
     }
-
-    // Return the schema from the resolved MediaSpec
     return mediaSpec.schema;
 }
 
