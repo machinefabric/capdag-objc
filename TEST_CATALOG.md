@@ -1,8 +1,8 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 778
+**Total Tests:** 779
 
-**Numbered Tests:** 658
+**Numbered Tests:** 659
 
 **Unnumbered Tests:** 120
 
@@ -17,55 +17,55 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
 | test001 | `test001_capUrnCreation` | TEST001: Test that cap URN is created with tags parsed correctly and direction specs accessible | Tests/CapDAGTests/CSCapUrnTests.m:31 |
-| test002 | `test002_directionSpecsDefaultToWildcard` | TEST002: Test that missing 'in' or 'out' defaults to media: wildcard | Tests/CapDAGTests/CSCapUrnTests.m:146 |
-| test003 | `test003_directionMatching` | TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any | Tests/CapDAGTests/CSCapUrnTests.m:200 |
-| test004 | `test004_unquotedValuesLowercased` | TEST004: Test that unquoted keys and values are normalized to lowercase | Tests/CapDAGTests/CSCapUrnTests.m:614 |
-| test005 | `test005_quotedValuesPreserveCase` | TEST005: Test that quoted values preserve case while unquoted are lowercased | Tests/CapDAGTests/CSCapUrnTests.m:640 |
-| test006 | `test006_quotedValueSpecialChars` | TEST006: Test that quoted values can contain special characters (semicolons, equals, spaces) | Tests/CapDAGTests/CSCapUrnTests.m:669 |
-| test007 | `test007_quotedValueEscapeSequences` | TEST007: Test that escape sequences in quoted values (\" and \\) are parsed correctly | Tests/CapDAGTests/CSCapUrnTests.m:693 |
-| test008 | `test008_mixedQuotedUnquoted` | TEST008: Test that mixed quoted and unquoted values in same URN parse correctly | Tests/CapDAGTests/CSCapUrnTests.m:710 |
-| test009 | `test009_unterminatedQuoteError` | TEST009: Test that unterminated quote produces UnterminatedQuote error | Tests/CapDAGTests/CSCapUrnTests.m:720 |
-| test010 | `test010_invalidEscapeSequenceError` | TEST010: Test that invalid escape sequences (like \n, \x) produce InvalidEscapeSequence error | Tests/CapDAGTests/CSCapUrnTests.m:729 |
+| test002 | `test002_directionSpecsDefaultToWildcard` | TEST002: Test that missing 'in' or 'out' defaults to media: wildcard | Tests/CapDAGTests/CSCapUrnTests.m:181 |
+| test003 | `test003_directionMatching` | TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any | Tests/CapDAGTests/CSCapUrnTests.m:235 |
+| test004 | `test004_unquotedValuesLowercased` | TEST004: Test that unquoted keys and values are normalized to lowercase | Tests/CapDAGTests/CSCapUrnTests.m:649 |
+| test005 | `test005_quotedValuesPreserveCase` | TEST005: Test that quoted values preserve case while unquoted are lowercased | Tests/CapDAGTests/CSCapUrnTests.m:675 |
+| test006 | `test006_quotedValueSpecialChars` | TEST006: Test that quoted values can contain special characters (semicolons, equals, spaces) | Tests/CapDAGTests/CSCapUrnTests.m:704 |
+| test007 | `test007_quotedValueEscapeSequences` | TEST007: Test that escape sequences in quoted values (\" and \\) are parsed correctly | Tests/CapDAGTests/CSCapUrnTests.m:728 |
+| test008 | `test008_mixedQuotedUnquoted` | TEST008: Test that mixed quoted and unquoted values in same URN parse correctly | Tests/CapDAGTests/CSCapUrnTests.m:745 |
+| test009 | `test009_unterminatedQuoteError` | TEST009: Test that unterminated quote produces UnterminatedQuote error | Tests/CapDAGTests/CSCapUrnTests.m:755 |
+| test010 | `test010_invalidEscapeSequenceError` | TEST010: Test that invalid escape sequences (like \n, \x) produce InvalidEscapeSequence error | Tests/CapDAGTests/CSCapUrnTests.m:764 |
 | test011 | `test011_serializationSmartQuoting` | TEST011: Test that serialization uses smart quoting (no quotes for simple lowercase, quotes for special chars/uppercase) | Tests/CapDAGTests/CSCapUrnTests.m:50 |
-| test012 | `test012_roundTripSimple` | TEST012: Test that simple cap URN round-trips (parse -> serialize -> parse equals original) | Tests/CapDAGTests/CSCapUrnTests.m:738 |
-| test013 | `test013_roundTripQuoted` | TEST013: Test that quoted values round-trip preserving case and spaces | Tests/CapDAGTests/CSCapUrnTests.m:750 |
-| test014 | `test014_roundTripEscapes` | TEST014: Test that escape sequences round-trip correctly | Tests/CapDAGTests/CSCapUrnTests.m:1288 |
+| test012 | `test012_roundTripSimple` | TEST012: Test that simple cap URN round-trips (parse -> serialize -> parse equals original) | Tests/CapDAGTests/CSCapUrnTests.m:773 |
+| test013 | `test013_roundTripQuoted` | TEST013: Test that quoted values round-trip preserving case and spaces | Tests/CapDAGTests/CSCapUrnTests.m:785 |
+| test014 | `test014_roundTripEscapes` | TEST014: Test that escape sequences round-trip correctly | Tests/CapDAGTests/CSCapUrnTests.m:1323 |
 | test015 | `test015_capPrefixRequired` | TEST015: Test that cap: prefix is required and case-insensitive | Tests/CapDAGTests/CSCapUrnTests.m:63 |
 | test016 | `test016_trailingSemicolonEquivalence` | TEST016: Test that trailing semicolon is equivalent (same hash, same string, matches) | Tests/CapDAGTests/CSCapUrnTests.m:80 |
-| test017 | `test017_tagMatching` | TEST017: Test tag matching: exact match, subset match, wildcard match, value mismatch | Tests/CapDAGTests/CSCapUrnTests.m:238 |
-| test018 | `test018_matchingCaseSensitiveValues` | TEST018: Test that quoted values with different case do NOT match (case-sensitive) | Tests/CapDAGTests/CSCapUrnTests.m:1300 |
-| test019 | `test019_missingTagHandling` | TEST019: Missing tag in instance causes rejection — pattern's tags are constraints | Tests/CapDAGTests/CSCapUrnTests.m:265 |
-| test020 | `test020_specificity` | TEST020: Specificity is the sum of per-tag truth-table scores across in/out/y. Marker tags (bare segments and `key=*`) score 2 (must-have-any), exact `key=value` tags score 3, missing/`?` score 0, `!` scores 1. testUrn() builds "cap:in=media:void;out=media:record;textable;<tags>" so the directional baseline is: in:  media:void              -> {void=*}              -> 2 out: media:record;textable   -> {record=*, textable=*} -> 4 Total directional baseline: 6. | Tests/CapDAGTests/CSCapUrnTests.m:293 |
-| test021 | `test021_builder` | TEST021: Test builder creates cap URN with correct tags and direction specs | Tests/CapDAGTests/CSCapUrnTests.m:1315 |
-| test022 | `test022_builderRequiresDirection` | TEST022: Test builder requires both in_spec and out_spec | Tests/CapDAGTests/CSCapUrnTests.m:1333 |
-| test023 | `test023_builderPreservesCase` | TEST023: Test builder lowercases keys but preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:1361 |
-| test024 | `test024_directionalAccepts` | TEST024: Directional accepts — pattern's tags are constraints, instance must satisfy | Tests/CapDAGTests/CSCapUrnTests.m:318 |
-| test025 | `test025_bestMatch` | TEST025: Test find_best_match returns most specific matching cap | Tests/CapDAGTests/CSCapUrnTests.m:1375 |
-| test026 | `test026_mergeAndSubset` | TEST026: Test merge combines tags from both caps, subset keeps only specified tags | Tests/CapDAGTests/CSCapUrnTests.m:465 |
-| test027 | `test027_wildcardTag` | TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out | Tests/CapDAGTests/CSCapUrnTests.m:437 |
-| test028 | `test028_emptyCapUrnDefaultsToWildcard` | TEST028: Test empty cap URN defaults to media: wildcard | Tests/CapDAGTests/CSCapUrnTests.m:168 |
-| test029 | `test029_minimalCapUrn` | TEST029: Test minimal valid cap URN has just in and out, empty tags | Tests/CapDAGTests/CSCapUrnTests.m:188 |
-| test030 | `test030_extendedCharacterSupport` | TEST030: Test extended characters (forward slashes, colons) in tag values | Tests/CapDAGTests/CSCapUrnTests.m:541 |
-| test031 | `test031_wildcardRestrictions` | TEST031: Test wildcard rejected in keys but accepted in values | Tests/CapDAGTests/CSCapUrnTests.m:552 |
-| test032 | `test032_duplicateKeyRejection` | TEST032: Test duplicate keys are rejected with DuplicateKey error | Tests/CapDAGTests/CSCapUrnTests.m:571 |
-| test033 | `test033_numericKeyRestriction` | TEST033: Test pure numeric keys rejected, mixed alphanumeric allowed, numeric values allowed | Tests/CapDAGTests/CSCapUrnTests.m:581 |
-| test034 | `test034_emptyValueError` | TEST034: Test empty values are rejected | Tests/CapDAGTests/CSCapUrnTests.m:1394 |
-| test035 | `test035_hasTagCaseSensitive` | TEST035: Test has_tag is case-sensitive for values, case-insensitive for keys, works for in/out | Tests/CapDAGTests/CSCapUrnTests.m:763 |
-| test036 | `test036_withTagPreservesValue` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:363 |
-| test037 | `test037_withTagRejectsEmptyValue` | TEST037: Test with_tag rejects empty value | Tests/CapDAGTests/CSCapUrnTests.m:1405 |
-| test038 | `test038_semanticEquivalence` | TEST038: Test semantic equivalence of unquoted and quoted simple lowercase values | Tests/CapDAGTests/CSCapUrnTests.m:786 |
-| test039 | `test039_getTagReturnsDirectionSpecs` | TEST039: Test get_tag returns direction specs (in/out) with case-insensitive lookup | Tests/CapDAGTests/CSCapUrnTests.m:349 |
-| test040 | `test040_matchingSemantics_exactMatch` | TEST040: Matching semantics - exact match succeeds | Tests/CapDAGTests/CSCapUrnTests.m:808 |
-| test041 | `test041_matchingSemantics_capMissingTag` | TEST041: Matching semantics - cap missing tag matches (implicit wildcard) | Tests/CapDAGTests/CSCapUrnTests.m:821 |
-| test042 | `test042_matchingSemantics_capHasExtraTag` | TEST042: Pattern rejects instance missing required tags | Tests/CapDAGTests/CSCapUrnTests.m:834 |
-| test043 | `test043_matchingSemantics_requestHasWildcard` | TEST043: Matching semantics - request wildcard matches specific cap value | Tests/CapDAGTests/CSCapUrnTests.m:845 |
-| test044 | `test044_matchingSemantics_capHasWildcard` | TEST044: Matching semantics - cap wildcard matches specific request value | Tests/CapDAGTests/CSCapUrnTests.m:858 |
-| test045 | `test045_matchingSemantics_valueMismatch` | TEST045: Matching semantics - value mismatch does not match | Tests/CapDAGTests/CSCapUrnTests.m:871 |
-| test046 | `test046_matchingSemantics_fallbackPattern` | TEST046: Matching semantics - fallback pattern (cap missing tag = implicit wildcard) | Tests/CapDAGTests/CSCapUrnTests.m:884 |
-| test047 | `test047_matchingSemantics_thumbnailVoidInput` | TEST047: Matching semantics - thumbnail fallback with void input | Tests/CapDAGTests/CSCapUrnTests.m:1415 |
-| test048 | `test048_matchingSemantics_wildcardDirectionMatchesAnything` | TEST048: Matching semantics - wildcard direction matches anything | Tests/CapDAGTests/CSCapUrnTests.m:897 |
-| test049 | `test049_matchingSemantics_crossDimensionIndependence` | TEST049: Non-overlapping tags — neither direction accepts | Tests/CapDAGTests/CSCapUrnTests.m:911 |
-| test050 | `test050_matchingSemantics_directionMismatch` | TEST050: Matching semantics - direction mismatch prevents matching | Tests/CapDAGTests/CSCapUrnTests.m:921 |
+| test017 | `test017_tagMatching` | TEST017: Test tag matching: exact match, subset match, wildcard match, value mismatch | Tests/CapDAGTests/CSCapUrnTests.m:273 |
+| test018 | `test018_matchingCaseSensitiveValues` | TEST018: Test that quoted values with different case do NOT match (case-sensitive) | Tests/CapDAGTests/CSCapUrnTests.m:1335 |
+| test019 | `test019_missingTagHandling` | TEST019: Missing tag in instance causes rejection — pattern's tags are constraints | Tests/CapDAGTests/CSCapUrnTests.m:300 |
+| test020 | `test020_specificity` | TEST020: Specificity is the sum of per-tag truth-table scores across in/out/y. Marker tags (bare segments and `key=*`) score 2 (must-have-any), exact `key=value` tags score 3, missing/`?` score 0, `!` scores 1. testUrn() builds "cap:in=media:void;out=media:record;textable;<tags>" so the directional baseline is: in:  media:void              -> {void=*}              -> 2 out: media:record;textable   -> {record=*, textable=*} -> 4 Total directional baseline: 6. | Tests/CapDAGTests/CSCapUrnTests.m:328 |
+| test021 | `test021_builder` | TEST021: Test builder creates cap URN with correct tags and direction specs | Tests/CapDAGTests/CSCapUrnTests.m:1350 |
+| test022 | `test022_builderRequiresDirection` | TEST022: Test builder requires both in_spec and out_spec | Tests/CapDAGTests/CSCapUrnTests.m:1368 |
+| test023 | `test023_builderPreservesCase` | TEST023: Test builder lowercases keys but preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:1396 |
+| test024 | `test024_directionalAccepts` | TEST024: Directional accepts — pattern's tags are constraints, instance must satisfy | Tests/CapDAGTests/CSCapUrnTests.m:353 |
+| test025 | `test025_bestMatch` | TEST025: Test find_best_match returns most specific matching cap | Tests/CapDAGTests/CSCapUrnTests.m:1410 |
+| test026 | `test026_mergeAndSubset` | TEST026: Test merge combines tags from both caps, subset keeps only specified tags | Tests/CapDAGTests/CSCapUrnTests.m:500 |
+| test027 | `test027_wildcardTag` | TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out | Tests/CapDAGTests/CSCapUrnTests.m:472 |
+| test028 | `test028_emptyCapUrnDefaultsToWildcard` | TEST028: Test empty cap URN defaults to media: wildcard | Tests/CapDAGTests/CSCapUrnTests.m:203 |
+| test029 | `test029_minimalCapUrn` | TEST029: Test minimal valid cap URN has just in and out, empty tags | Tests/CapDAGTests/CSCapUrnTests.m:223 |
+| test030 | `test030_extendedCharacterSupport` | TEST030: Test extended characters (forward slashes, colons) in tag values | Tests/CapDAGTests/CSCapUrnTests.m:576 |
+| test031 | `test031_wildcardRestrictions` | TEST031: Test wildcard rejected in keys but accepted in values | Tests/CapDAGTests/CSCapUrnTests.m:587 |
+| test032 | `test032_duplicateKeyRejection` | TEST032: Test duplicate keys are rejected with DuplicateKey error | Tests/CapDAGTests/CSCapUrnTests.m:606 |
+| test033 | `test033_numericKeyRestriction` | TEST033: Test pure numeric keys rejected, mixed alphanumeric allowed, numeric values allowed | Tests/CapDAGTests/CSCapUrnTests.m:616 |
+| test034 | `test034_emptyValueError` | TEST034: Test empty values are rejected | Tests/CapDAGTests/CSCapUrnTests.m:1429 |
+| test035 | `test035_hasTagCaseSensitive` | TEST035: Test has_tag is case-sensitive for values, case-insensitive for keys, works for in/out | Tests/CapDAGTests/CSCapUrnTests.m:798 |
+| test036 | `test036_withTagPreservesValue` | TEST036: Test with_tag preserves value case | Tests/CapDAGTests/CSCapUrnTests.m:398 |
+| test037 | `test037_withTagRejectsEmptyValue` | TEST037: Test with_tag rejects empty value | Tests/CapDAGTests/CSCapUrnTests.m:1440 |
+| test038 | `test038_semanticEquivalence` | TEST038: Test semantic equivalence of unquoted and quoted simple lowercase values | Tests/CapDAGTests/CSCapUrnTests.m:821 |
+| test039 | `test039_getTagReturnsDirectionSpecs` | TEST039: Test get_tag returns direction specs (in/out) with case-insensitive lookup | Tests/CapDAGTests/CSCapUrnTests.m:384 |
+| test040 | `test040_matchingSemantics_exactMatch` | TEST040: Matching semantics - exact match succeeds | Tests/CapDAGTests/CSCapUrnTests.m:843 |
+| test041 | `test041_matchingSemantics_capMissingTag` | TEST041: Matching semantics - cap missing tag matches (implicit wildcard) | Tests/CapDAGTests/CSCapUrnTests.m:856 |
+| test042 | `test042_matchingSemantics_capHasExtraTag` | TEST042: Pattern rejects instance missing required tags | Tests/CapDAGTests/CSCapUrnTests.m:869 |
+| test043 | `test043_matchingSemantics_requestHasWildcard` | TEST043: Matching semantics - request wildcard matches specific cap value | Tests/CapDAGTests/CSCapUrnTests.m:880 |
+| test044 | `test044_matchingSemantics_capHasWildcard` | TEST044: Matching semantics - cap wildcard matches specific request value | Tests/CapDAGTests/CSCapUrnTests.m:893 |
+| test045 | `test045_matchingSemantics_valueMismatch` | TEST045: Matching semantics - value mismatch does not match | Tests/CapDAGTests/CSCapUrnTests.m:906 |
+| test046 | `test046_matchingSemantics_fallbackPattern` | TEST046: Matching semantics - fallback pattern (cap missing tag = implicit wildcard) | Tests/CapDAGTests/CSCapUrnTests.m:919 |
+| test047 | `test047_matchingSemantics_thumbnailVoidInput` | TEST047: Matching semantics - thumbnail fallback with void input | Tests/CapDAGTests/CSCapUrnTests.m:1450 |
+| test048 | `test048_matchingSemantics_wildcardDirectionMatchesAnything` | TEST048: Matching semantics - wildcard direction matches anything | Tests/CapDAGTests/CSCapUrnTests.m:932 |
+| test049 | `test049_matchingSemantics_crossDimensionIndependence` | TEST049: Non-overlapping tags — neither direction accepts | Tests/CapDAGTests/CSCapUrnTests.m:946 |
+| test050 | `test050_matchingSemantics_directionMismatch` | TEST050: Matching semantics - direction mismatch prevents matching | Tests/CapDAGTests/CSCapUrnTests.m:956 |
 | test060 | `test060_wrong_prefix_fails` | TEST060: Test wrong prefix fails with InvalidPrefix error showing expected and actual prefix | Tests/CapDAGTests/CSMediaUrnTests.m:119 |
 | test061 | `test061_is_binary` | TEST061: Test is_binary returns true when textable tag is absent (binary = not textable) | Tests/CapDAGTests/CSMediaUrnTests.m:130 |
 | test062 | `test062_is_record` | TEST062: Test is_record returns true when record marker tag is present indicating key-value structure | Tests/CapDAGTests/CSMediaUrnTests.m:146 |
@@ -497,22 +497,22 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test820 | `test820_singleValueSequence` | TEST820: Tests JSON path extraction correctly handles boolean values Verifies that true and false are extracted as proper boolean JSON values | Tests/BifaciTests/CborSequenceTests.swift:192 |
 | test821 | `test821_inputStreamCollectCborSequence` | TEST821: Tests JSON path extraction with multi-dimensional arrays (matrix access) Verifies that nested array structures like "matrix[1]" correctly extract inner arrays | Tests/BifaciTests/CborSequenceTests.swift:202 |
 | test822 | `test822_collectBytesVsSequence` | TEST822: Tests error handling for non-numeric array indices Verifies that invalid indices like "items[abc]" return a descriptive parse error | Tests/BifaciTests/CborSequenceTests.swift:589 |
-| test823 | `test823_isDispatchable_exactMatch` | TEST823: is_dispatchable — exact match provider dispatches request | Tests/CapDAGTests/CSCapUrnTests.m:1123 |
-| test824 | `test824_isDispatchable_broaderInputHandlesSpecific` | TEST824: is_dispatchable — provider with broader input handles specific request (contravariance) | Tests/CapDAGTests/CSCapUrnTests.m:1133 |
-| test825 | `test825_isDispatchable_unconstrainedInput` | TEST825: is_dispatchable — request with unconstrained input dispatches to specific provider media: on the request input axis means "unconstrained" — vacuously true | Tests/CapDAGTests/CSCapUrnTests.m:1144 |
-| test826 | `test826_isDispatchable_providerOutputSatisfiesRequest` | TEST826: is_dispatchable — provider output must satisfy request output (covariance) | Tests/CapDAGTests/CSCapUrnTests.m:1154 |
-| test827 | `test827_isDispatchable_genericOutputCannotSatisfySpecific` | TEST827: is_dispatchable — provider with generic output cannot satisfy specific request | Tests/CapDAGTests/CSCapUrnTests.m:1164 |
-| test828 | `test828_isDispatchable_wildcardRequestProviderMissingTag` | TEST828: is_dispatchable — wildcard * tag in request, provider missing tag → reject | Tests/CapDAGTests/CSCapUrnTests.m:1174 |
-| test829 | `test829_isDispatchable_wildcardRequestProviderHasTag` | TEST829: is_dispatchable — wildcard * tag in request, provider has tag → accept | Tests/CapDAGTests/CSCapUrnTests.m:1184 |
-| test830 | `test830_isDispatchable_providerExtraTags` | TEST830: is_dispatchable — provider extra tags are refinement, always OK | Tests/CapDAGTests/CSCapUrnTests.m:1194 |
-| test831 | `test831_isDispatchable_crossBackendMismatch` | TEST831: is_dispatchable — cross-backend mismatch prevented | Tests/CapDAGTests/CSCapUrnTests.m:1204 |
-| test832 | `test832_isDispatchable_asymmetric` | TEST832: is_dispatchable is NOT symmetric | Tests/CapDAGTests/CSCapUrnTests.m:1214 |
-| test833 | `test833_isComparable_symmetric` | TEST833: is_comparable — both directions checked | Tests/CapDAGTests/CSCapUrnTests.m:1225 |
-| test834 | `test834_isComparable_unrelated` | TEST834: is_comparable — unrelated caps are NOT comparable | Tests/CapDAGTests/CSCapUrnTests.m:1236 |
-| test835 | `test835_isEquivalent_identical` | TEST835: is_equivalent — identical caps | Tests/CapDAGTests/CSCapUrnTests.m:1247 |
-| test836 | `test836_isEquivalent_nonEquivalent` | TEST836: is_equivalent — non-equivalent comparable caps | Tests/CapDAGTests/CSCapUrnTests.m:1257 |
-| test837 | `test837_isDispatchable_opTagMismatch` | TEST837: is_dispatchable — op tag mismatch rejects | Tests/CapDAGTests/CSCapUrnTests.m:1268 |
-| test838 | `test838_isDispatchable_requestWildcardOutput` | TEST838: is_dispatchable — request with wildcard output accepts any provider output | Tests/CapDAGTests/CSCapUrnTests.m:1278 |
+| test823 | `test823_isDispatchable_exactMatch` | TEST823: is_dispatchable — exact match provider dispatches request | Tests/CapDAGTests/CSCapUrnTests.m:1158 |
+| test824 | `test824_isDispatchable_broaderInputHandlesSpecific` | TEST824: is_dispatchable — provider with broader input handles specific request (contravariance) | Tests/CapDAGTests/CSCapUrnTests.m:1168 |
+| test825 | `test825_isDispatchable_unconstrainedInput` | TEST825: is_dispatchable — request with unconstrained input dispatches to specific provider media: on the request input axis means "unconstrained" — vacuously true | Tests/CapDAGTests/CSCapUrnTests.m:1179 |
+| test826 | `test826_isDispatchable_providerOutputSatisfiesRequest` | TEST826: is_dispatchable — provider output must satisfy request output (covariance) | Tests/CapDAGTests/CSCapUrnTests.m:1189 |
+| test827 | `test827_isDispatchable_genericOutputCannotSatisfySpecific` | TEST827: is_dispatchable — provider with generic output cannot satisfy specific request | Tests/CapDAGTests/CSCapUrnTests.m:1199 |
+| test828 | `test828_isDispatchable_wildcardRequestProviderMissingTag` | TEST828: is_dispatchable — wildcard * tag in request, provider missing tag → reject | Tests/CapDAGTests/CSCapUrnTests.m:1209 |
+| test829 | `test829_isDispatchable_wildcardRequestProviderHasTag` | TEST829: is_dispatchable — wildcard * tag in request, provider has tag → accept | Tests/CapDAGTests/CSCapUrnTests.m:1219 |
+| test830 | `test830_isDispatchable_providerExtraTags` | TEST830: is_dispatchable — provider extra tags are refinement, always OK | Tests/CapDAGTests/CSCapUrnTests.m:1229 |
+| test831 | `test831_isDispatchable_crossBackendMismatch` | TEST831: is_dispatchable — cross-backend mismatch prevented | Tests/CapDAGTests/CSCapUrnTests.m:1239 |
+| test832 | `test832_isDispatchable_asymmetric` | TEST832: is_dispatchable is NOT symmetric | Tests/CapDAGTests/CSCapUrnTests.m:1249 |
+| test833 | `test833_isComparable_symmetric` | TEST833: is_comparable — both directions checked | Tests/CapDAGTests/CSCapUrnTests.m:1260 |
+| test834 | `test834_isComparable_unrelated` | TEST834: is_comparable — unrelated caps are NOT comparable | Tests/CapDAGTests/CSCapUrnTests.m:1271 |
+| test835 | `test835_isEquivalent_identical` | TEST835: is_equivalent — identical caps | Tests/CapDAGTests/CSCapUrnTests.m:1282 |
+| test836 | `test836_isEquivalent_nonEquivalent` | TEST836: is_equivalent — non-equivalent comparable caps | Tests/CapDAGTests/CSCapUrnTests.m:1292 |
+| test837 | `test837_isDispatchable_opTagMismatch` | TEST837: is_dispatchable — op tag mismatch rejects | Tests/CapDAGTests/CSCapUrnTests.m:1303 |
+| test838 | `test838_isDispatchable_requestWildcardOutput` | TEST838: is_dispatchable — request with wildcard output accepts any provider output | Tests/CapDAGTests/CSCapUrnTests.m:1313 |
 | test839 | `test839_peerResponseDeliversLogsBeforeStreamStart` | TEST839: LOG frames arriving BEFORE StreamStart are delivered immediately This tests the critical fix: during a peer call, the peer (e.g., modelcartridge) sends LOG frames for minutes during model download BEFORE sending any data (StreamStart + Chunk). The handler must receive these LOGs in real-time so it can re-emit progress and keep the engine's activity timer alive. Previously, demux_single_stream blocked on awaiting StreamStart before returning PeerResponse, which meant the handler couldn't call recv() until data arrived — causing 120s activity timeouts during long downloads. | Tests/BifaciTests/StreamingAPITests.swift:662 |
 | test840 | `test840_peerResponseCollectBytesDiscardsLogs` | TEST840: PeerResponse::collect_bytes discards LOG frames | Tests/BifaciTests/StreamingAPITests.swift:733 |
 | test841 | `test841_peerResponseCollectValueDiscardsLogs` | TEST841: PeerResponse::collect_value discards LOG frames | Tests/BifaciTests/StreamingAPITests.swift:763 |
@@ -555,6 +555,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test935 | `test935_findFirstForeachLinear` | TEST935: findFirstForeach returns nil for linear plans | Tests/CapDAGTests/CSPlanDecompositionTests.m:91 |
 | test936 | `test936_hasForeach` | TEST936: hasForeach | Tests/CapDAGTests/CSPlanDecompositionTests.m:100 |
 | test937 | `test937_extractPrefixTo` | TEST937: extractPrefixTo extracts input_slot → cap_0 as standalone plan | Tests/CapDAGTests/CSPlanDecompositionTests.m:112 |
+| test939 | `test939_capUrnCanonicalFormDropsWildcardInOut` | TEST939: The canonical form drops `in=media:` and `out=media:` segments. Every spelling of "the same cap with wildcard in/out" collapses to one byte-identical canonical string. This is the contract that makes registry lookups work: the cap-publisher hashes `<canonical-urn>` to compute the cache key, and every language port (Rust, Go, Python, JS, ObjC) must agree on the canonical form for cross-language lookups to land on the same key. A regression that emitted the wildcard segments would silently move the published cap to a different SHA-256 bucket, 404'ing every reader that hashes the canonical form. | Tests/CapDAGTests/CSCapUrnTests.m:113 |
 | test944 | `test944_sixMachine` | TEST944: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase | Tests/BifaciTests/OrchestratorTests.swift:300 |
 | test945 | `test945_fiveMachine` | TEST945: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string | Tests/BifaciTests/OrchestratorTests.swift:274 |
 | test946 | `test946_fourMachine` | TEST946: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP[" | Tests/BifaciTests/OrchestratorTests.swift:250 |
@@ -611,20 +612,20 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1098 | `test1098_extension_based_pdf` | TEST1098: Extension-based detection picks up pdf tag for .pdf files | Tests/CapDAGTests/CSInputResolverTests.m:420 |
 | test1144 | `test1144_content_structure_helpers` | TEST1144: ContentStructure is_list/is_record helpers are correct | Tests/CapDAGTests/CSInputResolverTests.m:440 |
 | test1145 | `test1145_resolved_input_set_uses_equivalent_media_and_file_count_cardinality` | TEST1145: ResolvedInputSet uses URN equivalence for common_media and file count for is_sequence | Tests/CapDAGTests/CSInputResolverTests.m:471 |
-| test1400 | `test1400_missingOutSpecDefaultsToWildcard` | TEST1400: Missing 'out' defaults to media: wildcard (mirror-local variant of TEST002 covering the out-side case) | Tests/CapDAGTests/CSCapUrnTests.m:157 |
-| test1401 | `test1401_directionWildcardMatches` | TEST1401: Wildcard in/out specs accept any concrete value (mirror-local variant of TEST003's wildcard branch) | Tests/CapDAGTests/CSCapUrnTests.m:218 |
-| test1402 | `test1402_invalidCharacters` | TEST1402: Invalid characters (e.g. '@') in tag keys are rejected by the parser (mirror-local variant of TEST003) | Tests/CapDAGTests/CSCapUrnTests.m:134 |
-| test1403 | `test1403_equality` | TEST1403: Equality and hash of CSCapUrn identify identical URNs and distinguish direction/tag differences (mirror-local variant of TEST016) | Tests/CapDAGTests/CSCapUrnTests.m:491 |
-| test1404 | `test1404_merge` | TEST1404: merge() combines tags from two cap URNs; direction comes from the other cap (mirror-local variant of TEST026's merge branch) | Tests/CapDAGTests/CSCapUrnTests.m:475 |
-| test1405 | `test1405_wildcardTagDirection` | TEST1405: withWildcardTag resolves to withInSpec/withOutSpec for "in"/"out" tags, setting them to the wildcard "media:" (mirror-local variant of TEST027) | Tests/CapDAGTests/CSCapUrnTests.m:451 |
-| test1406 | `test1406_valuelessTagParsing` | TEST1406: Value-less tags (bare keys like ";flag") parse as wildcards (mirror-local variant of TEST031) | Tests/CapDAGTests/CSCapUrnTests.m:114 |
-| test1407 | `test1407_withTagIgnoresInOut` | TEST1407: withTag silently ignores attempts to set "in" or "out" tags (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:377 |
-| test1408 | `test1408_withInSpec` | TEST1408: withInSpec returns a new URN with the in= spec replaced, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:390 |
-| test1409 | `test1409_withOutSpec` | TEST1409: withOutSpec returns a new URN with the out= spec replaced, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:400 |
-| test1410 | `test1410_withoutTag` | TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:410 |
-| test1411 | `test1411_withoutTagIgnoresInOut` | TEST1411: withoutTag silently ignores attempts to remove "in" or "out" tags (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:424 |
-| test1412 | `test1412_directionSemanticMatching` | TEST1412: Semantic direction matching - generic provider matches specific request (mirror-local variant of TEST051) | Tests/CapDAGTests/CSCapUrnTests.m:934 |
-| test1413 | `test1413_directionSemanticSpecificity` | TEST1413: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052) | Tests/CapDAGTests/CSCapUrnTests.m:981 |
+| test1400 | `test1400_missingOutSpecDefaultsToWildcard` | TEST1400: Missing 'out' defaults to media: wildcard (mirror-local variant of TEST002 covering the out-side case) | Tests/CapDAGTests/CSCapUrnTests.m:192 |
+| test1401 | `test1401_directionWildcardMatches` | TEST1401: Wildcard in/out specs accept any concrete value (mirror-local variant of TEST003's wildcard branch) | Tests/CapDAGTests/CSCapUrnTests.m:253 |
+| test1402 | `test1402_invalidCharacters` | TEST1402: Invalid characters (e.g. '@') in tag keys are rejected by the parser (mirror-local variant of TEST003) | Tests/CapDAGTests/CSCapUrnTests.m:169 |
+| test1403 | `test1403_equality` | TEST1403: Equality and hash of CSCapUrn identify identical URNs and distinguish direction/tag differences (mirror-local variant of TEST016) | Tests/CapDAGTests/CSCapUrnTests.m:526 |
+| test1404 | `test1404_merge` | TEST1404: merge() combines tags from two cap URNs; direction comes from the other cap (mirror-local variant of TEST026's merge branch) | Tests/CapDAGTests/CSCapUrnTests.m:510 |
+| test1405 | `test1405_wildcardTagDirection` | TEST1405: withWildcardTag resolves to withInSpec/withOutSpec for "in"/"out" tags, setting them to the wildcard "media:" (mirror-local variant of TEST027) | Tests/CapDAGTests/CSCapUrnTests.m:486 |
+| test1406 | `test1406_valuelessTagParsing` | TEST1406: Value-less tags (bare keys like ";flag") parse as wildcards (mirror-local variant of TEST031) | Tests/CapDAGTests/CSCapUrnTests.m:149 |
+| test1407 | `test1407_withTagIgnoresInOut` | TEST1407: withTag silently ignores attempts to set "in" or "out" tags (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:412 |
+| test1408 | `test1408_withInSpec` | TEST1408: withInSpec returns a new URN with the in= spec replaced, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:425 |
+| test1409 | `test1409_withOutSpec` | TEST1409: withOutSpec returns a new URN with the out= spec replaced, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:435 |
+| test1410 | `test1410_withoutTag` | TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:445 |
+| test1411 | `test1411_withoutTagIgnoresInOut` | TEST1411: withoutTag silently ignores attempts to remove "in" or "out" tags (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:459 |
+| test1412 | `test1412_directionSemanticMatching` | TEST1412: Semantic direction matching - generic provider matches specific request (mirror-local variant of TEST051) | Tests/CapDAGTests/CSCapUrnTests.m:969 |
+| test1413 | `test1413_directionSemanticSpecificity` | TEST1413: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052) | Tests/CapDAGTests/CSCapUrnTests.m:1016 |
 | test1414 | `test1414_parseSingleEdgeDag` | TEST1414: Parse DAG with a single edge using different node names (mirror-local) | Tests/BifaciTests/OrchestratorTests.swift:100 |
 | test1415 | `test1415_parseEdge1ToEdge2Chain` | TEST1415: Parse DAG chaining test_edge1 → test_edge2 (mirror-local) | Tests/BifaciTests/OrchestratorTests.swift:118 |
 | test1500 | `test1500_writeAfterCloseThrowsCleanly` | TEST1500: Writing to a closed FrameWriter must throw FrameError.ioError("writer closed"), never raise an Objective-C NSException that aborts the process. | Tests/BifaciTests/FrameTests.swift:1791 |
@@ -651,29 +652,29 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1711 | `test1711_attachmentErrorJSONRoundTripsForEveryKind` | / TEST1711: A `CartridgeAttachmentError` round-trips through / `JSONEncoder` → bytes → `JSONDecoder` unchanged for every / kind. RelayNotify's wire payload is JSON; if any variant / fails to deserialize, the engine's aggregate parse fails / and ALL cartridges from that host disappear from the / inventory — including the healthy ones. This test / covers each variant individually so a single-variant / regression doesn't hide behind a passing healthy-case. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:59 |
 | test1712 | `test1712_decodesWireFormatJSONIntoExpectedVariants` | / TEST1712: An on-the-wire JSON payload using the snake_case / raw values decodes into the right Swift variant. This is / the engine → Swift path: the engine emits / `{"kind":"bad_installation",...}` and the Swift side must / resolve it to `.badInstallation`. Asserts the lookup table / the decoder synthesises for `String`-backed enums actually / covers the new variants. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:90 |
 | test1713 | `test1713_unknownWireKindFailsToDecode` | / TEST1713: An unknown wire kind FAILS to decode. The two / new variants are wire-additive — older Swift binaries that / don't know `bad_installation` or `disabled` will see those / strings and reject them, which is correct: silently / coercing an unknown variant to a fallback would hide the / version-skew bug. The fatalError sites in / CartridgeGRPCAdapter and InstalledCartridgesStore rely on / this — they expect decode to throw / produce a known / variant, never silently pick a default. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:127 |
-| test1800 | `test1800_kind_identity_only_for_bare_cap` | TEST1800: Identity classifier — only the bare cap: form qualifies. Adding any tag (even one that doesn't constrain in/out) demotes the cap to Transform because the operation/metadata axis is no longer fully generic. | Tests/CapDAGTests/CSCapUrnTests.m:1439 |
-| test1801 | `test1801_kind_source_when_input_is_void` | TEST1801: Source classifier — in=media:void, out non-void. | Tests/CapDAGTests/CSCapUrnTests.m:1467 |
-| test1802 | `test1802_kind_sink_when_output_is_void` | TEST1802: Sink classifier — out=media:void, in non-void. | Tests/CapDAGTests/CSCapUrnTests.m:1480 |
-| test1803 | `test1803_kind_effect_when_both_sides_void` | TEST1803: Effect classifier — both sides void. Reads as `() → ()`. | Tests/CapDAGTests/CSCapUrnTests.m:1493 |
-| test1804 | `test1804_kind_transform_for_normal_data_processors` | TEST1804: Transform classifier — at least one side non-void, and the cap is not the bare identity. | Tests/CapDAGTests/CSCapUrnTests.m:1507 |
-| test1805 | `test1805_kind_invariant_under_canonical_spellings` | TEST1805: Kind is invariant under canonicalization. The same morphism written in many surface forms must classify the same way once parsed. | Tests/CapDAGTests/CSCapUrnTests.m:1522 |
+| test1800 | `test1800_kind_identity_only_for_bare_cap` | TEST1800: Identity classifier — only the bare cap: form qualifies. Adding any tag (even one that doesn't constrain in/out) demotes the cap to Transform because the operation/metadata axis is no longer fully generic. | Tests/CapDAGTests/CSCapUrnTests.m:1474 |
+| test1801 | `test1801_kind_source_when_input_is_void` | TEST1801: Source classifier — in=media:void, out non-void. | Tests/CapDAGTests/CSCapUrnTests.m:1502 |
+| test1802 | `test1802_kind_sink_when_output_is_void` | TEST1802: Sink classifier — out=media:void, in non-void. | Tests/CapDAGTests/CSCapUrnTests.m:1515 |
+| test1803 | `test1803_kind_effect_when_both_sides_void` | TEST1803: Effect classifier — both sides void. Reads as `() → ()`. | Tests/CapDAGTests/CSCapUrnTests.m:1528 |
+| test1804 | `test1804_kind_transform_for_normal_data_processors` | TEST1804: Transform classifier — at least one side non-void, and the cap is not the bare identity. | Tests/CapDAGTests/CSCapUrnTests.m:1542 |
+| test1805 | `test1805_kind_invariant_under_canonical_spellings` | TEST1805: Kind is invariant under canonicalization. The same morphism written in many surface forms must classify the same way once parsed. | Tests/CapDAGTests/CSCapUrnTests.m:1557 |
 | test1810 | `test1810_media_void_is_atomic` | TEST1810: media:void is atomic — refinements are parse errors. Mirrored across every language port (Rust, Go, Python, Swift/ObjC, JS) under the SAME number. Any divergence is a wire-level inconsistency — the unit type's atomicity is part of the protocol's deepest layer, not a per-port detail. | Tests/CapDAGTests/CSMediaUrnTests.m:482 |
-| test1820 | `test1820_specificity_question_is_zero` | TEST1820: A `?`-valued cap-tag scores 0. Same as missing. | Tests/CapDAGTests/CSCapUrnTests.m:1570 |
-| test1821 | `test1821_specificity_must_not_have_is_five` | TEST1821: A `!`-valued cap-tag scores 5 (top of negative chain). | Tests/CapDAGTests/CSCapUrnTests.m:1584 |
-| test1822 | `test1822_specificity_must_have_any_is_two` | TEST1822: A `*`-valued cap-tag (including bare markers) scores 2. | Tests/CapDAGTests/CSCapUrnTests.m:1593 |
-| test1823 | `test1823_specificity_exact_value_is_four` | TEST1823: An exact-valued cap-tag scores 4. | Tests/CapDAGTests/CSCapUrnTests.m:1611 |
-| test1824 | `test1824_specificity_combined_y_axis` | TEST1824: All six forms compose additively on a single cap. y combining 0+1+2+3+4+5 must sum to 15. | Tests/CapDAGTests/CSCapUrnTests.m:1621 |
-| test1830 | `test1830_canonicalize_no_constraint` |  | Tests/CapDAGTests/CSCapUrnTests.m:1631 |
-| test1831 | `test1831_canonicalize_absent_or_not_value` | TEST1831: ?x=v and x?=v both canonicalize to x?=v. The third hypothetical form `x=?v` is NOT recognized as a qualifier — a value starting with `?` is just an exact value beginning with a `?` character. | Tests/CapDAGTests/CSCapUrnTests.m:1646 |
-| test1832 | `test1832_canonicalize_must_have_any` |  | Tests/CapDAGTests/CSCapUrnTests.m:1664 |
-| test1833 | `test1833_canonicalize_present_not_value` | TEST1833: !x=v and x!=v both canonicalize to x!=v. The third hypothetical form `x=!v` is NOT recognized as a qualifier — a value starting with `!` is just an exact value beginning with a `!` character. | Tests/CapDAGTests/CSCapUrnTests.m:1679 |
-| test1834 | `test1834_canonicalize_exact_value` |  | Tests/CapDAGTests/CSCapUrnTests.m:1697 |
-| test1835 | `test1835_canonicalize_must_not_have` |  | Tests/CapDAGTests/CSCapUrnTests.m:1704 |
-| test1842 | `test1842_truth_table_full_cross_product` | TEST1842: Full 6×6 truth table. | Tests/CapDAGTests/CSCapUrnTests.m:1716 |
-| test1843 | `test1843_reject_invalid_combinations` | TEST1843: Invalid qualifier combinations must be rejected. | Tests/CapDAGTests/CSCapUrnTests.m:1748 |
-| test1844 | `test1844_axis_weighting_out_dominates` | TEST1844: out-axis difference dominates combined in+y differences. | Tests/CapDAGTests/CSCapUrnTests.m:1764 |
-| test1845 | `test1845_axis_weighting_in_dominates_y` | TEST1845: With equal out, in-axis dominates over y-axis. | Tests/CapDAGTests/CSCapUrnTests.m:1777 |
-| test1846 | `test1846_axis_weighting_decoded_layout` | TEST1846: Decoded layout — 10000*out + 100*in + y. | Tests/CapDAGTests/CSCapUrnTests.m:1790 |
+| test1820 | `test1820_specificity_question_is_zero` | TEST1820: A `?`-valued cap-tag scores 0. Same as missing. | Tests/CapDAGTests/CSCapUrnTests.m:1605 |
+| test1821 | `test1821_specificity_must_not_have_is_five` | TEST1821: A `!`-valued cap-tag scores 5 (top of negative chain). | Tests/CapDAGTests/CSCapUrnTests.m:1619 |
+| test1822 | `test1822_specificity_must_have_any_is_two` | TEST1822: A `*`-valued cap-tag (including bare markers) scores 2. | Tests/CapDAGTests/CSCapUrnTests.m:1628 |
+| test1823 | `test1823_specificity_exact_value_is_four` | TEST1823: An exact-valued cap-tag scores 4. | Tests/CapDAGTests/CSCapUrnTests.m:1646 |
+| test1824 | `test1824_specificity_combined_y_axis` | TEST1824: All six forms compose additively on a single cap. y combining 0+1+2+3+4+5 must sum to 15. | Tests/CapDAGTests/CSCapUrnTests.m:1656 |
+| test1830 | `test1830_canonicalize_no_constraint` |  | Tests/CapDAGTests/CSCapUrnTests.m:1666 |
+| test1831 | `test1831_canonicalize_absent_or_not_value` | TEST1831: ?x=v and x?=v both canonicalize to x?=v. The third hypothetical form `x=?v` is NOT recognized as a qualifier — a value starting with `?` is just an exact value beginning with a `?` character. | Tests/CapDAGTests/CSCapUrnTests.m:1681 |
+| test1832 | `test1832_canonicalize_must_have_any` |  | Tests/CapDAGTests/CSCapUrnTests.m:1699 |
+| test1833 | `test1833_canonicalize_present_not_value` | TEST1833: !x=v and x!=v both canonicalize to x!=v. The third hypothetical form `x=!v` is NOT recognized as a qualifier — a value starting with `!` is just an exact value beginning with a `!` character. | Tests/CapDAGTests/CSCapUrnTests.m:1714 |
+| test1834 | `test1834_canonicalize_exact_value` |  | Tests/CapDAGTests/CSCapUrnTests.m:1732 |
+| test1835 | `test1835_canonicalize_must_not_have` |  | Tests/CapDAGTests/CSCapUrnTests.m:1739 |
+| test1842 | `test1842_truth_table_full_cross_product` | TEST1842: Full 6×6 truth table. | Tests/CapDAGTests/CSCapUrnTests.m:1751 |
+| test1843 | `test1843_reject_invalid_combinations` | TEST1843: Invalid qualifier combinations must be rejected. | Tests/CapDAGTests/CSCapUrnTests.m:1783 |
+| test1844 | `test1844_axis_weighting_out_dominates` | TEST1844: out-axis difference dominates combined in+y differences. | Tests/CapDAGTests/CSCapUrnTests.m:1799 |
+| test1845 | `test1845_axis_weighting_in_dominates_y` | TEST1845: With equal out, in-axis dominates over y-axis. | Tests/CapDAGTests/CSCapUrnTests.m:1812 |
+| test1846 | `test1846_axis_weighting_decoded_layout` | TEST1846: Decoded layout — 10000*out + 100*in + y. | Tests/CapDAGTests/CSCapUrnTests.m:1825 |
 | | | | |
 | unnumbered | `test198b_limitsNegotiation` | TEST198 (continued): Limits negotiation picks minimum of both sides | Tests/BifaciTests/FrameTests.swift:307 |
 | unnumbered | `test205b_allFrameTypesRoundtrip` | Covers all frame types in a single loop for comprehensive roundtrip verification | Tests/BifaciTests/FrameTests.swift:894 |
@@ -722,10 +723,10 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testCapStdinSerialization` |  | Tests/CapDAGTests/CSCapTests.m:143 |
 | unnumbered | `testCapStdinType` |  | Tests/CapDAGTests/CSCapTests.m:77 |
 | unnumbered | `testCapWithDescription` |  | Tests/CapDAGTests/CSCapTests.m:56 |
-| unnumbered | `testCoding` | Obj-C specific: NSCoding support | Tests/CapDAGTests/CSCapUrnTests.m:505 |
+| unnumbered | `testCoding` | Obj-C specific: NSCoding support | Tests/CapDAGTests/CSCapUrnTests.m:540 |
 | unnumbered | `testCompleteCapDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:279 |
 | unnumbered | `testComplexNestedSchema` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:412 |
-| unnumbered | `testCopying` | Obj-C specific: NSCopying support | Tests/CapDAGTests/CSCapUrnTests.m:527 |
+| unnumbered | `testCopying` | Obj-C specific: NSCopying support | Tests/CapDAGTests/CSCapUrnTests.m:562 |
 | unnumbered | `testDataSourceWithBinaryContent` |  | Tests/CapDAGTests/CSStdinSourceTests.m:61 |
 | unnumbered | `testDataSourceWithEmptyData` |  | Tests/CapDAGTests/CSStdinSourceTests.m:51 |
 | unnumbered | `testDeterministicOrdering` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:100 |
@@ -748,7 +749,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testHostConstructsAndClosesWithoutAnObserver` |  | Tests/BifaciTests/CartridgeHostObserverTests.swift:53 |
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:273 |
 | unnumbered | `testIntegrationWithOutputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:343 |
-| unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:104 |
+| unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:139 |
 | unnumbered | `testMediaSpecDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaSpecs definition through CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:892 |
 | unnumbered | `testMediaSpecsWithoutSchemaSkipsValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:603 |
 | unnumbered | `testMediaUrnResolutionThroughRegistry` |  | Tests/CapDAGTests/CSCapTests.m:360 |
@@ -775,18 +776,18 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testStandaloneCollectNode` | MARK: - Standalone Collect Node Tests | Tests/CapDAGTests/CSPlanDecompositionTests.m:63 |
 | unnumbered | `testSyncFromCaps` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:124 |
 | unnumbered | `testValidateCapCanonical` |  | Tests/CapDAGTests/CSFabricRegistryTests.m:136 |
-| unnumbered | `testWildcard001EmptyCapDefaultsToMediaWildcard` | TEST_WILDCARD_001: cap: (empty) defaults to in=media:;out=media: | Tests/CapDAGTests/CSCapUrnTests.m:1008 |
-| unnumbered | `testWildcard002InOnlyDefaultsOutToMedia` | TEST_WILDCARD_002: cap:in defaults out to media: | Tests/CapDAGTests/CSCapUrnTests.m:1019 |
-| unnumbered | `testWildcard003OutOnlyDefaultsInToMedia` | TEST_WILDCARD_003: cap:out defaults in to media: | Tests/CapDAGTests/CSCapUrnTests.m:1028 |
-| unnumbered | `testWildcard004InOutNoValuesBecomeMedia` | TEST_WILDCARD_004: cap:in;out both become media: | Tests/CapDAGTests/CSCapUrnTests.m:1037 |
-| unnumbered | `testWildcard005ExplicitAsteriskBecomesMedia` | TEST_WILDCARD_005: cap:in=*;out=* becomes media: | Tests/CapDAGTests/CSCapUrnTests.m:1046 |
-| unnumbered | `testWildcard006SpecificInWildcardOut` | TEST_WILDCARD_006: cap:in=media:;out=* has specific in, wildcard out | Tests/CapDAGTests/CSCapUrnTests.m:1055 |
-| unnumbered | `testWildcard007WildcardInSpecificOut` | TEST_WILDCARD_007: cap:in=*;out=media:text has wildcard in, specific out | Tests/CapDAGTests/CSCapUrnTests.m:1064 |
-| unnumbered | `testWildcard008InvalidInSpecFails` | TEST_WILDCARD_008: cap:in=foo fails (invalid media URN) | Tests/CapDAGTests/CSCapUrnTests.m:1073 |
-| unnumbered | `testWildcard009InvalidOutSpecFails` | TEST_WILDCARD_009: cap:in=media:;out=bar fails (invalid media URN) | Tests/CapDAGTests/CSCapUrnTests.m:1082 |
-| unnumbered | `testWildcard010WildcardAcceptsSpecific` | TEST_WILDCARD_010: Wildcard in/out match specific caps | Tests/CapDAGTests/CSCapUrnTests.m:1091 |
-| unnumbered | `testWildcard011SpecificityScoring` | TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count | Tests/CapDAGTests/CSCapUrnTests.m:1101 |
-| unnumbered | `testWildcard012PreserveOtherTags` | TEST_WILDCARD_012: cap:in=media:;out=media:;test preserves other tags | Tests/CapDAGTests/CSCapUrnTests.m:1111 |
+| unnumbered | `testWildcard001EmptyCapDefaultsToMediaWildcard` | TEST_WILDCARD_001: cap: (empty) defaults to in=media:;out=media: | Tests/CapDAGTests/CSCapUrnTests.m:1043 |
+| unnumbered | `testWildcard002InOnlyDefaultsOutToMedia` | TEST_WILDCARD_002: cap:in defaults out to media: | Tests/CapDAGTests/CSCapUrnTests.m:1054 |
+| unnumbered | `testWildcard003OutOnlyDefaultsInToMedia` | TEST_WILDCARD_003: cap:out defaults in to media: | Tests/CapDAGTests/CSCapUrnTests.m:1063 |
+| unnumbered | `testWildcard004InOutNoValuesBecomeMedia` | TEST_WILDCARD_004: cap:in;out both become media: | Tests/CapDAGTests/CSCapUrnTests.m:1072 |
+| unnumbered | `testWildcard005ExplicitAsteriskBecomesMedia` | TEST_WILDCARD_005: cap:in=*;out=* becomes media: | Tests/CapDAGTests/CSCapUrnTests.m:1081 |
+| unnumbered | `testWildcard006SpecificInWildcardOut` | TEST_WILDCARD_006: cap:in=media:;out=* has specific in, wildcard out | Tests/CapDAGTests/CSCapUrnTests.m:1090 |
+| unnumbered | `testWildcard007WildcardInSpecificOut` | TEST_WILDCARD_007: cap:in=*;out=media:text has wildcard in, specific out | Tests/CapDAGTests/CSCapUrnTests.m:1099 |
+| unnumbered | `testWildcard008InvalidInSpecFails` | TEST_WILDCARD_008: cap:in=foo fails (invalid media URN) | Tests/CapDAGTests/CSCapUrnTests.m:1108 |
+| unnumbered | `testWildcard009InvalidOutSpecFails` | TEST_WILDCARD_009: cap:in=media:;out=bar fails (invalid media URN) | Tests/CapDAGTests/CSCapUrnTests.m:1117 |
+| unnumbered | `testWildcard010WildcardAcceptsSpecific` | TEST_WILDCARD_010: Wildcard in/out match specific caps | Tests/CapDAGTests/CSCapUrnTests.m:1126 |
+| unnumbered | `testWildcard011SpecificityScoring` | TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count | Tests/CapDAGTests/CSCapUrnTests.m:1136 |
+| unnumbered | `testWildcard012PreserveOtherTags` | TEST_WILDCARD_012: cap:in=media:;out=media:;test preserves other tags | Tests/CapDAGTests/CSCapUrnTests.m:1146 |
 | unnumbered | `test_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:247 |
 | unnumbered | `test_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:231 |
 | unnumbered | `test_glob_pattern_detection` | Mirror-specific: glob pattern detection is an objc-only helper used by the resolver internals. Rust uses globwalk; these checks exercise the BSD glob detection logic. | Tests/CapDAGTests/CSInputResolverTests.m:506 |
@@ -848,10 +849,10 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testCapStdinSerialization` — Tests/CapDAGTests/CSCapTests.m:143
 - `testCapStdinType` — Tests/CapDAGTests/CSCapTests.m:77
 - `testCapWithDescription` — Tests/CapDAGTests/CSCapTests.m:56
-- `testCoding` — Tests/CapDAGTests/CSCapUrnTests.m:505
+- `testCoding` — Tests/CapDAGTests/CSCapUrnTests.m:540
 - `testCompleteCapDeserialization` — Tests/CapDAGTests/CSCapTests.m:279
 - `testComplexNestedSchema` — Tests/CapDAGTests/CSSchemaValidationTests.m:412
-- `testCopying` — Tests/CapDAGTests/CSCapUrnTests.m:527
+- `testCopying` — Tests/CapDAGTests/CSCapUrnTests.m:562
 - `testDataSourceWithBinaryContent` — Tests/CapDAGTests/CSStdinSourceTests.m:61
 - `testDataSourceWithEmptyData` — Tests/CapDAGTests/CSStdinSourceTests.m:51
 - `testDeterministicOrdering` — Tests/CapDAGTests/CSLiveCapFabTests.m:100
@@ -874,7 +875,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testHostConstructsAndClosesWithoutAnObserver` — Tests/BifaciTests/CartridgeHostObserverTests.swift:53
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:273
 - `testIntegrationWithOutputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:343
-- `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:104
+- `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:139
 - `testMediaSpecDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:892
 - `testMediaSpecsWithoutSchemaSkipsValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:603
 - `testMediaUrnResolutionThroughRegistry` — Tests/CapDAGTests/CSCapTests.m:360
@@ -901,18 +902,18 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testStandaloneCollectNode` — Tests/CapDAGTests/CSPlanDecompositionTests.m:63
 - `testSyncFromCaps` — Tests/CapDAGTests/CSLiveCapFabTests.m:124
 - `testValidateCapCanonical` — Tests/CapDAGTests/CSFabricRegistryTests.m:136
-- `testWildcard001EmptyCapDefaultsToMediaWildcard` — Tests/CapDAGTests/CSCapUrnTests.m:1008
-- `testWildcard002InOnlyDefaultsOutToMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1019
-- `testWildcard003OutOnlyDefaultsInToMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1028
-- `testWildcard004InOutNoValuesBecomeMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1037
-- `testWildcard005ExplicitAsteriskBecomesMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1046
-- `testWildcard006SpecificInWildcardOut` — Tests/CapDAGTests/CSCapUrnTests.m:1055
-- `testWildcard007WildcardInSpecificOut` — Tests/CapDAGTests/CSCapUrnTests.m:1064
-- `testWildcard008InvalidInSpecFails` — Tests/CapDAGTests/CSCapUrnTests.m:1073
-- `testWildcard009InvalidOutSpecFails` — Tests/CapDAGTests/CSCapUrnTests.m:1082
-- `testWildcard010WildcardAcceptsSpecific` — Tests/CapDAGTests/CSCapUrnTests.m:1091
-- `testWildcard011SpecificityScoring` — Tests/CapDAGTests/CSCapUrnTests.m:1101
-- `testWildcard012PreserveOtherTags` — Tests/CapDAGTests/CSCapUrnTests.m:1111
+- `testWildcard001EmptyCapDefaultsToMediaWildcard` — Tests/CapDAGTests/CSCapUrnTests.m:1043
+- `testWildcard002InOnlyDefaultsOutToMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1054
+- `testWildcard003OutOnlyDefaultsInToMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1063
+- `testWildcard004InOutNoValuesBecomeMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1072
+- `testWildcard005ExplicitAsteriskBecomesMedia` — Tests/CapDAGTests/CSCapUrnTests.m:1081
+- `testWildcard006SpecificInWildcardOut` — Tests/CapDAGTests/CSCapUrnTests.m:1090
+- `testWildcard007WildcardInSpecificOut` — Tests/CapDAGTests/CSCapUrnTests.m:1099
+- `testWildcard008InvalidInSpecFails` — Tests/CapDAGTests/CSCapUrnTests.m:1108
+- `testWildcard009InvalidOutSpecFails` — Tests/CapDAGTests/CSCapUrnTests.m:1117
+- `testWildcard010WildcardAcceptsSpecific` — Tests/CapDAGTests/CSCapUrnTests.m:1126
+- `testWildcard011SpecificityScoring` — Tests/CapDAGTests/CSCapUrnTests.m:1136
+- `testWildcard012PreserveOtherTags` — Tests/CapDAGTests/CSCapUrnTests.m:1146
 - `test_csCapManifestRejectsUnknownChannel` — Tests/BifaciTests/ManifestTests.swift:247
 - `test_csCapManifestWithPageUrl` — Tests/BifaciTests/ManifestTests.swift:231
 - `test_glob_pattern_detection` — Tests/CapDAGTests/CSInputResolverTests.m:506
@@ -928,16 +929,16 @@ The following tests are cataloged but do not currently participate in numeric te
 
 These tests still participate in numeric indexing, but the cataloger did not find an authoritative immediate comment/docstring description for them. This is reported explicitly so intentional blank-description parity and accidental comment drift are both visible.
 
-- `test1830` / `test1830_canonicalize_no_constraint` — Tests/CapDAGTests/CSCapUrnTests.m:1631
-- `test1832` / `test1832_canonicalize_must_have_any` — Tests/CapDAGTests/CSCapUrnTests.m:1664
-- `test1834` / `test1834_canonicalize_exact_value` — Tests/CapDAGTests/CSCapUrnTests.m:1697
-- `test1835` / `test1835_canonicalize_must_not_have` — Tests/CapDAGTests/CSCapUrnTests.m:1704
+- `test1830` / `test1830_canonicalize_no_constraint` — Tests/CapDAGTests/CSCapUrnTests.m:1666
+- `test1832` / `test1832_canonicalize_must_have_any` — Tests/CapDAGTests/CSCapUrnTests.m:1699
+- `test1834` / `test1834_canonicalize_exact_value` — Tests/CapDAGTests/CSCapUrnTests.m:1732
+- `test1835` / `test1835_canonicalize_must_not_have` — Tests/CapDAGTests/CSCapUrnTests.m:1739
 
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 778*
-*Total numbered tests: 658*
+*Total tests: 779*
+*Total numbered tests: 659*
 *Total unnumbered tests: 120*
 *Total numbered tests missing descriptions: 4*
 *Total numbering mismatches: 0*
