@@ -1,10 +1,10 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 779
+**Total Tests:** 782
 
 **Numbered Tests:** 659
 
-**Unnumbered Tests:** 120
+**Unnumbered Tests:** 123
 
 **Numbered Tests Missing Descriptions:** 4
 
@@ -684,6 +684,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `test542d_outputStreamDoubleStartThrows` | TEST542d: OutputStream start() twice throws | Tests/BifaciTests/StreamingAPITests.swift:453 |
 | unnumbered | `test542e_outputStreamModeConflictThrows` | TEST542e: OutputStream mode conflict throws (start write, call emitListItem) | Tests/BifaciTests/StreamingAPITests.swift:470 |
 | unnumbered | `testAddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapFabTests.m:32 |
+| unnumbered | `testAddMasterWithDuplicateHealthyIdErrors` |  | Tests/BifaciTests/RelaySwitchTests.swift:963 |
 | unnumbered | `testArgumentCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:759 |
 | unnumbered | `testArgumentValidationWithUnknownSpecFails` | Obj-C specific: unresolved spec ID fails hard during schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:141 |
 | unnumbered | `testBuilderBasicConstruction` |  | Tests/CapDAGTests/CSCapUrnBuilderTests.m:16 |
@@ -764,8 +765,10 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testOutputWithEmbeddedSchemaValidationFailure` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:232 |
 | unnumbered | `testPerCapURLUsesSHA256` | / Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters / in the path, so no percent-encoding gymnastics. | Tests/CapDAGTests/CSFabricRegistryTests.m:67 |
 | unnumbered | `testPressureAndKill` | / Single test: allocate 90% of RAM with incompressible CSPRNG data, monitor / memory, detect pressure (kernel or threshold), kill cartridge, verify death. / The goal is to overload the system — force the kernel into real pressure. | testcartridge-host/Sources/TestcartridgeHost/main.swift:288 |
+| unnumbered | `testReattachByIdPreservesSlotIndex` | Reattach-by-id tests for the cardinality-stable slot model. When a master dies and the host reconnects, the new socket MUST attach to the same slot index — preserving routing entries keyed by index. Accumulating zombie slots on each reconnect was the bug class these tests guard against. | Tests/BifaciTests/RelaySwitchTests.swift:901 |
 | unnumbered | `testRegistryCreation` |  | Tests/CapDAGTests/CSFabricRegistryTests.m:44 |
 | unnumbered | `testRegistryValidCapCheck` | Registry validator tests removed - not part of current API | Tests/CapDAGTests/CSFabricRegistryTests.m:51 |
+| unnumbered | `testRelaySwitchInitRejectsDuplicateIds` |  | Tests/BifaciTests/RelaySwitchTests.swift:1001 |
 | unnumbered | `testResolveMediaUrnNotFound` |  | Tests/CapDAGTests/CSMediaSpecTests.m:108 |
 | unnumbered | `testRunExitKillsAllManagedCartridges` | / Contract #1: when `run()` exits because the relay closed, / every running cartridge is torn down and the observer is / fired with a death notification for each. The Rust reference / enforces this by calling `kill_all_cartridges().await` at / the very end of `run()`. The Swift mirror's previous / behavior was to leak cartridges across reconnects, which is / what allowed the XPC-service NSConcreteData accumulator bug. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66 |
 | unnumbered | `testSchemaValidationErrorDetails` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:503 |
@@ -810,6 +813,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `test542d_outputStreamDoubleStartThrows` — Tests/BifaciTests/StreamingAPITests.swift:453
 - `test542e_outputStreamModeConflictThrows` — Tests/BifaciTests/StreamingAPITests.swift:470
 - `testAddCapAndBasicTraversal` — Tests/CapDAGTests/CSLiveCapFabTests.m:32
+- `testAddMasterWithDuplicateHealthyIdErrors` — Tests/BifaciTests/RelaySwitchTests.swift:963
 - `testArgumentCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:759
 - `testArgumentValidationWithUnknownSpecFails` — Tests/CapDAGTests/CSSchemaValidationTests.m:141
 - `testBuilderBasicConstruction` — Tests/CapDAGTests/CSCapUrnBuilderTests.m:16
@@ -890,8 +894,10 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testOutputWithEmbeddedSchemaValidationFailure` — Tests/CapDAGTests/CSSchemaValidationTests.m:232
 - `testPerCapURLUsesSHA256` — Tests/CapDAGTests/CSFabricRegistryTests.m:67
 - `testPressureAndKill` — testcartridge-host/Sources/TestcartridgeHost/main.swift:288
+- `testReattachByIdPreservesSlotIndex` — Tests/BifaciTests/RelaySwitchTests.swift:901
 - `testRegistryCreation` — Tests/CapDAGTests/CSFabricRegistryTests.m:44
 - `testRegistryValidCapCheck` — Tests/CapDAGTests/CSFabricRegistryTests.m:51
+- `testRelaySwitchInitRejectsDuplicateIds` — Tests/BifaciTests/RelaySwitchTests.swift:1001
 - `testResolveMediaUrnNotFound` — Tests/CapDAGTests/CSMediaSpecTests.m:108
 - `testRunExitKillsAllManagedCartridges` — Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66
 - `testSchemaValidationErrorDetails` — Tests/CapDAGTests/CSSchemaValidationTests.m:503
@@ -937,8 +943,8 @@ These tests still participate in numeric indexing, but the cataloger did not fin
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 779*
+*Total tests: 782*
 *Total numbered tests: 659*
-*Total unnumbered tests: 120*
+*Total unnumbered tests: 123*
 *Total numbered tests missing descriptions: 4*
 *Total numbering mismatches: 0*
