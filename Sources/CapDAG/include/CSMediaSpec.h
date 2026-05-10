@@ -73,7 +73,7 @@ FOUNDATION_EXPORT NSString * const CSMediaWebm;         // media:webm;video
 FOUNDATION_EXPORT NSString * const CSMediaMkv;          // media:mkv;video
 // Semantic AI input types
 FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;wav;speech
-FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:textable;page
+FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:page;plain-text;textable;txt
 // Document types (PRIMARY naming - type IS the format)
 FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:pdf
 FOUNDATION_EXPORT NSString * const CSMediaEpub;         // media:epub
@@ -118,7 +118,7 @@ FOUNDATION_EXPORT NSString * const CSMediaFilePath;     // media:file-path;texta
 // Semantic input types (continued)
 FOUNDATION_EXPORT NSString * const CSMediaMlxModelPath;    // media:mlx-model-path;textable
 // Semantic output types
-FOUNDATION_EXPORT NSString * const CSMediaImageDescription;   // media:image-description;textable
+FOUNDATION_EXPORT NSString * const CSMediaImageDescription;   // media:image-description;plain-text;textable;txt
 FOUNDATION_EXPORT NSString * const CSMediaModelDim;        // media:integer;model-dim;numeric;textable
 FOUNDATION_EXPORT NSString * const CSMediaDownloadOutput;  // media:download-result;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaListOutput;      // media:model-list;record;textable
@@ -127,8 +127,10 @@ FOUNDATION_EXPORT NSString * const CSMediaContentsOutput;  // media:model-conten
 FOUNDATION_EXPORT NSString * const CSMediaAvailabilityOutput; // media:model-availability;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaPathOutput;      // media:model-path;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaEmbeddingVector; // media:embedding-vector;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaLlmInferenceOutput; // media:generated-text;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:image-caption;record;textable
+// Canonical input/output of cap:save-as-txt — finalised plain text bound to
+// the `.txt` extension. See fabric/media/plain-text.toml.
+FOUNDATION_EXPORT NSString * const CSMediaPlainText;       // media:plain-text;textable;txt
 FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;textable;transcription
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;json;record

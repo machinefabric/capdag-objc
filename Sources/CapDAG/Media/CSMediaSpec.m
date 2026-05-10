@@ -54,7 +54,7 @@ NSString * const CSMediaWebm = @"media:webm;video";
 NSString * const CSMediaMkv = @"media:mkv;video";
 // Semantic AI input types
 NSString * const CSMediaAudioSpeech = @"media:audio;wav;speech";
-NSString * const CSMediaTextablePage = @"media:textable;page";
+NSString * const CSMediaTextablePage = @"media:page;plain-text;textable;txt";
 // Document types (PRIMARY naming - type IS the format)
 NSString * const CSMediaPdf = @"media:pdf";
 NSString * const CSMediaEpub = @"media:epub";
@@ -96,7 +96,7 @@ NSString * const CSMediaFilePath = @"media:file-path;textable";
 // Semantic input types (continued)
 NSString * const CSMediaMlxModelPath = @"media:mlx-model-path;textable";
 // Semantic output types
-NSString * const CSMediaImageDescription = @"media:image-description;textable";
+NSString * const CSMediaImageDescription = @"media:image-description;plain-text;textable;txt";
 NSString * const CSMediaModelDim = @"media:integer;model-dim;numeric;textable";
 NSString * const CSMediaDownloadOutput = @"media:download-result;record;textable";
 NSString * const CSMediaListOutput = @"media:model-list;record;textable";
@@ -105,8 +105,8 @@ NSString * const CSMediaContentsOutput = @"media:model-contents;record;textable"
 NSString * const CSMediaAvailabilityOutput = @"media:model-availability;record;textable";
 NSString * const CSMediaPathOutput = @"media:model-path;record;textable";
 NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;record;textable";
-NSString * const CSMediaLlmInferenceOutput = @"media:generated-text;record;textable";
 NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
+NSString * const CSMediaPlainText = @"media:plain-text;textable;txt";
 NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
 NSString * const CSMediaDecision = @"media:decision;json;record;textable";
 NSString * const CSMediaAdapterSelection = @"media:adapter-selection;json;record";

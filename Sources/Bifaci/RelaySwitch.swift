@@ -73,12 +73,21 @@ public enum RelaySwitchError: Error, LocalizedError, Sendable {
 
 // MARK: - Data Structures
 
-/// Socket pair for master connection
+/// Socket pair for master connection.
+///
+/// `id` is the stable identity of the cardinality slot this socket
+/// fills. The relay's `addMaster` reattach-by-id contract uses it
+/// on subsequent reconnects to find the slot to reattach to —
+/// preserving slot indices across the death-and-reconnect cycle.
+/// Re-adding the same id while the slot is still healthy is a
+/// wiring bug and is rejected.
 public struct SocketPair: Sendable {
+    public let id: String
     public let read: FileHandle
     public let write: FileHandle
 
-    public init(read: FileHandle, write: FileHandle) {
+    public init(id: String, read: FileHandle, write: FileHandle) {
+        self.id = id
         self.read = read
         self.write = write
     }
@@ -139,21 +148,31 @@ private func identityNonce() -> Data {
 
 // MARK: - Master Connection
 
-/// Connection to a single RelayMaster
+/// Connection to a single RelayMaster.
+///
+/// `id` is the stable identity of this slot. Reattach-by-id matches
+/// against it on subsequent reconnects so the slot index stays
+/// constant across the death-and-reconnect cycle. Once set at slot
+/// creation `id` is never overwritten; the writer / seqAssigner /
+/// reorderBuffer / caps are replaced wholesale on reattach.
 @available(macOS 10.15.4, iOS 13.4, *)
 private final class MasterConnection: @unchecked Sendable {
-    let socketWriter: FrameWriter
-    /// SeqAssigner for outbound frames to this master (output stage)
-    let seqAssigner: SeqAssigner
-    /// ReorderBuffer for inbound frames from this master
-    let reorderBuffer: ReorderBuffer
+    let id: String
+    var socketWriter: FrameWriter
+    /// SeqAssigner for outbound frames to this master (output stage).
+    /// Reset on reattach (new session restarts sequence numbering).
+    var seqAssigner: SeqAssigner
+    /// ReorderBuffer for inbound frames from this master.
+    /// Reset on reattach.
+    var reorderBuffer: ReorderBuffer
     var manifest: Data
     var limits: Limits
     var caps: [String]
     var installedCartridges: [InstalledCartridgeRecord]
     var healthy: Bool
 
-    init(socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], healthy: Bool) {
+    init(id: String, socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], healthy: Bool) {
+        self.id = id
         self.socketWriter = socketWriter
         self.seqAssigner = seqAssigner
         self.manifest = manifest
@@ -194,6 +213,17 @@ public final class RelaySwitch: @unchecked Sendable {
     private var frameChannel: [(masterIdx: Int, frame: Frame?, error: Error?)] = []
     private let frameSemaphore = DispatchSemaphore(value: 0)
 
+    /// Serialises `addMaster` across the whole switch.
+    /// `masterIdx` is the routing key for capTable / requestRouting;
+    /// it must be decided once per slot and stay stable for the
+    /// slot's lifetime. Concurrent addMaster calls would race on
+    /// `masters.count` — two appenders could both decide they are
+    /// slot N. The lock covers the I/O too (RelayNotify read +
+    /// identity probe) so the reattach branch sees a stable view
+    /// of `masters` for the duration; contention is bounded by the
+    /// small slot count.
+    private let addMasterLock = NSLock()
+
     /// Shutdown flag - when true, reader threads should exit
     private var isShutdown = false
 
@@ -214,6 +244,22 @@ public final class RelaySwitch: @unchecked Sendable {
         if sockets.isEmpty {
             aggregateCapabilities = Data("[]".utf8)
             return
+        }
+
+        // Reject duplicate ids up front. Without this, two slots
+        // would be created with the same id; the first reconnect
+        // would reattach to whichever slot is found first by the
+        // linear scan in `addMaster`, leaving the other stuck
+        // unhealthy forever — the exact bug class this contract
+        // closes.
+        var seenIds: Set<String> = Set()
+        for sp in sockets {
+            if !seenIds.insert(sp.id).inserted {
+                throw RelaySwitchError.protocolError(
+                    "RelaySwitch.init: duplicate master id '\(sp.id)' in cardinality list — " +
+                    "each slot must have a unique stable id"
+                )
+            }
         }
 
         // Phase 1: For each master, read RelayNotify and verify identity (blocking).
@@ -339,6 +385,7 @@ public final class RelaySwitch: @unchecked Sendable {
             pendingReaders.append((masterIdx: masterIdx, reader: socketReader))
 
             let masterConn = MasterConnection(
+                id: sockPair.id,
                 socketWriter: socketWriter,
                 seqAssigner: seqAssigner,
                 manifest: capsPayload,
@@ -477,18 +524,54 @@ public final class RelaySwitch: @unchecked Sendable {
 
     // MARK: - Dynamic Master Management
 
-    /// Add a new master to a running switch.
-    /// Performs identity verification before adding the master.
+    /// Add or reattach a master.
     ///
-    /// - Parameter socket: Socket pair for the new master
-    /// - Returns: Index of the new master
-    /// - Throws: RelaySwitchError if identity verification fails
+    /// `socket.id` is the stable identity of the cardinality slot:
+    ///
+    /// - Existing slot, currently UNHEALTHY → reattach in place at
+    ///   the existing slot index. The dead master's reader thread
+    ///   has already exited on EOF; the new connection installs a
+    ///   fresh writer / reader thread and clears the unhealthy
+    ///   flag. Routing entries keyed by `masterIdx` stay coherent
+    ///   because the index does not change.
+    /// - Existing slot, currently HEALTHY → caller bug (the same
+    ///   master must not be added twice). Throws
+    ///   `RelaySwitchError.protocolError` so the wiring mistake is
+    ///   fixed instead of silently growing zombie slots.
+    /// - No existing slot with that id → append a fresh slot at
+    ///   `masters.count`. The reader thread is spawned with that
+    ///   index baked in.
+    ///
+    /// Returns the slot index (stable across reattach).
     public func addMaster(_ socket: SocketPair) throws -> Int {
+        addMasterLock.lock()
+        defer { addMasterLock.unlock() }
+
         var socketReader = FrameReader(handle: socket.read)
         let socketWriter = FrameWriter(handle: socket.write)
 
+        // Existing-slot lookup under the inner lock so the linear
+        // scan observes a stable `masters`.
         lock.lock()
-        let masterIdx = masters.count
+        var existingIdx: Int? = nil
+        for (idx, m) in masters.enumerated() {
+            if m.id == socket.id {
+                if m.healthy {
+                    lock.unlock()
+                    throw RelaySwitchError.protocolError(
+                        "addMaster: id '\(socket.id)' is already attached to a healthy slot at index \(idx) — " +
+                        "cardinality violation (each id may only be attached once at a time)"
+                    )
+                }
+                existingIdx = idx
+                break
+            }
+        }
+        // Reserve the slot index. For the append case this is the
+        // current length under `addMasterLock`; for reattach it is
+        // the existing slot index. The reader thread captures this
+        // value so per-frame routing always carries the right index.
+        let masterIdx = existingIdx ?? masters.count
         lock.unlock()
 
         // Read initial RelayNotify (blocking)
@@ -595,23 +678,58 @@ public final class RelaySwitch: @unchecked Sendable {
             }
         }
 
-        // Add master
+        // Commit the connection state into the slot.
         lock.lock()
-        let masterConn = MasterConnection(
-            socketWriter: socketWriter,
-            seqAssigner: seqAssigner,
-            manifest: capsPayload,
-            limits: masterLimits,
-            caps: caps,
-            installedCartridges: notifyPayload.installedCartridges,
-            healthy: true
-        )
-        let newIdx = masters.count
-        masters.append(masterConn)
+        if existingIdx == nil {
+            // Append. The captured `masterIdx` MUST equal the new
+            // length; if not, a concurrent appender bypassed
+            // `addMasterLock`, which is a protocol violation.
+            if masters.count != masterIdx {
+                lock.unlock()
+                throw RelaySwitchError.protocolError(
+                    "addMaster: append-index race for id '\(socket.id)': reserved \(masterIdx) but masters.count is now \(masters.count) " +
+                    "(a concurrent caller bypassed addMasterLock)"
+                )
+            }
+            let masterConn = MasterConnection(
+                id: socket.id,
+                socketWriter: socketWriter,
+                seqAssigner: seqAssigner,
+                manifest: capsPayload,
+                limits: masterLimits,
+                caps: caps,
+                installedCartridges: notifyPayload.installedCartridges,
+                healthy: true
+            )
+            masters.append(masterConn)
+        } else {
+            let slot = masters[masterIdx]
+            if slot.id != socket.id {
+                lock.unlock()
+                throw RelaySwitchError.protocolError(
+                    "addMaster: reattach-id mismatch at index \(masterIdx): expected '\(socket.id)' but found '\(slot.id)'"
+                )
+            }
+            // In-place mutation. The dead master's reader thread
+            // has already exited on EOF (Swift threads aren't
+            // cancellable; we rely on the natural EOF exit). The
+            // new reader thread is wired in below.
+            slot.socketWriter = socketWriter
+            slot.seqAssigner = seqAssigner
+            slot.reorderBuffer = ReorderBuffer(maxBufferPerFlow: masterLimits.maxReorderBuffer)
+            slot.manifest = capsPayload
+            slot.limits = masterLimits
+            slot.caps = caps
+            slot.installedCartridges = notifyPayload.installedCartridges
+            slot.healthy = true
+        }
 
-        // Spawn reader thread
+        // Spawn reader thread bound to the slot's index. For
+        // reattach this is the existing index; for append it's
+        // `masters.count - 1`. Either way captured by value here.
+        let boundIdx = masterIdx
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.readerLoop(masterIdx: newIdx, reader: socketReader)
+            self?.readerLoop(masterIdx: boundIdx, reader: socketReader)
         }
 
         // Rebuild tables
@@ -620,7 +738,7 @@ public final class RelaySwitch: @unchecked Sendable {
         rebuildLimits()
         lock.unlock()
 
-        return newIdx
+        return masterIdx
     }
 
     // MARK: - Public API

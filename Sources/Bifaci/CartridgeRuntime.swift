@@ -299,6 +299,19 @@ public final class InputPackage: Sequence, @unchecked Sendable {
 
 /// Find a stream's bytes by exact URN equivalence (order-independent tag matching).
 /// Uses CSMediaUrn.isEquivalentTo — matches only if both URNs have the exact same tag set.
+///
+/// Use this when the cap-arg URN you are matching is a single canonical
+/// constant (`MEDIA_LLM_GENERATION_REQUEST`, `CSMediaModelSpecMlxLlm`,
+/// etc.) and the planner emits exactly that URN on the stream.
+///
+/// For cap-args declared in TOML with rich dim profiles (e.g.
+/// `media:max-tokens;inference;limit;user;task;textable;numeric` —
+/// richer than the bare `media:max-tokens;textable;numeric` shape the
+/// handler thinks about), use `findStreamConforming` instead. Equality
+/// matching against the bare form silently misses the rich form, and
+/// any conforming-but-unmatched stream then falls through to a
+/// downstream `media:textable` catch-all and overwrites the prompt
+/// body — that's the gibberish-output bug.
 public func findStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) -> Data? {
     guard let target = try? CSMediaUrn.fromString(mediaUrn) else { return nil }
     for (urnStr, bytes) in streams {
@@ -313,6 +326,30 @@ public func findStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: S
 /// Like findStream but returns a UTF-8 string.
 public func findStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) -> String? {
     guard let data = findStream(streams, mediaUrn: mediaUrn) else { return nil }
+    return String(data: data, encoding: .utf8)
+}
+
+/// Find a stream whose URN *conforms to* the given pattern. The
+/// pattern is the broad form the handler knows about (e.g.
+/// `media:max-tokens;textable;numeric`); any stream URN with at
+/// least those tags (more tags = more specific) matches. This is
+/// the right matcher for cap-args whose TOML URN is a refinement
+/// of the bare handler form — see `findStream` for the equality
+/// case and the rationale.
+public func findStreamConforming(_ streams: [(mediaUrn: String, bytes: Data)], pattern: String) -> Data? {
+    guard let target = try? CSMediaUrn.fromString(pattern) else { return nil }
+    for (urnStr, bytes) in streams {
+        guard let urn = try? CSMediaUrn.fromString(urnStr) else { continue }
+        if urn.conforms(to: target) {
+            return bytes
+        }
+    }
+    return nil
+}
+
+/// Like findStreamConforming but returns a UTF-8 string.
+public func findStreamStrConforming(_ streams: [(mediaUrn: String, bytes: Data)], pattern: String) -> String? {
+    guard let data = findStreamConforming(streams, pattern: pattern) else { return nil }
     return String(data: data, encoding: .utf8)
 }
 

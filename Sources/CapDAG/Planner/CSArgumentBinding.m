@@ -231,10 +231,48 @@ typedef NS_ENUM(NSInteger, CSArgumentBindingType) {
 @end
 
 // MARK: - Helper: JSON value to bytes
+//
+// The wire contract for an arg stream is "bytes of the typed media
+// URN". For a `media:textable`-shaped arg that's plain UTF-8 text —
+// NOT a JSON-encoded form. Encoding each scalar JSON value as its
+// lexical wire form (string ⇒ raw UTF-8, number ⇒ decimal, bool ⇒
+// `true`/`false`, null ⇒ empty) matches what the same value typed
+// at the CLI flag would produce. Composite values (array, object)
+// ARE JSON on the wire by design and route through
+// `NSJSONSerialization`. Mirrors the dispatch in
+// `capdag/src/bifaci/cartridge_runtime.rs::extract_arg_value`.
 
 static NSData *JSONValueToBytes(id value) {
     if ([value isKindOfClass:[NSString class]]) {
         return [(NSString *)value dataUsingEncoding:NSUTF8StringEncoding];
+    }
+    if ([value isKindOfClass:[NSNumber class]]) {
+        NSNumber *number = (NSNumber *)value;
+        // NSNumber covers both booleans and integers/floats.
+        // `kCFBooleanTrue` / `kCFBooleanFalse` are the singleton
+        // representations of `@YES` / `@NO`; identity comparison
+        // is the canonical way to distinguish a boolean NSNumber
+        // from an integer-valued one.
+        if (number == (id)kCFBooleanTrue) {
+            return [@"true" dataUsingEncoding:NSUTF8StringEncoding];
+        }
+        if (number == (id)kCFBooleanFalse) {
+            return [@"false" dataUsingEncoding:NSUTF8StringEncoding];
+        }
+        // Numeric (int or float). The objCType char identifies
+        // float (`f`) and double (`d`); everything else is
+        // integer-shaped.
+        const char *objCType = [number objCType];
+        if (objCType && (objCType[0] == 'f' || objCType[0] == 'd')) {
+            // Render with enough precision to round-trip the value
+            // the registry serialised.
+            NSString *s = [NSString stringWithFormat:@"%.17g", [number doubleValue]];
+            return [s dataUsingEncoding:NSUTF8StringEncoding];
+        }
+        return [[number stringValue] dataUsingEncoding:NSUTF8StringEncoding];
+    }
+    if ([value isKindOfClass:[NSNull class]] || value == nil) {
+        return [NSData data];
     }
 
     NSError *error = nil;
