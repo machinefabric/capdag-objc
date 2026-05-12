@@ -135,7 +135,7 @@ FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;t
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;json;record
 // Fabric registry lookup wire types (consumed/produced by cap:lookup-cap;fabric
-// and cap:lookup-media-spec;fabric, both implemented by netaccesscartridge).
+// and cap:lookup-media-spec;fabric, both implemented by fetchcartridge).
 FOUNDATION_EXPORT NSString * const CSMediaCapUrn;            // media:cap-urn;textable
 FOUNDATION_EXPORT NSString * const CSMediaMediaUrn;          // media:media-urn;textable
 FOUNDATION_EXPORT NSString * const CSMediaCapDefinition;     // media:cap-definition;json;record;textable
@@ -160,7 +160,7 @@ FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;rec
 /// Accepts any media type as input and outputs any media type
 FOUNDATION_EXPORT NSString * const CSCapIdentity;           // cap:in=media:;out=media:
 
-/// Fabric registry lookup caps. Implemented by netaccesscartridge.
+/// Fabric registry lookup caps. Implemented by fetchcartridge.
 /// `CSCapLookupCapFabric` resolves a canonical cap URN to its full
 /// flattened cap definition; `CSCapLookupMediaSpecFabric` does the same
 /// for media specs. Both fetch from the public fabric registry with a

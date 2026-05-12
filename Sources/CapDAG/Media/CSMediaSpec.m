@@ -115,7 +115,7 @@ NSString * const CSMediaCapUrn = @"media:cap-urn;textable";
 NSString * const CSMediaMediaUrn = @"media:media-urn;textable";
 NSString * const CSMediaCapDefinition = @"media:cap-definition;json;record;textable";
 NSString * const CSMediaMediaSpecDefinition = @"media:media-spec-definition;json;record;textable";
-// Fabric lookup caps (implemented by netaccesscartridge)
+// Fabric lookup caps (implemented by fetchcartridge)
 NSString * const CSCapLookupCapFabric =
     @"cap:in=\"media:cap-urn;textable\";fabric;lookup-cap;out=\"media:cap-definition;json;record;textable\"";
 NSString * const CSCapLookupMediaSpecFabric =
