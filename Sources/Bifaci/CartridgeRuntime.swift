@@ -1941,6 +1941,80 @@ public enum ArgSource: Codable, Sendable {
 }
 
 /// Argument definition in a cap.
+public enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case integer(Int64)
+    case double(Double)
+    case bool(Bool)
+    case null
+    case array([JSONValue])
+    case object([String: JSONValue])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int64.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else {
+            throw DecodingError.typeMismatch(
+                JSONValue.self,
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Unsupported JSON value"
+                )
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .integer(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        case .array(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        }
+    }
+
+    fileprivate func lexicalBytes() throws -> Data {
+        switch self {
+        case .string(let value):
+            return Data(value.utf8)
+        case .integer(let value):
+            return Data(String(value).utf8)
+        case .double(let value):
+            return Data(String(value).utf8)
+        case .bool(let value):
+            return Data((value ? "true" : "false").utf8)
+        case .null:
+            return Data()
+        case .array, .object:
+            return try JSONEncoder().encode(self)
+        }
+    }
+}
+
 public struct CapArg: Codable, Sendable {
     public let mediaUrn: String
     public let required: Bool
@@ -1951,7 +2025,7 @@ public struct CapArg: Codable, Sendable {
     public let isSequence: Bool
     public let sources: [ArgSource]
     public let argDescription: String?
-    public let defaultValue: String?
+    public let defaultValue: JSONValue?
 
     enum CodingKeys: String, CodingKey {
         case mediaUrn = "media_urn"
@@ -1962,7 +2036,7 @@ public struct CapArg: Codable, Sendable {
         case defaultValue = "default_value"
     }
 
-    public init(mediaUrn: String, required: Bool, isSequence: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: String? = nil) {
+    public init(mediaUrn: String, required: Bool, isSequence: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil) {
         self.mediaUrn = mediaUrn
         self.required = required
         self.isSequence = isSequence
@@ -1978,7 +2052,7 @@ public struct CapArg: Codable, Sendable {
         isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
         sources = try container.decodeIfPresent([ArgSource].self, forKey: .sources) ?? []
         argDescription = try container.decodeIfPresent(String.self, forKey: .argDescription)
-        defaultValue = try container.decodeIfPresent(String.self, forKey: .defaultValue)
+        defaultValue = try container.decodeIfPresent(JSONValue.self, forKey: .defaultValue)
     }
 }
 
@@ -2695,7 +2769,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
 
         if let defaultValue = argDef.defaultValue {
-            return (Data(defaultValue.utf8), false)
+            return (try defaultValue.lexicalBytes(), false)
         }
 
         return (nil, false)

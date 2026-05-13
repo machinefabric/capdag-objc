@@ -162,7 +162,7 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 @property (nonatomic, readonly, nullable) id defaultValue;
 
 /// Optional metadata
-@property (nonatomic, readonly, nullable) NSDictionary *metadata;
+@property (nonatomic, readonly, nullable) id metadata;
 
 /**
  * Create an argument with minimal fields
@@ -239,15 +239,15 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 /**
  * Get the metadata
- * @return The metadata dictionary or nil
+ * @return The metadata JSON value or nil
  */
-- (nullable NSDictionary *)getMetadata;
+- (nullable id)getMetadata;
 
 /**
  * Set the metadata
- * @param metadata The metadata dictionary
+ * @param metadata The metadata JSON value
  */
-- (void)setMetadata:(nullable NSDictionary *)metadata;
+- (void)setMetadata:(nullable id)metadata;
 
 /**
  * Clear the metadata
@@ -267,7 +267,7 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 @property (nonatomic, readonly) NSString *outputDescription;
 /// Whether this output produces a sequence of items (YES) or a single item (NO, default)
 @property (nonatomic, readonly) BOOL isSequence;
-@property (nonatomic, readonly, nullable) NSDictionary *metadata;
+@property (nonatomic, readonly, nullable) id metadata;
 
 /**
  * Create an output with media URN
@@ -288,15 +288,15 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 /**
  * Get the metadata JSON
- * @return The metadata JSON dictionary or nil
+ * @return The metadata JSON value or nil
  */
-- (nullable NSDictionary *)getMetadata;
+- (nullable id)getMetadata;
 
 /**
  * Set the metadata JSON
- * @param metadata The metadata JSON dictionary
+ * @param metadata The metadata JSON value
  */
-- (void)setMetadata:(nullable NSDictionary *)metadata;
+- (void)setMetadata:(nullable id)metadata;
 
 /**
  * Clear the metadata JSON

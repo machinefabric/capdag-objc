@@ -372,7 +372,7 @@
     // Optional fields
     NSString *argDescription = dictionary[@"arg_description"];
     id defaultValue = dictionary[@"default_value"];
-    NSDictionary *metadata = dictionary[@"metadata"];
+    id metadata = dictionary[@"metadata"];
 
     // Optional: is_sequence (defaults to NO)
     NSNumber *isSequenceValue = dictionary[@"is_sequence"];
@@ -466,11 +466,11 @@
     return nil;
 }
 
-- (nullable NSDictionary *)getMetadata {
+- (nullable id)getMetadata {
     return self.metadata;
 }
 
-- (void)setMetadata:(nullable NSDictionary *)metadata {
+- (void)setMetadata:(nullable id)metadata {
     _metadata = [metadata copy];
 }
 
@@ -516,7 +516,7 @@
         _sources = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSArgSource class], nil] forKey:@"sources"];
         _argDescription = [coder decodeObjectOfClass:[NSString class] forKey:@"argDescription"];
         _defaultValue = [coder decodeObjectForKey:@"defaultValue"];
-        _metadata = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadata"];
+        _metadata = [coder decodeObjectForKey:@"metadata"];
     }
     return self;
 }
@@ -542,7 +542,7 @@
     if (self.defaultValue && ![self.defaultValue isEqual:other.defaultValue]) return NO;
 
     if ((self.metadata == nil) != (other.metadata == nil)) return NO;
-    if (self.metadata && ![self.metadata isEqualToDictionary:other.metadata]) return NO;
+    if (self.metadata && ![self.metadata isEqual:other.metadata]) return NO;
 
     return YES;
 }
@@ -572,7 +572,7 @@
     NSString *mediaUrn = dictionary[@"media_urn"];
     NSString *outputDescription = dictionary[@"output_description"];
     NSNumber *isSequenceValue = dictionary[@"is_sequence"];
-    NSDictionary *metadata = dictionary[@"metadata"];
+    id metadata = dictionary[@"metadata"];
 
     // FAIL HARD on missing required fields
     if (!mediaUrn) {
@@ -632,7 +632,7 @@
         _mediaUrn = mediaUrn;
         _outputDescription = outputDescription;
         _isSequence = [coder decodeBoolForKey:@"isSequence"];
-        _metadata = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadata"];
+        _metadata = [coder decodeObjectForKey:@"metadata"];
     }
     return self;
 }
@@ -648,11 +648,11 @@
     return [dict copy];
 }
 
-- (nullable NSDictionary *)getMetadata {
+- (nullable id)getMetadata {
     return self.metadata;
 }
 
-- (void)setMetadata:(nullable NSDictionary *)metadata {
+- (void)setMetadata:(nullable id)metadata {
     _metadata = [metadata copy];
 }
 
@@ -674,7 +674,7 @@
     if (![self.outputDescription isEqualToString:other.outputDescription]) return NO;
 
     if ((self.metadata == nil) != (other.metadata == nil)) return NO;
-    if (self.metadata && ![self.metadata isEqualToDictionary:other.metadata]) return NO;
+    if (self.metadata && ![self.metadata isEqual:other.metadata]) return NO;
 
     return YES;
 }

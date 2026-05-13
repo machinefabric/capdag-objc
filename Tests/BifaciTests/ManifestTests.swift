@@ -62,7 +62,43 @@ final class ManifestTests: XCTestCase {
     // TEST150: JSON roundtrip preserves channel and cap_groups.
     func test150_capManifestJsonRoundtrip() throws {
         let capUrn = "cap:in=media:;out=media:"
-        let cap = CapDefinition(urn: capUrn, title: "Process", command: "process")
+        let cap = CapDefinition(
+            urn: capUrn,
+            title: "Process",
+            command: "process",
+            capDescription: "Roundtrip process cap",
+            args: [
+                CapArg(
+                    mediaUrn: "media:pdf",
+                    required: true,
+                    sources: [.stdin("media:pdf")]
+                ),
+                CapArg(
+                    mediaUrn: "media:chunk-size;textable;numeric",
+                    required: false,
+                    sources: [.cliFlag("--chunk-size")],
+                    argDescription: "Chunk size",
+                    defaultValue: .integer(400)
+                ),
+                CapArg(
+                    mediaUrn: "media:timestamps;textable;bool",
+                    required: false,
+                    sources: [.cliFlag("--timestamps")],
+                    argDescription: "Include timestamps",
+                    defaultValue: .bool(false)
+                ),
+                CapArg(
+                    mediaUrn: "media:model-config;json;record",
+                    required: false,
+                    sources: [.cliFlag("--model-config")],
+                    argDescription: "Model config",
+                    defaultValue: .object([
+                        "repo": .string("hf:sentence-transformers/all-MiniLM-L6-v2"),
+                        "batch": .integer(8)
+                    ])
+                )
+            ]
+        )
         let original = Manifest(
             name: "roundtrip-cartridge",
             version: "2.0.0",
@@ -84,6 +120,16 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(decoded.description, original.description)
         XCTAssertEqual(decoded.capGroups.count, original.capGroups.count)
         XCTAssertEqual(decoded.capGroups[0].caps[0].urn, capUrn)
+        XCTAssertEqual(decoded.capGroups[0].caps[0].args.count, 4)
+        XCTAssertEqual(decoded.capGroups[0].caps[0].args[1].defaultValue, .integer(400))
+        XCTAssertEqual(decoded.capGroups[0].caps[0].args[2].defaultValue, .bool(false))
+        XCTAssertEqual(
+            decoded.capGroups[0].caps[0].args[3].defaultValue,
+            .object([
+                "repo": .string("hf:sentence-transformers/all-MiniLM-L6-v2"),
+                "batch": .integer(8)
+            ])
+        )
     }
 
     // TEST151: Manifest deserialization fails when any required field is

@@ -793,6 +793,89 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(objArg.mediaUrn, CSMediaObject);
 }
 
+// TEST115: Test CapArg serialization and deserialization with multiple sources
+- (void)test115_capArgSerialization {
+    CSArgSource *cliFlagSource = [CSArgSource cliFlagSource:@"--name"];
+    CSArgSource *positionSource = [CSArgSource positionSource:0];
+    NSDictionary *metadata = @{
+        @"kind": @"example",
+        @"flags": @[@YES, @NO]
+    };
+
+    CSCapArg *arg = [CSCapArg argWithMediaUrn:CSMediaString
+                                     required:YES
+                                      sources:@[cliFlagSource, positionSource]
+                               argDescription:@"The name argument"
+                                 defaultValue:@400];
+    [arg setMetadata:metadata];
+
+    NSDictionary *serialized = [arg toDictionary];
+    XCTAssertEqualObjects(serialized[@"media_urn"], CSMediaString);
+    XCTAssertEqualObjects(serialized[@"required"], @YES);
+    XCTAssertEqualObjects(serialized[@"default_value"], @400);
+    XCTAssertEqualObjects(serialized[@"metadata"], metadata);
+
+    NSError *error = nil;
+    CSCapArg *deserialized = [CSCapArg argWithDictionary:serialized error:&error];
+    XCTAssertNil(error);
+    XCTAssertNotNil(deserialized);
+    XCTAssertEqualObjects(deserialized.mediaUrn, arg.mediaUrn);
+    XCTAssertEqual(deserialized.required, arg.required);
+    XCTAssertEqualObjects(deserialized.argDescription, arg.argDescription);
+    XCTAssertEqualObjects(deserialized.defaultValue, arg.defaultValue);
+    XCTAssertEqualObjects(deserialized.metadata, arg.metadata);
+    XCTAssertEqual(deserialized.sources.count, 2);
+}
+
+// TEST116: Test CapArg constructor methods basic and with_description create args correctly
+- (void)test116_capArgConstructors {
+    CSCapArg *basicArg = [CSCapArg argWithMediaUrn:CSMediaString
+                                          required:YES
+                                           sources:@[[CSArgSource cliFlagSource:@"--name"]]];
+    XCTAssertEqualObjects(basicArg.mediaUrn, CSMediaString);
+    XCTAssertTrue(basicArg.required);
+    XCTAssertEqual(basicArg.sources.count, 1u);
+    XCTAssertNil(basicArg.argDescription);
+    XCTAssertNil(basicArg.defaultValue);
+
+    CSCapArg *describedArg = [CSCapArg argWithMediaUrn:CSMediaInteger
+                                              required:NO
+                                               sources:@[[CSArgSource positionSource:0]]
+                                        argDescription:@"The count argument"
+                                          defaultValue:@10];
+    XCTAssertEqualObjects(describedArg.mediaUrn, CSMediaInteger);
+    XCTAssertFalse(describedArg.required);
+    XCTAssertEqualObjects(describedArg.argDescription, @"The count argument");
+    XCTAssertEqualObjects(describedArg.defaultValue, @10);
+}
+
+// TEST597: CapArg::with_full_definition stores all fields including optional ones
+- (void)test597_capArgWithFullDefinition {
+    NSDictionary *defaultValue = @{
+        @"chunk_size": @400,
+        @"timestamps": @NO
+    };
+    NSDictionary *metadata = @{@"hint": @"enter name"};
+    CSCapArg *arg = [CSCapArg argWithMediaUrn:CSMediaString
+                                     required:YES
+                                      sources:@[[CSArgSource cliFlagSource:@"--name"]]
+                               argDescription:@"User name"
+                                 defaultValue:defaultValue];
+    [arg setMetadata:metadata];
+
+    XCTAssertEqualObjects(arg.mediaUrn, CSMediaString);
+    XCTAssertTrue(arg.required);
+    XCTAssertEqualObjects(arg.argDescription, @"User name");
+    XCTAssertEqualObjects(arg.defaultValue, defaultValue);
+    XCTAssertEqualObjects(arg.metadata, metadata);
+
+    CSCapArg *copy = [arg copy];
+    [copy clearMetadata];
+    XCTAssertNil(copy.metadata);
+    [copy setMetadata:@"new"];
+    XCTAssertEqualObjects(copy.metadata, @"new");
+}
+
 - (void)testOutputCreationWithNewAPI {
     // Test creating output with the new mediaUrn API
     CSCapOutput *output = [CSCapOutput outputWithMediaUrn:CSMediaObject
