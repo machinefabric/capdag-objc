@@ -1958,8 +1958,8 @@ public struct CapArg: Codable, Sendable {
         case required
         case isSequence = "is_sequence"
         case sources
-        case argDescription = "description"
-        case defaultValue = "default"
+        case argDescription = "arg_description"
+        case defaultValue = "default_value"
     }
 
     public init(mediaUrn: String, required: Bool, isSequence: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: String? = nil) {
@@ -1994,7 +1994,7 @@ public struct CapDefinition: Codable, Sendable {
         case urn
         case title
         case command
-        case capDescription = "description"
+        case capDescription = "cap_description"
         case args
     }
 
