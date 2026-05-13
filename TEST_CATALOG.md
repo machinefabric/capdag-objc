@@ -90,19 +90,19 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test102 | `test102_resolved_is_list` | TEST102: Test ResolvedMediaSpec is_list returns true when list marker is present | Tests/CapDAGTests/CSMediaSpecTests.m:276 |
 | test103 | `test103_resolved_is_json` | TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present | Tests/CapDAGTests/CSMediaSpecTests.m:291 |
 | test104 | `test104_resolved_is_text` | TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present | Tests/CapDAGTests/CSMediaSpecTests.m:306 |
-| test115 | `test115_capArgSerialization` | TEST115: CapArg JSON roundtrip preserves multiple sources plus typed `default_value` / `metadata` payloads without stringifying them. | Tests/CapDAGTests/CSCapTests.m:797 |
-| test116 | `test116_capArgConstructors` | TEST116: Basic CapArg construction leaves optional fields absent; described construction preserves an explicit description and typed default. | Tests/CapDAGTests/CSCapTests.m:831 |
+| test115 | `test115_capArgSerialization` | TEST115: Test CapArg serialization and deserialization with multiple sources | Tests/CapDAGTests/CSCapTests.m:797 |
+| test116 | `test116_capArgConstructors` | TEST116: Test CapArg constructor methods basic and with_description create args correctly | Tests/CapDAGTests/CSCapTests.m:831 |
 | test140 | `test140_sameCapDifferentSpellingsSameURL` | / TEST140: Equivalent URNs (different tag order, etc.) hash to the / same key. This is the property that makes cross-language lookups / land at the same registry object regardless of which capdag / implementation issued the request. Inputs MUST quote any / multi-tag media URN value — the previous unquoted spelling / `out=media:task;id` was actually a different URN (the bare / `media:task` plus a separate `id` op tag), and treating those / two URNs as equivalent here masked a real spec violation. | Tests/CapDAGTests/CSFabricRegistryTests.m:86 |
 | test141 | `test141_perCapURLShape` | / TEST141: URL has the right shape — protocol, host, /caps/ prefix, / 64 hex chars, no extension. | Tests/CapDAGTests/CSFabricRegistryTests.m:94 |
 | test142 | `test142_normalizeHandlesDifferentTagOrders` | / TEST142: Different tag orders normalise to the same URL — the / canonicaliser strips the variation before hashing. | Tests/CapDAGTests/CSFabricRegistryTests.m:107 |
 | test148 | `test148_capManifestCreation` | TEST148: Cap manifest construction stores name, version, channel, description, and the cap_groups verbatim. | Tests/BifaciTests/ManifestTests.swift:28 |
 | test149 | `test149_capManifestWithAuthor` | TEST149: Author field round-trips through CSCapManifest.withAuthor. | Tests/BifaciTests/ManifestTests.swift:49 |
-| test150 | `test150_capManifestJsonRoundtrip` | TEST150: CapManifest JSON roundtrip preserves typed CapArg defaults inside cap_groups, including numeric, boolean, object, and metadata JSON values. | Tests/BifaciTests/ManifestTests.swift:63 |
-| test151 | `test151_capManifestRequiredFields` | TEST151: Manifest deserialization fails when any required field is missing — including channel, which is part of the cartridge's identity. There is no fallback default; missing means broken. | Tests/BifaciTests/ManifestTests.swift:92 |
-| test152 | `test152_capManifestWithMultipleCaps` | TEST152: Multiple caps across multiple cap_groups serialize and deserialize correctly, preserving group structure. | Tests/BifaciTests/ManifestTests.swift:130 |
-| test153 | `test153_capManifestEmptyCapGroups` | TEST153: An empty cap_groups list round-trips without losing the channel / version envelope. | Tests/BifaciTests/ManifestTests.swift:166 |
-| test154 | `test154_capManifestOptionalAuthorField` | TEST154: Optional author field on CSCapManifest is nil by default and round-trips through `withAuthor`. | Tests/BifaciTests/ManifestTests.swift:190 |
-| test155 | `test155_componentMetadataAccessors` | TEST155: CSCapManifest exposes name / version / channel / description / cap_groups via its accessors. The Obj-C bridge is schema-equivalent to the Swift `Manifest` struct. | Tests/BifaciTests/ManifestTests.swift:208 |
+| test150 | `test150_capManifestJsonRoundtrip` | TEST150: JSON roundtrip preserves channel and cap_groups. | Tests/BifaciTests/ManifestTests.swift:63 |
+| test151 | `test151_capManifestRequiredFields` | TEST151: Manifest deserialization fails when any required field is missing — including channel, which is part of the cartridge's identity. There is no fallback default; missing means broken. | Tests/BifaciTests/ManifestTests.swift:138 |
+| test152 | `test152_capManifestWithMultipleCaps` | TEST152: Multiple caps across multiple cap_groups serialize and deserialize correctly, preserving group structure. | Tests/BifaciTests/ManifestTests.swift:176 |
+| test153 | `test153_capManifestEmptyCapGroups` | TEST153: An empty cap_groups list round-trips without losing the channel / version envelope. | Tests/BifaciTests/ManifestTests.swift:212 |
+| test154 | `test154_capManifestOptionalAuthorField` | TEST154: Optional author field on CSCapManifest is nil by default and round-trips through `withAuthor`. | Tests/BifaciTests/ManifestTests.swift:236 |
+| test155 | `test155_componentMetadataAccessors` | TEST155: CSCapManifest exposes name / version / channel / description / cap_groups via its accessors. The Obj-C bridge is schema-equivalent to the Swift `Manifest` struct. | Tests/BifaciTests/ManifestTests.swift:254 |
 | test163 | `test163_argumentSchemaValidationSuccess` | TEST163: Test argument schema validation succeeds with valid JSON matching schema | Tests/CapDAGTests/CSSchemaValidationTests.m:56 |
 | test164 | `test164_argumentSchemaValidationFailure` | TEST164: Test argument schema validation fails with JSON missing required fields | Tests/CapDAGTests/CSSchemaValidationTests.m:97 |
 | test165 | `test165_outputSchemaValidationSuccess` | TEST165: Test output schema validation succeeds with valid JSON matching schema | Tests/CapDAGTests/CSSchemaValidationTests.m:189 |
@@ -405,6 +405,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test551 | `test551_is_file_path` | TEST551: isFilePath returns true for the single file-path media URN, false for everything else. There is no "array" variant — cardinality is carried by is_sequence on the wire, not by URN tags. | Tests/CapDAGTests/CSMediaUrnTests.m:284 |
 | test555 | `test555_with_tag_and_without_tag` | TEST555: with_tag adds a tag and without_tag removes it | Tests/CapDAGTests/CSMediaUrnTests.m:292 |
 | test558 | `test558_predicate_constant_consistency` | TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates | Tests/CapDAGTests/CSMediaUrnTests.m:310 |
+| test597 | `test597_capArgWithFullDefinition` | TEST597: CapArg::with_full_definition stores all fields including optional ones | Tests/CapDAGTests/CSCapTests.m:853 |
 | test638 | `test638_noPeerRouterRejectsAll` | TEST638: Verify NoPeerRouter rejects all requests with PeerInvokeNotSupported | Tests/BifaciTests/RouterTests.swift:14 |
 | test654 | `test654_routesReqToHandler` | TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response | Tests/BifaciTests/InProcessCartridgeHostTests.swift:104 |
 | test655 | `test655_identityVerification` | TEST655: InProcessCartridgeHost handles identity verification (echo nonce) | Tests/BifaciTests/InProcessCartridgeHostTests.swift:188 |
@@ -485,7 +486,6 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test786 | `test786_roundtripSplitAssemble` | TEST786: split then assemble roundtrip preserves data | Tests/BifaciTests/CborSequenceTests.swift:342 |
 | test787 | `test787_sortingShorterFirst` | TEST787: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapFabTests.m:286 |
 | test788 | `test788_forEachWithSequenceInput` | TEST788: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapFabTests.m:308 |
-| test597 | `test597_capArgWithFullDefinition` | TEST597: CapArg::with_full_definition preserves object-shaped `default_value` JSON and optional metadata without narrowing them to strings. | Tests/CapDAGTests/CSCapTests.m:853 |
 | test790 | `test790_identityUrnSpecific` | TEST790: Identity URN is specific, not equivalent to everything | Tests/CapDAGTests/CSLiveCapFabTests.m:349 |
 | test810 | `test810_splitSequenceBytes` | TEST810: Tests EdgeType::JsonPath extracts values using nested path expressions Verifies that JsonPath edge type correctly navigates through multiple levels like "data.nested.value" | Tests/BifaciTests/CborSequenceTests.swift:26 |
 | test811 | `test811_splitSequenceText` | TEST811: Tests EdgeType::Iteration preserves array values for iterative processing Verifies that Iteration edge type passes through arrays unchanged to enable ForEach patterns | Tests/BifaciTests/CborSequenceTests.swift:50 |
@@ -712,8 +712,8 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testCanonicalValidationDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:259 |
 | unnumbered | `testCapAndForEachAreNotStandaloneCollect` |  | Tests/CapDAGTests/CSPlanDecompositionTests.m:75 |
 | unnumbered | `testCapCreation` |  | Tests/CapDAGTests/CSCapTests.m:31 |
-| unnumbered | `testCapDocumentationOmittedWhenNil` | When documentation is nil, toDictionary must omit the field entirely. This matches the Rust serializer's skip-when-None semantics and the JS toJSON behaviour. A regression where nil is emitted as `documentation: NSNull` (or simply not omitted) would break the symmetric round-trip with Rust. | Tests/CapDAGTests/CSCapTests.m:856 |
-| unnumbered | `testCapDocumentationRoundTrip` | Mirrors TEST920 in capdag/src/cap/definition.rs and the JS testJS_capDocumentationRoundTrip test. The body is non-trivial — multi-line, embedded backticks and double quotes, Unicode dingbat (\u2605) — so any escaping mismatch between dictionary serialization here and the Rust / JS counterparts surfaces as a failed round-trip. | Tests/CapDAGTests/CSCapTests.m:818 |
+| unnumbered | `testCapDocumentationOmittedWhenNil` | When documentation is nil, toDictionary must omit the field entirely. This matches the Rust serializer's skip-when-None semantics and the JS toJSON behaviour. A regression where nil is emitted as `documentation: NSNull` (or simply not omitted) would break the symmetric round-trip with Rust. | Tests/CapDAGTests/CSCapTests.m:939 |
+| unnumbered | `testCapDocumentationRoundTrip` | Mirrors TEST920 in capdag/src/cap/definition.rs and the JS testJS_capDocumentationRoundTrip test. The body is non-trivial — multi-line, embedded backticks and double quotes, Unicode dingbat (\u2605) — so any escaping mismatch between dictionary serialization here and the Rust / JS counterparts surfaces as a failed round-trip. | Tests/CapDAGTests/CSCapTests.m:901 |
 | unnumbered | `testCapManifestCompatibility` |  | Tests/CapDAGTests/CSCapTests.m:705 |
 | unnumbered | `testCapManifestCreation` | MARK: - Cap Manifest Tests | Tests/CapDAGTests/CSCapTests.m:417 |
 | unnumbered | `testCapManifestDictionaryDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:509 |
@@ -754,7 +754,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:273 |
 | unnumbered | `testIntegrationWithOutputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:343 |
 | unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:139 |
-| unnumbered | `testMediaSpecDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaSpecs definition through CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:892 |
+| unnumbered | `testMediaSpecDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaSpecs definition through CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:975 |
 | unnumbered | `testMediaSpecsWithoutSchemaSkipsValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:603 |
 | unnumbered | `testMediaUrnResolutionThroughRegistry` |  | Tests/CapDAGTests/CSCapTests.m:360 |
 | unnumbered | `testMetadataNilByDefault` |  | Tests/CapDAGTests/CSMediaSpecTests.m:54 |
@@ -764,7 +764,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaSpecTests.m:194 |
 | unnumbered | `testNewHostInstancePerRelaySession` | / Contract #2 (well-behaved path): one host → one run() → / drop. The misuse path (calling run() twice) is enforced via / `precondition` and is not death-tested here — the well- / behaved path is sufficient because if the precondition were / silently disabled, the prior test (`testRunExitKills…`) / would still pass on the first invocation but the second / call would race with itself and fail intermittently. This / test documents the contract by demonstrating that a fresh / `CartridgeHost` instance is the only correct way to start / a new relay session. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141 |
 | unnumbered | `testNonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:160 |
-| unnumbered | `testOutputCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:796 |
+| unnumbered | `testOutputCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:879 |
 | unnumbered | `testOutputWithEmbeddedSchemaValidationFailure` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:232 |
 | unnumbered | `testPerCapURLUsesSHA256` | / Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters / in the path, so no percent-encoding gymnastics. | Tests/CapDAGTests/CSFabricRegistryTests.m:67 |
 | unnumbered | `testPressureAndKill` | / Single test: allocate 90% of RAM with incompressible CSPRNG data, monitor / memory, detect pressure (kernel or threshold), kill cartridge, verify death. / The goal is to overload the system — force the kernel into real pressure. | testcartridge-host/Sources/TestcartridgeHost/main.swift:288 |
@@ -794,8 +794,8 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testWildcard010WildcardAcceptsSpecific` | TEST_WILDCARD_010: Wildcard in/out match specific caps | Tests/CapDAGTests/CSCapUrnTests.m:1126 |
 | unnumbered | `testWildcard011SpecificityScoring` | TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count | Tests/CapDAGTests/CSCapUrnTests.m:1136 |
 | unnumbered | `testWildcard012PreserveOtherTags` | TEST_WILDCARD_012: cap:in=media:;out=media:;test preserves other tags | Tests/CapDAGTests/CSCapUrnTests.m:1146 |
-| unnumbered | `test_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:247 |
-| unnumbered | `test_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:231 |
+| unnumbered | `test_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:293 |
+| unnumbered | `test_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:277 |
 | unnumbered | `test_glob_pattern_detection` | Mirror-specific: glob pattern detection is an objc-only helper used by the resolver internals. Rust uses globwalk; these checks exercise the BSD glob detection logic. | Tests/CapDAGTests/CSInputResolverTests.m:506 |
 | unnumbered | `test_resolved_input_set_total_size` | Mirror-specific: CSResolvedInputSet aggregates totalSize across files | Tests/CapDAGTests/CSInputResolverTests.m:515 |
 | unnumbered | `testconcatenatedVsFinalPayloadDivergence` | Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk | Tests/BifaciTests/RuntimeTests.swift:1105 |
@@ -841,8 +841,8 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testCanonicalValidationDeserialization` — Tests/CapDAGTests/CSCapTests.m:259
 - `testCapAndForEachAreNotStandaloneCollect` — Tests/CapDAGTests/CSPlanDecompositionTests.m:75
 - `testCapCreation` — Tests/CapDAGTests/CSCapTests.m:31
-- `testCapDocumentationOmittedWhenNil` — Tests/CapDAGTests/CSCapTests.m:856
-- `testCapDocumentationRoundTrip` — Tests/CapDAGTests/CSCapTests.m:818
+- `testCapDocumentationOmittedWhenNil` — Tests/CapDAGTests/CSCapTests.m:939
+- `testCapDocumentationRoundTrip` — Tests/CapDAGTests/CSCapTests.m:901
 - `testCapManifestCompatibility` — Tests/CapDAGTests/CSCapTests.m:705
 - `testCapManifestCreation` — Tests/CapDAGTests/CSCapTests.m:417
 - `testCapManifestDictionaryDeserialization` — Tests/CapDAGTests/CSCapTests.m:509
@@ -883,7 +883,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:273
 - `testIntegrationWithOutputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:343
 - `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:139
-- `testMediaSpecDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:892
+- `testMediaSpecDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:975
 - `testMediaSpecsWithoutSchemaSkipsValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:603
 - `testMediaUrnResolutionThroughRegistry` — Tests/CapDAGTests/CSCapTests.m:360
 - `testMetadataNilByDefault` — Tests/CapDAGTests/CSMediaSpecTests.m:54
@@ -893,7 +893,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testMultipleExtensions` — Tests/CapDAGTests/CSMediaSpecTests.m:194
 - `testNewHostInstancePerRelaySession` — Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141
 - `testNonStructuredArgumentSkipsSchemaValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:160
-- `testOutputCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:796
+- `testOutputCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:879
 - `testOutputWithEmbeddedSchemaValidationFailure` — Tests/CapDAGTests/CSSchemaValidationTests.m:232
 - `testPerCapURLUsesSHA256` — Tests/CapDAGTests/CSFabricRegistryTests.m:67
 - `testPressureAndKill` — testcartridge-host/Sources/TestcartridgeHost/main.swift:288
@@ -923,8 +923,8 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testWildcard010WildcardAcceptsSpecific` — Tests/CapDAGTests/CSCapUrnTests.m:1126
 - `testWildcard011SpecificityScoring` — Tests/CapDAGTests/CSCapUrnTests.m:1136
 - `testWildcard012PreserveOtherTags` — Tests/CapDAGTests/CSCapUrnTests.m:1146
-- `test_csCapManifestRejectsUnknownChannel` — Tests/BifaciTests/ManifestTests.swift:247
-- `test_csCapManifestWithPageUrl` — Tests/BifaciTests/ManifestTests.swift:231
+- `test_csCapManifestRejectsUnknownChannel` — Tests/BifaciTests/ManifestTests.swift:293
+- `test_csCapManifestWithPageUrl` — Tests/BifaciTests/ManifestTests.swift:277
 - `test_glob_pattern_detection` — Tests/CapDAGTests/CSInputResolverTests.m:506
 - `test_resolved_input_set_total_size` — Tests/CapDAGTests/CSInputResolverTests.m:515
 - `testconcatenatedVsFinalPayloadDivergence` — Tests/BifaciTests/RuntimeTests.swift:1105
@@ -946,8 +946,8 @@ These tests still participate in numeric indexing, but the cataloger did not fin
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 782*
-*Total numbered tests: 659*
+*Total tests: 785*
+*Total numbered tests: 662*
 *Total unnumbered tests: 123*
 *Total numbered tests missing descriptions: 4*
 *Total numbering mismatches: 0*
