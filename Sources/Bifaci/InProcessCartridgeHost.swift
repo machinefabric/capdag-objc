@@ -474,7 +474,8 @@ public final class InProcessCartridgeHost {
                     continue
                 }
 
-                // Identity cap is "cap:" — exact string match, NOT conforms_to.
+                // Identity cap is the explicit CSCapIdentity constant (`cap:effect=none`)
+                // and is matched by exact string equality, not conforms_to.
                 let isIdentity = capUrn == CSCapIdentity
 
                 let handler: FrameHandler = isIdentity ? identityHandler : {

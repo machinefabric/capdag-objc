@@ -24,7 +24,7 @@ import Foundation
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
 // `channel` is part of every cartridge's identity (release/nightly).
 private let testManifest = """
-{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
 """.data(using: .utf8)!
 
 final class CborIntegrationTests: XCTestCase {
@@ -105,7 +105,7 @@ final class CborIntegrationTests: XCTestCase {
                     return
                 }
                 XCTAssertEqual(frame.frameType, .req)
-                XCTAssertEqual(frame.cap, "cap:in=media:;out=media:")
+                XCTAssertEqual(frame.cap, CSCapIdentity)
                 XCTAssertEqual(frame.payload, "hello".data(using: .utf8))
 
                 try writer.write(Frame.end(id: frame.id, finalPayload: "hello back".data(using: .utf8)))
@@ -122,7 +122,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let requestId = MessageId.newUUID()
-        try writer.write(Frame.req(id: requestId, capUrn: "cap:in=media:;out=media:",
+        try writer.write(Frame.req(id: requestId, capUrn: CSCapIdentity,
                                        payload: "hello".data(using: .utf8)!,
                                        contentType: "application/json"))
 
@@ -677,7 +677,7 @@ final class CborIntegrationTests: XCTestCase {
 
         // Send REQ
         let reqId = MessageId.newUUID()
-        try writer.write(Frame.req(id: reqId, capUrn: "cap:in=media:;out=media:", payload: Data("input".utf8), contentType: "text/plain"))
+        try writer.write(Frame.req(id: reqId, capUrn: CSCapIdentity, payload: Data("input".utf8), contentType: "text/plain"))
 
         // Read full response
         var accumulated = Data()
@@ -727,7 +727,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let reqId = MessageId.newUUID()
-        try writer.write(Frame.req(id: reqId, capUrn: "cap:in=media:;out=media:", payload: Data(), contentType: ""))
+        try writer.write(Frame.req(id: reqId, capUrn: CSCapIdentity, payload: Data(), contentType: ""))
 
         guard let response = try reader.read() else {
             XCTFail("Expected response")
@@ -784,7 +784,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let reqId = MessageId.newUUID()
-        try writer.write(Frame.req(id: reqId, capUrn: "cap:in=media:;out=media:", payload: testData, contentType: "application/octet-stream"))
+        try writer.write(Frame.req(id: reqId, capUrn: CSCapIdentity, payload: testData, contentType: "application/octet-stream"))
 
         var received = Data()
         while true {
@@ -839,7 +839,7 @@ final class CborIntegrationTests: XCTestCase {
         _ = try performHandshakeWithManifest(reader: reader, writer: writer)
 
         let reqId = MessageId.newUUID()
-        try writer.write(Frame.req(id: reqId, capUrn: "cap:in=media:;out=media:", payload: Data(), contentType: ""))
+        try writer.write(Frame.req(id: reqId, capUrn: CSCapIdentity, payload: Data(), contentType: ""))
 
         var chunkCount = 0
         var gotStreamEnd = false

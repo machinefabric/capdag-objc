@@ -155,7 +155,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // MARK: - Test Constants
 
     static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
     """
     static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -620,7 +620,7 @@ final class CborFilePathConversionTests: XCTestCase {
         // (Appending instead of prepending to avoid breaking tests that reference caps[0])
         var allCaps = caps
         let identityCap = CapDefinition(
-            urn: "cap:",
+            urn: CSCapIdentity,
             title: "Identity",
             command: "identity"
         )

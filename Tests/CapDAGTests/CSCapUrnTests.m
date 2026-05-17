@@ -100,9 +100,9 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap2 accepts:cap1]);
 }
 
-// TEST939: The canonical form drops `in=media:` and `out=media:`
-// segments. Every spelling of "the same cap with wildcard in/out"
-// collapses to one byte-identical canonical string. This is the
+// TEST939: The canonical form drops default `in=media:`, `out=media:`,
+// and `effect=declared`. Every spelling of the same declared-effect
+// wildcard cap collapses to one byte-identical canonical string. This is the
 // contract that makes registry lookups work: the cap-publisher hashes
 // `<canonical-urn>` to compute the cache key, and every language
 // port (Rust, Go, Python, JS, ObjC) must agree on the canonical form
@@ -128,11 +128,11 @@ static NSString* testUrn(NSString *tags) {
             @"input %@ canonicalized to %@, expected %@ — wildcard in/out segments must be elided so the registry SHA-256 key is stable across input spellings",
             v, [parsed toString], canonical);
     }
-    // Bare-identity round-trip.
+    // Explicit identity round-trip.
     NSError *error = nil;
-    CSCapUrn *identity = [CSCapUrn fromString:@"cap:in=media:;out=media:" error:&error];
+    CSCapUrn *identity = [CSCapUrn fromString:@"cap:effect=none" error:&error];
     XCTAssertNotNil(identity);
-    XCTAssertEqualObjects([identity toString], @"cap:");
+    XCTAssertEqualObjects([identity toString], @"cap:effect=none");
 }
 
 // TEST001 variant: Test empty URN fails
@@ -199,20 +199,16 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getOutSpec], @"media:");
 }
 
-// TEST028: Test empty cap URN defaults to media: wildcard
-- (void)test028_emptyCapUrnDefaultsToWildcard {
+// TEST028: Empty cap URN is the illegal bare top form
+- (void)test028_emptyCapUrnIsIllegal {
     NSError *error = nil;
-    // Empty cap URN defaults to media: for both in and out
     CSCapUrn *empty = [CSCapUrn fromString:@"cap:" error:&error];
-    XCTAssertNotNil(empty, @"Empty cap should default to media: wildcard");
-    XCTAssertNil(error);
-    XCTAssertEqualObjects([empty getInSpec], @"media:");
-    XCTAssertEqualObjects([empty getOutSpec], @"media:");
+    XCTAssertNil(empty);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 
-    // cap:in=media:;out=media:;raw also defaults - has tags but missing in/out defaults to media:
     error = nil;
     CSCapUrn *missingInOut = [CSCapUrn fromString:@"cap:raw" error:&error];
-    XCTAssertNotNil(missingInOut, @"cap:in=media:;out=media:;raw should default in/out to media:");
+    XCTAssertNotNil(missingInOut, @"cap:raw remains legal because the operation axis is non-empty");
     XCTAssertNil(error);
     XCTAssertEqualObjects([missingInOut getInSpec], @"media:");
     XCTAssertEqualObjects([missingInOut getOutSpec], @"media:");
@@ -408,17 +404,14 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:generate;in=media:void;out=\"media:record;textable\"");
 }
 
-// TEST1407: withTag silently ignores attempts to set "in" or "out" tags (mirror-local)
-- (void)test1407_withTagIgnoresInOut {
+// TEST1407: withTag rejects reserved structural keys (mirror-local)
+- (void)test1407_withTagRejectsStructuralKeys {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate") error:&error];
 
-    // withTag for "in" or "out" should silently return self
-    CSCapUrn *sameIn = [original withTag:@"in" value:@"different"];
-    XCTAssertEqual(original, sameIn); // Same object
-
-    CSCapUrn *sameOut = [original withTag:@"out" value:@"different"];
-    XCTAssertEqual(original, sameOut); // Same object
+    XCTAssertThrowsSpecificNamed([original withTag:@"in" value:@"different"], NSException, NSInvalidArgumentException);
+    XCTAssertThrowsSpecificNamed([original withTag:@"out" value:@"different"], NSException, NSInvalidArgumentException);
+    XCTAssertThrowsSpecificNamed([original withTag:@"effect" value:@"none"], NSException, NSInvalidArgumentException);
 }
 
 // TEST1408: withInSpec returns a new URN with the in= spec replaced, leaving the original unchanged (mirror-local)
@@ -439,6 +432,9 @@ static NSString* testUrn(NSString *tags) {
 
     XCTAssertEqualObjects([modified getOutSpec], @"media:");
     XCTAssertEqualObjects([original getOutSpec], @"media:record;textable"); // Original unchanged
+
+    CSCapUrn *identity = [CSCapUrn fromString:@"cap:effect=none" error:&error];
+    XCTAssertThrowsSpecificNamed([identity withOutSpec:@"media:pdf"], NSException, NSInternalInconsistencyException);
 }
 
 // TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local)
@@ -455,17 +451,14 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:ext=pdf;generate;in=media:void;out=\"media:record;textable\"");
 }
 
-// TEST1411: withoutTag silently ignores attempts to remove "in" or "out" tags (mirror-local)
-- (void)test1411_withoutTagIgnoresInOut {
+// TEST1411: withoutTag rejects reserved structural keys (mirror-local)
+- (void)test1411_withoutTagRejectsStructuralKeys {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate") error:&error];
 
-    // withoutTag for "in" or "out" should silently return self
-    CSCapUrn *sameIn = [original withoutTag:@"in"];
-    XCTAssertEqual(original, sameIn); // Same object
-
-    CSCapUrn *sameOut = [original withoutTag:@"out"];
-    XCTAssertEqual(original, sameOut); // Same object
+    XCTAssertThrowsSpecificNamed([original withoutTag:@"in"], NSException, NSInvalidArgumentException);
+    XCTAssertThrowsSpecificNamed([original withoutTag:@"out"], NSException, NSInvalidArgumentException);
+    XCTAssertThrowsSpecificNamed([original withoutTag:@"effect"], NSException, NSInvalidArgumentException);
 }
 
 // TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out
@@ -933,7 +926,7 @@ static NSString* testUrn(NSString *tags) {
     // Test 8: Wildcard cap (in=*, out=*) matches anything
     // (This replaces the old "empty cap" test since empty caps are no longer valid)
     NSError *error = nil;
-    CSCapUrn *wildcardCap = [CSCapUrn fromString:@"cap:in=*;out=*" error:&error];
+    CSCapUrn *wildcardCap = [CSCapUrn fromString:@"cap:in=*;out=*;op" error:&error];
     XCTAssertNotNil(wildcardCap);
 
     CSCapUrn *request = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
@@ -1039,60 +1032,52 @@ static NSString* testUrn(NSString *tags) {
         @"pdf cap must be more specific than generic cap");
 }
 
-// TEST_WILDCARD_001: cap: (empty) defaults to in=media:;out=media:
-- (void)testWildcard001EmptyCapDefaultsToMediaWildcard {
+// TEST_WILDCARD_001: cap: (empty) is illegal
+- (void)testWildcard001EmptyCapIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:" error:&error];
-    XCTAssertNotNil(cap, @"Empty cap should default to media: wildcard");
-    XCTAssertNil(error);
-    XCTAssertEqualObjects([cap getInSpec], @"media:");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");
-    XCTAssertEqual(cap.tags.count, 0);
+    XCTAssertNil(cap);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
-// TEST_WILDCARD_002: cap:in defaults out to media:
-- (void)testWildcard002InOnlyDefaultsOutToMedia {
+// TEST_WILDCARD_002: cap:in collapses to the same illegal bare top form
+- (void)testWildcard002InOnlyIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in" error:&error];
-    XCTAssertNotNil(cap, @"in without out should default out to media:");
-    XCTAssertEqualObjects([cap getInSpec], @"media:");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");
+    XCTAssertNil(cap);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
-// TEST_WILDCARD_003: cap:out defaults in to media:
-- (void)testWildcard003OutOnlyDefaultsInToMedia {
+// TEST_WILDCARD_003: cap:out collapses to the same illegal bare top form
+- (void)testWildcard003OutOnlyIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:out" error:&error];
-    XCTAssertNotNil(cap, @"out without in should default in to media:");
-    XCTAssertEqualObjects([cap getInSpec], @"media:");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");
+    XCTAssertNil(cap);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
-// TEST_WILDCARD_004: cap:in;out both become media:
-- (void)testWildcard004InOutNoValuesBecomeMedia {
+// TEST_WILDCARD_004: cap:in;out collapses to the same illegal bare top form
+- (void)testWildcard004InOutNoValuesAreIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in;out" error:&error];
-    XCTAssertNotNil(cap, @"in;out should both become media:");
-    XCTAssertEqualObjects([cap getInSpec], @"media:");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");
+    XCTAssertNil(cap);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
-// TEST_WILDCARD_005: cap:in=*;out=* becomes media:
-- (void)testWildcard005ExplicitAsteriskBecomesMedia {
+// TEST_WILDCARD_005: cap:in=*;out=* is illegal
+- (void)testWildcard005ExplicitAsteriskIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=*;out=*" error:&error];
-    XCTAssertNotNil(cap, @"in=*;out=* should become media:");
-    XCTAssertEqualObjects([cap getInSpec], @"media:");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");
+    XCTAssertNil(cap);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
-// TEST_WILDCARD_006: cap:in=media:;out=* has specific in, wildcard out
-- (void)testWildcard006SpecificInWildcardOut {
+// TEST_WILDCARD_006: cap:in=media:;out=* is illegal
+- (void)testWildcard006SpecificInWildcardOutIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:;out=*" error:&error];
-    XCTAssertNotNil(cap);
-    XCTAssertEqualObjects([cap getInSpec], @"media:");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:");
+    XCTAssertNil(cap);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
 // TEST_WILDCARD_007: cap:in=*;out=media:text has wildcard in, specific out
@@ -1125,8 +1110,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST_WILDCARD_010: Wildcard in/out match specific caps
 - (void)testWildcard010WildcardAcceptsSpecific {
     NSError *error = nil;
-    CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:" error:&error];
-    CSCapUrn *specific = [CSCapUrn fromString:@"cap:in=media:;out=media:text" error:&error];
+    CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
+    CSCapUrn *specific = [CSCapUrn fromString:@"cap:in=media:;out=media:text;raw" error:&error];
     
     XCTAssertTrue([wildcard accepts:specific], @"Wildcard should accept specific cap");
     XCTAssertTrue([specific conformsTo:wildcard], @"Specific should conform to wildcard");
@@ -1135,10 +1120,10 @@ static NSString* testUrn(NSString *tags) {
 // TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count
 - (void)testWildcard011SpecificityScoring {
     NSError *error = nil;
-    CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:" error:&error];
-    CSCapUrn *specific = [CSCapUrn fromString:@"cap:in=media:;out=media:text" error:&error];
+    CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
+    CSCapUrn *specific = [CSCapUrn fromString:@"cap:in=media:;out=media:text;raw" error:&error];
     
-    XCTAssertEqual([wildcard specificity], 0, @"Wildcard should have 0 specificity");
+    XCTAssertEqual([wildcard specificity], 2, @"Marker-only wildcard cap should have y-axis specificity only");
     XCTAssertGreaterThan([specific specificity], 0, @"Specific cap should have non-zero specificity");
 }
 
@@ -1406,6 +1391,21 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap getTag:@"key"], @"ValueWithCase");
 }
 
+// TEST023B: Builder rejects reserved structural keys on tag/marker helpers
+- (void)test023b_builderRejectsStructuralKeys {
+    XCTAssertThrowsSpecificNamed([[[CSCapUrnBuilder builder] tag:@"in" value:@"media:void"] build:nil], NSException, NSInvalidArgumentException);
+    XCTAssertThrowsSpecificNamed([[[CSCapUrnBuilder builder] marker:@"effect"] build:nil], NSException, NSInvalidArgumentException);
+
+    NSError *error = nil;
+    CSCapUrn *invalid = [[[[[CSCapUrnBuilder builder]
+        inSpec:@"media:void"]
+        outSpec:@"media:record;textable"]
+        tag:@"123" value:@"value"]
+        build:&error];
+    XCTAssertNil(invalid);
+    XCTAssertEqual(error.code, CSCapUrnErrorNumericKey);
+}
+
 // TEST025: Test find_best_match returns most specific matching cap
 - (void)test025_bestMatch {
     NSError *error;
@@ -1467,30 +1467,34 @@ static NSString* testUrn(NSString *tags) {
 // inconsistency — the kind taxonomy is part of the protocol's public
 // surface, not a per-port detail.
 
-// TEST1800: Identity classifier — only the bare cap: form qualifies.
+// TEST1800: Identity classifier — only explicit effect=none qualifies.
 // Adding any tag (even one that doesn't constrain in/out) demotes
 // the cap to Transform because the operation/metadata axis is no
 // longer fully generic.
 - (void)test1800_kind_identity_only_for_bare_cap {
     NSError *error = nil;
 
-    CSCapUrn *identity = [CSCapUrn fromString:@"cap:" error:&error];
+    CSCapUrn *identity = [CSCapUrn fromString:@"cap:effect=none" error:&error];
     XCTAssertNotNil(identity, @"%@", error.localizedDescription);
     XCTAssertEqual([identity kind], CSCapKindIdentity);
 
     NSArray<NSString *> *spellings = @[
-        @"cap:in=media:;out=media:",
-        @"cap:in=*;out=*",
-        @"cap:in=media:",
-        @"cap:out=media:",
+        @"cap:in=media:;out=media:;effect=none",
+        @"cap:effect=none;in=*;out=*",
+        @"cap:effect=none;in=media:",
+        @"cap:effect=none;out=media:",
     ];
     for (NSString *spelling in spellings) {
         CSCapUrn *cap = [CSCapUrn fromString:spelling error:&error];
         XCTAssertNotNil(cap, @"%@: %@", spelling, error.localizedDescription);
         XCTAssertEqual([cap kind], CSCapKindIdentity,
-                       @"%@ should classify as Identity (canonical form is `cap:`)",
+                       @"%@ should classify as Identity (canonical form is `cap:effect=none`)",
                        spelling);
     }
+
+    CSCapUrn *generic = [CSCapUrn fromString:@"cap:" error:&error];
+    XCTAssertNil(generic);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 
     CSCapUrn *withOp = [CSCapUrn fromString:@"cap:passthrough" error:&error];
     XCTAssertNotNil(withOp);
@@ -1558,7 +1562,7 @@ static NSString* testUrn(NSString *tags) {
     NSError *error = nil;
 
     NSArray *cases = @[
-        @[@"cap:", @"cap:in=media:;out=media:", @(CSCapKindIdentity)],
+        @[@"cap:effect=none", @"cap:in=media:;out=media:;effect=none", @(CSCapKindIdentity)],
         @[@"cap:extract;in=media:pdf;out=media:textable",
           @"cap:extract;in=\"media:pdf\";out=\"media:textable\"",
           @(CSCapKindTransform)],
@@ -1588,6 +1592,81 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
+// TEST654: effect=none preserves runtime media identity
+- (void)test654_effectNonePreservesRuntimeMedia {
+    NSError *error = nil;
+    CSCapUrn *decimate = [CSCapUrn fromString:@"cap:decimate-sequence;effect=none" error:&error];
+    XCTAssertNotNil(decimate, @"%@", error.localizedDescription);
+
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    XCTAssertNotNil(png, @"%@", error.localizedDescription);
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
+    XCTAssertNotNil(pdf, @"%@", error.localizedDescription);
+
+    XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:png error:&error] toString], @"media:image;png");
+    XCTAssertNil(error);
+    XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:pdf error:&error] toString], @"media:pdf");
+    XCTAssertNil(error);
+}
+
+// TEST655: default declared effect uses declared output media
+- (void)test655_effectDeclaredUsesDeclaredOutput {
+    NSError *error = nil;
+    CSCapUrn *resize = [CSCapUrn fromString:@"cap:in=media:image;png;resize;out=media:image;jpeg" error:&error];
+    XCTAssertNotNil(resize, @"%@", error.localizedDescription);
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    XCTAssertNotNil(png, @"%@", error.localizedDescription);
+
+    CSMediaUrn *result = [resize inferRuntimeOutputMedia:png error:&error];
+    XCTAssertNotNil(result, @"%@", error.localizedDescription);
+    XCTAssertEqualObjects([result toString], @"media:image;jpeg");
+
+    error = nil;
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
+    XCTAssertNotNil(pdf, @"%@", error.localizedDescription);
+    XCTAssertNil([resize inferRuntimeOutputMedia:pdf error:&error]);
+    XCTAssertNotNil(error);
+}
+
+// TEST655 variant: patch effect applies the declared media delta to runtime input
+- (void)test655_effectPatchAppliesMediaDelta {
+    NSError *error = nil;
+    CSCapUrn *patch = [CSCapUrn fromString:@"cap:in=media:image;png;effect=patch;resize;out=media:image;jpeg" error:&error];
+    XCTAssertNotNil(patch, @"%@", error.localizedDescription);
+    CSMediaUrn *runtime = [CSMediaUrn fromString:@"media:image;png;thumbnail" error:&error];
+    XCTAssertNotNil(runtime, @"%@", error.localizedDescription);
+
+    CSMediaUrn *result = [patch inferRuntimeOutputMedia:runtime error:&error];
+    XCTAssertNotNil(result, @"%@", error.localizedDescription);
+    XCTAssertEqualObjects([result toString], @"media:image;jpeg;thumbnail");
+}
+
+// TEST656: invalid effect=none declarations fail hard
+- (void)test656_invalidEffectNoneFailsHard {
+    NSError *error = nil;
+    CSCapUrn *invalid = [CSCapUrn fromString:@"cap:in=media:pdf;out=media:textable;effect=none" error:&error];
+    XCTAssertNil(invalid);
+    XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
+}
+
+// TEST657: omitted effect means declared; ?effect must be explicit
+- (void)test657_effectDispatchRequiresExplicitWildcard {
+    NSError *error = nil;
+    CSCapUrn *declaredProvider = [CSCapUrn fromString:@"cap:thumbnail" error:&error];
+    XCTAssertNotNil(declaredProvider, @"%@", error.localizedDescription);
+    XCTAssertEqual([declaredProvider effect], CSCapEffectDeclared);
+
+    CSCapUrn *noneProvider = [CSCapUrn fromString:@"cap:effect=none" error:&error];
+    XCTAssertNotNil(noneProvider, @"%@", error.localizedDescription);
+
+    CSCapUrn *explicitAnyRequest = [CSCapUrn fromString:@"cap:?effect" error:&error];
+    XCTAssertNotNil(explicitAnyRequest, @"%@", error.localizedDescription);
+
+    XCTAssertTrue([declaredProvider isDispatchable:explicitAnyRequest]);
+    XCTAssertTrue([noneProvider isDispatchable:explicitAnyRequest]);
+    XCTAssertFalse([noneProvider isDispatchable:declaredProvider]);
+}
+
 #pragma mark - Truth-table specificity tests (test1820–test1824)
 //
 // Mirrored across every language port (Rust, Go, Python, Swift/ObjC,
@@ -1605,7 +1684,7 @@ static NSString* testUrn(NSString *tags) {
 - (void)test1820_specificity_question_is_zero {
     NSError *error = nil;
 
-    CSCapUrn *bare = [CSCapUrn fromString:@"cap:" error:&error];
+    CSCapUrn *bare = [CSCapUrn fromString:@"cap:?effect" error:&error];
     XCTAssertNotNil(bare);
     XCTAssertEqual([bare specificity], 0u);
 
@@ -1765,8 +1844,8 @@ static NSString* testUrn(NSString *tags) {
         for (NSUInteger j = 0; j < forms.count; j++) {
             NSString *instForm = forms[i];
             NSString *pattForm = forms[j];
-            NSString *instStr = instForm.length == 0 ? @"cap:" : [@"cap:" stringByAppendingString:instForm];
-            NSString *pattStr = pattForm.length == 0 ? @"cap:" : [@"cap:" stringByAppendingString:pattForm];
+            NSString *instStr = instForm.length == 0 ? @"cap:base" : [@"cap:base;" stringByAppendingString:instForm];
+            NSString *pattStr = pattForm.length == 0 ? @"cap:base" : [@"cap:base;" stringByAppendingString:pattForm];
             CSCapUrn *inst = [CSCapUrn fromString:instStr error:&error];
             CSCapUrn *patt = [CSCapUrn fromString:pattStr error:&error];
             XCTAssertNotNil(inst);

@@ -2,12 +2,13 @@
 //  CSCapUrn.h
 //  Flat Tag-Based Cap Identifier System with Required Direction
 //
-//  This provides a flat, tag-based cap URN system with required direction (in→out),
+//  This provides a flat, tag-based cap URN system with structural direction (in→out),
 //  pattern matching, and graded specificity comparison.
 //
-//  Direction is REQUIRED:
-//  - inSpec: The input media URN (must start with "media:" or be "*")
-//  - outSpec: The output media URN (must start with "media:" or be "*")
+//  Structural coordinates:
+//  - inSpec: input media URN (defaults to "media:")
+//  - outSpec: output media URN (defaults to "media:")
+//  - effect: runtime media relation ("declared" by default)
 //
 //  Special pattern values (from tagged-urn):
 //    K=v  - Must have key K with exact value v
@@ -24,9 +25,10 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class CSTaggedUrn;
+@class CSMediaUrn;
 
-/// Functional category of a cap, derived from all three axes
-/// (`in`, `out`, and the remaining tags). The classification is
+/// Functional category of a cap, derived from all four structural axes
+/// (`in`, `out`, `effect`, and the remaining tags). The classification is
 /// **logical** — the dispatch protocol does not branch on `CSCapKind`.
 /// Exposed so tools, UIs, planners, and tests can reason about a
 /// cap's role without re-deriving the rules.
@@ -35,22 +37,28 @@ NS_ASSUME_NONNULL_BEGIN
 /// `media:` is the **top type** (universal wildcard). With those
 /// anchors the five kinds fall out:
 ///
-///   Identity    in=media:, out=media:, no other tags  →  A → A
-///   Source      in=media:void, out!=void              →  () → B
-///   Sink        in!=void, out=media:void              →  A → ()
-///   Effect      in=media:void, out=media:void         →  () → ()
-///   Transform   anything else
+///   Identity   in=media:, out=media:, effect=none, no other tags →  A → A
+///   Source     in=media:void, out!=void              →  () → B
+///   Sink       in!=void, out=media:void              →  A → ()
+///   Effect     in=media:void, out=media:void         →  () → ()
+///   Transform  anything else
 ///
-/// Identity is the **fully generic** cap on every axis: input wide
-/// open, output wide open, no operation/metadata tags. Adding any
-/// tag specifies something on the third axis and demotes the
-/// morphism to a Transform whose in/out happen to be the wildcards.
+/// Identity is the explicit `effect=none` cap on every axis: input wide
+/// open, output wide open, no operation/metadata tags, and no runtime
+/// media/type change.
 typedef NS_ENUM(NSInteger, CSCapKind) {
     CSCapKindIdentity,
     CSCapKindSource,
     CSCapKindSink,
     CSCapKindEffect,
     CSCapKindTransform,
+};
+
+typedef NS_ENUM(NSInteger, CSCapEffect) {
+    CSCapEffectDeclared,
+    CSCapEffectNone,
+    CSCapEffectPatch,
+    CSCapEffectAny,
 };
 
 /// Stable wire/log/UI label for a CSCapKind value (snake_case to
@@ -65,11 +73,11 @@ static const NSUInteger CSCapUrnWeightOut = 10000;
 static const NSUInteger CSCapUrnWeightIn  = 100;
 
 /**
- * A cap URN with required direction (in→out) and optional tags
+ * A cap URN with direction (in→out), effect, and optional tags
  *
- * Direction is integral to a cap's identity. Every cap MUST specify:
- * - inSpec: What type of input it accepts (use "media:void" for no input)
- * - outSpec: What type of output it produces
+ * Direction and effect are integral to a cap's identity.
+ * Omitted `in` and `out` default to `media:`.
+ * Omitted `effect` defaults to `declared`.
  *
  * The 'in' and 'out' values must be either:
  * - A valid media URN starting with "media:" (e.g., "media:string")
@@ -88,13 +96,17 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 /// The output media URN (required) - e.g., "media:object", "media:binary", or "*"
 @property (nonatomic, readonly) NSString *outSpec;
 
+/// The effect coordinate. Omitted `effect` defaults to `declared`.
+@property (nonatomic, readonly) NSString *effectSpec;
+
 /// Other tags that define this cap (excludes in/out)
 @property (nonatomic, readonly) NSDictionary<NSString *, NSString *> *tags;
 
 /**
  * Create a cap URN from a string
  * Format: cap:in="<media-urn>";out="<media-urn>";key1=value1;...
- * IMPORTANT: 'in' and 'out' tags are REQUIRED and must be valid media URNs.
+ * `in` and `out` may be omitted; they default to `media:`.
+ * `effect` may be omitted; it defaults to `declared`.
  *
  * Uses CSTaggedUrn for parsing to ensure consistency with tagged-urn library.
  *
@@ -106,7 +118,8 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 
 /**
  * Create a cap URN from tags
- * Extracts 'in' and 'out' from tags (required), stores rest as regular tags
+ * Extracts `in`, `out`, and `effect` from tags, defaulting omitted
+ * structural coordinates to `media:`, `media:`, and `declared`.
  *
  * @param tags Dictionary containing all tags including 'in' and 'out'
  * @param error Error if tags are invalid or in/out missing
@@ -127,10 +140,22 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (NSString *)getOutSpec;
 
 /**
- * Functional category of this cap, derived from all three axes:
- * `in`, `out`, and the rest of the tags. See CSCapKind doc for the
- * full taxonomy. Identity requires every axis to be in its most
- * generic form.
+ * Get the effect coordinate string.
+ * @return The canonical effect coordinate (`declared`, `none`, `patch`, or `?`)
+ */
+- (NSString *)getEffectSpec;
+
+/**
+ * Get the parsed effect coordinate.
+ * @return The parsed effect enum
+ */
+- (CSCapEffect)effect;
+
+/**
+ * Functional category of this cap, derived from all four structural axes:
+ * `in`, `out`, `effect`, and the rest of the tags. See CSCapKind doc for the
+ * full taxonomy. Identity requires top/top, explicit `effect=none`, and no
+ * extra tags.
  *
  * Aborts (NSAssert) if either side is not a valid media URN — that
  * only happens on internally inconsistent state since CSCapUrn
@@ -141,7 +166,7 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 /**
  * Get the value of a specific tag
  * Key is normalized to lowercase for lookup
- * Returns inSpec for "in" key, outSpec for "out" key
+ * Returns inSpec for "in" key, outSpec for "out" key, effectSpec for "effect" key
  *
  * @param key The tag key
  * @return The tag value or nil if not found
@@ -173,9 +198,24 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)hasMarkerTag:(NSString * _Nonnull)tagName;
 
 /**
- * Create a new cap URN with an added or updated tag
- * NOTE: For "in" or "out" keys, silently returns self unchanged.
- *       Use withInSpec: or withOutSpec: to change direction.
+ * Infer the runtime output media for this cap from a concrete runtime input.
+ *
+ * `effect=declared` returns the declared output media.
+ * `effect=none` returns the runtime input unchanged.
+ * `effect=patch` applies the declared `(out - in)` coordinate delta to the
+ * runtime input.
+ *
+ * @param runtimeInput The concrete runtime input media URN
+ * @param error Error if the effect declaration is invalid or cannot be applied
+ * @return The inferred runtime output media or nil on error
+ */
+- (nullable CSMediaUrn *)inferRuntimeOutputMedia:(CSMediaUrn * _Nonnull)runtimeInput error:(NSError * _Nullable * _Nullable)error;
+
+/**
+ * Create a new cap URN with an added or updated non-structural tag.
+ * Reserved structural keys (`in`, `out`, `effect`) are illegal here and raise
+ * `NSInvalidArgumentException`. Use withInSpec:, withOutSpec:, or withEffect:
+ * to change structural coordinates.
  *
  * @param key The tag key
  * @param value The tag value
@@ -198,9 +238,9 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (CSCapUrn * _Nonnull)withOutSpec:(NSString * _Nonnull)outSpec;
 
 /**
- * Create a new cap URN with a tag removed
- * NOTE: For "in" or "out" keys, silently returns self unchanged.
- *       Direction tags cannot be removed.
+ * Create a new cap URN with a non-structural tag removed.
+ * Reserved structural keys (`in`, `out`, `effect`) are illegal here and raise
+ * `NSInvalidArgumentException`. Structural coordinates cannot be removed.
  *
  * @param key The tag key to remove
  * @return A new CSCapUrn instance with the tag removed
@@ -213,12 +253,12 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  * Direction matching:
  *   Input:  request's inSpec (instance) must conformTo cap's inSpec (pattern)
  *   Output: cap's outSpec (instance) must conformTo request's outSpec (pattern)
+ *   Effect: exact match unless the cap's effect is explicit unconstrained (`?effect`)
  *
  * Tag matching:
- *   Cap missing tag = implicit wildcard (accepts any value)
- *   Cap has wildcard = accepts any value
- *   Request has wildcard = any cap value matches
- *   Otherwise exact value match required
+ *   Per-key matching uses the tagged-URN six-form truth table
+ *   (`K=v`, `K=*`, `K=!`, `K=?`, missing, qualified exact-value forms)
+ *   over the union of keys present on either side.
  *
  * @param request The request cap to check against
  * @return YES if this cap accepts the request
@@ -247,7 +287,8 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  * 2. Output axis (covariant): provider meets request's output needs
  *    - Provider output must satisfy request's output requirement
  *    - provider.outSpec conforms to request.outSpec
- * 3. Cap-tags: provider satisfies all explicit request tag constraints
+ * 3. Effect axis: exact match unless the request explicitly uses `?effect`
+ * 4. Cap-tags: provider satisfies all explicit request tag constraints
  *    - Provider missing a tag that request specifies → reject (even if request tag is wildcard)
  *
  * @param request The request cap to check dispatchability against
@@ -304,11 +345,19 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  * Create a new cap with a specific tag set to wildcard
  * For "in" key, uses withInSpec:@"*"
  * For "out" key, uses withOutSpec:@"*"
+ * For "effect" key, uses withEffect:CSCapEffectAny
  *
  * @param key The tag key to set to wildcard
  * @return A new CSCapUrn instance with the tag set to wildcard
  */
 - (CSCapUrn * _Nonnull)withWildcardTag:(NSString * _Nonnull)key;
+
+/**
+ * Create a new cap URN with a changed effect coordinate.
+ * @param effect The new effect coordinate
+ * @return A new CSCapUrn instance with the changed effect
+ */
+- (CSCapUrn * _Nonnull)withEffect:(CSCapEffect)effect;
 
 /**
  * Create a new cap with only specified tags
@@ -350,12 +399,16 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
     CSCapUrnErrorMissingInSpec = 10,
     CSCapUrnErrorMissingOutSpec = 11,
     CSCapUrnErrorInvalidInSpec = 12,
-    CSCapUrnErrorInvalidOutSpec = 13
+    CSCapUrnErrorInvalidOutSpec = 13,
+    CSCapUrnErrorInvalidEffect = 14,
+    CSCapUrnErrorInvalidEffectApplication = 15,
+    CSCapUrnErrorIllegalDeclaration = 16
 };
 
 /**
- * Builder for creating cap URNs fluently
+ * Builder for creating cap URNs fluently.
  * Both inSpec and outSpec MUST be set before build() succeeds.
+ * Effect defaults to `declared`.
  */
 @interface CSCapUrnBuilder : NSObject
 
@@ -380,8 +433,16 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
 - (CSCapUrnBuilder * _Nonnull)outSpec:(NSString * _Nonnull)spec;
 
 /**
- * Add or update a tag
- * NOTE: For "in" or "out" keys, silently ignores. Use inSpec: or outSpec: instead.
+ * Set the effect coordinate.
+ * @param effect The effect coordinate
+ * @return This builder instance for chaining
+ */
+- (CSCapUrnBuilder * _Nonnull)effect:(CSCapEffect)effect;
+
+/**
+ * Add or update a non-structural tag.
+ * Reserved structural keys (`in`, `out`, `effect`) are illegal here and raise
+ * `NSInvalidArgumentException`. Use inSpec:, outSpec:, or effect: instead.
  *
  * @param key The tag key
  * @param value The tag value
@@ -392,9 +453,9 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
 /**
  * Add a marker tag (a wildcard-valued tag that serializes as just the key).
  * Equivalent to `[self tag:key value:@"*"]` but expresses authorial intent:
- * this tag is present as a marker, not a key=value pair. Attempts to use
- * `in` or `out` as a marker key are silently ignored — direction specs
- * are set via `inSpec:` / `outSpec:`.
+ * this tag is present as a marker, not a key=value pair. Structural
+ * coordinates (`in`, `out`, `effect`) are illegal as marker keys and raise
+ * `NSInvalidArgumentException`.
  * @param key The marker key
  * @return This builder instance for chaining
  */

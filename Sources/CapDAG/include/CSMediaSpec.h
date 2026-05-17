@@ -158,7 +158,7 @@ FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;rec
 
 /// Standard echo capability URN
 /// Accepts any media type as input and outputs any media type
-FOUNDATION_EXPORT NSString * const CSCapIdentity;           // cap:in=media:;out=media:
+FOUNDATION_EXPORT NSString * const CSCapIdentity;           // cap:effect=none
 
 /// Fabric registry lookup caps. Implemented by fetchcartridge.
 /// `CSCapLookupCapFabric` resolves a canonical cap URN to its full

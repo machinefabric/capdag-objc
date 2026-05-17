@@ -13,9 +13,9 @@
  * Identity capability — the categorical identity morphism.
  * MANDATORY in every capset.
  * Accepts any media type as input and outputs the same media type.
- * Bare "cap:" expands to "cap:in=media:;out=media:" via wildcard expansion.
+ * Canonical URN: cap:effect=none
  */
-NSString * const CSCapIdentity = @"cap:";
+NSString * const CSCapIdentity = @"cap:effect=none";
 
 /**
  * Discard capability — the terminal morphism.

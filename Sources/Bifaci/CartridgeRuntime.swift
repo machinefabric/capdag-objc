@@ -2312,7 +2312,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // Cartridges MUST explicitly declare all caps they provide - no fallbacks
         if let parsed = self.parsedManifest {
             // Check using URN conformance, not string equality
-            // CAP_IDENTITY ("cap:") can be declared as "cap:" or "cap:in=media:;out=media:"
+            // CAP_IDENTITY is explicit `cap:effect=none`
             var hasIdentity = false
             if let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) {
                 hasIdentity = parsed.allCaps().contains { cap in
@@ -2343,7 +2343,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// Auto-register standard capability handlers.
     /// Called during initialization to provide mandatory and optional standard caps.
     private func autoRegisterStandardCaps() {
-        // CAP_IDENTITY: "cap:in=media:;out=media:" (mandatory)
+        // CAP_IDENTITY: "cap:effect=none" (mandatory)
         if findHandler(capUrn: CSCapIdentity) == nil {
             register_op_type(capUrn: CSCapIdentity, make: IdentityOp.init)
         }

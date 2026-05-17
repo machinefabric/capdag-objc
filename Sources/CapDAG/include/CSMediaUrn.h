@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 
 @class CSTaggedUrn;
+@class CSTaggedUrnCoordinateDelta;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -80,6 +81,12 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Returns NO if both directions fail.
 /// Mirrors Rust: pub fn is_comparable(&self, other: &MediaUrn) -> Result<bool, MediaUrnError>
 - (BOOL)isComparableTo:(CSMediaUrn *)other;
+
+/// Compute the directional coordinate delta from `base` to `self`.
+- (nullable CSTaggedUrnCoordinateDelta *)deltaFrom:(CSMediaUrn *)base error:(NSError **)error;
+
+/// Apply a coordinate delta to this media URN.
+- (nullable CSMediaUrn *)applyDelta:(CSTaggedUrnCoordinateDelta *)delta error:(NSError **)error;
 
 // MARK: - Builders (mirror Rust MediaUrn builders)
 

@@ -15,7 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
  * Identity capability — the categorical identity morphism.
  * MANDATORY in every capset.
  * Accepts any media type as input and outputs the same media type.
- * URN: cap:in=media:;out=media:
+ * URN: cap:effect=none
  */
 extern NSString * const CSCapIdentity;
 

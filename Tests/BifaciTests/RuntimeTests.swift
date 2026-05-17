@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -47,7 +47,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func makeManifest(name: String, caps: [String]) -> Data {
         // Always include CAP_IDENTITY as first cap (mandatory)
-        var allCaps = ["{\"urn\":\"cap:in=media:;out=media:\",\"title\":\"Identity\",\"command\":\"identity\"}"]
+        var allCaps = ["{\"urn\":\"cap:effect=none\",\"title\":\"Identity\",\"command\":\"identity\"}"]
         // Add user caps as proper cap objects with full direction specs
         for cap in caps {
             let capWithDirs = cap.contains("in=") ? cap : "cap:in=media:;\(cap.dropFirst(4));out=media:"
@@ -677,10 +677,10 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     func test293_cartridgeRuntimeHandlerRegistration() throws {
         let runtime = CartridgeRuntime(manifest: CborRuntimeTests.testManifestData)
 
-        runtime.register_op_type(capUrn: "cap:in=media:;out=media:", make: EchoAllBytesOp.init)
+        runtime.register_op_type(capUrn: CSCapIdentity, make: EchoAllBytesOp.init)
         runtime.register_op_type(capUrn: "cap:transform", make: TransformOp.init)
 
-        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:in=media:;out=media:"), "echo handler must be found")
+        XCTAssertNotNil(runtime.findHandler(capUrn: CSCapIdentity), "echo handler must be found")
         XCTAssertNotNil(runtime.findHandler(capUrn: "cap:transform"), "transform handler must be found")
         XCTAssertNil(runtime.findHandler(capUrn: "cap:unknown"), "unknown handler must be nil")
     }
@@ -1398,7 +1398,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
             // Send cartridge HELLO with manifest
             let manifest = CborRuntimeTests.makeManifest(name: "IdentityTestCartridge", caps: [
-                "cap:in=media:;out=media:",  // Identity cap
+                CSCapIdentity,  // Identity cap
                 "cap:in=media:;test;out=media:"
             ])
             try cartridgeWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
@@ -1448,7 +1448,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(idx, 0, "First cartridge must be index 0")
 
         // Verify cartridge is registered and has caps
-        XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;out=media:"), "Must find identity cap")
+        XCTAssertNotNil(host.findCartridgeForCap(CSCapIdentity), "Must find identity cap")
         XCTAssertNotNil(host.findCartridgeForCap("cap:in=media:;test;out=media:"), "Must find test cap")
 
         try await cartridgeTask.value
@@ -1471,7 +1471,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
             // Send cartridge HELLO with manifest
             let manifest = CborRuntimeTests.makeManifest(name: "BrokenIdentityCartridge", caps: [
-                "cap:in=media:;out=media:"
+                CSCapIdentity
             ])
             try cartridgeWriter.write(CborRuntimeTests.helloWith(manifest: manifest))
 

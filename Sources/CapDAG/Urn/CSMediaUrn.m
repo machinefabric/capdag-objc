@@ -128,6 +128,18 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return NO;
 }
 
+- (nullable CSTaggedUrnCoordinateDelta *)deltaFrom:(CSMediaUrn *)base error:(NSError **)error {
+    return [self.inner deltaFrom:base.inner error:error];
+}
+
+- (nullable CSMediaUrn *)applyDelta:(CSTaggedUrnCoordinateDelta *)delta error:(NSError **)error {
+    CSTaggedUrn *applied = [self.inner applyDelta:delta error:error];
+    if (!applied) {
+        return nil;
+    }
+    return [CSMediaUrn fromTaggedUrn:applied error:error];
+}
+
 // MARK: - Builders
 
 - (CSMediaUrn *)withTag:(NSString *)key value:(NSString *)value {
