@@ -605,6 +605,12 @@ private class ManagedCartridge {
     }
     var running: Bool
     var helloFailed: Bool
+    /// True when this cartridge path disappeared from the latest
+    /// discovery scan. The host retains the slot so any in-flight
+    /// reader / death event captured against the historical
+    /// cartridge index still lands on a valid entry and can drain
+    /// pending routing state deterministically.
+    var isRemoved: Bool
     /// Positive lifecycle phase. Distinct from `attachmentError`:
     /// when `attachmentError != nil` this field is irrelevant
     /// (consumers must check the error first). When
@@ -642,6 +648,7 @@ private class ManagedCartridge {
         self.capGroups = capGroups
         self.running = false
         self.helloFailed = false
+        self.isRemoved = false
         self.lifecycle = lifecycle
         self.pendingHeartbeats = [:]
         self.lastDeathMessage = nil
@@ -659,6 +666,9 @@ private class ManagedCartridge {
     var attachmentError: CartridgeAttachmentError?
 
     func installedCartridgeRecord() -> InstalledCartridgeRecord? {
+        if isRemoved {
+            return nil
+        }
         // Attached cartridges (no on-disk anchor) are pre-connected for
         // in-process / test use — they never hold an attachment error in
         // production. If a caller tags one with an attachment error it's a
@@ -1123,11 +1133,12 @@ public final class CartridgeHost: @unchecked Sendable {
     ///   attachment error.
     /// - **Same path, still failed**: update the attachment-error record with
     ///   the latest classification/message.
-    /// - **Path gone**: kill the process if running and **remove** the
-    ///   cartridge from the host's list entirely. The scan is authoritative
-    ///   about what exists on disk; a cartridge absent from the scan is
-    ///   uninstalled, not "failing attachment", so we drop it rather than
-    ///   report a permanent error.
+    /// - **Path gone**: kill the process if running and tombstone the
+    ///   slot. The scan is authoritative about what exists on disk, so the
+    ///   cartridge stops contributing installed-cartridge records and caps.
+    ///   The slot itself is retained so any in-flight reader / death event
+    ///   keyed by the historical cartridge index still resolves to the same
+    ///   managed cartridge and can drain routing state safely.
     /// - **New path**: append a fresh entry (spawnable or failed-record).
     ///
     /// Matches by **path**, not by cap set — URN strings are not stable across
@@ -1151,13 +1162,17 @@ public final class CartridgeHost: @unchecked Sendable {
         var matchedOutcomeIndices = Set<Int>()
 
         // Walk existing cartridges and reconcile with the new outcomes.
-        // Collect "still present" cartridges; cartridges whose paths are
-        // gone from the scan are dropped entirely (see doc comment).
-        var retained: [ManagedCartridge] = []
-        retained.reserveCapacity(cartridges.count)
+        // Slots are stable for the lifetime of the host: reader /
+        // death events carry cartridge indices captured when the
+        // thread was spawned, so discovery must not renumber the
+        // backing array under them.
         for cartridge in cartridges {
+            if cartridge.path.isEmpty {
+                continue
+            }
             if let outcomeIdx = outcomeByPath[cartridge.path] {
                 matchedOutcomeIndices.insert(outcomeIdx)
+                cartridge.isRemoved = false
                 switch outcomes[outcomeIdx] {
                 case .inProgress(_, _, let lifecycle):
                     // Mid-lifecycle update: cartridge is now in
@@ -1193,10 +1208,11 @@ public final class CartridgeHost: @unchecked Sendable {
                     cartridge.recordAttachmentError(kind: kind, message: message)
                     cartridge.lifecycle = .discovered
                 }
-                retained.append(cartridge)
             } else {
-                // Cartridge path no longer on disk — uninstalled or replaced.
-                // Tear down any running process and drop the entry.
+                // Cartridge path no longer on disk — uninstalled or
+                // replaced. Retain the slot so any in-flight reader /
+                // death event keyed by the historical cartridgeIdx
+                // still resolves to the same ManagedCartridge.
                 cartridge.shutdownReason = .appExit
                 cartridge.killProcess()
                 cartridge.writerLock.lock()
@@ -1205,10 +1221,16 @@ public final class CartridgeHost: @unchecked Sendable {
                 cartridge.writerLock.unlock()
                 cartridge.stdoutHandle = nil
                 cartridge.stderrHandle = nil
-                // Do NOT append to `retained` — this cartridge is gone.
+                cartridge.running = false
+                cartridge.capGroups = []
+                cartridge.attachmentError = nil
+                cartridge.helloFailed = false
+                cartridge.lifecycle = .discovered
+                cartridge.lastDeathMessage = nil
+                cartridge.pendingHeartbeats.removeAll()
+                cartridge.isRemoved = true
             }
         }
-        cartridges = retained
 
         // Append genuinely new outcomes (path not yet tracked by the host).
         for (i, outcome) in outcomes.enumerated() where !matchedOutcomeIndices.contains(i) {
@@ -1244,7 +1266,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // `capUrns` view over its `capGroups` (the source of truth).
         capTable.removeAll()
         for (idx, cartridge) in cartridges.enumerated()
-            where !cartridge.helloFailed && cartridge.lifecycle == .operational
+            where !cartridge.isRemoved && !cartridge.helloFailed && cartridge.lifecycle == .operational
         {
             for cap in cartridge.capUrns {
                 capTable.append((cap, idx))
@@ -2018,6 +2040,15 @@ public final class CartridgeHost: @unchecked Sendable {
     private func handleCartridgeDeath(cartridgeIdx: Int) {
         stateLock.lock()
         let cartridge = cartridges[cartridgeIdx]
+        let alreadyTornDown =
+            !cartridge.running &&
+            cartridge.pid == nil &&
+            cartridge.writer == nil &&
+            cartridge.stderrHandle == nil
+        if alreadyTornDown {
+            stateLock.unlock()
+            return
+        }
         // Capture observer payload before any state mutation: pid is
         // about to be cleared, and the name needs to reflect the
         // process that actually died (path is stable, but cache the
@@ -2188,7 +2219,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // groups. The cartridge's manifest persists past death so
         // on-demand spawn knows which caps to advertise.
         capTable.removeAll { $0.1 == cartridgeIdx }
-        if !cartridge.helloFailed {
+        if !cartridge.isRemoved && !cartridge.helloFailed {
             for cap in cartridge.capUrns {
                 capTable.append((cap, cartridgeIdx))
             }
@@ -2338,7 +2369,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // Match Rust: cartridges that have permanently failed
             // HELLO are not advertised, even if they have a resolvable
             // identity record.
-            if cartridge.helloFailed {
+            if cartridge.isRemoved || cartridge.helloFailed {
                 continue
             }
             guard let base = cartridge.installedCartridgeRecord() else { continue }
