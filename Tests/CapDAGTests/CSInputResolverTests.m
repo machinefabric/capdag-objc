@@ -11,24 +11,24 @@
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 
-/// Build a `CSFabricRegistry` pre-seeded with the media specs the
+/// Build a `CSFabricRegistry` pre-seeded with the media defs the
 /// input-resolver tests reference. The unified registry hydrates
 /// extensions from spec arrival; tests must seed explicitly.
 static CSFabricRegistry *testFabricRegistry(void) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
-    [registry addMediaSpec:@{
+    [registry addMediaDef:@{
         @"urn": @"media:pdf",
         @"media_type": @"application/pdf",
         @"title": @"PDF",
         @"extensions": @[@"pdf"],
     }];
-    [registry addMediaSpec:@{
+    [registry addMediaDef:@{
         @"urn": @"media:txt;textable",
         @"media_type": @"text/plain",
         @"title": @"Text",
         @"extensions": @[@"txt"],
     }];
-    [registry addMediaSpec:@{
+    [registry addMediaDef:@{
         @"urn": @"media:json;record;textable",
         @"media_type": @"application/json",
         @"title": @"JSON",

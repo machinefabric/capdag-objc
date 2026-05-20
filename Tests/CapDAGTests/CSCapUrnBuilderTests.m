@@ -138,21 +138,12 @@
 }
 
 - (void)testBuilderTagIgnoresInOut {
-    NSError *error;
-    CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
-    [builder inSpec:@"media:void"];
-    [builder outSpec:@"media:record;textable"];
-    // Trying to set in/out via tag should be silently ignored
-    [builder tag:@"in" value:@"different"];
-    [builder tag:@"out" value:@"different"];
-    [builder tag:@"op" value:@"test"];
-    CSCapUrn *cap = [builder build:&error];
-
-    XCTAssertNotNil(cap);
-    XCTAssertNil(error);
-    // Direction should be from inSpec/outSpec, not from tag calls
-    XCTAssertEqualObjects([cap getInSpec], @"media:void");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:record;textable");
+    XCTAssertThrowsSpecificNamed([[[CSCapUrnBuilder builder] tag:@"in" value:@"different"] build:nil],
+                                 NSException,
+                                 NSInvalidArgumentException);
+    XCTAssertThrowsSpecificNamed([[[CSCapUrnBuilder builder] tag:@"out" value:@"different"] build:nil],
+                                 NSException,
+                                 NSInvalidArgumentException);
 }
 
 - (void)testBuilderMinimalValid {

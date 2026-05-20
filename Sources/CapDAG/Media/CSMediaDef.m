@@ -1,16 +1,16 @@
 //
-//  CSMediaSpec.m
-//  MediaSpec parsing and handling
+//  CSMediaDef.m
+//  MediaDef parsing and handling
 //
 
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 #import "CSCapUrn.h"
 #import "CSCap.h"
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 @import TaggedUrn;
 
-NSErrorDomain const CSMediaSpecErrorDomain = @"CSMediaSpecErrorDomain";
+NSErrorDomain const CSMediaDefErrorDomain = @"CSMediaDefErrorDomain";
 
 // ============================================================================
 // BUILT-IN MEDIA URN CONSTANTS
@@ -114,12 +114,12 @@ NSString * const CSMediaAdapterSelection = @"media:adapter-selection;json;record
 NSString * const CSMediaCapUrn = @"media:cap-urn;textable";
 NSString * const CSMediaMediaUrn = @"media:media-urn;textable";
 NSString * const CSMediaCapDefinition = @"media:cap-definition;json;record;textable";
-NSString * const CSMediaMediaSpecDefinition = @"media:media-spec-definition;json;record;textable";
+NSString * const CSMediaMediaDefinition = @"media:media-definition;json;record;textable";
 // Fabric lookup caps (implemented by fetchcartridge)
 NSString * const CSCapLookupCapFabric =
     @"cap:in=\"media:cap-urn;textable\";fabric;lookup-cap;out=\"media:cap-definition;json;record;textable\"";
-NSString * const CSCapLookupMediaSpecFabric =
-    @"cap:in=\"media:media-urn;textable\";fabric;lookup-media-spec;out=\"media:media-spec-definition;json;record;textable\"";
+NSString * const CSCapLookupMediaDefFabric =
+    @"cap:in=\"media:media-urn;textable\";fabric;lookup-media-def;out=\"media:media-definition;json;record;textable\"";
 // Format-specific variants for JSON, YAML, CSV
 NSString * const CSMediaJsonValue = @"media:json;textable";
 NSString * const CSMediaJsonRecord = @"media:json;record;textable";
@@ -177,10 +177,10 @@ NSString *CSGetProfileURL(NSString *profileName) {
 // ============================================================================
 
 // ============================================================================
-// MEDIA SPEC IMPLEMENTATION
+// MEDIA DEFINITION IMPLEMENTATION
 // ============================================================================
 
-@interface CSMediaSpec ()
+@interface CSMediaDef ()
 @property (nonatomic, readwrite) NSString *contentType;
 @property (nonatomic, readwrite, nullable) NSString *profile;
 @property (nonatomic, readwrite, nullable) NSDictionary *schema;
@@ -201,7 +201,7 @@ static BOOL CSMediaUrnHasTag(NSString *mediaUrn, NSString *tagName) {
     CSTaggedUrn *parsed = [CSTaggedUrn fromString:mediaUrn error:&error];
     if (parsed == nil || error != nil) {
         [NSException raise:NSInvalidArgumentException
-                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaSpec was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
+                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
     }
     return [parsed getTag:tagName] != nil;
 }
@@ -214,7 +214,7 @@ static BOOL CSMediaUrnHasMarkerTag(NSString *mediaUrn, NSString *tagName) {
     CSTaggedUrn *parsed = [CSTaggedUrn fromString:mediaUrn error:&error];
     if (parsed == nil || error != nil) {
         [NSException raise:NSInvalidArgumentException
-                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaSpec was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
+                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
     }
     NSString *value = [parsed getTag:tagName];
     return value != nil && [value isEqualToString:@"*"];
@@ -303,7 +303,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
     return CSMediaUrnHasMarkerTag(mediaUrn, @"model-spec");
 }
 
-@implementation CSMediaSpec
+@implementation CSMediaDef
 
 + (instancetype)withContentType:(NSString *)contentType
                         profile:(nullable NSString *)profile
@@ -337,7 +337,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
                      validation:(nullable CSMediaValidation *)validation
                        metadata:(nullable NSDictionary *)metadata
                      extensions:(NSArray<NSString *> *)extensions {
-    CSMediaSpec *spec = [[CSMediaSpec alloc] init];
+    CSMediaDef *spec = [[CSMediaDef alloc] init];
     spec.contentType = contentType;
     spec.profile = profile;
     spec.schema = schema;
@@ -413,24 +413,24 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
 // MEDIA URN RESOLUTION
 // ============================================================================
 
-CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
+CSMediaDef * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
                                           CSFabricRegistry *registry,
                                           NSError * _Nullable * _Nullable error) {
     if (!registry) {
         if (error) {
-            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+            *error = [NSError errorWithDomain:CSMediaDefErrorDomain
+                                         code:CSMediaDefErrorUnresolvableMediaUrn
                                      userInfo:@{NSLocalizedDescriptionKey:
                                                     [NSString stringWithFormat:@"Cannot resolve media URN '%@': no registry provided", mediaUrn]}];
         }
         return nil;
     }
 
-    NSDictionary *def = [registry getCachedMediaSpec:mediaUrn];
+    NSDictionary *def = [registry getCachedMediaDef:mediaUrn];
     if (!def) {
         if (error) {
-            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+            *error = [NSError errorWithDomain:CSMediaDefErrorDomain
+                                         code:CSMediaDefErrorUnresolvableMediaUrn
                                      userInfo:@{NSLocalizedDescriptionKey:
                                                     [NSString stringWithFormat:@"Cannot resolve media URN '%@': not in registry cache", mediaUrn]}];
         }
@@ -470,15 +470,15 @@ CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
 
     if (!mediaType) {
         if (error) {
-            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+            *error = [NSError errorWithDomain:CSMediaDefErrorDomain
+                                         code:CSMediaDefErrorUnresolvableMediaUrn
                                      userInfo:@{NSLocalizedDescriptionKey:
                                                     [NSString stringWithFormat:@"Media URN '%@' has invalid spec: missing media_type", mediaUrn]}];
         }
         return nil;
     }
 
-    CSMediaSpec *spec = [CSMediaSpec withContentType:mediaType
+    CSMediaDef *spec = [CSMediaDef withContentType:mediaType
                                               profile:profileUri
                                                schema:schema
                                                 title:title
@@ -495,7 +495,7 @@ CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
 // CAP URN EXTENSION
 // ============================================================================
 
-@implementation CSMediaSpec (CapUrn)
+@implementation CSMediaDef (CapUrn)
 
 + (nullable instancetype)fromCapUrn:(CSCapUrn *)capUrn
                            registry:(CSFabricRegistry *)registry
@@ -504,8 +504,8 @@ CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
 
     if (!mediaUrn) {
         if (error) {
-            *error = [NSError errorWithDomain:CSMediaSpecErrorDomain
-                                         code:CSMediaSpecErrorUnresolvableMediaUrn
+            *error = [NSError errorWithDomain:CSMediaDefErrorDomain
+                                         code:CSMediaDefErrorUnresolvableMediaUrn
                                      userInfo:@{NSLocalizedDescriptionKey: @"no 'out' media URN found in cap URN"}];
         }
         return nil;

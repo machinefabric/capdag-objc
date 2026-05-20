@@ -280,7 +280,7 @@ NSArray<NSString *> * _Nullable CSInputResolverExpandGlob(NSString *pattern, NSE
 // Extension-based detection helper (sync, for preliminary UI queries).
 // Consults the supplied registry's in-memory extension index — no
 // hardcoded fallback. The registry hydrates on demand through cap and
-// media-spec fetch, so callers must seed it (or wait for fetches to
+// media-def fetch, so callers must seed it (or wait for fetches to
 // land) before extension lookups will yield specific URNs.
 static NSString * _Nullable _detectMediaUrnByExtension(NSString *path,
                                                        CSContentStructure *structure,

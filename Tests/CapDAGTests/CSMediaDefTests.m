@@ -1,29 +1,29 @@
 //
-//  CSMediaSpecTests.m
-//  Tests for CSMediaSpec metadata propagation
+//  CSMediaDefTests.m
+//  Tests for CSMediaDef metadata propagation
 //
 
 #import <XCTest/XCTest.h>
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 #import "CSFabricRegistry.h"
 
-@interface CSMediaSpecTests : XCTestCase
+@interface CSMediaDefTests : XCTestCase
 @end
 
 static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     for (NSDictionary *spec in specs) {
-        [registry addMediaSpec:spec];
+        [registry addMediaDef:spec];
     }
     return registry;
 }
 
 
-@implementation CSMediaSpecTests
+@implementation CSMediaDefTests
 
 - (void)testMetadataPropagationFromObjectDef {
-    // Create a media spec definition with metadata
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Create a media definition with metadata
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:custom-setting",
             @"media_type": @"text/plain",
@@ -40,7 +40,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-setting", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:custom-setting", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -52,8 +52,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 }
 
 - (void)testMetadataNilByDefault {
-    // Media specs without metadata field should have nil metadata
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Media defs without metadata field should have nil metadata
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": CSMediaString,
             @"media_type": @"text/plain",
@@ -62,7 +62,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(CSMediaString, registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(CSMediaString, registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -71,7 +71,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 - (void)testMetadataWithValidation {
     // Ensure metadata and validation can coexist
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:bounded-number;numeric",
             @"media_type": @"text/plain",
@@ -89,7 +89,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:bounded-number;numeric", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:bounded-number;numeric", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -108,18 +108,18 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 - (void)testResolveMediaUrnNotFound {
     // Should fail hard for unknown media URNs
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:unknown;type", registryWithSpecs(@[]), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:unknown;type", registryWithSpecs(@[]), &error);
 
     XCTAssertNotNil(error, @"Should have error for unknown media URN");
     XCTAssertNil(resolved, @"Should not resolve unknown media URN");
-    XCTAssertEqual(error.code, CSMediaSpecErrorUnresolvableMediaUrn, @"Should be UNRESOLVABLE_MEDIA_URN error");
+    XCTAssertEqual(error.code, CSMediaDefErrorUnresolvableMediaUrn, @"Should be UNRESOLVABLE_MEDIA_URN error");
 }
 
 // Extensions field tests
 
 - (void)testExtensionsPropagationFromObjectDef {
-    // Create a media spec definition with extensions array
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Create a media definition with extensions array
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:pdf",
             @"media_type": @"application/pdf",
@@ -131,7 +131,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:pdf", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:pdf", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -141,8 +141,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 }
 
 - (void)testExtensionsEmptyWhenNotSet {
-    // Media specs without extensions field should have empty array
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Media defs without extensions field should have empty array
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:text;textable",
             @"media_type": @"text/plain",
@@ -151,7 +151,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:text;textable", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:text;textable", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -161,7 +161,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 - (void)testExtensionsWithMetadataAndValidation {
     // Ensure extensions, metadata, and validation can coexist
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:custom-output",
             @"media_type": @"application/json",
@@ -179,7 +179,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-output", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:custom-output", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -192,8 +192,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 }
 
 - (void)testMultipleExtensions {
-    // Test multiple extensions in a media spec
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Test multiple extensions in a media def
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:image;jpeg",
             @"media_type": @"image/jpeg",
@@ -205,7 +205,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:image;jpeg", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:image;jpeg", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -217,16 +217,16 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // Duplicate URN validation tests
 
-// `CSValidateNoMediaSpecDuplicates` was removed when inline cap
-// `media_specs` arrays were dropped. The function validated an
+// `CSValidateNoMediaDefDuplicates` was removed when inline cap
+// `media_defs` arrays were dropped. The function validated an
 // inline-array invariant that no longer arises — caps reference
 // media URNs and the unified `CSFabricRegistry` is the source of
 // truth. The four duplicate-array tests that lived here are
 // intentionally absent.
 
-#pragma mark - ResolvedMediaSpec predicate tests
+#pragma mark - ResolvedMediaDef predicate tests
 
-// TEST099: Test ResolvedMediaSpec is_binary returns true when textable tag is absent
+// TEST099: Test ResolvedMediaDef is_binary returns true when textable tag is absent
 - (void)test099_resolved_is_binary {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:",
@@ -234,14 +234,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"title": @"Binary"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isBinary]);
     XCTAssertFalse([resolved isRecord]);
     XCTAssertFalse([resolved isJSON]);
 }
 
-// TEST100: Test ResolvedMediaSpec is_record returns true when record marker is present
+// TEST100: Test ResolvedMediaDef is_record returns true when record marker is present
 - (void)test100_resolved_is_record {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:record;textable",
@@ -249,7 +249,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"title": @"Object"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:record;textable", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:record;textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isRecord]);
     XCTAssertFalse([resolved isBinary]);
@@ -257,7 +257,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertFalse([resolved isList]);
 }
 
-// TEST101: Test ResolvedMediaSpec is_scalar returns true when list marker is absent
+// TEST101: Test ResolvedMediaDef is_scalar returns true when list marker is absent
 - (void)test101_resolved_is_scalar {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:textable",
@@ -265,14 +265,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"title": @"String"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isScalar]);
     XCTAssertFalse([resolved isRecord]);
     XCTAssertFalse([resolved isList]);
 }
 
-// TEST102: Test ResolvedMediaSpec is_list returns true when list marker is present
+// TEST102: Test ResolvedMediaDef is_list returns true when list marker is present
 - (void)test102_resolved_is_list {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:list;textable",
@@ -280,14 +280,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"title": @"String Array"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:list;textable", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:list;textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isList]);
     XCTAssertFalse([resolved isRecord]);
     XCTAssertFalse([resolved isScalar]);
 }
 
-// TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present
+// TEST103: Test ResolvedMediaDef is_json returns true when json tag is present
 - (void)test103_resolved_is_json {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:json;record;textable",
@@ -295,14 +295,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"title": @"JSON"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:json;record;textable", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:json;record;textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isJSON]);
     XCTAssertTrue([resolved isRecord]);
     XCTAssertFalse([resolved isBinary]);
 }
 
-// TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present
+// TEST104: Test ResolvedMediaDef is_text returns true when textable tag is present
 - (void)test104_resolved_is_text {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:textable",
@@ -310,7 +310,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"title": @"Text"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isText]);
     XCTAssertFalse([resolved isBinary]);
@@ -319,8 +319,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Resolve with local overrides
 
-// TEST091: Test resolving custom media URN from local media_specs takes precedence over registry
-- (void)test091_resolve_custom_media_spec {
+// TEST091: Test resolving custom media URN from local media_defs takes precedence over registry
+- (void)test091_resolve_custom_media_def {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:custom-spec;json",
         @"media_type": @"application/json",
@@ -328,7 +328,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"profile_uri": @"https://example.com/schema"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:custom-spec;json", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:custom-spec;json", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertNil(error);
     XCTAssertEqualObjects(resolved.mediaUrn, @"media:custom-spec;json");
@@ -337,7 +337,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(resolved.schema);
 }
 
-// TEST092: Test resolving custom record media spec with schema from local media_specs
+// TEST092: Test resolving custom record media def with schema from local media_defs
 - (void)test092_resolve_custom_with_schema {
     NSDictionary *schema = @{
         @"type": @"object",
@@ -353,7 +353,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"schema": schema
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:json;output-spec;record", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:json;output-spec;record", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertEqualObjects(resolved.mediaUrn, @"media:json;output-spec;record");
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
@@ -362,7 +362,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.schema[@"type"], @"object");
 }
 
-// TEST094: Test local media_specs definition overrides registry definition for same URN
+// TEST094: Test local media_defs definition overrides registry definition for same URN
 - (void)test094_local_overrides_registry {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:textable",
@@ -371,7 +371,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"profile_uri": @"https://custom.example.com/str"
     }];
     NSError *error = nil;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:textable", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertEqualObjects(resolved.profile, @"https://custom.example.com/str");

@@ -2,10 +2,10 @@
 //  schema_validation_example.m
 //  Example usage of JSON Schema validation with CapDAG
 //
-//  Demonstrates comprehensive schema validation with schemas stored in mediaSpecs,
+//  Demonstrates comprehensive schema validation with schemas stored in mediaDefs,
 //  spec ID resolution, and integration with cap validation system.
 //
-//  Schemas are stored in the mediaSpecs table and resolved via spec IDs.
+//  Schemas are stored in the mediaDefs table and resolved via spec IDs.
 //
 
 #import "CapDAG.h"
@@ -29,7 +29,7 @@
 - (void)demonstrateEmbeddedSchemaValidation {
     NSLog(@"\n=== Embedded Schema Validation Example ===");
 
-    // Create capability with embedded JSON schema in mediaSpecs
+    // Create capability with embedded JSON schema in mediaDefs
     NSDictionary *userSchema = @{
         @"type": @"object",
         @"properties": @{
@@ -60,8 +60,8 @@
         @"additionalProperties": @NO
     };
 
-    // MediaSpecs table with schemas
-    NSDictionary *mediaSpecs = @{
+    // MediaDefs table with schemas
+    NSDictionary *mediaDefs = @{
         @"my:user-data.v1": @{
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/user-data",
@@ -96,7 +96,7 @@
                        description:@"Create a new user with validation"
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:mediaSpecs
+                        mediaDefs:mediaDefs
                               args:@[userArg]
                             output:output
                       metadataJSON:nil];
@@ -113,7 +113,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:userArg withValue:validUser mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:userArg withValue:validUser mediaDefs:mediaDefs error:&error];
 
     if (result) {
         NSLog(@"OK Valid user data passed schema validation");
@@ -142,7 +142,7 @@
     };
 
     error = nil;
-    result = [self.validator validateArgument:userArg withValue:invalidUser mediaSpecs:mediaSpecs error:&error];
+    result = [self.validator validateArgument:userArg withValue:invalidUser mediaDefs:mediaDefs error:&error];
 
     if (!result) {
         NSLog(@"OK Invalid user data correctly failed validation");
@@ -160,7 +160,7 @@
 - (void)demonstrateBuiltinSpecIds {
     NSLog(@"\n=== Built-in Spec ID Validation Example ===");
 
-    // Built-in spec IDs don't need to be declared in mediaSpecs
+    // Built-in spec IDs don't need to be declared in mediaDefs
 
     CSCapArg *textArg = [CSCapArg argWithMediaUrn:CSSpecIdStr
                                           required:YES
@@ -186,19 +186,19 @@
     NSError *error = nil;
 
     // String validation
-    BOOL result = [self.validator validateArgument:textArg withValue:@"hello world" mediaSpecs:@{} error:&error];
+    BOOL result = [self.validator validateArgument:textArg withValue:@"hello world" mediaDefs:@{} error:&error];
     if (result) {
         NSLog(@"OK Built-in str spec validated string");
     }
 
     // Integer validation
-    result = [self.validator validateArgument:countArg withValue:@42 mediaSpecs:@{} error:&error];
+    result = [self.validator validateArgument:countArg withValue:@42 mediaDefs:@{} error:&error];
     if (result) {
         NSLog(@"OK Built-in int spec validated integer");
     }
 
     // Object validation
-    result = [self.validator validateArgument:dataArg withValue:@{@"key": @"value"} mediaSpecs:@{} error:&error];
+    result = [self.validator validateArgument:dataArg withValue:@{@"key": @"value"} mediaDefs:@{} error:&error];
     if (result) {
         NSLog(@"OK Built-in obj spec validated object");
     }
@@ -221,7 +221,7 @@
 - (void)demonstrateOutputValidation {
     NSLog(@"\n=== Output Validation Example ===");
 
-    // Create output with schema in mediaSpecs
+    // Create output with schema in mediaDefs
     NSDictionary *resultsSchema = @{
         @"type": @"array",
         @"items": @{
@@ -239,7 +239,7 @@
         @"minItems": @0
     };
 
-    NSDictionary *mediaSpecs = @{
+    NSDictionary *mediaDefs = @{
         @"my:search-results.v1": @{
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/search-results",
@@ -247,7 +247,7 @@
         }
     };
 
-    CSCapOutput *output = [CSCapOutput outputWithMediaSpec:@"my:search-results.v1"
+    CSCapOutput *output = [CSCapOutput outputWithMediaDef:@"my:search-results.v1"
                                                 validation:nil
                                          outputDescription:@"Search results"];
 
@@ -259,7 +259,7 @@
     ];
 
     NSError *error = nil;
-    BOOL result = [self.validator validateOutput:output withValue:validResults mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateOutput:output withValue:validResults mediaDefs:mediaDefs error:&error];
 
     if (result) {
         NSLog(@"OK Valid output passed schema validation");
@@ -275,7 +275,7 @@
     ];
 
     error = nil;
-    result = [self.validator validateOutput:output withValue:invalidResults mediaSpecs:mediaSpecs error:&error];
+    result = [self.validator validateOutput:output withValue:invalidResults mediaDefs:mediaDefs error:&error];
 
     if (!result) {
         NSLog(@"OK Invalid output correctly failed validation");
@@ -341,7 +341,7 @@
         @"required": @[@"metadata", @"content"]
     };
 
-    NSDictionary *mediaSpecs = @{
+    NSDictionary *mediaDefs = @{
         @"my:document.v1": @{
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/document",
@@ -389,7 +389,7 @@
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:documentArg withValue:validDocument mediaSpecs:mediaSpecs error:&error];
+    BOOL result = [self.validator validateArgument:documentArg withValue:validDocument mediaDefs:mediaDefs error:&error];
 
     if (result) {
         NSLog(@"OK Complex nested document passed schema validation");
@@ -401,7 +401,7 @@
 - (void)demonstratePerformanceConsiderations {
     NSLog(@"\n=== Performance Considerations Example ===");
 
-    // Schema in mediaSpecs
+    // Schema in mediaDefs
     NSDictionary *simpleSchema = @{
         @"type": @"object",
         @"properties": @{
@@ -411,7 +411,7 @@
         @"required": @[@"id", @"value"]
     };
 
-    NSDictionary *mediaSpecs = @{
+    NSDictionary *mediaDefs = @{
         @"my:item.v1": @{
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/item",
@@ -432,7 +432,7 @@
     for (NSInteger i = 0; i < 1000; i++) {
         NSDictionary *testData = @{@"id": [NSString stringWithFormat:@"item_%ld", (long)i], @"value": @(i * 1.5)};
         NSError *error = nil;
-        [self.validator validateArgument:arg withValue:testData mediaSpecs:mediaSpecs error:&error];
+        [self.validator validateArgument:arg withValue:testData mediaDefs:mediaDefs error:&error];
     }
 
     NSTimeInterval duration = [[NSDate date] timeIntervalSinceDate:startTime];

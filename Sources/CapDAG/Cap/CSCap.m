@@ -2,11 +2,11 @@
 //  CSCap.m
 //  Formal cap implementation
 //
-//  NOTE: All type information is conveyed via mediaSpec fields containing spec IDs.
+//  NOTE: All type information is conveyed via mediaDef fields containing spec IDs.
 //
 
 #import "CSCap.h"
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 
 #pragma mark - CSMediaValidation Implementation
 

@@ -4,14 +4,14 @@
 //
 //  NOTE: All ArgumentType/OutputType enums have been removed.
 //  Arguments and outputs now use mediaUrn fields containing media URNs
-//  (e.g., "media:string") that resolve via the mediaSpecs table.
+//  (e.g., "media:string") that resolve via the mediaDefs table.
 //
 
 #import <XCTest/XCTest.h>
 #import "CSCap.h"
 #import "CSCapUrn.h"
 #import "CSCapManifest.h"
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 #import "CSFabricRegistry.h"
 
 @interface CSCapTests : XCTestCase
@@ -21,7 +21,7 @@
 static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     for (NSDictionary *spec in specs) {
-        [registry addMediaSpec:spec];
+        [registry addMediaDef:spec];
     }
     return registry;
 }
@@ -285,7 +285,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"command": @"transform-data",
         @"cap_description": @"Transform JSON data with validation",
         @"metadata": @{@"engine": @"jq", @"performance": @"high"},
-        @"media_specs": @[
+        @"media_defs": @[
             @{
                 @"urn": @"my:output.v1",
                 @"media_type": @"application/json",
@@ -358,14 +358,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 }
 
 - (void)testMediaUrnResolutionThroughRegistry {
-    // Caps no longer carry inline media specs; the unified
+    // Caps no longer carry inline media defs; the unified
     // CSFabricRegistry is the only source. This test seeds three
     // specs into a fresh registry and verifies each resolves through
     // CSResolveMediaUrn, plus that an unseeded URN fails hard.
     NSError *error;
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
 
-    [registry addMediaSpec:@{
+    [registry addMediaDef:@{
         @"urn": @"my:custom-output.v1",
         @"media_type": @"application/json",
         @"profile_uri": @"https://example.com/schema/custom-output",
@@ -377,37 +377,37 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
             @"required": @[@"result"]
         }
     }];
-    [registry addMediaSpec:@{
+    [registry addMediaDef:@{
         @"urn": @"my:text-input.v1",
         @"media_type": @"text/plain",
         @"profile_uri": @"https://example.com/schema/text-input"
     }];
-    [registry addMediaSpec:@{
+    [registry addMediaDef:@{
         @"urn": CSMediaString,
         @"media_type": @"text/plain",
         @"profile_uri": @"https://capdag.com/schema/string"
     }];
 
     // Custom spec
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"my:custom-output.v1", registry, &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"my:custom-output.v1", registry, &error);
     XCTAssertNotNil(resolved, @"Should resolve custom URN through registry: %@", error);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertNotNil(resolved.schema);
 
     // Text spec
-    CSMediaSpec *resolvedText = CSResolveMediaUrn(@"my:text-input.v1", registry, &error);
+    CSMediaDef *resolvedText = CSResolveMediaUrn(@"my:text-input.v1", registry, &error);
     XCTAssertNotNil(resolvedText, @"Should resolve text URN through registry: %@", error);
     XCTAssertEqualObjects(resolvedText.contentType, @"text/plain");
 
     // Standard spec
-    CSMediaSpec *resolvedFromArray = CSResolveMediaUrn(CSMediaString, registry, &error);
+    CSMediaDef *resolvedFromArray = CSResolveMediaUrn(CSMediaString, registry, &error);
     XCTAssertNotNil(resolvedFromArray, @"Should resolve standard URN through registry: %@", error);
     XCTAssertEqualObjects(resolvedFromArray.contentType, @"text/plain");
 
     // Unseeded URN fails hard. Surfacing the failure is the only
     // honest behaviour — fallbacks would hide the real issue.
     error = nil;
-    CSMediaSpec *unknown = CSResolveMediaUrn(@"unknown:spec.v1", registry, &error);
+    CSMediaDef *unknown = CSResolveMediaUrn(@"unknown:spec.v1", registry, &error);
     XCTAssertNil(unknown, @"Unseeded URN should fail to resolve");
     XCTAssertNotNil(error, @"Failure must set an error");
 }
@@ -968,14 +968,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(parsed.documentation, @"Empty string in documentation must collapse to nil");
 }
 
-// Documentation propagates from a mediaSpecs definition through
-// CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the
-// Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on
+// Documentation propagates from a mediaDefs definition through
+// CSResolveMediaUrn into the resolved CSMediaDef. Mirrors TEST924 on the
+// Rust side and testJS_mediaDefDocumentationPropagatesThroughResolve on
 // the JS side.
-- (void)testMediaSpecDocumentationPropagatesThroughResolve {
+- (void)testMediaDefDocumentationPropagatesThroughResolve {
     NSString *body = @"## Markdown body\n\nWith `code` and a [link](https://example.com).";
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"media:doc-test;textable",
             @"media_type": @"text/plain",
@@ -986,9 +986,9 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error;
-    CSMediaSpec *resolved = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(mediaSpecs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(mediaDefs), &error);
     XCTAssertNotNil(resolved, @"Resolution must succeed: %@", error);
-    XCTAssertEqualObjects(resolved.documentation, body, @"documentation must propagate into CSMediaSpec");
+    XCTAssertEqualObjects(resolved.documentation, body, @"documentation must propagate into CSMediaDef");
     // The short description must remain distinct from the long markdown
     // body — they are different fields with different semantics.
     XCTAssertEqualObjects(resolved.descriptionText, @"short desc");
@@ -997,7 +997,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<NSDictionary *> *noDocSpecs = @[
         @{ @"urn": @"media:doc-test;textable", @"media_type": @"text/plain", @"title": @"No Doc" }
     ];
-    CSMediaSpec *noDoc = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(noDocSpecs), &error);
+    CSMediaDef *noDoc = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(noDocSpecs), &error);
     XCTAssertNotNil(noDoc);
     XCTAssertNil(noDoc.documentation, @"Missing documentation must resolve to nil");
 
@@ -1005,7 +1005,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<NSDictionary *> *emptyDocSpecs = @[
         @{ @"urn": @"media:doc-test;textable", @"media_type": @"text/plain", @"title": @"Empty", @"documentation": @"" }
     ];
-    CSMediaSpec *emptyDoc = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(emptyDocSpecs), &error);
+    CSMediaDef *emptyDoc = CSResolveMediaUrn(@"media:doc-test;textable", registryWithSpecs(emptyDocSpecs), &error);
     XCTAssertNotNil(emptyDoc);
     XCTAssertNil(emptyDoc.documentation, @"Empty string in documentation must collapse to nil");
 }

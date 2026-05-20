@@ -4,7 +4,7 @@
 //
 //  Unified Fabric Registry — replaces what used to be a separate
 //  cap registry and media-URN registry. Holds cap definitions and
-//  media specs together with a single HTTP client and one disk
+//  media defs together with a single HTTP client and one disk
 //  cache root (`caps/` and `media/` subdirectories).
 //
 
@@ -47,7 +47,7 @@ NS_ASSUME_NONNULL_BEGIN
  * bare `media:` wildcard is excluded from the recursive fetch.
  *
  * Extension lookups (mediaUrnsForExtension:) consult the in-memory
- * media-spec cache: extensions become known as their owning specs
+ * media-def cache: extensions become known as their owning specs
  * land — there is no compiled-in fallback table.
  */
 @interface CSFabricRegistry : NSObject
@@ -85,24 +85,24 @@ NS_ASSUME_NONNULL_BEGIN
 /// All currently cached caps (snapshot).
 - (NSArray<CSCap *> *)getCachedCaps;
 
-// MARK: Media-spec surface
+// MARK: Media-def surface
 
-/// Get a media spec from the in-memory cache or fetch it.
-- (void)getMediaSpec:(NSString *)urn
+/// Get a media def from the in-memory cache or fetch it.
+- (void)getMediaDef:(NSString *)urn
           completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
 
-/// Synchronous in-memory probe for a cached media spec. Returns nil
+/// Synchronous in-memory probe for a cached media def. Returns nil
 /// when not cached; never touches the network.
-- (nullable NSDictionary *)getCachedMediaSpec:(NSString *)urn;
+- (nullable NSDictionary *)getCachedMediaDef:(NSString *)urn;
 
-/// Insert a media spec directly into the in-memory cache.
+/// Insert a media def directly into the in-memory cache.
 /// Updates the extension index as a side effect. Used for tests and
 /// for hydrating from local sources (e.g. cartridge manifests).
-- (void)addMediaSpec:(NSDictionary *)spec;
+- (void)addMediaDef:(NSDictionary *)spec;
 
 /// All media URNs registered for the given extension. Returns an
 /// empty array when the extension hasn't been seen yet (specs
-/// hydrate on demand through getMediaSpec / getCapWithUrn — there is
+/// hydrate on demand through getMediaDef / getCapWithUrn — there is
 /// no compiled-in fallback). The leading dot is stripped if present;
 /// matching is case-insensitive.
 - (NSArray<NSString *> *)mediaUrnsForExtension:(NSString *)extension;

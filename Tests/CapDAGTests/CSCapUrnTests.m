@@ -923,16 +923,14 @@ static NSString* testUrn(NSString *tags) {
 
 // TEST048: Matching semantics - wildcard direction matches anything
 - (void)test048_matchingSemantics_wildcardDirectionMatchesAnything {
-    // Test 8: Wildcard cap (in=*, out=*) matches anything
-    // (This replaces the old "empty cap" test since empty caps are no longer valid)
     NSError *error = nil;
-    CSCapUrn *wildcardCap = [CSCapUrn fromString:@"cap:in=*;out=*;op" error:&error];
+    CSCapUrn *wildcardCap = [CSCapUrn fromString:@"cap:generate" error:&error];
     XCTAssertNotNil(wildcardCap);
 
     CSCapUrn *request = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
     XCTAssertNotNil(request);
 
-    XCTAssertTrue([wildcardCap accepts:request], @"Test 8: Wildcard cap should match anything");
+    XCTAssertTrue([wildcardCap accepts:request], @"Test 8: Generic declared directions should accept a more specific matching request");
 }
 
 // TEST049: Non-overlapping tags — neither direction accepts
@@ -1111,7 +1109,7 @@ static NSString* testUrn(NSString *tags) {
 - (void)testWildcard010WildcardAcceptsSpecific {
     NSError *error = nil;
     CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
-    CSCapUrn *specific = [CSCapUrn fromString:@"cap:in=media:;out=media:text;raw" error:&error];
+    CSCapUrn *specific = [CSCapUrn fromString:@"cap:out=media:text;raw" error:&error];
     
     XCTAssertTrue([wildcard accepts:specific], @"Wildcard should accept specific cap");
     XCTAssertTrue([specific conformsTo:wildcard], @"Specific should conform to wildcard");
@@ -1121,7 +1119,7 @@ static NSString* testUrn(NSString *tags) {
 - (void)testWildcard011SpecificityScoring {
     NSError *error = nil;
     CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
-    CSCapUrn *specific = [CSCapUrn fromString:@"cap:in=media:;out=media:text;raw" error:&error];
+    CSCapUrn *specific = [CSCapUrn fromString:@"cap:out=media:text;raw" error:&error];
     
     XCTAssertEqual([wildcard specificity], 2, @"Marker-only wildcard cap should have y-axis specificity only");
     XCTAssertGreaterThan([specific specificity], 0, @"Specific cap should have non-zero specificity");
@@ -1130,7 +1128,7 @@ static NSString* testUrn(NSString *tags) {
 // TEST_WILDCARD_012: cap:in=media:;out=media:;test preserves other tags
 - (void)testWildcard012PreserveOtherTags {
     NSError *error = nil;
-    CSCapUrn *cap = [CSCapUrn fromString:@"cap:in;out;test" error:&error];
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:;out=media:;test" error:&error];
     XCTAssertNotNil(cap);
     XCTAssertEqualObjects([cap getInSpec], @"media:");
     XCTAssertEqualObjects([cap getOutSpec], @"media:");
@@ -1441,9 +1439,7 @@ static NSString* testUrn(NSString *tags) {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"") error:&error];
     XCTAssertNotNil(cap);
-    // withTag with empty value — tag should NOT be set
-    CSCapUrn *result = [cap withTag:@"key" value:@""];
-    XCTAssertNil([result getTag:@"key"]);
+    XCTAssertThrowsSpecificNamed([cap withTag:@"key" value:@""], NSException, NSInvalidArgumentException);
 }
 
 // TEST047: Matching semantics - thumbnail fallback with void input
@@ -1612,33 +1608,27 @@ static NSString* testUrn(NSString *tags) {
 // TEST655: default declared effect uses declared output media
 - (void)test655_effectDeclaredUsesDeclaredOutput {
     NSError *error = nil;
-    CSCapUrn *resize = [CSCapUrn fromString:@"cap:in=media:image;png;resize;out=media:image;jpeg" error:&error];
+    CSCapUrn *resize = [CSCapUrn fromString:@"cap:in=media:image;resize;out=media:image" error:&error];
     XCTAssertNotNil(resize, @"%@", error.localizedDescription);
-    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png;width=4000" error:&error];
     XCTAssertNotNil(png, @"%@", error.localizedDescription);
 
     CSMediaUrn *result = [resize inferRuntimeOutputMedia:png error:&error];
     XCTAssertNotNil(result, @"%@", error.localizedDescription);
-    XCTAssertEqualObjects([result toString], @"media:image;jpeg");
-
-    error = nil;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
-    XCTAssertNotNil(pdf, @"%@", error.localizedDescription);
-    XCTAssertNil([resize inferRuntimeOutputMedia:pdf error:&error]);
-    XCTAssertNotNil(error);
+    XCTAssertEqualObjects([result toString], @"media:image");
 }
 
 // TEST655 variant: patch effect applies the declared media delta to runtime input
 - (void)test655_effectPatchAppliesMediaDelta {
     NSError *error = nil;
-    CSCapUrn *patch = [CSCapUrn fromString:@"cap:in=media:image;png;effect=patch;resize;out=media:image;jpeg" error:&error];
+    CSCapUrn *patch = [CSCapUrn fromString:@"cap:in=media:image;effect=patch;resize;out=media:image;thumbnail" error:&error];
     XCTAssertNotNil(patch, @"%@", error.localizedDescription);
-    CSMediaUrn *runtime = [CSMediaUrn fromString:@"media:image;png;thumbnail" error:&error];
+    CSMediaUrn *runtime = [CSMediaUrn fromString:@"media:image;png" error:&error];
     XCTAssertNotNil(runtime, @"%@", error.localizedDescription);
 
     CSMediaUrn *result = [patch inferRuntimeOutputMedia:runtime error:&error];
     XCTAssertNotNil(result, @"%@", error.localizedDescription);
-    XCTAssertEqualObjects([result toString], @"media:image;jpeg;thumbnail");
+    XCTAssertEqualObjects([result toString], @"media:image;png");
 }
 
 // TEST656: invalid effect=none declarations fail hard

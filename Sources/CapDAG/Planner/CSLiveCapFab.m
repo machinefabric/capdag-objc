@@ -436,8 +436,8 @@
         }
 
         CSStrand *path = [[CSStrand alloc] init];
-        path.sourceSpec = [source toString];
-        path.targetSpec = [target toString];
+        path.sourceMediaUrn = [source toString];
+        path.targetMediaUrn = [target toString];
         path.steps = [currentPath copy];
         path.totalSteps = (NSInteger)currentPath.count;
         path.capStepCount = capStepCount;

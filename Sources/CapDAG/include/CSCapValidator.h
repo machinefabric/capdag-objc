@@ -21,10 +21,10 @@ typedef NS_ENUM(NSInteger, CSValidationErrorType) {
     CSValidationErrorTypeUnknownArgument,
     CSValidationErrorTypeInvalidArgumentType,
     CSValidationErrorTypeMediaValidationFailed,
-    CSValidationErrorTypeMediaSpecValidationFailed,
+    CSValidationErrorTypeMediaDefValidationFailed,
     CSValidationErrorTypeInvalidOutputType,
     CSValidationErrorTypeOutputValidationFailed,
-    CSValidationErrorTypeOutputMediaSpecValidationFailed,
+    CSValidationErrorTypeOutputMediaDefValidationFailed,
     CSValidationErrorTypeInvalidCapSchema,
     CSValidationErrorTypeTooManyArguments,
     CSValidationErrorTypeJSONParseError,
@@ -54,7 +54,7 @@ typedef NS_ENUM(NSInteger, CSValidationErrorType) {
                                  argumentName:(NSString *)argumentName
                                validationRule:(NSString *)validationRule
                                   actualValue:(id)actualValue;
-+ (instancetype)mediaSpecValidationFailedError:(NSString *)capUrn
++ (instancetype)mediaDefValidationFailedError:(NSString *)capUrn
                                   argumentName:(NSString *)argumentName
                                       mediaUrn:(NSString *)mediaUrn
                                 validationRule:(NSString *)validationRule
@@ -66,7 +66,7 @@ typedef NS_ENUM(NSInteger, CSValidationErrorType) {
 + (instancetype)outputValidationFailedError:(NSString *)capUrn
                              validationRule:(NSString *)validationRule
                                 actualValue:(id)actualValue;
-+ (instancetype)outputMediaSpecValidationFailedError:(NSString *)capUrn
++ (instancetype)outputMediaDefValidationFailedError:(NSString *)capUrn
                                             mediaUrn:(NSString *)mediaUrn
                                       validationRule:(NSString *)validationRule
                                          actualValue:(id)actualValue;

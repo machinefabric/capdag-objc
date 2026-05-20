@@ -8,7 +8,7 @@
 //    - cachedCaps: in-memory map of normalised cap URN → CSCap.
 //    - cachedSpecs: in-memory map of normalised media URN → spec dict.
 //    - extensionIndex: lowercase extension → array of URNs, populated
-//      as media specs land in cachedSpecs.
+//      as media defs land in cachedSpecs.
 //
 //  Atomic cap fetch: getCapWithUrn: refuses to cache a cap until every
 //  media URN it references has also been successfully fetched. The bare
@@ -133,7 +133,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
         _cacheLock = [[NSLock alloc] init];
 
         [self loadAllCachedCaps];
-        [self loadAllCachedMediaSpecs];
+        [self loadAllCachedMediaDefs];
     }
     return self;
 }
@@ -264,9 +264,9 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     return exists;
 }
 
-// MARK: - Public media-spec surface
+// MARK: - Public media-def surface
 
-- (void)getMediaSpec:(NSString *)urn
+- (void)getMediaDef:(NSString *)urn
           completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion {
     NSString *normalized = [self normalizeMediaUrn:urn];
 
@@ -279,16 +279,16 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
         return;
     }
 
-    [self fetchMediaSpecFromRegistry:urn completion:^(NSDictionary *spec, NSError *error) {
+    [self fetchMediaDefFromRegistry:urn completion:^(NSDictionary *spec, NSError *error) {
         if (spec) {
-            [self saveMediaSpecToCache:spec];
-            [self insertMediaSpecInMemory:spec];
+            [self saveMediaDefToCache:spec];
+            [self insertMediaDefInMemory:spec];
         }
         completion(spec, error);
     }];
 }
 
-- (NSDictionary *)getCachedMediaSpec:(NSString *)urn {
+- (NSDictionary *)getCachedMediaDef:(NSString *)urn {
     NSString *normalized = [self normalizeMediaUrn:urn];
     [self.cacheLock lock];
     NSDictionary *spec = self.cachedSpecs[normalized];
@@ -296,8 +296,8 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     return spec;
 }
 
-- (void)addMediaSpec:(NSDictionary *)spec {
-    [self insertMediaSpecInMemory:spec];
+- (void)addMediaDef:(NSDictionary *)spec {
+    [self insertMediaDefInMemory:spec];
 }
 
 - (NSArray<NSString *> *)mediaUrnsForExtension:(NSString *)extension {
@@ -387,7 +387,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
         }
 
         NSArray<NSString *> *referenced = [self collectReferencedMediaUrnsForCap:cap];
-        [self ensureMediaSpecsCached:referenced
+        [self ensureMediaDefsCached:referenced
                           forCapUrn:urn
                          completion:^(NSError *mediaError) {
             if (mediaError) {
@@ -406,7 +406,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     }];
 }
 
-- (void)ensureMediaSpecsCached:(NSArray<NSString *> *)urns
+- (void)ensureMediaDefsCached:(NSArray<NSString *> *)urns
                      forCapUrn:(NSString *)capUrn
                     completion:(void (^)(NSError * _Nullable error))completion {
     if (urns.count == 0) {
@@ -432,10 +432,10 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
             continue;
         }
 
-        [self fetchMediaSpecFromRegistry:mediaUrn completion:^(NSDictionary *spec, NSError *error) {
+        [self fetchMediaDefFromRegistry:mediaUrn completion:^(NSDictionary *spec, NSError *error) {
             if (spec) {
-                [self saveMediaSpecToCache:spec];
-                [self insertMediaSpecInMemory:spec];
+                [self saveMediaDefToCache:spec];
+                [self insertMediaDefInMemory:spec];
             }
             @synchronized (guard) {
                 if (error && !firstError) {
@@ -460,7 +460,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     }
 }
 
-- (void)insertMediaSpecInMemory:(NSDictionary *)spec {
+- (void)insertMediaDefInMemory:(NSDictionary *)spec {
     NSString *rawUrn = spec[@"urn"];
     if (![rawUrn isKindOfClass:[NSString class]] || rawUrn.length == 0) {
         return;
@@ -513,7 +513,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     }
 }
 
-- (void)saveMediaSpecToCache:(NSDictionary *)spec {
+- (void)saveMediaDefToCache:(NSDictionary *)spec {
     NSString *rawUrn = spec[@"urn"];
     if (![rawUrn isKindOfClass:[NSString class]]) return;
     NSString *cacheFile = [self mediaCacheFilePathForUrn:rawUrn];
@@ -560,7 +560,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     }
 }
 
-- (void)loadAllCachedMediaSpecs {
+- (void)loadAllCachedMediaDefs {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSArray *files = [fm contentsOfDirectoryAtPath:self.mediaCacheDirectory error:nil];
     for (NSString *filename in files) {
@@ -582,7 +582,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
         NSDictionary *spec = json[@"spec"];
         if ([spec isKindOfClass:[NSDictionary class]]) {
-            [self insertMediaSpecInMemory:spec];
+            [self insertMediaDefInMemory:spec];
         }
     }
 }
@@ -630,7 +630,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     [task resume];
 }
 
-- (void)fetchMediaSpecFromRegistry:(NSString *)urn
+- (void)fetchMediaDefFromRegistry:(NSString *)urn
                         completion:(void (^)(NSDictionary *spec, NSError *error))completion {
     NSString *normalized = [self normalizeMediaUrn:urn];
     NSString *digest = [self sha256HexForString:normalized];
@@ -645,7 +645,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
             completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError"
                                                 code:http.statusCode
                                             userInfo:@{NSLocalizedDescriptionKey:
-                                                           [NSString stringWithFormat:@"Media spec '%@' not found in registry (HTTP %ld)",
+                                                           [NSString stringWithFormat:@"Media def '%@' not found in registry (HTTP %ld)",
                                                             urn, (long)http.statusCode]}]);
             return;
         }
@@ -655,7 +655,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
             completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError"
                                                 code:1001
                                             userInfo:@{NSLocalizedDescriptionKey:
-                                                           [NSString stringWithFormat:@"Failed to parse registry response for media spec '%@'", urn]}]);
+                                                           [NSString stringWithFormat:@"Failed to parse registry response for media def '%@'", urn]}]);
             return;
         }
         completion(json, nil);

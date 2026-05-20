@@ -2,11 +2,11 @@
 //  CSResponseWrapper.m
 //  Response wrapper for unified cartridge output handling with validation
 //
-//  NOTE: Validation now uses mediaSpec -> spec ID resolution.
+//  NOTE: Validation now uses mediaDef -> spec ID resolution.
 //
 
 #import "CSResponseWrapper.h"
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 #import "CSFabricRegistry.h"
 
 @interface CSResponseWrapper ()
@@ -89,8 +89,8 @@
 
     // Resolve the mediaUrn to determine expected type
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(output.mediaUrn, registry, &resolveError);
-    if (!mediaSpec) {
+    CSMediaDef *mediaDef = CSResolveMediaUrn(output.mediaUrn, registry, &resolveError);
+    if (!mediaDef) {
         // FAIL HARD on unresolvable spec ID
         if (error) {
             NSString *message = [NSString stringWithFormat:@"Cannot resolve spec ID '%@' for output: %@",
@@ -104,7 +104,7 @@
 
     // For binary outputs, check type compatibility
     if (self.contentType == CSResponseContentTypeBinary) {
-        if (![mediaSpec isBinary]) {
+        if (![mediaDef isBinary]) {
             if (error) {
                 NSString *message = [NSString stringWithFormat:@"Cap %@ expects %@ output but received binary data",
                                    [cap urnString], output.mediaUrn];
@@ -140,8 +140,8 @@
             return NO;
         }
 
-        // If the media spec has a schema, validate against it
-        if (mediaSpec.schema) {
+        // If the media def has a schema, validate against it
+        if (mediaDef.schema) {
             // Schema validation would go here
             // For now, skip detailed schema validation
         }
@@ -179,8 +179,8 @@
 
     // Resolve the mediaUrn - fail hard if resolution fails
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
-    if (!mediaSpec) {
+    CSMediaDef *mediaDef = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
+    if (!mediaDef) {
         if (error) {
             NSString *message = [NSString stringWithFormat:@"Failed to resolve output spec ID '%@' for cap '%@': %@",
                                outputDef.mediaUrn, [cap urnString], resolveError.localizedDescription];
@@ -194,15 +194,15 @@
     switch (self.contentType) {
         case CSResponseContentTypeJson:
             // JSON response matches outputs with record marker (internal key-value structure) or json tag
-            return [mediaSpec isRecord] || [mediaSpec isJSON];
+            return [mediaDef isRecord] || [mediaDef isJSON];
 
         case CSResponseContentTypeText:
             // Text response matches textable outputs that are opaque (no internal structure)
-            return [mediaSpec isText] && [mediaSpec isOpaque];
+            return [mediaDef isText] && [mediaDef isOpaque];
 
         case CSResponseContentTypeBinary:
             // Binary response matches binary outputs
-            return [mediaSpec isBinary];
+            return [mediaDef isBinary];
     }
 }
 

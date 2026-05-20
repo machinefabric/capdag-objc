@@ -63,7 +63,7 @@ typedef NS_ENUM(NSInteger, CSMessageErrorCode) {
 @property (nonatomic, readonly, nullable) NSString *cap;
 
 /// The actual payload data (request args, response data, etc.)
-/// Interpretation depends on messageType and cap's media specs
+/// Interpretation depends on messageType and cap's media defs
 @property (nonatomic, readonly) NSDictionary *payload;
 
 #pragma mark - Factory Methods

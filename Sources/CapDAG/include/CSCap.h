@@ -6,9 +6,9 @@
 //  the cap URN, versioning, and metadata. Caps are general-purpose
 //  and do not assume any specific domain like files or documents.
 //
-//  NOTE: All type information is conveyed via mediaSpec fields that
+//  NOTE: All type information is conveyed via mediaDef fields that
 //  contain spec IDs (e.g., "media:string") which resolve to
-//  Media specs are resolved through CSFabricRegistry, not embedded.
+//  Media defs are resolved through CSFabricRegistry, not embedded.
 //
 
 #import <Foundation/Foundation.h>
@@ -344,16 +344,16 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 @end
 
-@class CSMediaSpec;
+@class CSMediaDef;
 
 #pragma mark - CSCap
 
 /**
  * Formal cap definition.
  *
- * Caps reference media URNs only — media specs themselves are
+ * Caps reference media URNs only — media defs themselves are
  * resolved through the unified `CSFabricRegistry`. Cap definitions
- * never embed media specs.
+ * never embed media defs.
  */
 @interface CSCap : NSObject <NSCopying, NSCoding>
 
@@ -406,7 +406,7 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  * Create a fully specified cap.
  *
  * Caps reference media URNs only; the unified `CSFabricRegistry`
- * resolves them. There is no inline media-specs parameter.
+ * resolves them. There is no inline media-defs parameter.
  */
 + (instancetype)capWithUrn:(CSCapUrn * _Nonnull)capUrn
                      title:(NSString * _Nonnull)title

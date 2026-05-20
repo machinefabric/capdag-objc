@@ -2,13 +2,13 @@
 //  CSCapValidator.m
 //  Cap schema validation for cartridge interactions
 //
-//  NOTE: Type validation now uses mediaSpec -> spec ID resolution.
+//  NOTE: Type validation now uses mediaDef -> spec ID resolution.
 //  The old CSArgumentType and CSOutputType enums have been removed.
 //
 
 #import "CSCapValidator.h"
 #import "CSSchemaValidator.h"
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 #import "CSFabricRegistry.h"
 
 // Error domain
@@ -115,14 +115,14 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                              }];
 }
 
-+ (instancetype)mediaSpecValidationFailedError:(NSString *)capUrn
++ (instancetype)mediaDefValidationFailedError:(NSString *)capUrn
                                   argumentName:(NSString *)argumentName
                                       mediaUrn:(NSString *)mediaUrn
                                 validationRule:(NSString *)validationRule
                                    actualValue:(id)actualValue {
-    NSString *description = [NSString stringWithFormat:@"Cap '%@' argument '%@' failed media spec '%@' validation rule '%@' with value: %@",
+    NSString *description = [NSString stringWithFormat:@"Cap '%@' argument '%@' failed media def '%@' validation rule '%@' with value: %@",
                             capUrn, argumentName, mediaUrn, validationRule, actualValue];
-    return [[self alloc] initWithType:CSValidationErrorTypeMediaSpecValidationFailed
+    return [[self alloc] initWithType:CSValidationErrorTypeMediaDefValidationFailed
                          capUrn:capUrn
                           description:description
                              userInfo:@{
@@ -165,13 +165,13 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                              }];
 }
 
-+ (instancetype)outputMediaSpecValidationFailedError:(NSString *)capUrn
++ (instancetype)outputMediaDefValidationFailedError:(NSString *)capUrn
                                             mediaUrn:(NSString *)mediaUrn
                                       validationRule:(NSString *)validationRule
                                          actualValue:(id)actualValue {
-    NSString *description = [NSString stringWithFormat:@"Cap '%@' output failed media spec '%@' validation rule '%@' with value: %@",
+    NSString *description = [NSString stringWithFormat:@"Cap '%@' output failed media def '%@' validation rule '%@' with value: %@",
                             capUrn, mediaUrn, validationRule, actualValue];
-    return [[self alloc] initWithType:CSValidationErrorTypeOutputMediaSpecValidationFailed
+    return [[self alloc] initWithType:CSValidationErrorTypeOutputMediaDefValidationFailed
                          capUrn:capUrn
                           description:description
                              userInfo:@{
@@ -244,8 +244,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                          cap:(CSCap *)cap
                     registry:(CSFabricRegistry *)registry
                        error:(NSError **)error;
-+ (BOOL)validateMediaSpecRules:(CSCapArg *)argDef
-                     mediaSpec:(CSMediaSpec *)mediaSpec
++ (BOOL)validateMediaDefRules:(CSCapArg *)argDef
+                     mediaDef:(CSMediaDef *)mediaDef
                          value:(id)value
                            cap:(CSCap *)cap
                          error:(NSError **)error;
@@ -325,12 +325,12 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                            cap:(CSCap *)cap
                       registry:(CSFabricRegistry *)registry
                          error:(NSError **)error {
-    // Resolve mediaSpec first - needed for type validation and media spec validation
-    CSMediaSpec *mediaSpec = nil;
+    // Resolve mediaDef first - needed for type validation and media def validation
+    CSMediaDef *mediaDef = nil;
     if (argDef.mediaUrn) {
         NSError *resolveError = nil;
-        mediaSpec = CSResolveMediaUrn(argDef.mediaUrn, registry, &resolveError);
-        if (!mediaSpec) {
+        mediaDef = CSResolveMediaUrn(argDef.mediaUrn, registry, &resolveError);
+        if (!mediaDef) {
             // FAIL HARD on unresolvable spec ID
             if (error) {
                 NSString *capUrn = [cap urnString];
@@ -347,15 +347,15 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         return NO;
     }
 
-    // Media spec validation rules (inherent to the semantic type)
-    if (mediaSpec && mediaSpec.validation) {
-        if (![self validateMediaSpecRules:argDef mediaSpec:mediaSpec value:value cap:cap error:error]) {
+    // Media def validation rules (inherent to the semantic type)
+    if (mediaDef && mediaDef.validation) {
+        if (![self validateMediaDefRules:argDef mediaDef:mediaDef value:value cap:cap error:error]) {
             return NO;
         }
     }
 
     // Schema validation
-    if (mediaSpec && mediaSpec.schema) {
+    if (mediaDef && mediaDef.schema) {
         CSJSONSchemaValidator *schemaValidator = [CSJSONSchemaValidator validator];
         NSError *schemaError = nil;
 
@@ -381,15 +381,15 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     NSString *capUrn = [cap urnString];
     NSString *actualType = [self getJsonTypeName:value];
 
-    // If no mediaSpec, skip type validation
+    // If no mediaDef, skip type validation
     if (!argDef.mediaUrn) {
         return YES;
     }
 
-    // Resolve mediaSpec to determine expected type
+    // Resolve mediaDef to determine expected type
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(argDef.mediaUrn, registry, &resolveError);
-    if (!mediaSpec) {
+    CSMediaDef *mediaDef = CSResolveMediaUrn(argDef.mediaUrn, registry, &resolveError);
+    if (!mediaDef) {
         // FAIL HARD on unresolvable spec ID
         if (error) {
             *error = [CSValidationError invalidCapSchemaError:capUrn
@@ -400,7 +400,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // Determine expected type from profile
-    NSString *profile = mediaSpec.profile;
+    NSString *profile = mediaDef.profile;
     BOOL typeMatches = YES;
     NSString *expectedType = argDef.mediaUrn;
 
@@ -434,7 +434,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // Check for binary based on media type
-    if ([mediaSpec isBinary]) {
+    if ([mediaDef isBinary]) {
         typeMatches = [value isKindOfClass:[NSString class]] || [value isKindOfClass:[NSData class]];
         expectedType = @"binary";
     }
@@ -453,14 +453,14 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     return YES;
 }
 
-+ (BOOL)validateMediaSpecRules:(CSCapArg *)argDef
-                     mediaSpec:(CSMediaSpec *)mediaSpec
++ (BOOL)validateMediaDefRules:(CSCapArg *)argDef
+                     mediaDef:(CSMediaDef *)mediaDef
                          value:(id)value
                            cap:(CSCap *)cap
                          error:(NSError **)error {
     NSString *capUrn = [cap urnString];
-    CSMediaValidation *validation = mediaSpec.validation;
-    NSString *mediaUrn = mediaSpec.mediaUrn ?: argDef.mediaUrn;
+    CSMediaValidation *validation = mediaDef.validation;
+    NSString *mediaUrn = mediaDef.mediaUrn ?: argDef.mediaUrn;
 
     if (!validation) {
         return YES;
@@ -472,7 +472,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (numValue && [numValue doubleValue] < [validation.min doubleValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"minimum value %@", validation.min];
-                *error = [CSValidationError mediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError mediaDefValidationFailedError:capUrn
                                                               argumentName:argDef.mediaUrn
                                                                   mediaUrn:mediaUrn
                                                             validationRule:rule
@@ -487,7 +487,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (numValue && [numValue doubleValue] > [validation.max doubleValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"maximum value %@", validation.max];
-                *error = [CSValidationError mediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError mediaDefValidationFailedError:capUrn
                                                               argumentName:argDef.mediaUrn
                                                                   mediaUrn:mediaUrn
                                                             validationRule:rule
@@ -503,7 +503,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (stringValue.length < [validation.minLength integerValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"minimum length %@", validation.minLength];
-                *error = [CSValidationError mediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError mediaDefValidationFailedError:capUrn
                                                               argumentName:argDef.mediaUrn
                                                                   mediaUrn:mediaUrn
                                                             validationRule:rule
@@ -518,7 +518,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (stringValue.length > [validation.maxLength integerValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"maximum length %@", validation.maxLength];
-                *error = [CSValidationError mediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError mediaDefValidationFailedError:capUrn
                                                               argumentName:argDef.mediaUrn
                                                                   mediaUrn:mediaUrn
                                                             validationRule:rule
@@ -541,7 +541,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
             if (!match) {
                 if (error) {
                     NSString *rule = [NSString stringWithFormat:@"pattern '%@'", validation.pattern];
-                    *error = [CSValidationError mediaSpecValidationFailedError:capUrn
+                    *error = [CSValidationError mediaDefValidationFailedError:capUrn
                                                                   argumentName:argDef.mediaUrn
                                                                       mediaUrn:mediaUrn
                                                                 validationRule:rule
@@ -558,7 +558,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (![validation.allowedValues containsObject:stringValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"allowed values: %@", validation.allowedValues];
-                *error = [CSValidationError mediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError mediaDefValidationFailedError:capUrn
                                                               argumentName:argDef.mediaUrn
                                                                   mediaUrn:mediaUrn
                                                             validationRule:rule
@@ -609,8 +609,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                        cap:(CSCap *)cap
                   registry:(CSFabricRegistry *)registry
                      error:(NSError **)error;
-+ (BOOL)validateOutputMediaSpecRules:(CSCapOutput *)outputDef
-                           mediaSpec:(CSMediaSpec *)mediaSpec
++ (BOOL)validateOutputMediaDefRules:(CSCapOutput *)outputDef
+                           mediaDef:(CSMediaDef *)mediaDef
                                value:(id)value
                                  cap:(CSCap *)cap
                                error:(NSError **)error;
@@ -630,12 +630,12 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         return YES;
     }
 
-    // Resolve mediaSpec first - needed for type validation and media spec validation
-    CSMediaSpec *mediaSpec = nil;
+    // Resolve mediaDef first - needed for type validation and media def validation
+    CSMediaDef *mediaDef = nil;
     if (outputDef.mediaUrn) {
         NSError *resolveError = nil;
-        mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
-        if (!mediaSpec) {
+        mediaDef = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
+        if (!mediaDef) {
             // FAIL HARD on unresolvable spec ID
             if (error) {
                 *error = [CSValidationError invalidCapSchemaError:capUrn
@@ -651,15 +651,15 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         return NO;
     }
 
-    // Media spec validation rules (inherent to the semantic type)
-    if (mediaSpec && mediaSpec.validation) {
-        if (![self validateOutputMediaSpecRules:outputDef mediaSpec:mediaSpec value:output cap:cap error:error]) {
+    // Media def validation rules (inherent to the semantic type)
+    if (mediaDef && mediaDef.validation) {
+        if (![self validateOutputMediaDefRules:outputDef mediaDef:mediaDef value:output cap:cap error:error]) {
             return NO;
         }
     }
 
     // Schema validation
-    if (mediaSpec && mediaSpec.schema) {
+    if (mediaDef && mediaDef.schema) {
         CSJSONSchemaValidator *schemaValidator = [CSJSONSchemaValidator validator];
         NSError *schemaError = nil;
 
@@ -684,15 +684,15 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     NSString *capUrn = [cap urnString];
     NSString *actualType = [CSInputValidator getJsonTypeName:value];
 
-    // If no mediaSpec, skip type validation
+    // If no mediaDef, skip type validation
     if (!outputDef.mediaUrn) {
         return YES;
     }
 
-    // Resolve mediaSpec to determine expected type
+    // Resolve mediaDef to determine expected type
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
-    if (!mediaSpec) {
+    CSMediaDef *mediaDef = CSResolveMediaUrn(outputDef.mediaUrn, registry, &resolveError);
+    if (!mediaDef) {
         // FAIL HARD on unresolvable spec ID
         if (error) {
             *error = [CSValidationError invalidCapSchemaError:capUrn
@@ -703,7 +703,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // Determine expected type from profile
-    NSString *profile = mediaSpec.profile;
+    NSString *profile = mediaDef.profile;
     BOOL typeMatches = YES;
     NSString *expectedType = outputDef.mediaUrn;
 
@@ -737,7 +737,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // Check for binary based on media type
-    if ([mediaSpec isBinary]) {
+    if ([mediaDef isBinary]) {
         typeMatches = [value isKindOfClass:[NSString class]] || [value isKindOfClass:[NSData class]];
         expectedType = @"binary";
     }
@@ -755,14 +755,14 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     return YES;
 }
 
-+ (BOOL)validateOutputMediaSpecRules:(CSCapOutput *)outputDef
-                           mediaSpec:(CSMediaSpec *)mediaSpec
++ (BOOL)validateOutputMediaDefRules:(CSCapOutput *)outputDef
+                           mediaDef:(CSMediaDef *)mediaDef
                                value:(id)value
                                  cap:(CSCap *)cap
                                error:(NSError **)error {
     NSString *capUrn = [cap urnString];
-    CSMediaValidation *validation = mediaSpec.validation;
-    NSString *mediaUrn = mediaSpec.mediaUrn ?: outputDef.mediaUrn;
+    CSMediaValidation *validation = mediaDef.validation;
+    NSString *mediaUrn = mediaDef.mediaUrn ?: outputDef.mediaUrn;
 
     if (!validation) {
         return YES;
@@ -774,7 +774,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (numValue && [numValue doubleValue] < [validation.min doubleValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"minimum value %@", validation.min];
-                *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
                                                                         mediaUrn:mediaUrn
                                                                   validationRule:rule
                                                                      actualValue:value];
@@ -788,7 +788,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (numValue && [numValue doubleValue] > [validation.max doubleValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"maximum value %@", validation.max];
-                *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
                                                                         mediaUrn:mediaUrn
                                                                   validationRule:rule
                                                                      actualValue:value];
@@ -803,7 +803,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (stringValue.length < [validation.minLength integerValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"minimum length %@", validation.minLength];
-                *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
                                                                         mediaUrn:mediaUrn
                                                                   validationRule:rule
                                                                      actualValue:value];
@@ -817,7 +817,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (stringValue.length > [validation.maxLength integerValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"maximum length %@", validation.maxLength];
-                *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
                                                                         mediaUrn:mediaUrn
                                                                   validationRule:rule
                                                                      actualValue:value];
@@ -839,7 +839,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
             if (!match) {
                 if (error) {
                     NSString *rule = [NSString stringWithFormat:@"pattern '%@'", validation.pattern];
-                    *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
+                    *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
                                                                             mediaUrn:mediaUrn
                                                                       validationRule:rule
                                                                          actualValue:value];
@@ -855,7 +855,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         if (![validation.allowedValues containsObject:stringValue]) {
             if (error) {
                 NSString *rule = [NSString stringWithFormat:@"allowed values: %@", validation.allowedValues];
-                *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
+                *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
                                                                         mediaUrn:mediaUrn
                                                                   validationRule:rule
                                                                      actualValue:value];
@@ -996,12 +996,12 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         return YES;
     }
 
-    // Resolve mediaSpec to check if it's binary - fail hard if resolution fails
+    // Resolve mediaDef to check if it's binary - fail hard if resolution fails
     if (output.mediaUrn) {
         NSError *resolveError = nil;
-        CSMediaSpec *mediaSpec = CSResolveMediaUrn(output.mediaUrn, registry, &resolveError);
+        CSMediaDef *mediaDef = CSResolveMediaUrn(output.mediaUrn, registry, &resolveError);
 
-        if (!mediaSpec) {
+        if (!mediaDef) {
             // FAIL HARD on unresolvable spec ID
             if (error) {
                 NSString *message = [NSString stringWithFormat:@"Cannot resolve output spec ID '%@' for cap '%@': %@",
@@ -1013,7 +1013,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
             return NO;
         }
 
-        if (![mediaSpec isBinary]) {
+        if (![mediaDef isBinary]) {
             if (error) {
                 *error = [CSValidationError invalidOutputTypeError:capUrn
                                                       expectedType:output.mediaUrn
@@ -1023,14 +1023,14 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
             return NO;
         }
 
-        // Validate binary data size constraints using media spec validation if defined
-        CSMediaValidation *validation = mediaSpec.validation;
+        // Validate binary data size constraints using media def validation if defined
+        CSMediaValidation *validation = mediaDef.validation;
         if (validation && validation.min) {
             if (outputData.length < [validation.min integerValue]) {
                 if (error) {
                     NSString *rule = [NSString stringWithFormat:@"minimum size %@ bytes", validation.min];
-                    *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
-                                                                            mediaUrn:mediaSpec.mediaUrn
+                    *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
+                                                                            mediaUrn:mediaDef.mediaUrn
                                                                       validationRule:rule
                                                                          actualValue:@(outputData.length)];
                 }
@@ -1042,8 +1042,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
             if (outputData.length > [validation.max integerValue]) {
                 if (error) {
                     NSString *rule = [NSString stringWithFormat:@"maximum size %@ bytes", validation.max];
-                    *error = [CSValidationError outputMediaSpecValidationFailedError:capUrn
-                                                                            mediaUrn:mediaSpec.mediaUrn
+                    *error = [CSValidationError outputMediaDefValidationFailedError:capUrn
+                                                                            mediaUrn:mediaDef.mediaUrn
                                                                       validationRule:rule
                                                                          actualValue:@(outputData.length)];
                 }
@@ -1062,7 +1062,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 @end
 
-// XV5 (no-inline-media-spec-redefinition) was removed when inline
-// `cap.media_specs` arrays were dropped from the cap definition. The
-// situation it guarded against — a cap embedding a media spec that
+// XV5 (no-inline-media-def-redefinition) was removed when inline
+// `cap.media_defs` arrays were dropped from the cap definition. The
+// situation it guarded against — a cap embedding a media def that
 // conflicts with the registry — is now structurally impossible.

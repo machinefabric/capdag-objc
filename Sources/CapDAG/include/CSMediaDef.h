@@ -1,8 +1,8 @@
 //
-//  CSMediaSpec.h
-//  MediaSpec parsing and handling
+//  CSMediaDef.h
+//  MediaDef parsing and handling
 //
-//  Parses media_spec values in the canonical format:
+//  Parses media_def values in the canonical format:
 //  `<media-type>; profile=<url>`
 //
 //  Examples:
@@ -22,19 +22,19 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Error domain for MediaSpec errors
-FOUNDATION_EXPORT NSErrorDomain const CSMediaSpecErrorDomain;
+/// Error domain for MediaDef errors
+FOUNDATION_EXPORT NSErrorDomain const CSMediaDefErrorDomain;
 
-/// Error codes for MediaSpec operations
-typedef NS_ERROR_ENUM(CSMediaSpecErrorDomain, CSMediaSpecError) {
-    CSMediaSpecErrorUnresolvableMediaUrn = 1,
+/// Error codes for MediaDef operations
+typedef NS_ERROR_ENUM(CSMediaDefErrorDomain, CSMediaDefError) {
+    CSMediaDefErrorUnresolvableMediaUrn = 1,
 };
 
 // ============================================================================
 // BUILT-IN MEDIA URN CONSTANTS
 // ============================================================================
 
-/// Well-known built-in media URNs with coercion tags - these do not need to be declared in mediaSpecs
+/// Well-known built-in media URNs with coercion tags - these do not need to be declared in mediaDefs
 FOUNDATION_EXPORT NSString * const CSMediaString;       // media:textable
 FOUNDATION_EXPORT NSString * const CSMediaInteger;      // media:integer;textable;numeric
 FOUNDATION_EXPORT NSString * const CSMediaNumber;       // media:textable;numeric
@@ -135,11 +135,11 @@ FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;t
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;json;record
 // Fabric registry lookup wire types (consumed/produced by cap:lookup-cap;fabric
-// and cap:lookup-media-spec;fabric, both implemented by fetchcartridge).
+// and cap:lookup-media-def;fabric, both implemented by fetchcartridge).
 FOUNDATION_EXPORT NSString * const CSMediaCapUrn;            // media:cap-urn;textable
 FOUNDATION_EXPORT NSString * const CSMediaMediaUrn;          // media:media-urn;textable
 FOUNDATION_EXPORT NSString * const CSMediaCapDefinition;     // media:cap-definition;json;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaMediaSpecDefinition; // media:media-spec-definition;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaMediaDefinition; // media:media-definition;json;record;textable
 // Format-specific variants for JSON, YAML, CSV
 FOUNDATION_EXPORT NSString * const CSMediaJsonValue;       // media:json;textable
 FOUNDATION_EXPORT NSString * const CSMediaJsonRecord;      // media:json;record;textable
@@ -162,11 +162,11 @@ FOUNDATION_EXPORT NSString * const CSCapIdentity;           // cap:effect=none
 
 /// Fabric registry lookup caps. Implemented by fetchcartridge.
 /// `CSCapLookupCapFabric` resolves a canonical cap URN to its full
-/// flattened cap definition; `CSCapLookupMediaSpecFabric` does the same
-/// for media specs. Both fetch from the public fabric registry with a
+/// flattened cap definition; `CSCapLookupMediaDefFabric` does the same
+/// for media defs. Both fetch from the public fabric registry with a
 /// two-level cache (memory + disk + 1-week TTL).
 FOUNDATION_EXPORT NSString * const CSCapLookupCapFabric;
-FOUNDATION_EXPORT NSString * const CSCapLookupMediaSpecFabric;
+FOUNDATION_EXPORT NSString * const CSCapLookupMediaDefFabric;
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION
@@ -191,13 +191,13 @@ FOUNDATION_EXPORT NSString *CSGetSchemaBaseURL(void);
 FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 
 // ============================================================================
-// MEDIA SPEC PARSING
+// MEDIA DEFINITION PARSING
 // ============================================================================
 
 /**
- * A resolved MediaSpec value
+ * A resolved MediaDef value
  */
-@interface CSMediaSpec : NSObject
+@interface CSMediaDef : NSObject
 
 /// The media URN identifier (e.g., "media:pdf")
 @property (nonatomic, readonly, nullable) NSString *mediaUrn;
@@ -220,7 +220,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 /// Optional long-form markdown documentation.
 ///
 /// Rendered in media info panels, the cap navigator, capdag-dot-com,
-/// and anywhere else a rich-text explanation of the media spec is
+/// and anywhere else a rich-text explanation of the media def is
 /// useful. Authored as a triple-quoted literal string in the source
 /// TOML so newlines and markdown punctuation pass through unchanged.
 @property (nonatomic, readonly, nullable) NSString *documentation;
@@ -235,7 +235,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 @property (nonatomic, readonly) NSArray<NSString *> *extensions;
 
 /**
- * Create a MediaSpec with all properties
+ * Create a MediaDef with all properties
  * @param contentType The MIME content type
  * @param profile Optional profile URL
  * @param schema Optional JSON Schema for local validation
@@ -245,7 +245,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
  * @param validation Optional validation rules
  * @param metadata Optional metadata dictionary
  * @param extensions File extensions for storing this media type (can be empty array)
- * @return A new CSMediaSpec instance
+ * @return A new CSMediaDef instance
  */
 + (instancetype)withContentType:(NSString *)contentType
                         profile:(nullable NSString *)profile
@@ -258,59 +258,59 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
                      extensions:(NSArray<NSString *> *)extensions;
 
 /**
- * Create a MediaSpec from content type, optional profile, and optional schema
+ * Create a MediaDef from content type, optional profile, and optional schema
  * @param contentType The MIME content type
  * @param profile Optional profile URL
  * @param schema Optional JSON Schema for local validation
- * @return A new CSMediaSpec instance
+ * @return A new CSMediaDef instance
  */
 + (instancetype)withContentType:(NSString *)contentType
                         profile:(nullable NSString *)profile
                          schema:(nullable NSDictionary *)schema;
 
 /**
- * Create a MediaSpec from content type and optional profile (no schema)
+ * Create a MediaDef from content type and optional profile (no schema)
  * @param contentType The MIME content type
  * @param profile Optional profile URL
- * @return A new CSMediaSpec instance
+ * @return A new CSMediaDef instance
  */
 + (instancetype)withContentType:(NSString *)contentType profile:(nullable NSString *)profile;
 
 /**
- * Check if this media spec represents binary output
+ * Check if this media def represents binary output
  * @return YES if textable marker tag is absent
  */
 - (BOOL)isBinary;
 
 /**
- * Check if this media spec represents a record (has record marker tag)
+ * Check if this media def represents a record (has record marker tag)
  * A record has internal key-value structure (e.g., JSON object).
  * @return YES if record marker tag is present
  */
 - (BOOL)isRecord;
 
 /**
- * Check if this media spec is opaque (no record marker tag)
+ * Check if this media def is opaque (no record marker tag)
  * Opaque is the default structure - no internal fields recognized.
  * @return YES if opaque (no record marker)
  */
 - (BOOL)isOpaque;
 
 /**
- * Check if this media spec represents a scalar value (no list marker tag)
+ * Check if this media def represents a scalar value (no list marker tag)
  * Scalar is the default cardinality.
  * @return YES if scalar (no list marker)
  */
 - (BOOL)isScalar;
 
 /**
- * Check if this media spec represents a list/array structure (has list marker tag)
+ * Check if this media def represents a list/array structure (has list marker tag)
  * @return YES if list marker tag is present
  */
 - (BOOL)isList;
 
 /**
- * Check if this media spec represents JSON representation
+ * Check if this media def represents JSON representation
  * Note: This only checks for explicit JSON format marker.
  * For checking if data is structured (map/list), use isStructured.
  * @return YES if json marker tag is present
@@ -318,7 +318,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 - (BOOL)isJSON;
 
 /**
- * Check if this media spec represents text output
+ * Check if this media def represents text output
  * @return YES if textable marker tag is present
  */
 - (BOOL)isText;
@@ -338,7 +338,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 /**
  * Get the canonical string representation
  * Format: <media-type>; profile="<url>" (no content-type: prefix)
- * @return The media_spec as a string
+ * @return The media_def as a string
  */
 - (NSString *)toString;
 
@@ -349,20 +349,20 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 // ============================================================================
 
 /**
- * Resolve a media URN to a MediaSpec
+ * Resolve a media URN to a MediaDef
  *
  * Resolution algorithm:
- * 1. Iterate mediaSpecs array and find by URN
+ * 1. Iterate mediaDefs array and find by URN
  * 2. If not found: FAIL HARD
  *
  * @param mediaUrn The media URN (e.g., "media:textable")
  * @param registry The unified `CSFabricRegistry` to resolve through.
- *   The registry's in-memory media-spec cache is the only source —
+ *   The registry's in-memory media-def cache is the only source —
  *   there is no inline-spec fallback.
  * @param error Error if media URN cannot be resolved
- * @return The resolved MediaSpec or nil on error
+ * @return The resolved MediaDef or nil on error
  */
-CSMediaSpec * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
+CSMediaDef * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
                                           CSFabricRegistry *registry,
                                           NSError * _Nullable * _Nullable error);
 
@@ -480,17 +480,17 @@ BOOL CSMediaUrnIsFilePath(NSString *mediaUrn);
 BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn);
 
 /**
- * Helper functions for working with MediaSpec in CapUrn
+ * Helper functions for working with MediaDef in CapUrn
  */
-@interface CSMediaSpec (CapUrn)
+@interface CSMediaDef (CapUrn)
 
 /**
- * Extract MediaSpec from a CapUrn's 'out' tag (a media URN), resolved
+ * Extract MediaDef from a CapUrn's 'out' tag (a media URN), resolved
  * through the unified `CSFabricRegistry`.
  * @param capUrn The cap URN to extract from
  * @param registry The unified `CSFabricRegistry`
  * @param error Error if media URN not found or resolution fails
- * @return The resolved MediaSpec or nil if not found
+ * @return The resolved MediaDef or nil if not found
  */
 + (nullable instancetype)fromCapUrn:(CSCapUrn *)capUrn
                            registry:(CSFabricRegistry *)registry

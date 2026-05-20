@@ -198,12 +198,12 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     NSArray<CSReachableTargetInfo *> *targets = [graph getReachableTargetsFromSource:source maxDepth:5 isSequence:NO];
 
     XCTAssertEqual(targets.count, 2u, @"Should find 2 reachable targets");
-    NSMutableSet *targetSpecs = [NSMutableSet set];
+    NSMutableSet *targetMediaUrns = [NSMutableSet set];
     for (CSReachableTargetInfo *t in targets) {
-        [targetSpecs addObject:t.mediaUrn];
+        [targetMediaUrns addObject:t.mediaUrn];
     }
-    XCTAssertTrue([targetSpecs containsObject:@"media:b"], @"B should be reachable");
-    XCTAssertTrue([targetSpecs containsObject:@"media:d"], @"D should be reachable");
+    XCTAssertTrue([targetMediaUrns containsObject:@"media:b"], @"B should be reachable");
+    XCTAssertTrue([targetMediaUrns containsObject:@"media:d"], @"D should be reachable");
 }
 
 // TEST777: PDF cap does not match PNG input

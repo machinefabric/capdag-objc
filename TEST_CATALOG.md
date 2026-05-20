@@ -82,15 +82,15 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test075 | `test075_matching` | TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests | Tests/CapDAGTests/CSMediaUrnTests.m:404 |
 | test076 | `test076_specificity` | TEST076: Test specificity increases with more tags for ranking conformance | Tests/CapDAGTests/CSMediaUrnTests.m:415 |
 | test078 | `test078_object_does_not_conform_to_string` | TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING | Tests/CapDAGTests/CSMediaUrnTests.m:430 |
-| test091 | `test091_resolve_custom_media_spec` | TEST091: Test resolving custom media URN from local media_specs takes precedence over registry | Tests/CapDAGTests/CSMediaSpecTests.m:323 |
-| test092 | `test092_resolve_custom_with_schema` | TEST092: Test resolving custom record media spec with schema from local media_specs | Tests/CapDAGTests/CSMediaSpecTests.m:341 |
-| test094 | `test094_local_overrides_registry` | TEST094: Test local media_specs definition overrides registry definition for same URN | Tests/CapDAGTests/CSMediaSpecTests.m:366 |
-| test099 | `test099_resolved_is_binary` | TEST099: Test ResolvedMediaSpec is_binary returns true when textable tag is absent | Tests/CapDAGTests/CSMediaSpecTests.m:230 |
-| test100 | `test100_resolved_is_record` | TEST100: Test ResolvedMediaSpec is_record returns true when record marker is present | Tests/CapDAGTests/CSMediaSpecTests.m:245 |
-| test101 | `test101_resolved_is_scalar` | TEST101: Test ResolvedMediaSpec is_scalar returns true when list marker is absent | Tests/CapDAGTests/CSMediaSpecTests.m:261 |
-| test102 | `test102_resolved_is_list` | TEST102: Test ResolvedMediaSpec is_list returns true when list marker is present | Tests/CapDAGTests/CSMediaSpecTests.m:276 |
-| test103 | `test103_resolved_is_json` | TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present | Tests/CapDAGTests/CSMediaSpecTests.m:291 |
-| test104 | `test104_resolved_is_text` | TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present | Tests/CapDAGTests/CSMediaSpecTests.m:306 |
+| test091 | `test091_resolve_custom_media_def` | TEST091: Test resolving custom media URN from local media_defs takes precedence over registry | Tests/CapDAGTests/CSMediaDefTests.m:323 |
+| test092 | `test092_resolve_custom_with_schema` | TEST092: Test resolving custom record media def with schema from local media_defs | Tests/CapDAGTests/CSMediaDefTests.m:341 |
+| test094 | `test094_local_overrides_registry` | TEST094: Test local media_defs definition overrides registry definition for same URN | Tests/CapDAGTests/CSMediaDefTests.m:366 |
+| test099 | `test099_resolved_is_binary` | TEST099: Test ResolvedMediaDef is_binary returns true when textable tag is absent | Tests/CapDAGTests/CSMediaDefTests.m:230 |
+| test100 | `test100_resolved_is_record` | TEST100: Test ResolvedMediaDef is_record returns true when record marker is present | Tests/CapDAGTests/CSMediaDefTests.m:245 |
+| test101 | `test101_resolved_is_scalar` | TEST101: Test ResolvedMediaDef is_scalar returns true when list marker is absent | Tests/CapDAGTests/CSMediaDefTests.m:261 |
+| test102 | `test102_resolved_is_list` | TEST102: Test ResolvedMediaDef is_list returns true when list marker is present | Tests/CapDAGTests/CSMediaDefTests.m:276 |
+| test103 | `test103_resolved_is_json` | TEST103: Test ResolvedMediaDef is_json returns true when json tag is present | Tests/CapDAGTests/CSMediaDefTests.m:291 |
+| test104 | `test104_resolved_is_text` | TEST104: Test ResolvedMediaDef is_text returns true when textable tag is present | Tests/CapDAGTests/CSMediaDefTests.m:306 |
 | test115 | `test115_capArgSerialization` | TEST115: Test CapArg serialization and deserialization with multiple sources | Tests/CapDAGTests/CSCapTests.m:797 |
 | test116 | `test116_capArgConstructors` | TEST116: Test CapArg constructor methods basic and with_description create args correctly | Tests/CapDAGTests/CSCapTests.m:831 |
 | test140 | `test140_sameCapDifferentSpellingsSameURL` | / TEST140: Equivalent URNs (different tag order, etc.) hash to the / same key. This is the property that makes cross-language lookups / land at the same registry object regardless of which capdag / implementation issued the request. Inputs MUST quote any / multi-tag media URN value — the previous unquoted spelling / `out=media:task;id` was actually a different URN (the bare / `media:task` plus a separate `id` op tag), and treating those / two URNs as equivalent here masked a real spec violation. | Tests/CapDAGTests/CSFabricRegistryTests.m:86 |
@@ -531,7 +531,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test858 | `test858_lub_three_inputs` | TEST858: LUB with three+ inputs narrows correctly | Tests/CapDAGTests/CSMediaUrnTests.m:87 |
 | test859 | `test859_lub_valued_tags` | TEST859: LUB with valued tags (non-marker) that differ | Tests/CapDAGTests/CSMediaUrnTests.m:103 |
 | test860 | `test860_seqAssignerSameRidDifferentXidsIndependent` | TEST860: Same RID with different XIDs get independent seq counters | Tests/BifaciTests/FlowOrderingTests.swift:115 |
-| test896 | `test896_fullPathEngineReqToCartridgeResponse` | TEST896: All cap input media specs that represent user files must have extensions. These are the entry points — the file types users can right-click on. | Tests/BifaciTests/IntegrationTests.swift:636 |
+| test896 | `test896_fullPathEngineReqToCartridgeResponse` | TEST896: All cap input media defs that represent user files must have extensions. These are the entry points — the file types users can right-click on. | Tests/BifaciTests/IntegrationTests.swift:636 |
 | test897 | `test897_cartridgeErrorFlowsToEngine` | TEST897: Verify that specific cap output URNs resolve to the correct extension. This catches misconfigurations where a spec exists but has the wrong extension. | Tests/BifaciTests/IntegrationTests.swift:703 |
 | test898 | `test898_binaryIntegrityThroughRelay` | TEST898: Binary data integrity through full relay path (256 byte values) | Tests/BifaciTests/IntegrationTests.swift:745 |
 | test899 | `test899_streamingChunksThroughRelay` | TEST899: Streaming chunks flow through relay without accumulation | Tests/BifaciTests/IntegrationTests.swift:803 |
@@ -749,11 +749,11 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testDotParserQuotedIdentifiers` | TEST: Parse quoted identifiers | Tests/BifaciTests/OrchestratorTests.swift:381 |
 | unnumbered | `testDotParserSimpleDigraph` | TEST: Parse simple digraph | Tests/BifaciTests/OrchestratorTests.swift:330 |
 | unnumbered | `testExactVsConformanceMatching` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:50 |
-| unnumbered | `testExtensionsEmptyWhenNotSet` |  | Tests/CapDAGTests/CSMediaSpecTests.m:143 |
-| unnumbered | `testExtensionsPropagationFromObjectDef` | Extensions field tests | Tests/CapDAGTests/CSMediaSpecTests.m:120 |
-| unnumbered | `testExtensionsWithMetadataAndValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:162 |
+| unnumbered | `testExtensionsEmptyWhenNotSet` |  | Tests/CapDAGTests/CSMediaDefTests.m:143 |
+| unnumbered | `testExtensionsPropagationFromObjectDef` | Extensions field tests | Tests/CapDAGTests/CSMediaDefTests.m:120 |
+| unnumbered | `testExtensionsWithMetadataAndValidation` |  | Tests/CapDAGTests/CSMediaDefTests.m:162 |
 | unnumbered | `testFileReferenceWithAllFields` |  | Tests/CapDAGTests/CSStdinSourceTests.m:74 |
-| unnumbered | `testFullCapValidationWithMediaSpecs` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:687 |
+| unnumbered | `testFullCapValidationWithMediaDefs` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:687 |
 | unnumbered | `testGcEvictsOldestEntriesByTouchedAt` | / Contract #2 — the GC drops the OLDEST entries by / `touchedAt`, not arbitrary keys. We seed a known age / distribution and recompute the expected victim set / independently of the production code, then assert that / the post-GC table contains exactly the entries the test / computed should survive. / / A regression where the GC e.g. iterates the dictionary and / drops the first N entries (dictionary iteration order is / arbitrary in Swift) would still pass contract #1 but fail / this one — so this is the assertion that catches a "wrong / victims" bug, which is the more dangerous one (silently / drops in-flight continuation frames). | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:108 |
 | unnumbered | `testGcReducesTableBelowSoftWatermarkInOnePass` | / Contract #1 — the GC keeps the table strictly below the / hard cap. We seed the table well above the soft watermark / (matching what a runaway producer would do mid-frame-burst) / and call the production GC entry point. The post-state / must be at most `softWatermark` entries because the GC / drops at least `evictionFraction × pre-state` entries in / one pass and the pre-state is below `hardCap` (i.e. one / pass is enough; the secondary "hard cap" pass would only / kick in if pre-state crossed the hard cap before insertion / completed, which production prevents by gc-ing on every / insert). | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:45 |
 | unnumbered | `testGcSecondaryPassEnforcesHardCap` | / Contract #3 — the secondary "hard cap" pass kicks in if / the table somehow exceeds `hardCap` (e.g. a seed that goes / over, simulating an extreme runaway). Without the / secondary pass, a single GC at the soft watermark would / not be enough to recover headroom and the table could / grow without bound between bursts. | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:172 |
@@ -762,14 +762,14 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testIntegrationWithInputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:273 |
 | unnumbered | `testIntegrationWithOutputValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:343 |
 | unnumbered | `testInvalidCapUrn` | TEST001 variant: Test empty URN fails | Tests/CapDAGTests/CSCapUrnTests.m:139 |
-| unnumbered | `testMediaSpecDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaSpecs definition through CSResolveMediaUrn into the resolved CSMediaSpec. Mirrors TEST924 on the Rust side and testJS_mediaSpecDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:975 |
-| unnumbered | `testMediaSpecsWithoutSchemaSkipsValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:603 |
+| unnumbered | `testMediaDefDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaDefs definition through CSResolveMediaUrn into the resolved CSMediaDef. Mirrors TEST924 on the Rust side and testJS_mediaDefDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:975 |
+| unnumbered | `testMediaDefsWithoutSchemaSkipsValidation` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:603 |
 | unnumbered | `testMediaUrnResolutionThroughRegistry` |  | Tests/CapDAGTests/CSCapTests.m:360 |
-| unnumbered | `testMetadataNilByDefault` |  | Tests/CapDAGTests/CSMediaSpecTests.m:54 |
-| unnumbered | `testMetadataPropagationFromObjectDef` |  | Tests/CapDAGTests/CSMediaSpecTests.m:24 |
-| unnumbered | `testMetadataWithValidation` |  | Tests/CapDAGTests/CSMediaSpecTests.m:72 |
+| unnumbered | `testMetadataNilByDefault` |  | Tests/CapDAGTests/CSMediaDefTests.m:54 |
+| unnumbered | `testMetadataPropagationFromObjectDef` |  | Tests/CapDAGTests/CSMediaDefTests.m:24 |
+| unnumbered | `testMetadataWithValidation` |  | Tests/CapDAGTests/CSMediaDefTests.m:72 |
 | unnumbered | `testMultiStepPath` |  | Tests/CapDAGTests/CSLiveCapFabTests.m:80 |
-| unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaSpecTests.m:194 |
+| unnumbered | `testMultipleExtensions` |  | Tests/CapDAGTests/CSMediaDefTests.m:194 |
 | unnumbered | `testNewHostInstancePerRelaySession` | / Contract #2 (well-behaved path): one host → one run() → / drop. The misuse path (calling run() twice) is enforced via / `precondition` and is not death-tested here — the well- / behaved path is sufficient because if the precondition were / silently disabled, the prior test (`testRunExitKills…`) / would still pass on the first invocation but the second / call would race with itself and fail intermittently. This / test documents the contract by demonstrating that a fresh / `CartridgeHost` instance is the only correct way to start / a new relay session. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141 |
 | unnumbered | `testNonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:160 |
 | unnumbered | `testOutputCreationWithNewAPI` |  | Tests/CapDAGTests/CSCapTests.m:879 |
@@ -780,7 +780,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testRegistryCreation` |  | Tests/CapDAGTests/CSFabricRegistryTests.m:44 |
 | unnumbered | `testRegistryValidCapCheck` | Registry validator tests removed - not part of current API | Tests/CapDAGTests/CSFabricRegistryTests.m:51 |
 | unnumbered | `testRelaySwitchInitRejectsDuplicateIds` |  | Tests/BifaciTests/RelaySwitchTests.swift:1001 |
-| unnumbered | `testResolveMediaUrnNotFound` |  | Tests/CapDAGTests/CSMediaSpecTests.m:108 |
+| unnumbered | `testResolveMediaUrnNotFound` |  | Tests/CapDAGTests/CSMediaDefTests.m:108 |
 | unnumbered | `testRunExitKillsAllManagedCartridges` | / Contract #1: when `run()` exits because the relay closed, / every running cartridge is torn down and the observer is / fired with a death notification for each. The Rust reference / enforces this by calling `kill_all_cartridges().await` at / the very end of `run()`. The Swift mirror's previous / behavior was to leak cartridges across reconnects, which is / what allowed the XPC-service NSConcreteData accumulator bug. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66 |
 | unnumbered | `testSchemaValidationErrorDetails` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:503 |
 | unnumbered | `testSchemaValidationPerformance` |  | Tests/CapDAGTests/CSSchemaValidationTests.m:629 |
@@ -915,11 +915,11 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testDotParserQuotedIdentifiers` — Tests/BifaciTests/OrchestratorTests.swift:381
 - `testDotParserSimpleDigraph` — Tests/BifaciTests/OrchestratorTests.swift:330
 - `testExactVsConformanceMatching` — Tests/CapDAGTests/CSLiveCapFabTests.m:50
-- `testExtensionsEmptyWhenNotSet` — Tests/CapDAGTests/CSMediaSpecTests.m:143
-- `testExtensionsPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:120
-- `testExtensionsWithMetadataAndValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:162
+- `testExtensionsEmptyWhenNotSet` — Tests/CapDAGTests/CSMediaDefTests.m:143
+- `testExtensionsPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaDefTests.m:120
+- `testExtensionsWithMetadataAndValidation` — Tests/CapDAGTests/CSMediaDefTests.m:162
 - `testFileReferenceWithAllFields` — Tests/CapDAGTests/CSStdinSourceTests.m:74
-- `testFullCapValidationWithMediaSpecs` — Tests/CapDAGTests/CSSchemaValidationTests.m:687
+- `testFullCapValidationWithMediaDefs` — Tests/CapDAGTests/CSSchemaValidationTests.m:687
 - `testGcEvictsOldestEntriesByTouchedAt` — Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:108
 - `testGcReducesTableBelowSoftWatermarkInOnePass` — Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:45
 - `testGcSecondaryPassEnforcesHardCap` — Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:172
@@ -928,14 +928,14 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testIntegrationWithInputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:273
 - `testIntegrationWithOutputValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:343
 - `testInvalidCapUrn` — Tests/CapDAGTests/CSCapUrnTests.m:139
-- `testMediaSpecDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:975
-- `testMediaSpecsWithoutSchemaSkipsValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:603
+- `testMediaDefDocumentationPropagatesThroughResolve` — Tests/CapDAGTests/CSCapTests.m:975
+- `testMediaDefsWithoutSchemaSkipsValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:603
 - `testMediaUrnResolutionThroughRegistry` — Tests/CapDAGTests/CSCapTests.m:360
-- `testMetadataNilByDefault` — Tests/CapDAGTests/CSMediaSpecTests.m:54
-- `testMetadataPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaSpecTests.m:24
-- `testMetadataWithValidation` — Tests/CapDAGTests/CSMediaSpecTests.m:72
+- `testMetadataNilByDefault` — Tests/CapDAGTests/CSMediaDefTests.m:54
+- `testMetadataPropagationFromObjectDef` — Tests/CapDAGTests/CSMediaDefTests.m:24
+- `testMetadataWithValidation` — Tests/CapDAGTests/CSMediaDefTests.m:72
 - `testMultiStepPath` — Tests/CapDAGTests/CSLiveCapFabTests.m:80
-- `testMultipleExtensions` — Tests/CapDAGTests/CSMediaSpecTests.m:194
+- `testMultipleExtensions` — Tests/CapDAGTests/CSMediaDefTests.m:194
 - `testNewHostInstancePerRelaySession` — Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141
 - `testNonStructuredArgumentSkipsSchemaValidation` — Tests/CapDAGTests/CSSchemaValidationTests.m:160
 - `testOutputCreationWithNewAPI` — Tests/CapDAGTests/CSCapTests.m:879
@@ -946,7 +946,7 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testRegistryCreation` — Tests/CapDAGTests/CSFabricRegistryTests.m:44
 - `testRegistryValidCapCheck` — Tests/CapDAGTests/CSFabricRegistryTests.m:51
 - `testRelaySwitchInitRejectsDuplicateIds` — Tests/BifaciTests/RelaySwitchTests.swift:1001
-- `testResolveMediaUrnNotFound` — Tests/CapDAGTests/CSMediaSpecTests.m:108
+- `testResolveMediaUrnNotFound` — Tests/CapDAGTests/CSMediaDefTests.m:108
 - `testRunExitKillsAllManagedCartridges` — Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66
 - `testSchemaValidationErrorDetails` — Tests/CapDAGTests/CSSchemaValidationTests.m:503
 - `testSchemaValidationPerformance` — Tests/CapDAGTests/CSSchemaValidationTests.m:629

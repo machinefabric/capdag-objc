@@ -5,12 +5,12 @@
 //  Provides comprehensive JSON Schema Draft-7 validation using native
 //  Foundation classes with proper error reporting and caching.
 //
-//  NOTE: Schema resolution now uses the mediaSpec -> spec ID -> MediaSpec flow.
-//  Schemas are stored in the resolved MediaSpec's schema property.
+//  NOTE: Schema resolution now uses the mediaDef -> spec ID -> MediaDef flow.
+//  Schemas are stored in the resolved MediaDef's schema property.
 //
 
 #import "CSSchemaValidator.h"
-#import "CSMediaSpec.h"
+#import "CSMediaDef.h"
 #import "CSFabricRegistry.h"
 
 // Error domain
@@ -331,14 +331,14 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
         return nil;
     }
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(specId, registry, &resolveError);
-    if (!mediaSpec) {
+    CSMediaDef *mediaDef = CSResolveMediaUrn(specId, registry, &resolveError);
+    if (!mediaDef) {
         if (error && resolveError) {
             *error = resolveError;
         }
         return nil;
     }
-    return mediaSpec.schema;
+    return mediaDef.schema;
 }
 
 - (nullable NSDictionary *)resolveOutputSchema:(CSCapOutput *)output
@@ -349,14 +349,14 @@ NSString * const CSSchemaValidationErrorValidationErrorsKey = @"CSSchemaValidati
         return nil;
     }
     NSError *resolveError = nil;
-    CSMediaSpec *mediaSpec = CSResolveMediaUrn(specId, registry, &resolveError);
-    if (!mediaSpec) {
+    CSMediaDef *mediaDef = CSResolveMediaUrn(specId, registry, &resolveError);
+    if (!mediaDef) {
         if (error && resolveError) {
             *error = resolveError;
         }
         return nil;
     }
-    return mediaSpec.schema;
+    return mediaDef.schema;
 }
 
 - (BOOL)validateValue:(id)value

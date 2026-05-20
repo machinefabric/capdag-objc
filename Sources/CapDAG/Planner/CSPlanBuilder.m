@@ -595,7 +595,7 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
         NSString *inputSlotId = @"input_slot";
         [plan addNode:[CSMachineNode inputSlotNode:inputSlotId
                                       slotName:@"input"
-                                      mediaUrn:path.sourceSpec
+                                      mediaUrn:path.sourceMediaUrn
                                    cardinality:cardinality]];
 
         NSString *prevNodeId = inputSlotId;
@@ -632,8 +632,8 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
         [plan addEdge:[CSMachinePlanEdge directFrom:prevNodeId to:outputId]];
 
         plan.metadata = @{
-            @"source_spec": path.sourceSpec,
-            @"target_spec": path.targetSpec
+            @"source_media_urn": path.sourceMediaUrn,
+            @"target_media_urn": path.targetMediaUrn
         };
 
         completion(plan, nil);

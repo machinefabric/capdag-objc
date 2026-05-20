@@ -918,22 +918,11 @@ final class CborRelaySwitchTests: XCTestCase {
             SocketPair(id: "xpc-service", read: pair1a.read, write: pair2a.write)
         ])
 
-        // Phase 2: shutting down the slave's pair would normally
-        // trigger handleMasterDeath via EOF detection, but the
-        // reader thread runs asynchronously and may not have
-        // observed EOF by the time we proceed. Drive death
-        // synchronously by issuing addMaster against the same id
-        // immediately after marking it unhealthy via shutdown of
-        // the original socket pair.
-        //
-        // We don't expose handle_master_death directly in the
-        // Swift port (it's a private method), so instead we close
-        // the slave's write side, wait for the reader thread to
-        // observe EOF, and then the slot becomes unhealthy.
-        // For test determinism we sleep briefly after closing.
-        try? pair1a.write.close()
-        try? pair2a.read.close()
-        Thread.sleep(forTimeInterval: 0.5)
+        // Phase 2: simulate master death synchronously, exactly
+        // like the Rust reference test. The slot remains in the
+        // cardinality list but becomes unhealthy, so a reconnect
+        // under the same id must reattach in place.
+        try switch_.handleMasterDeath(0)
 
         // Phase 3: reconnect with the SAME id. The new socket
         // should reattach to slot 0, not append a new slot.

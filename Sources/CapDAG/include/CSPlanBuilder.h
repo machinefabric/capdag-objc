@@ -30,11 +30,11 @@ typedef NS_ENUM(NSInteger, CSPlannerErrorCode) {
 // MARK: - Registry Protocol
 
 /// Protocol for the unified fabric registry. The merged registry
-/// holds both cap definitions and media specs in one cache; the
+/// holds both cap definitions and media defs in one cache; the
 /// plan builder consumes both surfaces here.
 @protocol CSFabricRegistryProtocol <NSObject>
 - (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion;
-- (void)getMediaSpec:(NSString *)urn completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
+- (void)getMediaDef:(NSString *)urn completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
 @end
 
 // MARK: - Step Type Enum
@@ -70,9 +70,9 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 @property (nonatomic, strong, nullable) NSDictionary *metadata;
 /// Step type (Cap, ForEach, Collect)
 @property (nonatomic, assign) CSStrandStepType stepType;
-/// Input media spec for this step
+/// Input media def for this step
 @property (nonatomic, copy, nullable) NSString *fromSpec;
-/// Output media spec for this step
+/// Output media def for this step
 @property (nonatomic, copy, nullable) NSString *toSpec;
 /// For ForEach/Collect: the media URN (same for both from and to — shape transition, not type)
 @property (nonatomic, copy, nullable) NSString *mediaUrn;
@@ -87,8 +87,8 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 /// Information about a machine path
 /// Mirrors Rust: Strand
 @interface CSStrand : NSObject
-@property (nonatomic, copy) NSString *sourceSpec;
-@property (nonatomic, copy) NSString *targetSpec;
+@property (nonatomic, copy) NSString *sourceMediaUrn;
+@property (nonatomic, copy) NSString *targetMediaUrn;
 @property (nonatomic, strong) NSArray<CSStrandStep *> *steps;
 /// Total steps including cardinality transitions
 @property (nonatomic, assign) NSInteger totalSteps;
@@ -152,7 +152,7 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
         inputCardinality:(CSInputCardinality)cardinality
               completion:(void (^)(CSMachinePlan * _Nullable plan, NSError * _Nullable error))completion;
 
-/// Get all possible target media specs from a given source
+/// Get all possible target media defs from a given source
 - (void)getReachableTargetsFromSource:(NSString *)sourceMedia
                            completion:(void (^)(NSArray<NSString *> * _Nullable targets, NSError * _Nullable error))completion;
 

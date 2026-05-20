@@ -3,9 +3,9 @@
 //  Comprehensive tests for JSON Schema validation
 //
 //  Tests schema validation for both arguments and outputs with schemas stored
-//  in the mediaSpecs array, and integration with existing validation system.
+//  in the mediaDefs array, and integration with existing validation system.
 //
-//  Schemas are stored in the mediaSpecs array and resolved via URN field.
+//  Schemas are stored in the mediaDefs array and resolved via URN field.
 //
 
 #import <XCTest/XCTest.h>
@@ -21,7 +21,7 @@
 static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     for (NSDictionary *spec in specs) {
-        [registry addMediaSpec:spec];
+        [registry addMediaDef:spec];
     }
     return registry;
 }
@@ -54,7 +54,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // TEST163: Test argument schema validation succeeds with valid JSON matching schema
 - (void)test163_argumentSchemaValidationSuccess {
-    // Create argument with spec ID that has embedded schema in mediaSpecs
+    // Create argument with spec ID that has embedded schema in mediaDefs
     NSDictionary *schema = @{
         @"type": @"object",
         @"properties": @{
@@ -64,8 +64,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"name"]
     };
 
-    // MediaSpecs array with schema
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // MediaDefs array with schema
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:user-data.v1;textable;record",
             @"media_type": @"application/json",
@@ -87,7 +87,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:validData registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:validData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertTrue(result, @"Validation should succeed for valid data");
     XCTAssertNil(error, @"Error should be nil for valid data");
@@ -95,7 +95,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // TEST164: Test argument schema validation fails with JSON missing required fields
 - (void)test164_argumentSchemaValidationFailure {
-    // Create argument with spec ID that has embedded schema in mediaSpecs
+    // Create argument with spec ID that has embedded schema in mediaDefs
     NSDictionary *schema = @{
         @"type": @"object",
         @"properties": @{
@@ -105,7 +105,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"name"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:user-data.v1;textable;record",
             @"media_type": @"application/json",
@@ -126,7 +126,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertFalse(result, @"Validation should fail for invalid data");
     XCTAssertNotNil(error, @"Error should be present for invalid data");
@@ -159,8 +159,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // Obj-C specific: Non-structured argument skips schema validation
 - (void)testNonStructuredArgumentSkipsSchemaValidation {
     // Create string argument (no schema validation expected for non-structured types)
-    // Media URNs must be defined in mediaSpecs (no built-in resolution)
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Media URNs must be defined in mediaDefs (no built-in resolution)
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": CSMediaString,
             @"media_type": @"text/plain",
@@ -177,7 +177,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSString *value = @"test";
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:value registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:value registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertTrue(result, @"Non-structured types should skip schema validation");
     XCTAssertNil(error, @"Error should be nil");
@@ -200,7 +200,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"result", @"count"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:query-results.v1;textable;list",
             @"media_type": @"application/json",
@@ -223,7 +223,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateOutput:output withValue:validData registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateOutput:output withValue:validData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertTrue(result, @"Output validation should succeed for valid data");
     XCTAssertNil(error, @"Error should be nil for valid data");
@@ -239,7 +239,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"result", @"count"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:query-results.v1;textable;list",
             @"media_type": @"application/json",
@@ -258,7 +258,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateOutput:output withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateOutput:output withValue:invalidData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertFalse(result, @"Output validation should fail for invalid data");
     XCTAssertNotNil(error, @"Error should be present for invalid data");
@@ -285,7 +285,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"id", @"name", @"email"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:user.v1;textable;record",
             @"media_type": @"application/json",
@@ -318,7 +318,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [CSInputValidator validateArguments:@[validUser] cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [CSInputValidator validateArguments:@[validUser] cap:cap registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertTrue(result, @"Input validation should succeed with valid schema data");
     XCTAssertNil(error, @"Error should be nil");
@@ -330,7 +330,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"email": @"invalid-email"
     };
 
-    result = [CSInputValidator validateArguments:@[invalidUser] cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
+    result = [CSInputValidator validateArguments:@[invalidUser] cap:cap registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertFalse(result, @"Input validation should fail with invalid schema data");
     XCTAssertNotNil(error, @"Error should be present");
@@ -358,7 +358,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"minItems": @0
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:results-array.v1;textable;list",
             @"media_type": @"application/json",
@@ -387,7 +387,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    BOOL result = [CSOutputValidator validateOutput:validOutput cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [CSOutputValidator validateOutput:validOutput cap:cap registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertTrue(result, @"Output validation should succeed with valid schema data");
     XCTAssertNil(error, @"Error should be nil");
@@ -397,7 +397,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @{@"id": @"item1"} // Missing 'value' field
     ];
 
-    result = [CSOutputValidator validateOutput:invalidOutput cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
+    result = [CSOutputValidator validateOutput:invalidOutput cap:cap registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertFalse(result, @"Output validation should fail with invalid schema data");
     XCTAssertNotNil(error, @"Error should be present");
@@ -440,7 +440,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"metadata", @"data"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:payload.v1;textable;record",
             @"media_type": @"application/json",
@@ -474,7 +474,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:validData registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:validData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertTrue(result, @"Complex nested schema validation should succeed");
     XCTAssertNil(error, @"Error should be nil for valid complex data");
@@ -492,7 +492,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         ]
     };
 
-    result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
+    result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertFalse(result, @"Complex nested schema validation should fail for invalid data");
     XCTAssertNotNil(error, @"Error should be present for invalid complex data");
@@ -510,7 +510,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"requiredString"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:test-arg.v1;textable;record",
             @"media_type": @"application/json",
@@ -531,7 +531,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:invalidData registry:registryWithSpecs(mediaDefs) error:&error];
 
     XCTAssertFalse(result, @"Validation should fail");
     XCTAssertNotNil(error, @"Error should be present");
@@ -547,8 +547,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 #pragma mark - Built-in Spec ID Tests
 
 - (void)testBuiltinSpecIdsResolve {
-    // Media URNs must be defined in mediaSpecs array (no built-in resolution)
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    // Media URNs must be defined in mediaDefs array (no built-in resolution)
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": CSMediaString,
             @"media_type": @"text/plain",
@@ -573,7 +573,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                                        defaultValue:nil];
 
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:strArg withValue:@"hello" registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:strArg withValue:@"hello" registry:registryWithSpecs(mediaDefs) error:&error];
     XCTAssertTrue(result, @"String spec should validate string");
     XCTAssertNil(error);
 
@@ -583,7 +583,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                                    argDescription:@"Count value"
                                      defaultValue:nil];
 
-    result = [self.validator validateArgument:intArg withValue:@42 registry:registryWithSpecs(mediaSpecs) error:&error];
+    result = [self.validator validateArgument:intArg withValue:@42 registry:registryWithSpecs(mediaDefs) error:&error];
     XCTAssertTrue(result, @"Integer spec should validate integer");
     XCTAssertNil(error);
 
@@ -593,16 +593,16 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                                   argDescription:@"JSON data"
                                     defaultValue:nil];
 
-    result = [self.validator validateArgument:objArg withValue:@{@"key": @"value"} registry:registryWithSpecs(mediaSpecs) error:&error];
+    result = [self.validator validateArgument:objArg withValue:@{@"key": @"value"} registry:registryWithSpecs(mediaDefs) error:&error];
     XCTAssertTrue(result, @"Object spec should validate object");
     XCTAssertNil(error);
 }
 
-#pragma mark - MediaSpecs Without Schema Tests
+#pragma mark - MediaDefs Without Schema Tests
 
-- (void)testMediaSpecsWithoutSchemaSkipsValidation {
-    // Test that media spec definitions without schema skip schema validation
-    NSArray<NSDictionary *> *mediaSpecs = @[
+- (void)testMediaDefsWithoutSchemaSkipsValidation {
+    // Test that media definitions without schema skip schema validation
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:text-input.v1;textable",
             @"media_type": @"text/plain",
@@ -619,7 +619,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Spec without schema skips schema validation
     // (schema validation is skipped when no schema is present)
     NSError *error = nil;
-    BOOL result = [self.validator validateArgument:argument withValue:@"hello world" registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL result = [self.validator validateArgument:argument withValue:@"hello world" registry:registryWithSpecs(mediaDefs) error:&error];
     XCTAssertTrue(result, @"Spec without schema should pass");
     XCTAssertNil(error);
 }
@@ -647,7 +647,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         }
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:large-data.v1;textable;record",
             @"media_type": @"application/json",
@@ -677,15 +677,15 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     [self measureBlock:^{
         NSError *error = nil;
-        BOOL result = [self.validator validateArgument:argument withValue:largeDataSet registry:registryWithSpecs(mediaSpecs) error:&error];
+        BOOL result = [self.validator validateArgument:argument withValue:largeDataSet registry:registryWithSpecs(mediaDefs) error:&error];
         XCTAssertTrue(result, @"Large data set validation should succeed");
     }];
 }
 
 #pragma mark - Cap Full Validation Tests
 
-- (void)testFullCapValidationWithMediaSpecs {
-    // Test complete cap validation flow with mediaSpecs resolution
+- (void)testFullCapValidationWithMediaDefs {
+    // Test complete cap validation flow with mediaDefs resolution
     // Use media:record;textable instead of media:object to indicate textable object data
     NSError *error = nil;
     CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:record;textable"] tag:@"format" value:@"json"] tag:@"op" value:@"transform"] build:&error];
@@ -715,7 +715,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"required": @[@"result"]
     };
 
-    NSArray<NSDictionary *> *mediaSpecs = @[
+    NSArray<NSDictionary *> *mediaDefs = @[
         @{
             @"urn": @"my:transform-input.v1;textable;record",
             @"media_type": @"application/json",
@@ -762,7 +762,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         }
     };
 
-    BOOL inputValid = [CSInputValidator validateArguments:@[validInput] cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL inputValid = [CSInputValidator validateArguments:@[validInput] cap:cap registry:registryWithSpecs(mediaDefs) error:&error];
     XCTAssertTrue(inputValid, @"Valid input should pass: %@", error);
 
     // Test valid output
@@ -771,12 +771,12 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"byteCount": @24
     };
 
-    BOOL outputValid = [CSOutputValidator validateOutput:validOutputData cap:cap registry:registryWithSpecs(mediaSpecs) error:&error];
+    BOOL outputValid = [CSOutputValidator validateOutput:validOutputData cap:cap registry:registryWithSpecs(mediaDefs) error:&error];
     XCTAssertTrue(outputValid, @"Valid output should pass: %@", error);
 }
 
-// XV5 (no-inline-media-spec-redefinition) tests removed: caps no
-// longer carry inline `mediaSpecs` arrays, so the situation the rule
+// XV5 (no-inline-media-def-redefinition) tests removed: caps no
+// longer carry inline `mediaDefs` arrays, so the situation the rule
 // guarded against is structurally impossible.
 
 @end

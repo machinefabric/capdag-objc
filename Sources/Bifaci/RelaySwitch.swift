@@ -1213,7 +1213,7 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    private func handleMasterDeath(_ masterIdx: Int) throws {
+    func handleMasterDeath(_ masterIdx: Int) throws {
         lock.lock()
         defer { lock.unlock() }
 

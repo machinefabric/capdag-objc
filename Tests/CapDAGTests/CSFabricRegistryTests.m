@@ -146,7 +146,7 @@ static NSString *buildRegistryURL(NSString *urn) {
                        description:nil
                      documentation:nil
                           metadata:@{}
-                        mediaSpecs:@[]
+                        mediaDefs:@[]
                               args:@[]
                             output:nil
                       metadataJSON:nil];

@@ -632,7 +632,7 @@ final class CborIntegrationTests: XCTestCase {
 
     // MARK: - Full Path Integration Tests (TEST896-907)
 
-    // TEST896: All cap input media specs that represent user files must have extensions. These are the entry points — the file types users can right-click on.
+    // TEST896: All cap input media defs that represent user files must have extensions. These are the entry points — the file types users can right-click on.
     func test896_fullPathEngineReqToCartridgeResponse() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
