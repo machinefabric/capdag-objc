@@ -32,8 +32,8 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 + (instancetype)defaultConfig {
     CSFabricRegistryConfig *config = [[CSFabricRegistryConfig alloc] init];
     NSDictionary *env = [[NSProcessInfo processInfo] environment];
-    NSString *registryURL = env[@"CAPDAG_REGISTRY_URL"];
-    NSString *schemaURL = env[@"CAPDAG_SCHEMA_BASE_URL"];
+    NSString *registryURL = env[@"CDG_FABRIC_REGISTRY_URL"];
+    NSString *schemaURL = env[@"CDG_SCHEMA_BASE_URL"];
     config.registryBaseURL = registryURL ?: DEFAULT_REGISTRY_BASE_URL;
     config.schemaBaseURL = schemaURL ?: [config.registryBaseURL stringByAppendingString:@"/schema"];
     return config;

@@ -56,7 +56,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// a missing or unrecognized value is a hard parse error.
 @property (nonatomic, assign) CSCartridgeChannel channel;
 /// Verbatim URL of the registry the cartridge was built for, or
-/// `nil` for dev builds (`MFR_REGISTRY_URL` unset). Compared
+/// `nil` for dev builds (`MFR_CARTRIDGE_REGISTRY_URL` unset). Compared
 /// byte-wise; never normalized. Required-but-nullable on the wire:
 /// missing key surfaces as a parse error so old-schema payloads
 /// never silently pass; explicit null means dev install.

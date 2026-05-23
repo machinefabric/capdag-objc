@@ -25,8 +25,8 @@ NS_ASSUME_NONNULL_BEGIN
 /** Base URL for schema profiles (defaults to {registryBaseURL}/schema) */
 @property (nonatomic, copy) NSString *schemaBaseURL;
 
-/// Defaults from environment variables CAPDAG_REGISTRY_URL and
-/// CAPDAG_SCHEMA_BASE_URL, falling back to https://fabric.capdag.com.
+/// Defaults from environment variables CDG_FABRIC_REGISTRY_URL and
+/// CDG_SCHEMA_BASE_URL, falling back to https://fabric.capdag.com.
 + (instancetype)defaultConfig;
 
 /// Custom registry URL; schema URL is set to {registryURL}/schema.

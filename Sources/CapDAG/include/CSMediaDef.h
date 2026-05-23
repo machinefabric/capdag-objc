@@ -176,8 +176,8 @@ FOUNDATION_EXPORT NSString * const CSCapLookupMediaDefFabric;
  * Get the schema base URL from environment variables or default
  *
  * Checks in order:
- * 1. CAPDAG_SCHEMA_BASE_URL environment variable
- * 2. CAPDAG_REGISTRY_URL environment variable + "/schema"
+ * 1. CDG_SCHEMA_BASE_URL environment variable
+ * 2. CDG_FABRIC_REGISTRY_URL environment variable + "/schema"
  * 3. Default: "https://capdag.com/schema"
  */
 FOUNDATION_EXPORT NSString *CSGetSchemaBaseURL(void);

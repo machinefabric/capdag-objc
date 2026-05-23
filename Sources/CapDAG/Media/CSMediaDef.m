@@ -142,19 +142,19 @@ static NSString * const CSDefaultSchemaBase = @"https://capdag.com/schema";
  * Get the schema base URL from environment variables or default
  *
  * Checks in order:
- * 1. CAPDAG_SCHEMA_BASE_URL environment variable
- * 2. CAPDAG_REGISTRY_URL environment variable + "/schema"
+ * 1. CDG_SCHEMA_BASE_URL environment variable
+ * 2. CDG_FABRIC_REGISTRY_URL environment variable + "/schema"
  * 3. Default: "https://capdag.com/schema"
  */
 NSString *CSGetSchemaBaseURL(void) {
     NSDictionary *env = [[NSProcessInfo processInfo] environment];
 
-    NSString *schemaURL = env[@"CAPDAG_SCHEMA_BASE_URL"];
+    NSString *schemaURL = env[@"CDG_SCHEMA_BASE_URL"];
     if (schemaURL.length > 0) {
         return schemaURL;
     }
 
-    NSString *registryURL = env[@"CAPDAG_REGISTRY_URL"];
+    NSString *registryURL = env[@"CDG_FABRIC_REGISTRY_URL"];
     if (registryURL.length > 0) {
         return [registryURL stringByAppendingString:@"/schema"];
     }

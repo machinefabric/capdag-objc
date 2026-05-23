@@ -2142,7 +2142,7 @@ public struct Manifest: Codable, Sendable {
     /// registryURL)` is the full four-tuple. The Swift cartridge
     /// SDK reads this from a generated `BuildIdentity.generated.swift`
     /// file under `Sources/<cartridge>/Generated/` (mirror of Rust's
-    /// `option_env!("MFR_REGISTRY_URL")`).
+    /// `option_env!("MFR_CARTRIDGE_REGISTRY_URL")`).
     public let registryURL: String?
     public let description: String
     /// All caps must be in cap groups. Groups without adapter URNs are valid.
