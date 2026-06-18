@@ -1,10 +1,10 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 791
+**Total Tests:** 793
 
 **Numbered Tests:** 667
 
-**Unnumbered Tests:** 124
+**Unnumbered Tests:** 126
 
 **Numbered Tests Missing Descriptions:** 4
 
@@ -79,9 +79,9 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test071 | `test071_to_string_roundtrip` | TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure | Tests/CapDAGTests/CSMediaUrnTests.m:345 |
 | test072 | `test072_constants_parse` | TEST072: Test all media URN constants parse successfully as valid media URNs | Tests/CapDAGTests/CSMediaUrnTests.m:356 |
 | test074 | `test074_media_urn_matching` | TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements | Tests/CapDAGTests/CSMediaUrnTests.m:388 |
-| test075 | `test075_matching` | TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests | Tests/CapDAGTests/CSMediaUrnTests.m:404 |
-| test076 | `test076_specificity` | TEST076: Test specificity increases with more tags for ranking conformance | Tests/CapDAGTests/CSMediaUrnTests.m:415 |
-| test078 | `test078_object_does_not_conform_to_string` | TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING | Tests/CapDAGTests/CSMediaUrnTests.m:430 |
+| test075 | `test075_matching` | TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests | Tests/CapDAGTests/CSMediaUrnTests.m:406 |
+| test076 | `test076_specificity` | TEST076: Test specificity increases with more tags for ranking conformance | Tests/CapDAGTests/CSMediaUrnTests.m:417 |
+| test078 | `test078_object_does_not_conform_to_string` | TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING | Tests/CapDAGTests/CSMediaUrnTests.m:432 |
 | test091 | `test091_resolve_custom_media_def` | TEST091: Test resolving custom media URN from local media_defs takes precedence over registry | Tests/CapDAGTests/CSMediaDefTests.m:323 |
 | test092 | `test092_resolve_custom_with_schema` | TEST092: Test resolving custom record media def with schema from local media_defs | Tests/CapDAGTests/CSMediaDefTests.m:341 |
 | test094 | `test094_local_overrides_registry` | TEST094: Test local media_defs definition overrides registry definition for same URN | Tests/CapDAGTests/CSMediaDefTests.m:366 |
@@ -221,9 +221,9 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test292 | `test292_messageIdUniqueness` | TEST292: Sequential requests get distinct MessageIds | Tests/BifaciTests/IntegrationTests.swift:346 |
 | test293 | `test293_cartridgeRuntimeHandlerRegistration` | TEST293: Test CartridgeRuntime Op registration and lookup by exact and non-existent cap URN | Tests/BifaciTests/RuntimeTests.swift:677 |
 | test299 | `test299_emptyPayloadRoundtrip` | TEST299: Empty payload request/response roundtrip | Tests/BifaciTests/IntegrationTests.swift:399 |
-| test304 | `test304_media_availability_output_constant` | TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:442 |
-| test305 | `test305_media_path_output_constant` | TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:454 |
-| test306 | `test306_availability_and_path_output_distinct` | TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs | Tests/CapDAGTests/CSMediaUrnTests.m:466 |
+| test304 | `test304_media_availability_output_constant` | TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:444 |
+| test305 | `test305_media_path_output_constant` | TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:456 |
+| test306 | `test306_availability_and_path_output_distinct` | TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs | Tests/CapDAGTests/CSMediaUrnTests.m:468 |
 | test336 | `test336_file_path_reads_file_passes_bytes` | TEST336: Single file-path arg with stdin source reads file and passes bytes to handler TEST336: Single file-path arg with stdin source reads file and passes bytes to handler. Mirrors Rust test336_file_path_reads_file_passes_bytes. | Tests/BifaciTests/CartridgeRuntimeTests.swift:708 |
 | test337 | `test337_file_path_without_stdin_passes_string` | TEST337: file-path arg without stdin source passes path as string (no conversion). Mirrors Rust test337_file_path_without_stdin_passes_string. | Tests/BifaciTests/CartridgeRuntimeTests.swift:748 |
 | test338 | `test338_file_path_via_cli_flag` | TEST338: file-path arg reads file via --file CLI flag. Mirrors Rust test338_file_path_via_cli_flag. | Tests/BifaciTests/CartridgeRuntimeTests.swift:778 |
@@ -658,7 +658,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1803 | `test1803_kind_effect_when_both_sides_void` | TEST1803: Effect classifier — both sides void. Reads as `() → ()`. | Tests/CapDAGTests/CSCapUrnTests.m:1528 |
 | test1804 | `test1804_kind_transform_for_normal_data_processors` | TEST1804: Transform classifier — at least one side non-void, and the cap is not the bare identity. | Tests/CapDAGTests/CSCapUrnTests.m:1542 |
 | test1805 | `test1805_kind_invariant_under_canonical_spellings` | TEST1805: Kind is invariant under canonicalization. The same morphism written in many surface forms must classify the same way once parsed. | Tests/CapDAGTests/CSCapUrnTests.m:1557 |
-| test1810 | `test1810_media_void_is_atomic` | TEST1810: media:void is atomic — refinements are parse errors. Mirrored across every language port (Rust, Go, Python, Swift/ObjC, JS) under the SAME number. Any divergence is a wire-level inconsistency — the unit type's atomicity is part of the protocol's deepest layer, not a per-port detail. | Tests/CapDAGTests/CSMediaUrnTests.m:482 |
+| test1810 | `test1810_media_void_is_atomic` | TEST1810: media:void is atomic — refinements are parse errors. Mirrored across every language port (Rust, Go, Python, Swift/ObjC, JS) under the SAME number. Any divergence is a wire-level inconsistency — the unit type's atomicity is part of the protocol's deepest layer, not a per-port detail. | Tests/CapDAGTests/CSMediaUrnTests.m:484 |
 | test1820 | `test1820_specificity_question_is_zero` | TEST1820: A `?`-valued cap-tag scores 0. Same as missing. | Tests/CapDAGTests/CSCapUrnTests.m:1674 |
 | test1821 | `test1821_specificity_must_not_have_is_five` | TEST1821: A `!`-valued cap-tag scores 5 (top of negative chain). | Tests/CapDAGTests/CSCapUrnTests.m:1688 |
 | test1822 | `test1822_specificity_must_have_any_is_two` | TEST1822: A `*`-valued cap-tag (including bare markers) scores 2. | Tests/CapDAGTests/CSCapUrnTests.m:1697 |
@@ -734,6 +734,8 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | unnumbered | `testCapMatching` |  | Tests/CapDAGTests/CSCapTests.m:119 |
 | unnumbered | `testCapStdinSerialization` |  | Tests/CapDAGTests/CSCapTests.m:143 |
 | unnumbered | `testCapStdinType` |  | Tests/CapDAGTests/CSCapTests.m:77 |
+| unnumbered | `testCapVersionNonZeroRoundTrip` |  | Tests/CapDAGTests/CSCapTests.m:1045 |
+| unnumbered | `testCapVersionZeroRoundTrip` |  | Tests/CapDAGTests/CSCapTests.m:1013 |
 | unnumbered | `testCapWithDescription` |  | Tests/CapDAGTests/CSCapTests.m:56 |
 | unnumbered | `testCoding` | Obj-C specific: NSCoding support | Tests/CapDAGTests/CSCapUrnTests.m:533 |
 | unnumbered | `testCompleteCapDeserialization` |  | Tests/CapDAGTests/CSCapTests.m:279 |
@@ -900,6 +902,8 @@ The following tests are cataloged but do not currently participate in numeric te
 - `testCapMatching` — Tests/CapDAGTests/CSCapTests.m:119
 - `testCapStdinSerialization` — Tests/CapDAGTests/CSCapTests.m:143
 - `testCapStdinType` — Tests/CapDAGTests/CSCapTests.m:77
+- `testCapVersionNonZeroRoundTrip` — Tests/CapDAGTests/CSCapTests.m:1045
+- `testCapVersionZeroRoundTrip` — Tests/CapDAGTests/CSCapTests.m:1013
 - `testCapWithDescription` — Tests/CapDAGTests/CSCapTests.m:56
 - `testCoding` — Tests/CapDAGTests/CSCapUrnTests.m:533
 - `testCompleteCapDeserialization` — Tests/CapDAGTests/CSCapTests.m:279
@@ -991,8 +995,8 @@ These tests still participate in numeric indexing, but the cataloger did not fin
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 791*
+*Total tests: 793*
 *Total numbered tests: 667*
-*Total unnumbered tests: 124*
+*Total unnumbered tests: 126*
 *Total numbered tests missing descriptions: 4*
 *Total numbering mismatches: 0*
