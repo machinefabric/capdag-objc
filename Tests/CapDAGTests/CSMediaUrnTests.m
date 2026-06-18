@@ -387,12 +387,14 @@
 // TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements
 - (void)test074_media_urn_matching {
     NSError *e;
+    // CSMediaPdf is now "media:ext=pdf" — the request must also use the ext= form.
     CSMediaUrn *pdfListing = [CSMediaUrn fromString:CSMediaPdf error:&e];
-    CSMediaUrn *pdfReq = [CSMediaUrn fromString:@"media:pdf" error:&e];
+    CSMediaUrn *pdfReq = [CSMediaUrn fromString:@"media:ext=pdf" error:&e];
     XCTAssertTrue([pdfListing conformsTo:pdfReq]);
 
+    // CSMediaMd is now "media:ext=md;textable" — request with just ext=md tag.
     CSMediaUrn *mdListing = [CSMediaUrn fromString:CSMediaMd error:&e];
-    CSMediaUrn *mdReq = [CSMediaUrn fromString:@"media:md" error:&e];
+    CSMediaUrn *mdReq = [CSMediaUrn fromString:@"media:ext=md" error:&e];
     XCTAssertTrue([mdListing conformsTo:mdReq error:&e]);
 
     CSMediaUrn *strUrn = [CSMediaUrn fromString:CSMediaString error:&e];

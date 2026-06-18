@@ -1010,4 +1010,60 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(emptyDoc.documentation, @"Empty string in documentation must collapse to nil");
 }
 
+- (void)testCapVersionZeroRoundTrip {
+    // version=0 (default) must not appear in serialized dict; absent dict key must deserialize as 0.
+    NSError *error;
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:test-version-zero;in=media:void;out=media:void" error:&error];
+    XCTAssertNotNil(urn, @"URN parse failed: %@", error);
+
+    CSCap *cap = [CSCap capWithUrn:urn
+                             title:@"Version Zero"
+                           command:@"version-zero"
+                       description:nil
+                     documentation:nil
+                          metadata:@{}
+                              args:@[]
+                            output:nil
+                      metadataJSON:nil];
+    XCTAssertEqual(cap.version, (uint32_t)0, @"Default version must be 0");
+
+    NSDictionary *dict = [cap toDictionary];
+    XCTAssertNil(dict[@"version"], @"version=0 must be omitted from serialized dict");
+
+    // Deserialize from a dict that has no "version" key — must come back as 0.
+    NSDictionary *dictWithoutVersion = @{
+        @"urn": @"cap:test-version-zero;in=media:void;out=media:void",
+        @"title": @"Version Zero",
+        @"command": @"version-zero",
+        @"metadata": @{}
+    };
+    CSCap *roundTripped = [CSCap capWithDictionary:dictWithoutVersion error:&error];
+    XCTAssertNotNil(roundTripped, @"Deserialization failed: %@", error);
+    XCTAssertEqual(roundTripped.version, (uint32_t)0, @"Absent version key must deserialize as 0");
+}
+
+- (void)testCapVersionNonZeroRoundTrip {
+    // version=3 must survive serialize → dict → deserialize with value preserved.
+    NSError *error;
+    NSDictionary *dictWithVersion = @{
+        @"urn": @"cap:test-version-three;in=media:void;out=media:void",
+        @"title": @"Version Three",
+        @"command": @"version-three",
+        @"metadata": @{},
+        @"version": @3
+    };
+    CSCap *cap = [CSCap capWithDictionary:dictWithVersion error:&error];
+    XCTAssertNotNil(cap, @"Deserialization with version=3 failed: %@", error);
+    XCTAssertEqual(cap.version, (uint32_t)3, @"version must deserialize as 3");
+
+    NSDictionary *serialized = [cap toDictionary];
+    XCTAssertNotNil(serialized[@"version"], @"version=3 must be present in serialized dict");
+    XCTAssertEqualObjects(serialized[@"version"], @3, @"Serialized version must equal 3");
+
+    // Round-trip through dict again.
+    CSCap *roundTripped = [CSCap capWithDictionary:serialized error:&error];
+    XCTAssertNotNil(roundTripped, @"Second deserialization failed: %@", error);
+    XCTAssertEqual(roundTripped.version, (uint32_t)3, @"version must survive full round-trip");
+}
+
 @end

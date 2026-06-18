@@ -50,40 +50,40 @@ FOUNDATION_EXPORT NSString * const CSMediaObjectList;    // media:list;record
 FOUNDATION_EXPORT NSString * const CSMediaIdentity;       // media:
 FOUNDATION_EXPORT NSString * const CSMediaVoid;         // media:void
 // Semantic content types
-FOUNDATION_EXPORT NSString * const CSMediaPng;          // media:image;png
-FOUNDATION_EXPORT NSString * const CSMediaImage;        // media:image;png (alias for CSMediaPng)
-FOUNDATION_EXPORT NSString * const CSMediaJpeg;         // media:jpeg;image
-FOUNDATION_EXPORT NSString * const CSMediaGif;          // media:gif;image
-FOUNDATION_EXPORT NSString * const CSMediaBmp;          // media:bmp;image
-FOUNDATION_EXPORT NSString * const CSMediaTiff;         // media:tiff;image
-FOUNDATION_EXPORT NSString * const CSMediaWebp;         // media:webp;image
-FOUNDATION_EXPORT NSString * const CSMediaAudio;        // media:wav;audio
-FOUNDATION_EXPORT NSString * const CSMediaWav;          // media:wav;audio (alias for CSMediaAudio)
-FOUNDATION_EXPORT NSString * const CSMediaMp3;          // media:mp3;audio
-FOUNDATION_EXPORT NSString * const CSMediaFlac;         // media:flac;audio
-FOUNDATION_EXPORT NSString * const CSMediaOgg;          // media:ogg;audio
-FOUNDATION_EXPORT NSString * const CSMediaAac;          // media:aac;audio
-FOUNDATION_EXPORT NSString * const CSMediaM4a;          // media:m4a;audio
-FOUNDATION_EXPORT NSString * const CSMediaAiff;         // media:aiff;audio
-FOUNDATION_EXPORT NSString * const CSMediaOpus;         // media:opus;audio
+FOUNDATION_EXPORT NSString * const CSMediaPng;          // media:ext=png;image
+FOUNDATION_EXPORT NSString * const CSMediaImage;        // media:ext=png;image (alias for CSMediaPng)
+FOUNDATION_EXPORT NSString * const CSMediaJpeg;         // media:ext=jpeg;image
+FOUNDATION_EXPORT NSString * const CSMediaGif;          // media:ext=gif;image
+FOUNDATION_EXPORT NSString * const CSMediaBmp;          // media:ext=bmp;image
+FOUNDATION_EXPORT NSString * const CSMediaTiff;         // media:ext=tiff;image
+FOUNDATION_EXPORT NSString * const CSMediaWebp;         // media:ext=webp;image
+FOUNDATION_EXPORT NSString * const CSMediaAudio;        // media:audio;ext=wav
+FOUNDATION_EXPORT NSString * const CSMediaWav;          // media:audio;ext=wav (alias for CSMediaAudio)
+FOUNDATION_EXPORT NSString * const CSMediaMp3;          // media:audio;ext=mp3
+FOUNDATION_EXPORT NSString * const CSMediaFlac;         // media:audio;ext=flac
+FOUNDATION_EXPORT NSString * const CSMediaOgg;          // media:audio;ext=ogg
+FOUNDATION_EXPORT NSString * const CSMediaAac;          // media:audio;ext=aac
+FOUNDATION_EXPORT NSString * const CSMediaM4a;          // media:audio;ext=m4a
+FOUNDATION_EXPORT NSString * const CSMediaAiff;         // media:audio;ext=aiff
+FOUNDATION_EXPORT NSString * const CSMediaOpus;         // media:audio;ext=opus
 FOUNDATION_EXPORT NSString * const CSMediaVideo;        // media:video
-FOUNDATION_EXPORT NSString * const CSMediaMp4;          // media:mp4;video
-FOUNDATION_EXPORT NSString * const CSMediaMov;          // media:mov;video
-FOUNDATION_EXPORT NSString * const CSMediaWebm;         // media:webm;video
-FOUNDATION_EXPORT NSString * const CSMediaMkv;          // media:mkv;video
+FOUNDATION_EXPORT NSString * const CSMediaMp4;          // media:ext=mp4;video
+FOUNDATION_EXPORT NSString * const CSMediaMov;          // media:ext=mov;video
+FOUNDATION_EXPORT NSString * const CSMediaWebm;         // media:ext=webm;video
+FOUNDATION_EXPORT NSString * const CSMediaMkv;          // media:ext=mkv;video
 // Semantic AI input types
-FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;wav;speech
-FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:page;plain-text;textable;txt
+FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;ext=wav;speech
+FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:ext=txt;page;plain-text;textable
 // Document types (PRIMARY naming - type IS the format)
-FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:pdf
-FOUNDATION_EXPORT NSString * const CSMediaEpub;         // media:epub
+FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:ext=pdf
+FOUNDATION_EXPORT NSString * const CSMediaEpub;         // media:ext=epub
 // Text format types (PRIMARY naming - type IS the format)
-FOUNDATION_EXPORT NSString * const CSMediaMd;           // media:md;textable
-FOUNDATION_EXPORT NSString * const CSMediaTxt;          // media:txt;textable
-FOUNDATION_EXPORT NSString * const CSMediaRst;          // media:rst;textable
-FOUNDATION_EXPORT NSString * const CSMediaLog;          // media:log;textable
-FOUNDATION_EXPORT NSString * const CSMediaHtml;         // media:html;textable
-FOUNDATION_EXPORT NSString * const CSMediaXml;          // media:xml;textable
+FOUNDATION_EXPORT NSString * const CSMediaMd;           // media:ext=md;textable
+FOUNDATION_EXPORT NSString * const CSMediaTxt;          // media:ext=txt;textable
+FOUNDATION_EXPORT NSString * const CSMediaRst;          // media:ext=rst;textable
+FOUNDATION_EXPORT NSString * const CSMediaLog;          // media:ext=log;textable
+FOUNDATION_EXPORT NSString * const CSMediaHtml;         // media:ext=html;textable
+FOUNDATION_EXPORT NSString * const CSMediaXml;          // media:ext=xml;textable
 FOUNDATION_EXPORT NSString * const CSMediaJson;         // media:json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaJsonSchema;   // media:json;json-schema;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaYaml;         // media:record;textable;yaml
@@ -118,7 +118,7 @@ FOUNDATION_EXPORT NSString * const CSMediaFilePath;     // media:file-path;texta
 // Semantic input types (continued)
 FOUNDATION_EXPORT NSString * const CSMediaMlxModelPath;    // media:mlx-model-path;textable
 // Semantic output types
-FOUNDATION_EXPORT NSString * const CSMediaImageDescription;   // media:image-description;plain-text;textable;txt
+FOUNDATION_EXPORT NSString * const CSMediaImageDescription;   // media:ext=txt;image-description;plain-text;textable
 FOUNDATION_EXPORT NSString * const CSMediaModelDim;        // media:integer;model-dim;numeric;textable
 FOUNDATION_EXPORT NSString * const CSMediaDownloadOutput;  // media:download-result;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaListOutput;      // media:model-list;record;textable
@@ -130,7 +130,7 @@ FOUNDATION_EXPORT NSString * const CSMediaEmbeddingVector; // media:embedding-ve
 FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:image-caption;record;textable
 // Canonical input/output of cap:save-as-txt — finalised plain text bound to
 // the `.txt` extension. See fabric/media/plain-text.toml.
-FOUNDATION_EXPORT NSString * const CSMediaPlainText;       // media:plain-text;textable;txt
+FOUNDATION_EXPORT NSString * const CSMediaPlainText;       // media:ext=txt;plain-text;textable
 FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:record;textable;transcription
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;json;record
@@ -140,6 +140,7 @@ FOUNDATION_EXPORT NSString * const CSMediaCapUrn;            // media:cap-urn;te
 FOUNDATION_EXPORT NSString * const CSMediaMediaUrn;          // media:media-urn;textable
 FOUNDATION_EXPORT NSString * const CSMediaCapDefinition;     // media:cap-definition;json;record;textable
 FOUNDATION_EXPORT NSString * const CSMediaMediaDefinition; // media:media-definition;json;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaFabricDefver; // media:defver;textable
 // Format-specific variants for JSON, YAML, CSV
 FOUNDATION_EXPORT NSString * const CSMediaJsonValue;       // media:json;textable
 FOUNDATION_EXPORT NSString * const CSMediaJsonRecord;      // media:json;record;textable
@@ -149,8 +150,8 @@ FOUNDATION_EXPORT NSString * const CSMediaYamlValue;       // media:textable;yam
 FOUNDATION_EXPORT NSString * const CSMediaYamlRecord;      // media:record;textable;yaml
 FOUNDATION_EXPORT NSString * const CSMediaYamlList;        // media:list;textable;yaml
 FOUNDATION_EXPORT NSString * const CSMediaYamlListRecord;  // media:list;record;textable;yaml
-FOUNDATION_EXPORT NSString * const CSMediaCsv;             // media:csv;list;record;textable
-FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:csv;list;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaCsv;             // media:ext=csv;list;record;textable
+FOUNDATION_EXPORT NSString * const CSMediaCsvList;         // media:ext=csv;list;record;textable
 
 // ============================================================================
 // STANDARD CAP URN CONSTANTS

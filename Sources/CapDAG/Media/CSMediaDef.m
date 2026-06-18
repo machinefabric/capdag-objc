@@ -31,40 +31,40 @@ NSString * const CSMediaObjectList = @"media:list;record";
 NSString * const CSMediaIdentity = @"media:";
 NSString * const CSMediaVoid = @"media:void";
 // Semantic content types
-NSString * const CSMediaPng = @"media:image;png";
-NSString * const CSMediaImage = @"media:image;png"; // alias for CSMediaPng
-NSString * const CSMediaJpeg = @"media:jpeg;image";
-NSString * const CSMediaGif = @"media:gif;image";
-NSString * const CSMediaBmp = @"media:bmp;image";
-NSString * const CSMediaTiff = @"media:tiff;image";
-NSString * const CSMediaWebp = @"media:webp;image";
-NSString * const CSMediaAudio = @"media:wav;audio";
-NSString * const CSMediaWav = @"media:wav;audio"; // alias for CSMediaAudio
-NSString * const CSMediaMp3 = @"media:mp3;audio";
-NSString * const CSMediaFlac = @"media:flac;audio";
-NSString * const CSMediaOgg = @"media:ogg;audio";
-NSString * const CSMediaAac = @"media:aac;audio";
-NSString * const CSMediaM4a = @"media:m4a;audio";
-NSString * const CSMediaAiff = @"media:aiff;audio";
-NSString * const CSMediaOpus = @"media:opus;audio";
+NSString * const CSMediaPng = @"media:ext=png;image";
+NSString * const CSMediaImage = @"media:ext=png;image"; // alias for CSMediaPng
+NSString * const CSMediaJpeg = @"media:ext=jpeg;image";
+NSString * const CSMediaGif = @"media:ext=gif;image";
+NSString * const CSMediaBmp = @"media:ext=bmp;image";
+NSString * const CSMediaTiff = @"media:ext=tiff;image";
+NSString * const CSMediaWebp = @"media:ext=webp;image";
+NSString * const CSMediaAudio = @"media:audio;ext=wav";
+NSString * const CSMediaWav = @"media:audio;ext=wav"; // alias for CSMediaAudio
+NSString * const CSMediaMp3 = @"media:audio;ext=mp3";
+NSString * const CSMediaFlac = @"media:audio;ext=flac";
+NSString * const CSMediaOgg = @"media:audio;ext=ogg";
+NSString * const CSMediaAac = @"media:audio;ext=aac";
+NSString * const CSMediaM4a = @"media:audio;ext=m4a";
+NSString * const CSMediaAiff = @"media:audio;ext=aiff";
+NSString * const CSMediaOpus = @"media:audio;ext=opus";
 NSString * const CSMediaVideo = @"media:video";
-NSString * const CSMediaMp4 = @"media:mp4;video";
-NSString * const CSMediaMov = @"media:mov;video";
-NSString * const CSMediaWebm = @"media:webm;video";
-NSString * const CSMediaMkv = @"media:mkv;video";
+NSString * const CSMediaMp4 = @"media:ext=mp4;video";
+NSString * const CSMediaMov = @"media:ext=mov;video";
+NSString * const CSMediaWebm = @"media:ext=webm;video";
+NSString * const CSMediaMkv = @"media:ext=mkv;video";
 // Semantic AI input types
-NSString * const CSMediaAudioSpeech = @"media:audio;wav;speech";
-NSString * const CSMediaTextablePage = @"media:page;plain-text;textable;txt";
+NSString * const CSMediaAudioSpeech = @"media:audio;ext=wav;speech";
+NSString * const CSMediaTextablePage = @"media:ext=txt;page;plain-text;textable";
 // Document types (PRIMARY naming - type IS the format)
-NSString * const CSMediaPdf = @"media:pdf";
-NSString * const CSMediaEpub = @"media:epub";
+NSString * const CSMediaPdf = @"media:ext=pdf";
+NSString * const CSMediaEpub = @"media:ext=epub";
 // Text format types (PRIMARY naming - type IS the format)
-NSString * const CSMediaMd = @"media:md;textable";
-NSString * const CSMediaTxt = @"media:txt;textable";
-NSString * const CSMediaRst = @"media:rst;textable";
-NSString * const CSMediaLog = @"media:log;textable";
-NSString * const CSMediaHtml = @"media:html;textable";
-NSString * const CSMediaXml = @"media:xml;textable";
+NSString * const CSMediaMd = @"media:ext=md;textable";
+NSString * const CSMediaTxt = @"media:ext=txt;textable";
+NSString * const CSMediaRst = @"media:ext=rst;textable";
+NSString * const CSMediaLog = @"media:ext=log;textable";
+NSString * const CSMediaHtml = @"media:ext=html;textable";
+NSString * const CSMediaXml = @"media:ext=xml;textable";
 NSString * const CSMediaJson = @"media:json;record;textable";
 NSString * const CSMediaJsonSchema = @"media:json;json-schema;record;textable";
 NSString * const CSMediaYaml = @"media:record;textable;yaml";
@@ -96,7 +96,7 @@ NSString * const CSMediaFilePath = @"media:file-path;textable";
 // Semantic input types (continued)
 NSString * const CSMediaMlxModelPath = @"media:mlx-model-path;textable";
 // Semantic output types
-NSString * const CSMediaImageDescription = @"media:image-description;plain-text;textable;txt";
+NSString * const CSMediaImageDescription = @"media:ext=txt;image-description;plain-text;textable";
 NSString * const CSMediaModelDim = @"media:integer;model-dim;numeric;textable";
 NSString * const CSMediaDownloadOutput = @"media:download-result;record;textable";
 NSString * const CSMediaListOutput = @"media:model-list;record;textable";
@@ -106,7 +106,7 @@ NSString * const CSMediaAvailabilityOutput = @"media:model-availability;record;t
 NSString * const CSMediaPathOutput = @"media:model-path;record;textable";
 NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;record;textable";
 NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
-NSString * const CSMediaPlainText = @"media:plain-text;textable;txt";
+NSString * const CSMediaPlainText = @"media:ext=txt;plain-text;textable";
 NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
 NSString * const CSMediaDecision = @"media:decision;json;record;textable";
 NSString * const CSMediaAdapterSelection = @"media:adapter-selection;json;record";
@@ -115,6 +115,10 @@ NSString * const CSMediaCapUrn = @"media:cap-urn;textable";
 NSString * const CSMediaMediaUrn = @"media:media-urn;textable";
 NSString * const CSMediaCapDefinition = @"media:cap-definition;json;record;textable";
 NSString * const CSMediaMediaDefinition = @"media:media-definition;json;record;textable";
+// Fabric registry per-definition version (defver). Carried as data alongside a
+// URN when a cap looks up a definition pinned to a specific manifest snapshot.
+// Absent ⇒ defver 0 (legacy v0 flat-path lookup).
+NSString * const CSMediaFabricDefver = @"media:defver;textable";
 // Fabric lookup caps (implemented by fetchcartridge)
 NSString * const CSCapLookupCapFabric =
     @"cap:in=\"media:cap-urn;textable\";fabric;lookup-cap;out=\"media:cap-definition;json;record;textable\"";
@@ -129,8 +133,8 @@ NSString * const CSMediaYamlValue = @"media:textable;yaml";
 NSString * const CSMediaYamlRecord = @"media:record;textable;yaml";
 NSString * const CSMediaYamlList = @"media:list;textable;yaml";
 NSString * const CSMediaYamlListRecord = @"media:list;record;textable;yaml";
-NSString * const CSMediaCsv = @"media:csv;list;record;textable";
-NSString * const CSMediaCsvList = @"media:csv;list;record;textable";
+NSString * const CSMediaCsv = @"media:ext=csv;list;record;textable";
+NSString * const CSMediaCsvList = @"media:ext=csv;list;record;textable";
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION

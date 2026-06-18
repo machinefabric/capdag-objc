@@ -822,6 +822,12 @@
         return nil;
     }
 
+    uint32_t version = 0;
+    NSNumber *versionNum = dictionary[@"version"];
+    if (versionNum && [versionNum isKindOfClass:[NSNumber class]]) {
+        version = [versionNum unsignedIntValue];
+    }
+
     // Optional fields
     NSString *capDescription = dictionary[@"cap_description"];
     // Long-form markdown documentation. Snake_case in JSON to match the
@@ -894,6 +900,7 @@
     cap->_registeredBy = registeredBy;
     cap->_supportedModelTypes = [supportedModelTypes copy];
     cap->_defaultModelSpec = [defaultModelSpec copy];
+    cap->_version = version;
     return cap;
 }
 
@@ -901,6 +908,9 @@
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
 
     dict[@"urn"] = [self.capUrn toString];
+    if (self.version != 0) {
+        dict[@"version"] = @(self.version);
+    }
     dict[@"title"] = self.title;
     dict[@"command"] = self.command;
 
@@ -1081,6 +1091,7 @@
     copy->_registeredBy = [self.registeredBy copy];
     copy->_supportedModelTypes = [self.supportedModelTypes copy];
     copy->_defaultModelSpec = [self.defaultModelSpec copy];
+    copy->_version = self.version;
     return copy;
 }
 
@@ -1097,6 +1108,7 @@
     [coder encodeObject:self.registeredBy forKey:@"registeredBy"];
     [coder encodeObject:self.supportedModelTypes forKey:@"supportedModelTypes"];
     [coder encodeObject:self.defaultModelSpec forKey:@"defaultModelSpec"];
+    [coder encodeObject:@(self.version) forKey:@"version"];
 }
 
 - (nullable instancetype)initWithCoder:(NSCoder *)coder {
@@ -1131,6 +1143,7 @@
     cap->_registeredBy = registeredBy;
     cap->_supportedModelTypes = supportedModelTypes ?: @[];
     cap->_defaultModelSpec = defaultModelSpec;
+    cap->_version = [[coder decodeObjectOfClass:[NSNumber class] forKey:@"version"] unsignedIntValue];
     return cap;
 }
 
@@ -1174,6 +1187,7 @@
     cap->_metadataJSON = [metadataJSON copy];
     cap->_supportedModelTypes = @[];
     cap->_defaultModelSpec = nil;
+    cap->_version = 0;
     return cap;
 }
 

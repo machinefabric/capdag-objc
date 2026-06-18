@@ -360,6 +360,11 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Formal cap URN with hierarchical naming
 @property (nonatomic, readonly) CSCapUrn *capUrn;
 
+/// Per-definition version. 0 means v0 (pre-versioning). >= 1 means the cap is
+/// published at a versioned path and pinned by the manifest at that defver.
+/// Omitted from serialization when 0; deserialized as 0 when absent.
+@property (nonatomic) uint32_t version;
+
 /// Human-readable title of the capability (required)
 @property (nonatomic, readonly) NSString *title;
 
