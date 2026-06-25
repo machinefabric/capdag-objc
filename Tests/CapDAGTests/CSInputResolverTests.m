@@ -503,7 +503,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
 
 // Mirror-specific: glob pattern detection is an objc-only helper used by the resolver internals.
 // Rust uses globwalk; these checks exercise the BSD glob detection logic.
-- (void)test_glob_pattern_detection {
+- (void)test0143_glob_pattern_detection {
     XCTAssertTrue(CSInputResolverIsGlobPattern(@"*.txt"));
     XCTAssertTrue(CSInputResolverIsGlobPattern(@"file?.pdf"));
     XCTAssertTrue(CSInputResolverIsGlobPattern(@"doc[1-3].txt"));
@@ -512,7 +512,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
 }
 
 // Mirror-specific: CSResolvedInputSet aggregates totalSize across files
-- (void)test_resolved_input_set_total_size {
+- (void)test0144_resolved_input_set_total_size {
     CSResolvedFile *file1 = [CSResolvedFile fileWithPath:@"/a.txt"
                                                 mediaUrn:@"media:txt"
                                                sizeBytes:100

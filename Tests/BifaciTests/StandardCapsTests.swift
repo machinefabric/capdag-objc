@@ -68,7 +68,7 @@ final class StandardCapsTests: XCTestCase {
     }
 
     // Mirror-specific coverage: Manifest.ensureIdentity() adds if missing, idempotent if present
-    func testmanifestEnsureIdentityIdempotent() throws {
+    func test0077_manifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
         let testUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
         let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")

@@ -29,7 +29,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // MARK: - Basic Tests (unnumbered, match Rust unnumbered tests)
 
-- (void)testAddCapAndBasicTraversal {
+- (void)test0373_AddCapAndBasicTraversal {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract_text", @"Extract Text");
@@ -47,7 +47,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(targets[0].minDepth, 1u);
 }
 
-- (void)testExactVsConformanceMatching {
+// TEST0374: Exact vs conformance matching
+- (void)test0374_ExactVsConformanceMatching {
     // Verify is_equivalent distinguishes singular vs list
     NSError *error = nil;
     CSMediaUrn *singular = [CSMediaUrn fromString:@"media:analysis-result" error:&error];
@@ -77,7 +78,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(pathsPlural.count, 1u, @"list query should find exactly 1 path");
 }
 
-- (void)testMultiStepPath {
+// TEST0375: Multi step path
+- (void)test0375_MultiStepPath {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract", @"Extract");
@@ -97,7 +99,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqualObjects(paths[0].steps[1].capUrn, [cap2.capUrn toString]);
 }
 
-- (void)testDeterministicOrdering {
+// TEST0376: Deterministic ordering
+- (void)test0376_DeterministicOrdering {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:pdf", @"media:extracted-text", @"extract_a", @"Extract A");
@@ -121,7 +124,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     }
 }
 
-- (void)testSyncFromCaps {
+// TEST0377: Sync from caps
+- (void)test0377_SyncFromCaps {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     NSArray *caps = @[

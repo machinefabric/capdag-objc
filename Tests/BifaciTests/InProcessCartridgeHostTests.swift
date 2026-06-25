@@ -100,8 +100,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         }
     }
 
-    // TEST654: InProcessCartridgeHost routes REQ to matching handler and returns response
-    func test654_routesReqToHandler() throws {
+    // TEST0107: InProcessCartridgeHost routes REQ to matching handler and returns response
+    func test0107_routesReqToHandler() throws {
         let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
         let cap = makeTestCap(capUrn)
         let handlers: [(name: String, caps: [CSCap], handler: FrameHandler)] = [
@@ -184,8 +184,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // TEST655: InProcessCartridgeHost handles identity verification (echo nonce)
-    func test655_identityVerification() throws {
+    // TEST0108: InProcessCartridgeHost handles identity verification (echo nonce)
+    func test0108_identityVerification() throws {
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "in-process-test"),
             handlers: []
@@ -245,8 +245,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // TEST656: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
-    func test656_noHandlerReturnsErr() throws {
+    // TEST0109: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
+    func test0109_noHandlerReturnsErr() throws {
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "in-process-test"),
             handlers: []
@@ -287,8 +287,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // TEST657: InProcessCartridgeHost manifest includes identity cap and handler caps
-    func test657_manifestIncludesAllCaps() throws {
+    // TEST0110: InProcessCartridgeHost manifest includes identity cap and handler caps
+    func test0110_manifestIncludesAllCaps() throws {
         let capUrn = "cap:in=\"media:pdf\";thumbnail;out=\"media:image;png\""
         let cap = makeTestCap(capUrn)
         let host = InProcessCartridgeHost(

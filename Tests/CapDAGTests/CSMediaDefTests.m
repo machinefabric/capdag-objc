@@ -21,7 +21,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 @implementation CSMediaDefTests
 
-- (void)testMetadataPropagationFromObjectDef {
+// TEST0145: Metadata propagation from object def
+- (void)test0145_MetadataPropagationFromObjectDef {
     // Create a media definition with metadata
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -51,7 +52,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.metadata[@"display_index"], @5, @"Should have display_index");
 }
 
-- (void)testMetadataNilByDefault {
+// TEST0146: Metadata nil by default
+- (void)test0146_MetadataNilByDefault {
     // Media defs without metadata field should have nil metadata
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -69,7 +71,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(resolved.metadata, @"Should have nil metadata when not provided");
 }
 
-- (void)testMetadataWithValidation {
+// TEST0147: Metadata with validation
+- (void)test0147_MetadataWithValidation {
     // Ensure metadata and validation can coexist
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -105,7 +108,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.metadata[@"ui_type"], @"SETTING_UI_TYPE_SLIDER", @"Should have ui_type");
 }
 
-- (void)testResolveMediaUrnNotFound {
+// TEST0156: Resolve media urn not found
+- (void)test0156_ResolveMediaUrnNotFound {
     // Should fail hard for unknown media URNs
     NSError *error = nil;
     CSMediaDef *resolved = CSResolveMediaUrn(@"media:unknown;type", registryWithSpecs(@[]), &error);
@@ -117,7 +121,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // Extensions field tests
 
-- (void)testExtensionsPropagationFromObjectDef {
+- (void)test0157_ExtensionsPropagationFromObjectDef {
     // Create a media definition with extensions array
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -140,7 +144,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.extensions[0], @"pdf", @"Should have pdf extension");
 }
 
-- (void)testExtensionsEmptyWhenNotSet {
+// TEST0158: Extensions empty when not set
+- (void)test0158_ExtensionsEmptyWhenNotSet {
     // Media defs without extensions field should have empty array
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -159,7 +164,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqual(resolved.extensions.count, 0, @"Should have empty extensions array when not provided");
 }
 
-- (void)testExtensionsWithMetadataAndValidation {
+// TEST0159: Extensions with metadata and validation
+- (void)test0159_ExtensionsWithMetadataAndValidation {
     // Ensure extensions, metadata, and validation can coexist
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -191,7 +197,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.extensions[0], @"json", @"Should have json extension");
 }
 
-- (void)testMultipleExtensions {
+// TEST0160: Multiple extensions
+- (void)test0160_MultipleExtensions {
     // Test multiple extensions in a media def
     NSArray<NSDictionary *> *mediaDefs = @[
         @{

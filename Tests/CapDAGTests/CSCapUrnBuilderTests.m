@@ -13,7 +13,8 @@
 
 @implementation CSCapUrnBuilderTests
 
-- (void)testBuilderBasicConstruction {
+// TEST0112: Builder basic construction
+- (void)test0112_BuilderBasicConstruction {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
@@ -29,7 +30,8 @@
     XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;out=\"media:record;textable\";transform;type=data_processing");
 }
 
-- (void)testBuilderFluentAPI {
+// TEST0113: Builder fluent a p i
+- (void)test0113_BuilderFluentAPI {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [[[[[[builder inSpec:@"media:void"] outSpec:@"media:record;textable"]
@@ -50,7 +52,8 @@
     XCTAssertEqualObjects([cap getOutSpec], @"media:record;textable");
 }
 
-- (void)testBuilderDirectionAccess {
+// TEST0114: Builder direction access
+- (void)test0114_BuilderDirectionAccess {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:string"];
@@ -67,7 +70,8 @@
     XCTAssertEqualObjects([cap getTag:@"out"], @"media:");
 }
 
-- (void)testBuilderCustomTags {
+// TEST0117: Builder custom tags
+- (void)test0117_BuilderCustomTags {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
@@ -85,7 +89,8 @@
     XCTAssertEqualObjects([cap getTag:@"op"], @"compress");
 }
 
-- (void)testBuilderTagOverrides {
+// TEST0118: Builder tag overrides
+- (void)test0118_BuilderTagOverrides {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
@@ -102,7 +107,8 @@
     XCTAssertEqualObjects([cap getTag:@"format"], @"jpg");
 }
 
-- (void)testBuilderMissingInSpecFails {
+// TEST0119: Builder missing in spec fails
+- (void)test0119_BuilderMissingInSpecFails {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     // Only set outSpec, not inSpec
@@ -115,7 +121,8 @@
     XCTAssertEqual(error.code, CSCapUrnErrorMissingInSpec);
 }
 
-- (void)testBuilderMissingOutSpecFails {
+// TEST0120: Builder missing out spec fails
+- (void)test0120_BuilderMissingOutSpecFails {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     // Only set inSpec, not outSpec
@@ -128,7 +135,8 @@
     XCTAssertEqual(error.code, CSCapUrnErrorMissingOutSpec);
 }
 
-- (void)testBuilderEmptyBuildFailsWithMissingInSpec {
+// TEST0121: Builder empty build fails with missing in spec
+- (void)test0121_BuilderEmptyBuildFailsWithMissingInSpec {
     NSError *error;
     CSCapUrn *cap = [[CSCapUrnBuilder builder] build:&error];
 
@@ -137,7 +145,8 @@
     XCTAssertEqual(error.code, CSCapUrnErrorMissingInSpec);
 }
 
-- (void)testBuilderTagIgnoresInOut {
+// TEST0122: Builder tag ignores in out
+- (void)test0122_BuilderTagIgnoresInOut {
     XCTAssertThrowsSpecificNamed([[[CSCapUrnBuilder builder] tag:@"in" value:@"different"] build:nil],
                                  NSException,
                                  NSInvalidArgumentException);
@@ -146,7 +155,8 @@
                                  NSInvalidArgumentException);
 }
 
-- (void)testBuilderMinimalValid {
+// TEST0123: Builder minimal valid
+- (void)test0123_BuilderMinimalValid {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
@@ -165,7 +175,8 @@
     XCTAssertEqual([cap specificity], 10000 * 4 + 100 * 2 + 0);
 }
 
-- (void)testBuilderComplex {
+// TEST0124: Builder complex
+- (void)test0124_BuilderComplex {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:"];
@@ -206,7 +217,8 @@
     XCTAssertEqual([cap specificity], 10000 * 0 + 100 * 0 + 30);
 }
 
-- (void)testBuilderWildcards {
+// TEST0125: Builder wildcards
+- (void)test0125_BuilderWildcards {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"*"]; // Wildcard in
@@ -231,7 +243,8 @@
     XCTAssertEqualObjects([cap getOutSpec], @"media:");
 }
 
-- (void)testBuilderStaticFactory {
+// TEST0126: Builder static factory
+- (void)test0126_BuilderStaticFactory {
     CSCapUrnBuilder *builder1 = [CSCapUrnBuilder builder];
     CSCapUrnBuilder *builder2 = [CSCapUrnBuilder builder];
 
@@ -240,7 +253,8 @@
     XCTAssertNotNil(builder2);
 }
 
-- (void)testBuilderMatchingWithBuiltCap {
+// TEST0127: Builder matching with built cap
+- (void)test0127_BuilderMatchingWithBuiltCap {
     NSError *error;
 
     // Create a specific cap (handler/instance)
@@ -290,7 +304,8 @@
     XCTAssertEqual([wildcardRequest specificity], 10000 * 4 + 100 * 2 + 10);
 }
 
-- (void)testBuilderDirectionMismatchNoMatch {
+// TEST0128: Builder direction mismatch no match
+- (void)test0128_BuilderDirectionMismatchNoMatch {
     NSError *error;
 
     // Create caps with different directions

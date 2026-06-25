@@ -285,7 +285,7 @@ func allocationMb(percent: Int) -> Int {
 /// Single test: allocate 90% of RAM with incompressible CSPRNG data, monitor
 /// memory, detect pressure (kernel or threshold), kill cartridge, verify death.
 /// The goal is to overload the system — force the kernel into real pressure.
-func testPressureAndKill(host: CartridgeHost, writer: FrameWriter, reader: FrameReader) -> Bool {
+func test0111_PressureAndKill(host: CartridgeHost, writer: FrameWriter, reader: FrameReader) -> Bool {
     let percent = 90
     let sizeMb = allocationMb(percent: percent)
     let holdSec = 120
@@ -554,7 +554,7 @@ Thread.sleep(forTimeInterval: 0.1)
 let writer = FrameWriter(handle: toHostPipe.fileHandleForWriting)
 let reader = FrameReader(handle: fromHostPipe.fileHandleForReading)
 
-let success = testPressureAndKill(host: host, writer: writer, reader: reader)
+let success = test0111_PressureAndKill(host: host, writer: writer, reader: reader)
 
 host.close()
 Thread.sleep(forTimeInterval: 0.5)

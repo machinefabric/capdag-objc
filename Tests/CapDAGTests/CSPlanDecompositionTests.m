@@ -60,7 +60,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 
 // MARK: - Standalone Collect Node Tests
 
-- (void)testStandaloneCollectNode {
+- (void)test0209_StandaloneCollectNode {
     // Standalone Collect: has outputMediaUrn set, single input node
     CSMachineNode *node = [CSMachineNode collectNode:@"collect_0" inputNodes:@[@"cap_0"]];
     node.outputMediaUrn = @"media:list;text";
@@ -72,7 +72,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertFalse([node isFanOut]);
 }
 
-- (void)testCapAndForEachAreNotStandaloneCollect {
+// TEST0265: Cap and for each are not standalone collect
+- (void)test0265_CapAndForEachAreNotStandaloneCollect {
     CSMachineNode *cap = [CSMachineNode capNode:@"cap_0" capUrn:@"cap:test"];
     XCTAssertFalse([cap isFanIn]);
 

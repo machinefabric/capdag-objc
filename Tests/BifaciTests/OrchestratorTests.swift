@@ -135,7 +135,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // Mirror-specific coverage: Parse fan-in pattern
-    func testparseFanInPattern() async throws {
+    func test0079_parseFanInPattern() async throws {
         let registry = TestcartridgeRegistry()
 
         // Two parallel paths that merge
@@ -160,7 +160,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // Mirror-specific coverage: Validate that cycles are rejected
-    func testrejectCycles() async throws {
+    func test0080_rejectCycles() async throws {
         let registry = TestcartridgeRegistry()
 
         // Create a self-loop using identity cap
@@ -327,7 +327,7 @@ final class OrchestratorTests: XCTestCase {
     // MARK: - DOT Parser Tests
 
     // TEST: Parse simple digraph
-    func testDotParserSimpleDigraph() throws {
+    func test0081_DotParserSimpleDigraph() throws {
         let dot = #"""
             digraph G {
                 A -> B;
@@ -347,7 +347,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // TEST: Parse edge with label attribute
-    func testDotParserEdgeWithLabel() throws {
+    func test0082_DotParserEdgeWithLabel() throws {
         let dot = #"""
             digraph G {
                 A -> B [label="my_label"];
@@ -361,7 +361,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // TEST: Parse node with attributes
-    func testDotParserNodeWithAttributes() throws {
+    func test0083_DotParserNodeWithAttributes() throws {
         let dot = #"""
             digraph G {
                 A [shape=box, color=red];
@@ -378,7 +378,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // TEST: Parse quoted identifiers
-    func testDotParserQuotedIdentifiers() throws {
+    func test0084_DotParserQuotedIdentifiers() throws {
         let dot = #"""
             digraph G {
                 "node with spaces" -> "another node" [label="test"];
@@ -394,7 +394,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // TEST: Parse graph with comments
-    func testDotParserComments() throws {
+    func test0085_DotParserComments() throws {
         let dot = #"""
             // This is a comment
             digraph G {
@@ -410,7 +410,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // TEST: Parse cap URN label with escaped quotes
-    func testDotParserCapUrnLabel() throws {
+    func test0086_DotParserCapUrnLabel() throws {
         let dot = #"""
             digraph G {
                 A -> B [label="cap:in=\"media:node1;textable\";test;out=\"media:node2;textable\""];

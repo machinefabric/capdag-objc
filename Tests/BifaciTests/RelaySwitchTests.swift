@@ -898,7 +898,7 @@ final class CborRelaySwitchTests: XCTestCase {
     // entries keyed by index. Accumulating zombie slots on each
     // reconnect was the bug class these tests guard against.
 
-    func testReattachByIdPreservesSlotIndex() throws {
+    func test0087_ReattachByIdPreservesSlotIndex() throws {
         // Phase 1: build a switch with one slot at id "xpc-service".
         let pair1a = FileHandle.socketPair()
         let pair2a = FileHandle.socketPair()
@@ -949,7 +949,8 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    func testAddMasterWithDuplicateHealthyIdErrors() throws {
+    // TEST0088: Add master with duplicate healthy id errors
+    func test0088_AddMasterWithDuplicateHealthyIdErrors() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
         let done = DispatchSemaphore(value: 0)
@@ -987,7 +988,8 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    func testRelaySwitchInitRejectsDuplicateIds() throws {
+    // TEST0089: Relay switch init rejects duplicate ids
+    func test0089_RelaySwitchInitRejectsDuplicateIds() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
         let pair3 = FileHandle.socketPair()

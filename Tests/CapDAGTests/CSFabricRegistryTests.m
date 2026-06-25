@@ -41,14 +41,15 @@ static NSString *buildRegistryURL(NSString *urn) {
 
 @implementation CSFabricRegistryTests
 
-- (void)testRegistryCreation {
+// TEST0161: Registry creation
+- (void)test0161_RegistryCreation {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     XCTAssertNotNil(registry);
 }
 
 // Registry validator tests removed - not part of current API
 
-- (void)testRegistryValidCapCheck {
+- (void)test0162_RegistryValidCapCheck {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     
     // Test that registry checks if cap exists in cache
@@ -64,7 +65,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 
 /// Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters
 /// in the path, so no percent-encoding gymnastics.
-- (void)testPerCapURLUsesSHA256 {
+- (void)test0166_PerCapURLUsesSHA256 {
     NSString *registryURL = buildRegistryURL(@"cap:in=media:string;test;out=\"media:record;textable\"");
 
     XCTAssertTrue([registryURL containsString:@"/caps/"], @"URL must use the /caps/ path prefix");
@@ -113,7 +114,8 @@ static NSString *buildRegistryURL(NSString *urn) {
 // Note: These tests would make actual HTTP requests to capdag.com
 // Uncomment to test with real registry
 /*
-- (void)testGetCapDefinitionReal {
+// TEST0167: Get cap definition real
+- (void)test0167_GetCapDefinitionReal {
     CSFabricRegistry *registry = [CSFabricRegistry registry];
     
     XCTestExpectation *expectation = [self expectationWithDescription:@"Get cap definition"];
@@ -133,7 +135,8 @@ static NSString *buildRegistryURL(NSString *urn) {
     [self waitForExpectationsWithTimeout:15.0 handler:nil];
 }
 
-- (void)testValidateCapCanonical {
+// TEST0168: Validate cap canonical
+- (void)test0168_ValidateCapCanonical {
     CSRegistryValidator *validator = [CSRegistryValidator validator];
     
     NSError *error;

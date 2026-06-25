@@ -296,15 +296,15 @@ final class CborFrameTests: XCTestCase {
         XCTAssertFalse(frame.isEof)
     }
 
-    // TEST198: Test Limits::default provides the documented default values
-    func test198_limitsDefault() {
+    // TEST0057: Test Limits::default provides the documented default values
+    func test0057_limitsDefault() {
         let limits = Limits()
         XCTAssertEqual(limits.maxFrame, DEFAULT_MAX_FRAME)
         XCTAssertEqual(limits.maxChunk, DEFAULT_MAX_CHUNK)
     }
 
     // TEST198 (continued): Limits negotiation picks minimum of both sides
-    func test198b_limitsNegotiation() {
+    func test0058_b_limitsNegotiation() {
         let local = Limits(maxFrame: 1_000_000, maxChunk: 100_000)
         let remote = Limits(maxFrame: 500_000, maxChunk: 200_000)
         let negotiated = local.negotiate(with: remote)
@@ -356,8 +356,8 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - Encode/Decode Roundtrip Tests (TEST205-213)
 
-    // TEST205: Test REQ frame encode/decode roundtrip preserves all fields
-    func test205_encodeDecodeRoundtrip() throws {
+    // TEST0059: Test REQ frame encode/decode roundtrip preserves all fields
+    func test0059_encodeDecodeRoundtrip() throws {
         let id = MessageId.newUUID()
         let original = Frame.req(
             id: id,
@@ -891,7 +891,7 @@ final class CborFrameTests: XCTestCase {
     // MARK: - All Frame Types Roundtrip (combined TEST for TEST205-213 coverage)
 
     // Covers all frame types in a single loop for comprehensive roundtrip verification
-    func test205b_allFrameTypesRoundtrip() throws {
+    func test0069_b_allFrameTypesRoundtrip() throws {
         let chunkPayload = "chunk".data(using: .utf8)!
         let testCases: [(Frame, String)] = [
             (Frame.hello(limits: Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)), "HELLO"),
@@ -1071,8 +1071,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.mediaUrn, "")
     }
 
-    // TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn
-    func test389_streamStartRoundtrip() throws {
+    // TEST0070: StreamStart encode/decode roundtrip preserves stream_id and media_urn
+    func test0070_streamStartRoundtrip() throws {
         let id = MessageId.newUUID()
         let streamId = "stream-abc-123"
         let mediaUrn = "media:"
@@ -1088,7 +1088,7 @@ final class CborFrameTests: XCTestCase {
     }
 
     // TEST389b: STREAM_START with isSequence roundtrips correctly
-    func test389b_streamStartIsSequenceRoundtrip() throws {
+    func test0073_b_streamStartIsSequenceRoundtrip() throws {
         let id = MessageId.newUUID()
 
         // isSequence=false

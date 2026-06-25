@@ -274,7 +274,7 @@ final class ManifestTests: XCTestCase {
 
     // MARK: - CSCapManifest With PageUrl Test
 
-    func test_csCapManifestWithPageUrl() throws {
+    func test0023_csCapManifestWithPageUrl() throws {
         let manifest = CSCapManifest(
             name: "cartridge-with-url",
             version: "1.0.0",
@@ -290,7 +290,7 @@ final class ManifestTests: XCTestCase {
     // Channel is part of the cartridge's identity; the deserializer
     // accepts the closed enum {release, nightly} only. Anything else
     // is a publish-pipeline bug we want to surface.
-    func test_csCapManifestRejectsUnknownChannel() {
+    func test0051_csCapManifestRejectsUnknownChannel() {
         let dict: [String: Any] = [
             "name": "weird-cartridge",
             "version": "1.0.0",

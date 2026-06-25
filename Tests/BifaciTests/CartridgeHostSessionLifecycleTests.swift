@@ -63,7 +63,7 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
     /// the very end of `run()`. The Swift mirror's previous
     /// behavior was to leak cartridges across reconnects, which is
     /// what allowed the XPC-service NSConcreteData accumulator bug.
-    func testRunExitKillsAllManagedCartridges() async throws {
+    func test0053_RunExitKillsAllManagedCartridges() async throws {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
@@ -138,7 +138,7 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
     /// test documents the contract by demonstrating that a fresh
     /// `CartridgeHost` instance is the only correct way to start
     /// a new relay session.
-    func testNewHostInstancePerRelaySession() async throws {
+    func test0054_NewHostInstancePerRelaySession() async throws {
         // Session 1
         do {
             let engineToHost = Pipe()
