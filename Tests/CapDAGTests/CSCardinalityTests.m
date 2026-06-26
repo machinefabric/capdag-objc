@@ -87,14 +87,14 @@
 // TEST699: CapShapeInfo cardinality from URN is always Single; ManyToOne requires is_sequence
 - (void)test699_cap_shape_info_list_urn_still_single_cardinality {
     // URN parsing always yields Single — the "list" tag is a structure marker, not cardinality
-    CSCapShapeInfo *fromUrn = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:list;pdf" outSpec:@"media:ext=pdf"];
+    CSCapShapeInfo *fromUrn = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:ext=pdf;list" outSpec:@"media:ext=pdf"];
     XCTAssertEqual(fromUrn.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(fromUrn.output.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual([fromUrn cardinalityPattern], CSCardinalityPatternOneToOne);
 
     // With is_sequence=true on input, cardinality becomes ManyToOne
     CSCapShapeInfo *withSeq = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs"
-                                                  inSpec:@"media:list;pdf"
+                                                  inSpec:@"media:ext=pdf;list"
                                                  outSpec:@"media:ext=pdf"
                                          inputIsSequence:YES
                                         outputIsSequence:NO];

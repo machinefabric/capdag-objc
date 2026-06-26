@@ -1610,7 +1610,7 @@ static NSString* testUrn(NSString *tags) {
     NSError *error = nil;
     CSCapUrn *resize = [CSCapUrn fromString:@"cap:in=media:image;resize;out=media:image" error:&error];
     XCTAssertNotNil(resize, @"%@", error.localizedDescription);
-    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png;width=4000" error:&error];
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:ext=png;image;width=4000" error:&error];
     XCTAssertNotNil(png, @"%@", error.localizedDescription);
 
     CSMediaUrn *result = [resize inferRuntimeOutputMedia:png error:&error];
