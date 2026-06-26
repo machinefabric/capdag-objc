@@ -29,7 +29,7 @@ extension CSMediaUrn {
 ///
 /// Returns true if either URN accepts the other, meaning they represent
 /// related media types where one may be more specific than the other.
-/// For example, `media:image;png` and `media:image;png;bytes` are compatible
+/// For example, `media:ext=png;image` and `media:bytes;ext=png;image` are compatible
 /// because the less-specific one accepts the more-specific one.
 private func mediaUrnsCompatible(_ a: String, _ b: String) -> Result<Bool, ParseOrchestrationError> {
     guard let aUrn = CSMediaUrn.from(a) else {

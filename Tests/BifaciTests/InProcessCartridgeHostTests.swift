@@ -289,7 +289,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST0110: InProcessCartridgeHost manifest includes identity cap and handler caps
     func test0110_manifestIncludesAllCaps() throws {
-        let capUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:image;png\""
+        let capUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:ext=png;image\""
         let cap = makeTestCap(capUrn)
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "thumb-host"),
@@ -392,8 +392,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity
     func test660_closestSpecificityRouting() throws {
-        let specificUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:image;png\""
-        let genericUrn = "cap:in=\"media:image\";thumbnail;out=\"media:image;png\""
+        let specificUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:ext=png;image\""
+        let genericUrn = "cap:in=\"media:image\";thumbnail;out=\"media:ext=png;image\""
 
         let specificCap = makeTestCap(specificUrn)
         let genericCap = makeTestCap(genericUrn)

@@ -27,7 +27,7 @@
 - (void)test853_lub_no_common_tags {
     NSError *error;
     CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
-    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     XCTAssertNotNil(pdf);
     XCTAssertNotNil(png);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf, png]];
@@ -220,8 +220,8 @@
 - (void)test546_is_image {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaPng error:&e] isImage]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:image;jpg" error:&e] isImage]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:image;jpg" error:&e] isImage]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:ext=jpg;image" error:&e] isImage]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:ext=jpg;image" error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaPdf error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaAudio error:&e] isImage]);
@@ -233,7 +233,7 @@
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaAudio error:&e] isAudio]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaAudioSpeech error:&e] isAudio]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:audio;mp3" error:&e] isAudio]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:audio;ext=mp3" error:&e] isAudio]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaVideo error:&e] isAudio]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaPng error:&e] isAudio]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isAudio]);
@@ -243,7 +243,7 @@
 - (void)test548_is_video {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaVideo error:&e] isVideo]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:video;mp4" error:&e] isVideo]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:ext=mp4;video" error:&e] isVideo]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaAudio error:&e] isVideo]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaPng error:&e] isVideo]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isVideo]);

@@ -218,7 +218,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     [graph addCap:cap];
 
     NSError *error = nil;
-    CSMediaUrn *source = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *source = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8" error:&error];
 
     NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
@@ -229,7 +229,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test778_typeMismatchPngPdf {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap = makeTestCap(@"media:image;png", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
+    CSCap *cap = makeTestCap(@"media:ext=png;image", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
     [graph addCap:cap];
 
     NSError *error = nil;
@@ -245,13 +245,13 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *pdfCap = makeTestCap(@"media:ext=pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
-    CSCap *pngCap = makeTestCap(@"media:image;png", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
+    CSCap *pngCap = makeTestCap(@"media:ext=png;image", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
     [graph addCap:pdfCap];
     [graph addCap:pngCap];
 
     NSError *error = nil;
     // PNG should only reach thumbnail
-    CSMediaUrn *pngSource = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *pngSource = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     NSArray *pngTargets = [graph getReachableTargetsFromSource:pngSource maxDepth:5 isSequence:NO];
     XCTAssertEqual(pngTargets.count, 1u, @"PNG should reach 1 target");
     XCTAssertEqualObjects(((CSReachableTargetInfo *)pngTargets[0]).mediaUrn, @"media:thumbnail");
@@ -267,14 +267,14 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test781_findPathsTypeChain {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *resize = makeTestCap(@"media:image;png", @"media:resized-png", @"resize", @"Resize PNG");
+    CSCap *resize = makeTestCap(@"media:ext=png;image", @"media:resized-png", @"resize", @"Resize PNG");
     CSCap *toThumb = makeTestCap(@"media:resized-png", @"media:thumbnail", @"thumb", @"To Thumbnail");
     [graph addCap:resize];
     [graph addCap:toThumb];
 
     NSError *error = nil;
     // PNG should find 2-step path
-    CSMediaUrn *pngSource = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *pngSource = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     CSMediaUrn *thumbTarget = [CSMediaUrn fromString:@"media:thumbnail" error:&error];
     NSArray *pngPaths = [graph findPathsToExactTarget:pngSource target:thumbTarget maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(pngPaths.count, 1u, @"PNG should find 1 path to thumbnail");

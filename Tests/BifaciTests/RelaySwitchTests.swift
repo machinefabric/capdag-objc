@@ -641,7 +641,7 @@ final class CborRelaySwitchTests: XCTestCase {
         // Request with INCOMPATIBLE input (different type family) must NOT match.
         let req3 = Frame.req(
             id: MessageId.uint(3),
-            capUrn: "cap:in=\"media:image;png\";process;out=\"media:text\"",
+            capUrn: "cap:in=\"media:ext=png;image\";process;out=\"media:text\"",
             payload: Data(),
             contentType: "text/plain"
         )

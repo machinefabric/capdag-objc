@@ -68,7 +68,7 @@
 // TEST697: Tests CapShapeInfo correctly identifies one-to-one pattern
 // Verifies Single input and Single output result in OneToOne pattern
 - (void)test697_cap_shape_info_one_to_one {
-    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:test" inSpec:@"media:ext=pdf" outSpec:@"media:image;png"];
+    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:test" inSpec:@"media:ext=pdf" outSpec:@"media:ext=png;image"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToOne);
@@ -78,7 +78,7 @@
 // Cardinality comes from context (is_sequence), not from URN tags.
 // The list tag is a semantic type property, not a cardinality indicator.
 - (void)test698_cap_shape_info_cardinality_always_single_from_urn {
-    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:ext=pdf" outSpec:@"media:list;png"];
+    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:ext=pdf" outSpec:@"media:ext=png;list"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToOne);
@@ -129,8 +129,8 @@
 // Verifies chains with no fan-out are valid and require no transformation
 - (void)test711_strand_shape_analysis_simple_linear {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-png" inSpec:@"media:ext=pdf" outSpec:@"media:image;png"],
-        [CSCapShapeInfo fromCapUrn:@"cap:resize" inSpec:@"media:image;png" outSpec:@"media:image;png"],
+        [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-png" inSpec:@"media:ext=pdf" outSpec:@"media:ext=png;image"],
+        [CSCapShapeInfo fromCapUrn:@"cap:resize" inSpec:@"media:ext=png;image" outSpec:@"media:ext=png;image"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
     XCTAssertTrue(analysis.isValid);
@@ -144,10 +144,10 @@
     NSArray *infos = @[
         [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages"
                             inSpec:@"media:ext=pdf"
-                           outSpec:@"media:image;png"
+                           outSpec:@"media:ext=png;image"
                    inputIsSequence:NO
                   outputIsSequence:YES],
-        [CSCapShapeInfo fromCapUrn:@"cap:thumbnail" inSpec:@"media:image;png" outSpec:@"media:image;png"],
+        [CSCapShapeInfo fromCapUrn:@"cap:thumbnail" inSpec:@"media:ext=png;image" outSpec:@"media:ext=png;image"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
     XCTAssertTrue(analysis.isValid);
@@ -345,8 +345,8 @@
 // TEST750: Tests shape chain analysis for valid chain with matching structures
 - (void)test750_strand_shape_valid {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:resize" inSpec:@"media:image;png" outSpec:@"media:image;png"],
-        [CSCapShapeInfo fromCapUrn:@"cap:compress" inSpec:@"media:image;png" outSpec:@"media:image;png"],
+        [CSCapShapeInfo fromCapUrn:@"cap:resize" inSpec:@"media:ext=png;image" outSpec:@"media:ext=png;image"],
+        [CSCapShapeInfo fromCapUrn:@"cap:compress" inSpec:@"media:ext=png;image" outSpec:@"media:ext=png;image"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
     XCTAssertTrue(analysis.isValid);

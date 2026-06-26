@@ -202,7 +202,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test multiple extensions in a media def
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:image;jpeg",
+            @"urn": @"media:ext=jpeg;image",
             @"media_type": @"image/jpeg",
             @"profile_uri": @"https://capdag.com/schema/jpeg",
             @"title": @"JPEG Image",
@@ -212,7 +212,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:image;jpeg", registryWithSpecs(mediaDefs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:ext=jpeg;image", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");

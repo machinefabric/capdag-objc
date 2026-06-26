@@ -961,23 +961,23 @@ static NSString* testUrn(NSString *tags) {
     NSError *error = nil;
 
     // A cap accepting media: (generic) should match a request with media:ext=pdf (specific)
-    CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(genericCap, @"Failed to parse generic cap: %@", error);
-    CSCapUrn *pdfRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *pdfRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(pdfRequest, @"Failed to parse pdf request: %@", error);
     XCTAssertTrue([genericCap accepts:pdfRequest],
         @"Generic provider must match specific pdf request");
 
     // Generic cap also matches epub (any subtype)
-    CSCapUrn *epubRequest = [CSCapUrn fromString:@"cap:in=\"media:epub\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *epubRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=epub\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(epubRequest, @"Failed to parse epub request: %@", error);
     XCTAssertTrue([genericCap accepts:epubRequest],
         @"Generic provider must match epub request");
 
     // Reverse: specific cap does NOT match generic request
-    CSCapUrn *pdfCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *pdfCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(pdfCap, @"Failed to parse pdf cap: %@", error);
-    CSCapUrn *genericRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *genericRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(genericRequest, @"Failed to parse generic request: %@", error);
     XCTAssertFalse([pdfCap accepts:genericRequest],
         @"Specific pdf cap must NOT match generic request");
@@ -987,7 +987,7 @@ static NSString* testUrn(NSString *tags) {
         @"PDF-specific cap must NOT match epub request (epub lacks pdf marker)");
 
     // Output direction: cap producing more specific output matches less specific request
-    CSCapUrn *specificOutCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *specificOutCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(specificOutCap);
     CSCapUrn *genericOutRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image\"" error:&error];
     XCTAssertNotNil(genericOutRequest);
@@ -997,7 +997,7 @@ static NSString* testUrn(NSString *tags) {
     // Reverse output: generic output cap does NOT match specific output request
     CSCapUrn *genericOutCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image\"" error:&error];
     XCTAssertNotNil(genericOutCap);
-    CSCapUrn *specificOutRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *specificOutRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(specificOutRequest);
     XCTAssertFalse([genericOutCap accepts:specificOutRequest],
         @"Cap producing generic image must NOT satisfy request requiring image;png;thumbnail");
@@ -1007,24 +1007,24 @@ static NSString* testUrn(NSString *tags) {
 - (void)test1413_directionSemanticSpecificity {
     NSError *error = nil;
 
-    CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(genericCap, @"Failed to parse generic cap: %@", error);
-    CSCapUrn *specificCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *specificCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(specificCap, @"Failed to parse specific cap: %@", error);
 
     // Cap-URN spec: 10000*spec_U(out) + 100*spec_U(in) + spec_U(y).
     // generic:
-    //   out = media:image;png;thumbnail -> 3 markers, score 6
+    //   out = media:ext=png;image;thumbnail -> 4 (ext=png exact-value) + 2 + 2 = 8
     //   in  = media:                    -> 0
     //   y   = generate-thumbnail marker -> 2
-    //   spec_C = 10000*6 + 100*0 + 2 = 60002
-    XCTAssertEqual([genericCap specificity], 10000 * 6 + 100 * 0 + 2);
+    //   spec_C = 10000*8 + 100*0 + 2 = 80002
+    XCTAssertEqual([genericCap specificity], 10000 * 8 + 100 * 0 + 2);
     // specific:
-    //   out = media:image;png;thumbnail -> 6
+    //   out = media:ext=png;image;thumbnail -> 8
     //   in  = media:ext=pdf             -> 4 (ext=pdf is an exact-value tag, not a bare marker)
     //   y   = generate-thumbnail marker -> 2
-    //   spec_C = 10000*6 + 100*4 + 2 = 60402
-    XCTAssertEqual([specificCap specificity], 10000 * 6 + 100 * 4 + 2);
+    //   spec_C = 10000*8 + 100*4 + 2 = 80402
+    XCTAssertEqual([specificCap specificity], 10000 * 8 + 100 * 4 + 2);
 
     XCTAssertGreaterThan([specificCap specificity], [genericCap specificity],
         @"pdf cap must be more specific than generic cap");
@@ -1594,12 +1594,12 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *decimate = [CSCapUrn fromString:@"cap:decimate-sequence;effect=none" error:&error];
     XCTAssertNotNil(decimate, @"%@", error.localizedDescription);
 
-    CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *png = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     XCTAssertNotNil(png, @"%@", error.localizedDescription);
     CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
     XCTAssertNotNil(pdf, @"%@", error.localizedDescription);
 
-    XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:png error:&error] toString], @"media:image;png");
+    XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:png error:&error] toString], @"media:ext=png;image");
     XCTAssertNil(error);
     XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:pdf error:&error] toString], @"media:ext=pdf");
     XCTAssertNil(error);
@@ -1623,12 +1623,12 @@ static NSString* testUrn(NSString *tags) {
     NSError *error = nil;
     CSCapUrn *patch = [CSCapUrn fromString:@"cap:in=media:image;effect=patch;resize;out=media:image;thumbnail" error:&error];
     XCTAssertNotNil(patch, @"%@", error.localizedDescription);
-    CSMediaUrn *runtime = [CSMediaUrn fromString:@"media:image;png" error:&error];
+    CSMediaUrn *runtime = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     XCTAssertNotNil(runtime, @"%@", error.localizedDescription);
 
     CSMediaUrn *result = [patch inferRuntimeOutputMedia:runtime error:&error];
     XCTAssertNotNil(result, @"%@", error.localizedDescription);
-    XCTAssertEqualObjects([result toString], @"media:image;png");
+    XCTAssertEqualObjects([result toString], @"media:ext=png;image");
 }
 
 // TEST0311: invalid effect=none declarations fail hard

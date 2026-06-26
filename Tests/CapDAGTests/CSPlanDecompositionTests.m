@@ -92,7 +92,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 - (void)test935_findFirstForeachLinear {
     CSMachinePlan *plan = [CSMachinePlan linearChainPlan:@[@"cap:a", @"cap:b"]
                                                        inputMedia:@"media:ext=pdf"
-                                                      outputMedia:@"media:image;png"
+                                                      outputMedia:@"media:ext=png;image"
                                                   filePathArgNames:@[@"input_a", @"input_b"]];
     XCTAssertNil([plan findFirstForeach]);
 }
@@ -104,7 +104,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 
     CSMachinePlan *linearPlan = [CSMachinePlan linearChainPlan:@[@"cap:a"]
                                                              inputMedia:@"media:ext=pdf"
-                                                            outputMedia:@"media:image;png"
+                                                            outputMedia:@"media:ext=png;image"
                                                         filePathArgNames:@[@"input_a"]];
     XCTAssertFalse([linearPlan hasForeach]);
 }
