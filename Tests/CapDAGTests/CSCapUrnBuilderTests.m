@@ -18,7 +18,7 @@
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
-    [builder outSpec:@"media:record;textable"];
+    [builder outSpec:@"media:enc=utf-8;record"];
     [builder tag:@"type" value:@"data_processing"];
     [builder marker:@"transform"];
     [builder tag:@"format" value:@"json"];
@@ -27,14 +27,14 @@
     XCTAssertNotNil(capUrn);
     XCTAssertNil(error);
     // Alphabetical order: format, in, out, transform, type.
-    XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;out=\"media:record;textable\";transform;type=data_processing");
+    XCTAssertEqualObjects([capUrn toString], @"cap:format=json;in=media:void;out=\"media:enc=utf-8;record\";transform;type=data_processing");
 }
 
 // TEST0113: Builder fluent a p i
 - (void)test0113_BuilderFluentAPI {
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
-    [[[[[[builder inSpec:@"media:void"] outSpec:@"media:record;textable"]
+    [[[[[[builder inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record"]
         marker:@"generate"]
        tag:@"target" value:@"thumbnail"]
       tag:@"format" value:@"pdf"]
@@ -49,7 +49,7 @@
     XCTAssertEqualObjects([cap getTag:@"format"], @"pdf");
     XCTAssertEqualObjects([cap getTag:@"output"], @"binary");
     XCTAssertEqualObjects([cap getInSpec], @"media:void");
-    XCTAssertEqualObjects([cap getOutSpec], @"media:record;textable");
+    XCTAssertEqualObjects([cap getOutSpec], @"media:enc=utf-8;record");
 }
 
 // TEST0114: Builder direction access
@@ -75,7 +75,7 @@
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
-    [builder outSpec:@"media:record;textable"];
+    [builder outSpec:@"media:enc=utf-8;record"];
     [builder tag:@"engine" value:@"v2"];
     [builder tag:@"quality" value:@"high"];
     [builder tag:@"op" value:@"compress"];
@@ -94,7 +94,7 @@
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
-    [builder outSpec:@"media:record;textable"];
+    [builder outSpec:@"media:enc=utf-8;record"];
     [builder tag:@"op" value:@"old"];
     [builder tag:@"op" value:@"convert"]; // Override
     [builder tag:@"format" value:@"jpg"];
@@ -112,7 +112,7 @@
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     // Only set outSpec, not inSpec
-    [builder outSpec:@"media:record;textable"];
+    [builder outSpec:@"media:enc=utf-8;record"];
     [builder tag:@"op" value:@"test"];
     CSCapUrn *cap = [builder build:&error];
 
@@ -160,19 +160,19 @@
     NSError *error;
     CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
     [builder inSpec:@"media:void"];
-    [builder outSpec:@"media:record;textable"];
+    [builder outSpec:@"media:enc=utf-8;record"];
     // No other tags
     CSCapUrn *cap = [builder build:&error];
 
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
-    XCTAssertEqualObjects([cap toString], @"cap:in=media:void;out=\"media:record;textable\"");
+    XCTAssertEqualObjects([cap toString], @"cap:in=media:void;out=\"media:enc=utf-8;record\"");
     XCTAssertEqual(cap.tags.count, 0);
     // Cap-URN spec: 10000 * spec_U(out) + 100 * spec_U(in) + spec_U(y).
-    //   out = media:record;textable -> 2 markers, score 4
-    //   in  = media:void           -> 1 marker, score 2
-    //   y   = empty                -> 0
-    XCTAssertEqual([cap specificity], 10000 * 4 + 100 * 2 + 0);
+    //   out = media:enc=utf-8;record -> enc=utf-8 exact-value (4) + record marker (2) = 6
+    //   in  = media:void            -> 1 marker, score 2
+    //   y   = empty                 -> 0
+    XCTAssertEqual([cap specificity], 10000 * 6 + 100 * 2 + 0);
 }
 
 // TEST0124: Builder complex
@@ -260,7 +260,7 @@
     // Create a specific cap (handler/instance)
     CSCapUrnBuilder *builder1 = [CSCapUrnBuilder builder];
     [builder1 inSpec:@"media:void"];
-    [builder1 outSpec:@"media:record;textable"];
+    [builder1 outSpec:@"media:enc=utf-8;record"];
     [builder1 tag:@"op" value:@"generate"];
     [builder1 tag:@"target" value:@"thumbnail"];
     [builder1 tag:@"format" value:@"pdf"];
@@ -270,14 +270,14 @@
     // Create a more general request (same direction)
     CSCapUrnBuilder *builder2 = [CSCapUrnBuilder builder];
     [builder2 inSpec:@"media:void"];
-    [builder2 outSpec:@"media:record;textable"];
+    [builder2 outSpec:@"media:enc=utf-8;record"];
     [builder2 tag:@"op" value:@"generate"];
     CSCapUrn *generalRequest = [builder2 build:&error];
 
     // Create a wildcard request (same direction)
     CSCapUrnBuilder *builder3 = [CSCapUrnBuilder builder];
     [builder3 inSpec:@"media:void"];
-    [builder3 outSpec:@"media:record;textable"];
+    [builder3 outSpec:@"media:enc=utf-8;record"];
     [builder3 tag:@"op" value:@"generate"];
     [builder3 tag:@"target" value:@"thumbnail"];
     [builder3 tag:@"ext" value:@"*"];
@@ -295,13 +295,13 @@
 
     // Cap-URN spec: 10000 * spec_U(out) + 100 * spec_U(in) + spec_U(y).
     XCTAssertTrue([specificCap isMoreSpecificThan:generalRequest]);
-    //   specificCap: out=record;textable (4), in=void (2),
+    //   specificCap: out=enc=utf-8;record (enc=utf-8 value=4 + record marker=2 = 6), in=void (2),
     //   y = op=generate(4)+target=thumbnail(4)+format=pdf(4)+ext=pdf(4) = 16
-    XCTAssertEqual([specificCap specificity], 10000 * 4 + 100 * 2 + 16);
-    //   generalRequest: out=4, in=2, y = op=generate(4) = 4
-    XCTAssertEqual([generalRequest specificity], 10000 * 4 + 100 * 2 + 4);
-    //   wildcardRequest: out=4, in=2, y = op=generate(4)+target=thumbnail(4)+ext=*(2) = 10
-    XCTAssertEqual([wildcardRequest specificity], 10000 * 4 + 100 * 2 + 10);
+    XCTAssertEqual([specificCap specificity], 10000 * 6 + 100 * 2 + 16);
+    //   generalRequest: out=6, in=2, y = op=generate(4) = 4
+    XCTAssertEqual([generalRequest specificity], 10000 * 6 + 100 * 2 + 4);
+    //   wildcardRequest: out=6, in=2, y = op=generate(4)+target=thumbnail(4)+ext=*(2) = 10
+    XCTAssertEqual([wildcardRequest specificity], 10000 * 6 + 100 * 2 + 10);
 }
 
 // TEST0128: Builder direction mismatch no match
@@ -311,13 +311,13 @@
     // Create caps with different directions
     CSCapUrnBuilder *builder1 = [CSCapUrnBuilder builder];
     [builder1 inSpec:@"media:string"];
-    [builder1 outSpec:@"media:record;textable"];
+    [builder1 outSpec:@"media:enc=utf-8;record"];
     [builder1 tag:@"op" value:@"process"];
     CSCapUrn *cap1 = [builder1 build:&error];
 
     CSCapUrnBuilder *builder2 = [CSCapUrnBuilder builder];
     [builder2 inSpec:@"media:"]; // Different inSpec
-    [builder2 outSpec:@"media:record;textable"];
+    [builder2 outSpec:@"media:enc=utf-8;record"];
     [builder2 tag:@"op" value:@"process"];
     CSCapUrn *cap2 = [builder2 build:&error];
 

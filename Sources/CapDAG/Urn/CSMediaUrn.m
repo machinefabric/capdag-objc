@@ -169,10 +169,6 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 
 // MARK: - Predicates
 
-- (BOOL)isBinary {
-    return [self getTag:@"textable"] == nil;
-}
-
 // MARK: - Cardinality (list marker)
 
 - (BOOL)isList {
@@ -194,19 +190,15 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 }
 
 - (BOOL)isJson {
-    return [self getTag:@"json"] != nil;
+    return [[self getTag:@"fmt"] isEqualToString:@"json"];
 }
 
 - (BOOL)isYaml {
-    return [self hasMarkerTag:@"yaml"];
+    return [[self getTag:@"fmt"] isEqualToString:@"yaml"];
 }
 
 - (BOOL)isCsv {
-    return [self hasMarkerTag:@"csv"];
-}
-
-- (BOOL)isText {
-    return [self getTag:@"textable"] != nil;
+    return [[self getTag:@"fmt"] isEqualToString:@"csv"];
 }
 
 - (BOOL)isVoid {

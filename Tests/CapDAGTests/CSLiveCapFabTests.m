@@ -214,12 +214,12 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test777_typeMismatchPdfPng {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap = makeTestCap(@"media:pdf", @"media:textable", @"pdf2text", @"PDF to Text");
+    CSCap *cap = makeTestCap(@"media:pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
     [graph addCap:cap];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:image;png" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:textable" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8" error:&error];
 
     NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(paths.count, 0u, @"Should NOT find path from PNG via PDF cap");
@@ -244,7 +244,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test779_reachableTargetsTypeMatching {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *pdfCap = makeTestCap(@"media:pdf", @"media:textable", @"pdf2text", @"PDF to Text");
+    CSCap *pdfCap = makeTestCap(@"media:pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
     CSCap *pngCap = makeTestCap(@"media:image;png", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
     [graph addCap:pdfCap];
     [graph addCap:pngCap];
@@ -260,7 +260,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSMediaUrn *pdfSource = [CSMediaUrn fromString:@"media:pdf" error:&error];
     NSArray *pdfTargets = [graph getReachableTargetsFromSource:pdfSource maxDepth:5 isSequence:NO];
     XCTAssertEqual(pdfTargets.count, 1u, @"PDF should reach 1 target");
-    XCTAssertEqualObjects(((CSReachableTargetInfo *)pdfTargets[0]).mediaUrn, @"media:textable");
+    XCTAssertEqualObjects(((CSReachableTargetInfo *)pdfTargets[0]).mediaUrn, @"media:enc=utf-8");
 }
 
 // TEST781: Multi-step type chain enforcement
@@ -313,14 +313,14 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     // Two caps: pdf→page and textable→decision
-    CSCap *disbind = makeTestCap(@"media:pdf", @"media:page;textable", @"disbind", @"Disbind PDF");
-    CSCap *choose = makeTestCap(@"media:textable", @"media:decision;bool;textable", @"choose", @"Make a Decision");
+    CSCap *disbind = makeTestCap(@"media:pdf", @"media:enc=utf-8;page", @"disbind", @"Disbind PDF");
+    CSCap *choose = makeTestCap(@"media:enc=utf-8", @"media:enc=utf-8;decision;bool", @"choose", @"Make a Decision");
 
     [graph syncFromCaps:@[disbind, choose]];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:pdf" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:decision;bool;textable" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8;decision;bool" error:&error];
 
     // With isSequence:NO (single PDF), should find direct path: disbind → choose (no ForEach)
     NSArray<CSStrand *> *scalarPaths = [graph findPathsToExactTarget:source target:target maxDepth:10 maxPaths:20 isSequence:NO];
@@ -362,7 +362,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     // A specific cap should NOT be equivalent to identity
     CSCapUrnBuilder *specificBuilder = [CSCapUrnBuilder builder];
     [specificBuilder inSpec:@"media:pdf"];
-    [specificBuilder outSpec:@"media:disbound-page;list;textable"];
+    [specificBuilder outSpec:@"media:enc=utf-8;disbound-page;list"];
     [specificBuilder tag:@"op" value:@"disbind"];
     CSCapUrn *built = [specificBuilder build:&error];
     XCTAssertNotNil(built);

@@ -38,19 +38,19 @@ final class TestcartridgeRegistry: FabricRegistryProtocol, @unchecked Sendable {
         }
 
         // Register all testcartridge caps
-        addCap(#"cap:in="media:node1;textable";test-edge1;out="media:node2;textable""#)
-        addCap(#"cap:in="media:node2;textable";test-edge2;out="media:node3;textable""#)
-        addCap(#"cap:in="media:node3;textable";test-edge3;out="media:node4;list;textable""#)
-        addCap(#"cap:in="media:node4;list;textable";test-edge4;out="media:node5;textable""#)
-        addCap(#"cap:in="media:node3;textable";test-edge7;out="media:node6;textable""#)
-        addCap(#"cap:in="media:node6;textable";test-edge8;out="media:node7;textable""#)
-        addCap(#"cap:in="media:node7;textable";test-edge9;out="media:node8;textable""#)
-        addCap(#"cap:in="media:node8;textable";test-edge10;out="media:node1;textable""#)
+        addCap(#"cap:in="media:enc=utf-8;node1";test-edge1;out="media:enc=utf-8;node2""#)
+        addCap(#"cap:in="media:enc=utf-8;node2";test-edge2;out="media:enc=utf-8;node3""#)
+        addCap(#"cap:in="media:enc=utf-8;node3";test-edge3;out="media:enc=utf-8;node4;list""#)
+        addCap(#"cap:in="media:enc=utf-8;node4;list";test-edge4;out="media:enc=utf-8;node5""#)
+        addCap(#"cap:in="media:enc=utf-8;node3";test-edge7;out="media:enc=utf-8;node6""#)
+        addCap(#"cap:in="media:enc=utf-8;node6";test-edge8;out="media:enc=utf-8;node7""#)
+        addCap(#"cap:in="media:enc=utf-8;node7";test-edge9;out="media:enc=utf-8;node8""#)
+        addCap(#"cap:in="media:enc=utf-8;node8";test-edge10;out="media:enc=utf-8;node1""#)
         addCap(#"cap:in="media:void";test-large;out="media:""#)
-        addCap(#"cap:in="media:node1;textable";test-peer;out="media:node3;textable""#)
+        addCap(#"cap:in="media:enc=utf-8;node1";test-peer;out="media:enc=utf-8;node3""#)
 
         // Add identity cap for cycle testing
-        addCap(#"cap:in="media:node1;textable";identity;out="media:node1;textable""#)
+        addCap(#"cap:in="media:enc=utf-8;node1";identity;out="media:enc=utf-8;node1""#)
     }
 
     func lookup(_ urn: String) async throws -> CSCap {
@@ -84,7 +84,7 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
             }
         """#
 
@@ -92,8 +92,8 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 2)
         XCTAssertEqual(graph.edges.count, 1)
-        XCTAssertEqual(graph.nodes["A"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
+        XCTAssertEqual(graph.nodes["A"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["B"], "media:enc=utf-8;node2")
     }
 
     // TEST1414: Parse DAG with a single edge using different node names (mirror-local)
@@ -102,7 +102,7 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                input -> output [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
+                input -> output [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
             }
         """#
 
@@ -110,8 +110,8 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 2)
         XCTAssertEqual(graph.edges.count, 1)
-        XCTAssertEqual(graph.nodes["input"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["output"], "media:node2;textable")
+        XCTAssertEqual(graph.nodes["input"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["output"], "media:enc=utf-8;node2")
     }
 
     // TEST1415: Parse DAG chaining test_edge1 → test_edge2 (mirror-local)
@@ -120,8 +120,8 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
+                B -> C [label="cap:in=\"media:enc=utf-8;node2\";test-edge2;out=\"media:enc=utf-8;node3\""];
             }
         """#
 
@@ -129,9 +129,9 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 3)
         XCTAssertEqual(graph.edges.count, 2)
-        XCTAssertEqual(graph.nodes["A"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
-        XCTAssertEqual(graph.nodes["C"], "media:node3;textable")
+        XCTAssertEqual(graph.nodes["A"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["B"], "media:enc=utf-8;node2")
+        XCTAssertEqual(graph.nodes["C"], "media:enc=utf-8;node3")
     }
 
     // Mirror-specific coverage: Parse fan-in pattern
@@ -141,10 +141,10 @@ final class OrchestratorTests: XCTestCase {
         // Two parallel paths that merge
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
-                C -> D [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
-                B -> E [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
-                D -> E [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
+                C -> D [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
+                B -> E [label="cap:in=\"media:enc=utf-8;node2\";test-edge2;out=\"media:enc=utf-8;node3\""];
+                D -> E [label="cap:in=\"media:enc=utf-8;node2\";test-edge2;out=\"media:enc=utf-8;node3\""];
             }
         """#
 
@@ -152,11 +152,11 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 5)
         XCTAssertEqual(graph.edges.count, 4)
-        XCTAssertEqual(graph.nodes["A"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
-        XCTAssertEqual(graph.nodes["C"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["D"], "media:node2;textable")
-        XCTAssertEqual(graph.nodes["E"], "media:node3;textable")
+        XCTAssertEqual(graph.nodes["A"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["B"], "media:enc=utf-8;node2")
+        XCTAssertEqual(graph.nodes["C"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["D"], "media:enc=utf-8;node2")
+        XCTAssertEqual(graph.nodes["E"], "media:enc=utf-8;node3")
     }
 
     // Mirror-specific coverage: Validate that cycles are rejected
@@ -166,7 +166,7 @@ final class OrchestratorTests: XCTestCase {
         // Create a self-loop using identity cap
         let dot = #"""
             digraph G {
-                A -> A [label="cap:in=\"media:node1;textable\";identity;out=\"media:node1;textable\""];
+                A -> A [label="cap:in=\"media:enc=utf-8;node1\";identity;out=\"media:enc=utf-8;node1\""];
             }
         """#
 
@@ -252,10 +252,10 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
-                C -> D [label="cap:in=\"media:node3;textable\";test-edge7;out=\"media:node6;textable\""];
-                D -> E [label="cap:in=\"media:node6;textable\";test-edge8;out=\"media:node7;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
+                B -> C [label="cap:in=\"media:enc=utf-8;node2\";test-edge2;out=\"media:enc=utf-8;node3\""];
+                C -> D [label="cap:in=\"media:enc=utf-8;node3\";test-edge7;out=\"media:enc=utf-8;node6\""];
+                D -> E [label="cap:in=\"media:enc=utf-8;node6\";test-edge8;out=\"media:enc=utf-8;node7\""];
             }
         """#
 
@@ -263,11 +263,11 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 5)
         XCTAssertEqual(graph.edges.count, 4)
-        XCTAssertEqual(graph.nodes["A"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
-        XCTAssertEqual(graph.nodes["C"], "media:node3;textable")
-        XCTAssertEqual(graph.nodes["D"], "media:node6;textable")
-        XCTAssertEqual(graph.nodes["E"], "media:node7;textable")
+        XCTAssertEqual(graph.nodes["A"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["B"], "media:enc=utf-8;node2")
+        XCTAssertEqual(graph.nodes["C"], "media:enc=utf-8;node3")
+        XCTAssertEqual(graph.nodes["D"], "media:enc=utf-8;node6")
+        XCTAssertEqual(graph.nodes["E"], "media:enc=utf-8;node7")
     }
 
     // TEST945: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string
@@ -276,11 +276,11 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
-                C -> D [label="cap:in=\"media:node3;textable\";test-edge7;out=\"media:node6;textable\""];
-                D -> E [label="cap:in=\"media:node6;textable\";test-edge8;out=\"media:node7;textable\""];
-                E -> F [label="cap:in=\"media:node7;textable\";test-edge9;out=\"media:node8;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
+                B -> C [label="cap:in=\"media:enc=utf-8;node2\";test-edge2;out=\"media:enc=utf-8;node3\""];
+                C -> D [label="cap:in=\"media:enc=utf-8;node3\";test-edge7;out=\"media:enc=utf-8;node6\""];
+                D -> E [label="cap:in=\"media:enc=utf-8;node6\";test-edge8;out=\"media:enc=utf-8;node7\""];
+                E -> F [label="cap:in=\"media:enc=utf-8;node7\";test-edge9;out=\"media:enc=utf-8;node8\""];
             }
         """#
 
@@ -288,12 +288,12 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 6)
         XCTAssertEqual(graph.edges.count, 5)
-        XCTAssertEqual(graph.nodes["A"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
-        XCTAssertEqual(graph.nodes["C"], "media:node3;textable")
-        XCTAssertEqual(graph.nodes["D"], "media:node6;textable")
-        XCTAssertEqual(graph.nodes["E"], "media:node7;textable")
-        XCTAssertEqual(graph.nodes["F"], "media:node8;textable")
+        XCTAssertEqual(graph.nodes["A"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["B"], "media:enc=utf-8;node2")
+        XCTAssertEqual(graph.nodes["C"], "media:enc=utf-8;node3")
+        XCTAssertEqual(graph.nodes["D"], "media:enc=utf-8;node6")
+        XCTAssertEqual(graph.nodes["E"], "media:enc=utf-8;node7")
+        XCTAssertEqual(graph.nodes["F"], "media:enc=utf-8;node8")
     }
 
     // TEST944: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase
@@ -302,12 +302,12 @@ final class OrchestratorTests: XCTestCase {
 
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test-edge1;out=\"media:node2;textable\""];
-                B -> C [label="cap:in=\"media:node2;textable\";test-edge2;out=\"media:node3;textable\""];
-                C -> D [label="cap:in=\"media:node3;textable\";test-edge7;out=\"media:node6;textable\""];
-                D -> E [label="cap:in=\"media:node6;textable\";test-edge8;out=\"media:node7;textable\""];
-                E -> F [label="cap:in=\"media:node7;textable\";test-edge9;out=\"media:node8;textable\""];
-                F -> G [label="cap:in=\"media:node8;textable\";test-edge10;out=\"media:node1;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test-edge1;out=\"media:enc=utf-8;node2\""];
+                B -> C [label="cap:in=\"media:enc=utf-8;node2\";test-edge2;out=\"media:enc=utf-8;node3\""];
+                C -> D [label="cap:in=\"media:enc=utf-8;node3\";test-edge7;out=\"media:enc=utf-8;node6\""];
+                D -> E [label="cap:in=\"media:enc=utf-8;node6\";test-edge8;out=\"media:enc=utf-8;node7\""];
+                E -> F [label="cap:in=\"media:enc=utf-8;node7\";test-edge9;out=\"media:enc=utf-8;node8\""];
+                F -> G [label="cap:in=\"media:enc=utf-8;node8\";test-edge10;out=\"media:enc=utf-8;node1\""];
             }
         """#
 
@@ -315,13 +315,13 @@ final class OrchestratorTests: XCTestCase {
 
         XCTAssertEqual(graph.nodes.count, 7)
         XCTAssertEqual(graph.edges.count, 6)
-        XCTAssertEqual(graph.nodes["A"], "media:node1;textable")
-        XCTAssertEqual(graph.nodes["B"], "media:node2;textable")
-        XCTAssertEqual(graph.nodes["C"], "media:node3;textable")
-        XCTAssertEqual(graph.nodes["D"], "media:node6;textable")
-        XCTAssertEqual(graph.nodes["E"], "media:node7;textable")
-        XCTAssertEqual(graph.nodes["F"], "media:node8;textable")
-        XCTAssertEqual(graph.nodes["G"], "media:node1;textable")
+        XCTAssertEqual(graph.nodes["A"], "media:enc=utf-8;node1")
+        XCTAssertEqual(graph.nodes["B"], "media:enc=utf-8;node2")
+        XCTAssertEqual(graph.nodes["C"], "media:enc=utf-8;node3")
+        XCTAssertEqual(graph.nodes["D"], "media:enc=utf-8;node6")
+        XCTAssertEqual(graph.nodes["E"], "media:enc=utf-8;node7")
+        XCTAssertEqual(graph.nodes["F"], "media:enc=utf-8;node8")
+        XCTAssertEqual(graph.nodes["G"], "media:enc=utf-8;node1")
     }
 
     // MARK: - DOT Parser Tests
@@ -413,7 +413,7 @@ final class OrchestratorTests: XCTestCase {
     func test0086_DotParserCapUrnLabel() throws {
         let dot = #"""
             digraph G {
-                A -> B [label="cap:in=\"media:node1;textable\";test;out=\"media:node2;textable\""];
+                A -> B [label="cap:in=\"media:enc=utf-8;node1\";test;out=\"media:enc=utf-8;node2\""];
             }
         """#
 
@@ -423,6 +423,6 @@ final class OrchestratorTests: XCTestCase {
         let label = graph.edges[0].label
         XCTAssertNotNil(label)
         XCTAssertTrue(label!.hasPrefix("cap:"))
-        XCTAssertTrue(label!.contains("media:node1;textable"))
+        XCTAssertTrue(label!.contains("media:enc=utf-8;node1"))
     }
 }

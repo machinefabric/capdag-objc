@@ -118,9 +118,9 @@ func log(_ msg: String) {
 
 // MARK: - Cap Invocation
 
-let memoryHogCapUrn = "cap:in=\"media:void\";test-memory-hog;out=\"media:textable\""
-let hogSizeMediaUrn = "media:hog-size-mb;textable;numeric"
-let hogHoldMediaUrn = "media:hog-hold-seconds;textable;numeric"
+let memoryHogCapUrn = "cap:in=\"media:void\";test-memory-hog;out=\"media:enc=utf-8\""
+let hogSizeMediaUrn = "media:hog-size-mb;numeric"
+let hogHoldMediaUrn = "media:hog-hold-seconds;numeric"
 
 /// Build the full frame sequence to invoke test-memory-hog.
 /// Returns (requestId, routingId, frames) — routingId is the XID that

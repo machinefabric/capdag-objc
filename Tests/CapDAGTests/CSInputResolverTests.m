@@ -23,13 +23,13 @@ static CSFabricRegistry *testFabricRegistry(void) {
         @"extensions": @[@"pdf"],
     }];
     [registry addMediaDef:@{
-        @"urn": @"media:txt;textable",
+        @"urn": @"media:enc=utf-8;txt",
         @"media_type": @"text/plain",
         @"title": @"Text",
         @"extensions": @[@"txt"],
     }];
     [registry addMediaDef:@{
-        @"urn": @"media:json;record;textable",
+        @"urn": @"media:fmt=json;record",
         @"media_type": @"application/json",
         @"title": @"JSON",
         @"extensions": @[@"json"],
@@ -446,21 +446,21 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertFalse([scalarOpaque isRecord]);
 
     CSResolvedFile *listRecord = [CSResolvedFile fileWithPath:@"/y"
-                                                     mediaUrn:@"media:json;list;record;textable"
+                                                     mediaUrn:@"media:fmt=json;list;record"
                                                     sizeBytes:0
                                              contentStructure:CSContentStructureListRecord];
     XCTAssertTrue([listRecord isList]);
     XCTAssertTrue([listRecord isRecord]);
 
     CSResolvedFile *scalarRecord = [CSResolvedFile fileWithPath:@"/r"
-                                                       mediaUrn:@"media:json;record;textable"
+                                                       mediaUrn:@"media:fmt=json;record"
                                                       sizeBytes:0
                                                contentStructure:CSContentStructureScalarRecord];
     XCTAssertFalse([scalarRecord isList]);
     XCTAssertTrue([scalarRecord isRecord]);
 
     CSResolvedFile *listOpaque = [CSResolvedFile fileWithPath:@"/l"
-                                                     mediaUrn:@"media:list;textable"
+                                                     mediaUrn:@"media:enc=utf-8;list"
                                                     sizeBytes:0
                                              contentStructure:CSContentStructureListOpaque];
     XCTAssertTrue([listOpaque isList]);
@@ -471,16 +471,16 @@ static CSFabricRegistry *testFabricRegistry(void) {
 - (void)test1145_resolved_input_set_uses_equivalent_media_and_file_count_cardinality {
     // Single file with list-content URN: file count=1 → is_sequence=false, but homogeneous
     CSResolvedFile *singleListFile = [CSResolvedFile fileWithPath:@"/tmp/items.json"
-                                                         mediaUrn:@"media:application;json;list;record"
+                                                         mediaUrn:@"media:application;fmt=json;list;record"
                                                         sizeBytes:42
                                                  contentStructure:CSContentStructureListRecord];
     CSResolvedInputSet *singleSet = [CSResolvedInputSet setWithFiles:@[singleListFile]
                                                           isSequence:NO
-                                                         commonMedia:@"media:application;json;list;record"];
+                                                         commonMedia:@"media:application;fmt=json;list;record"];
     XCTAssertFalse(singleSet.isSequence,
                    @"single file must yield is_sequence=false even when content is a list");
     XCTAssertTrue([singleSet isHomogeneous]);
-    XCTAssertEqualObjects(singleSet.commonMedia, @"media:application;json;list;record");
+    XCTAssertEqualObjects(singleSet.commonMedia, @"media:application;fmt=json;list;record");
 
     // Two files whose URNs are equivalent (different tag order) → homogeneous, is_sequence=true.
     // commonMedia is determined by the resolver, so this exercises the resolver's URN-equivalence path.

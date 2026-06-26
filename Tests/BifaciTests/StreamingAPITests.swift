@@ -578,19 +578,19 @@ final class StreamingAPITests: XCTestCase {
     func test678_findStreamEquivalentUrnDifferentTagOrder() throws {
         // One stream with tags in one order
         let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:json;record;llm-generation-request", Data("data".utf8)),
+            ("media:fmt=json;record;llm-generation-request", Data("data".utf8)),
         ]
 
         // Look for it with tags in a DIFFERENT order — is_equivalent is order-independent
-        let found = findStream(streams, mediaUrn: "media:llm-generation-request;json;record")
+        let found = findStream(streams, mediaUrn: "media:llm-generation-request;fmt=json;record")
         XCTAssertNotNil(found, "Same tags in different order must match via is_equivalent")
         XCTAssertEqual(String(data: found!, encoding: .utf8), "data")
     }
 
-    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:llm-generation-request;json;record".
+    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:llm-generation-request;fmt=json;record".
     func test679_findStreamBaseUrnDoesNotMatchFullUrn() throws {
         let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:llm-generation-request;json;record", Data("data".utf8)),
+            ("media:llm-generation-request;fmt=json;record", Data("data".utf8)),
         ]
 
         // Base URN should NOT match full URN (strict equivalence)

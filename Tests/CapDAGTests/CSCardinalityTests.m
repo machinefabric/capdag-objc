@@ -191,7 +191,7 @@
 // Verifies that URNs without record marker are parsed as Opaque
 - (void)test720_from_media_urn_opaque {
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:pdf"), CSInputStructureOpaque);
-    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:textable"), CSInputStructureOpaque);
+    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:enc=utf-8"), CSInputStructureOpaque);
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:integer"), CSInputStructureOpaque);
     // List marker doesn't affect structure
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:file-path;list"), CSInputStructureOpaque);
@@ -200,11 +200,11 @@
 // TEST721: Tests InputStructure correctly identifies record media URNs
 // Verifies that URNs with record marker tag are parsed as Record
 - (void)test721_from_media_urn_record {
-    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:json;record"), CSInputStructureRecord);
-    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:record;textable"), CSInputStructureRecord);
-    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:file-metadata;record;textable"), CSInputStructureRecord);
+    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:fmt=json;record"), CSInputStructureRecord);
+    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:enc=utf-8;record"), CSInputStructureRecord);
+    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:enc=utf-8;file-metadata;record"), CSInputStructureRecord);
     // List of records
-    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:json;list;record"), CSInputStructureRecord);
+    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:fmt=json;list;record"), CSInputStructureRecord);
 }
 
 // TEST722: Tests structure compatibility for opaque-to-opaque data flow
@@ -233,13 +233,13 @@
 
 // TEST726: Tests applying Record structure adds record marker to URN
 - (void)test726_apply_structure_add_record {
-    NSString *result = CSInputStructureApplyToUrn(CSInputStructureRecord, @"media:json");
+    NSString *result = CSInputStructureApplyToUrn(CSInputStructureRecord, @"media:fmt=json");
     XCTAssertTrue([result containsString:@"record"]);
 }
 
 // TEST727: Tests applying Opaque structure removes record marker from URN
 - (void)test727_apply_structure_remove_record {
-    NSString *result = CSInputStructureApplyToUrn(CSInputStructureOpaque, @"media:json;record");
+    NSString *result = CSInputStructureApplyToUrn(CSInputStructureOpaque, @"media:fmt=json;record");
     XCTAssertFalse([result containsString:@"record"]);
 }
 
@@ -249,12 +249,12 @@
 // Cardinality is always Single from URN — comes from context, not URN tags
 - (void)test730_media_shape_from_urn_all_combinations {
     // Scalar opaque (default)
-    CSMediaShape *shape = [CSMediaShape fromMediaUrn:@"media:textable"];
+    CSMediaShape *shape = [CSMediaShape fromMediaUrn:@"media:enc=utf-8"];
     XCTAssertEqual(shape.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(shape.structure, CSInputStructureOpaque);
 
     // Scalar record
-    shape = [CSMediaShape fromMediaUrn:@"media:json;record"];
+    shape = [CSMediaShape fromMediaUrn:@"media:fmt=json;record"];
     XCTAssertEqual(shape.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(shape.structure, CSInputStructureRecord);
 
@@ -264,7 +264,7 @@
     XCTAssertEqual(shape.structure, CSInputStructureOpaque);
 
     // List record — cardinality is always Single from URN (shape comes from context)
-    shape = [CSMediaShape fromMediaUrn:@"media:json;list;record"];
+    shape = [CSMediaShape fromMediaUrn:@"media:fmt=json;list;record"];
     XCTAssertEqual(shape.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(shape.structure, CSInputStructureRecord);
 }
@@ -322,8 +322,8 @@
 // TEST740: Tests CapShapeInfo correctly parses cap specs
 - (void)test740_cap_shape_info_from_specs {
     CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:test"
-                                              inSpec:@"media:textable"
-                                             outSpec:@"media:json;record"];
+                                              inSpec:@"media:enc=utf-8"
+                                             outSpec:@"media:fmt=json;record"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(info.input.structure, CSInputStructureOpaque);
     XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
@@ -334,7 +334,7 @@
 - (void)test741_cap_shape_info_pattern {
     CSCapShapeInfo *oneToMany = [CSCapShapeInfo fromCapUrn:@"cap:disbind"
                                                     inSpec:@"media:pdf"
-                                                   outSpec:@"media:disbound-page;textable"
+                                                   outSpec:@"media:enc=utf-8;disbound-page"
                                            inputIsSequence:NO
                                           outputIsSequence:YES];
     XCTAssertEqual([oneToMany cardinalityPattern], CSCardinalityPatternOneToMany);
@@ -356,9 +356,9 @@
 // TEST751: Tests shape chain analysis detects structure mismatch
 - (void)test751_strand_shape_structure_mismatch {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:extract" inSpec:@"media:pdf" outSpec:@"media:textable"],
+        [CSCapShapeInfo fromCapUrn:@"cap:extract" inSpec:@"media:pdf" outSpec:@"media:enc=utf-8"],
         // This cap expects record but gets opaque - should fail
-        [CSCapShapeInfo fromCapUrn:@"cap:parse" inSpec:@"media:json;record" outSpec:@"media:data;record"],
+        [CSCapShapeInfo fromCapUrn:@"cap:parse" inSpec:@"media:fmt=json;record" outSpec:@"media:data;record"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
     XCTAssertFalse(analysis.isValid);
@@ -372,10 +372,10 @@
     NSArray *infos = @[
         [CSCapShapeInfo fromCapUrn:@"cap:disbind"
                             inSpec:@"media:pdf"
-                           outSpec:@"media:page;textable"
+                           outSpec:@"media:enc=utf-8;page"
                    inputIsSequence:NO
                   outputIsSequence:YES],
-        [CSCapShapeInfo fromCapUrn:@"cap:process" inSpec:@"media:textable" outSpec:@"media:result;textable"],
+        [CSCapShapeInfo fromCapUrn:@"cap:process" inSpec:@"media:enc=utf-8" outSpec:@"media:enc=utf-8;result"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
     XCTAssertTrue(analysis.isValid);
@@ -387,10 +387,10 @@
 - (void)test753_strand_shape_list_record_to_list_record {
     NSArray *infos = @[
         [CSCapShapeInfo fromCapUrn:@"cap:parse_csv"
-                            inSpec:@"media:csv;textable"
-                           outSpec:@"media:json;list;record"],
+                            inSpec:@"media:fmt=csv"
+                           outSpec:@"media:fmt=json;list;record"],
         [CSCapShapeInfo fromCapUrn:@"cap:transform"
-                            inSpec:@"media:json;list;record"
+                            inSpec:@"media:fmt=json;list;record"
                            outSpec:@"media:result;list;record"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];

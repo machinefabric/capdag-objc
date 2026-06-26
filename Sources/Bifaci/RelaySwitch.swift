@@ -1406,6 +1406,18 @@ public enum CartridgeAttachmentErrorKind: String, Codable, Hashable, Sendable {
     /// map; the XPC service is sandboxed and cannot fetch
     /// registries directly.
     case registryUnreachable = "registry_unreachable"
+    /// The cartridge was built against a different fabric registry
+    /// manifest version than this host is pinned to. Both host and
+    /// cartridge bake their fabric manifest version at build time from
+    /// `MFR_FABRIC_MANIFEST_VERSION` (sourced from
+    /// `fabric/manifest-version.txt`); the host refuses to load any
+    /// cartridge whose baked version does not match its own. Recovery
+    /// action is "rebuild the cartridge against the host's fabric
+    /// manifest version" — there is no in-host fallback because URN
+    /// resolution between mismatched versions is fundamentally unsafe
+    /// (cap and media definitions may have changed shape across manifest
+    /// versions).
+    case fabricManifestVersionMismatch = "fabric_manifest_version_mismatch"
 }
 
 /// Structured per-cartridge attachment failure. Mirrors the Rust

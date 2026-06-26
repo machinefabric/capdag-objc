@@ -30,4 +30,4 @@ NSString * const CSCapDiscard = @"cap:in=media:;out=media:void";
  * returns empty END (no match). Cartridges that inspect file content override
  * this with a handler that returns {"media_urns": [...]}.
  */
-NSString * const CSCapAdapterSelection = @"cap:in=\"media:\";out=\"media:adapter-selection;json;record\"";
+NSString * const CSCapAdapterSelection = @"cap:in=\"media:\";out=\"media:adapter-selection;fmt=json;record\"";

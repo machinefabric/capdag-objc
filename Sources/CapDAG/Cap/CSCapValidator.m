@@ -433,8 +433,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         }
     }
 
-    // Check for binary based on media type
-    if ([mediaDef isBinary]) {
+    // Check for binary based on media type (no enc= ⇒ not text-representable)
+    if (!CSMediaUrnHasEncoding(mediaDef.mediaUrn)) {
         typeMatches = [value isKindOfClass:[NSString class]] || [value isKindOfClass:[NSData class]];
         expectedType = @"binary";
     }
@@ -736,8 +736,8 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
         }
     }
 
-    // Check for binary based on media type
-    if ([mediaDef isBinary]) {
+    // Check for binary based on media type (no enc= ⇒ not text-representable)
+    if (!CSMediaUrnHasEncoding(mediaDef.mediaUrn)) {
         typeMatches = [value isKindOfClass:[NSString class]] || [value isKindOfClass:[NSData class]];
         expectedType = @"binary";
     }
@@ -1013,7 +1013,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
             return NO;
         }
 
-        if (![mediaDef isBinary]) {
+        if (CSMediaUrnHasEncoding(mediaDef.mediaUrn)) {
             if (error) {
                 *error = [CSValidationError invalidOutputTypeError:capUrn
                                                       expectedType:output.mediaUrn

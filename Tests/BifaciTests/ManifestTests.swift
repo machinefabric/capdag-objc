@@ -74,21 +74,21 @@ final class ManifestTests: XCTestCase {
                     sources: [.stdin("media:pdf")]
                 ),
                 CapArg(
-                    mediaUrn: "media:chunk-size;textable;numeric",
+                    mediaUrn: "media:chunk-size;numeric",
                     required: false,
                     sources: [.cliFlag("--chunk-size")],
                     argDescription: "Chunk size",
                     defaultValue: .integer(400)
                 ),
                 CapArg(
-                    mediaUrn: "media:timestamps;textable;bool",
+                    mediaUrn: "media:enc=utf-8;timestamps;bool",
                     required: false,
                     sources: [.cliFlag("--timestamps")],
                     argDescription: "Include timestamps",
                     defaultValue: .bool(false)
                 ),
                 CapArg(
-                    mediaUrn: "media:model-config;json;record",
+                    mediaUrn: "media:model-config;fmt=json;record",
                     required: false,
                     sources: [.cliFlag("--model-config")],
                     argDescription: "Model config",
@@ -300,5 +300,44 @@ final class ManifestTests: XCTestCase {
         ]
         XCTAssertThrowsError(try CSCapManifest(dictionary: dict),
                              "Manifest with channel='staging' must be rejected")
+    }
+
+    // MARK: - registryURLFromBuildEnv (TEST1872-1874)
+
+    // TEST1872: `registryURLFromBuildEnv` passes a non-empty registry URL
+    // through unchanged. This is the function that decides the engine's baked
+    // PRIMARY registry (surfaced over SystemService.HealthStatus); a published
+    // build must report exactly the URL it was compiled with.
+    func test1872_registryUrlFromBuildEnvPassesThroughNonempty() throws {
+        let url = "https://cartridges.machinefabric.com/manifest"
+        XCTAssertEqual(try registryURLFromBuildEnv(url), url)
+    }
+
+    // TEST1873: an unset env (nil) yields nil — a dev build has no baked
+    // registry, so the engine reports an empty primary-registry URL and loads
+    // only `dev/` cartridges. This is the dev-engine contract the registry
+    // sheets rely on to omit the read-only "Primary · built-in" row.
+    func test1873_registryUrlFromBuildEnvNoneForDev() throws {
+        XCTAssertNil(try registryURLFromBuildEnv(nil))
+    }
+
+    // TEST1874: an exported-but-empty env (the empty string) is neither a dev
+    // build nor a valid identity and MUST fail hard, so the build can never
+    // silently hash the empty string into a fake registry slug. We assert the
+    // failure AND its exact message — the catchable Swift analog of Rust's
+    // compile-time panic — so a regression that dropped the check (or replaced
+    // it with a silent fallback) is caught rather than passing on a bogus empty
+    // primary registry.
+    func test1874_registryUrlFromBuildEnvRejectsEmptyString() {
+        XCTAssertThrowsError(try registryURLFromBuildEnv("")) { error in
+            guard let buildEnvError = error as? ManifestBuildEnvError else {
+                return XCTFail("expected ManifestBuildEnvError, got \(error)")
+            }
+            XCTAssertEqual(buildEnvError, .emptyRegistryURL)
+            XCTAssertEqual(
+                buildEnvError.message,
+                "MFR_CARTRIDGE_REGISTRY_URL must be unset for dev builds or set to a non-empty registry URL for published builds; empty string is invalid"
+            )
+        }
     }
 }

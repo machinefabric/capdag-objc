@@ -16,17 +16,16 @@ NSErrorDomain const CSMediaDefErrorDomain = @"CSMediaDefErrorDomain";
 // BUILT-IN MEDIA URN CONSTANTS
 // ============================================================================
 
-NSString * const CSMediaString = @"media:textable";
-NSString * const CSMediaInteger = @"media:integer;textable;numeric";
-NSString * const CSMediaNumber = @"media:textable;numeric";
-NSString * const CSMediaBoolean = @"media:bool;textable";
+NSString * const CSMediaString = @"media:enc=utf-8";
+NSString * const CSMediaInteger = @"media:integer;numeric";
+NSString * const CSMediaNumber = @"media:numeric";
+NSString * const CSMediaBoolean = @"media:bool;enc=utf-8";
 NSString * const CSMediaObject = @"media:record";
 NSString * const CSMediaList = @"media:list";
-NSString * const CSMediaTextableList = @"media:list;textable";
-NSString * const CSMediaStringList = @"media:list;textable";
-NSString * const CSMediaIntegerList = @"media:integer;list;textable;numeric";
-NSString * const CSMediaNumberList = @"media:list;numeric;textable";
-NSString * const CSMediaBooleanList = @"media:bool;list;textable";
+NSString * const CSMediaStringList = @"media:enc=utf-8;list";
+NSString * const CSMediaIntegerList = @"media:integer;list;numeric";
+NSString * const CSMediaNumberList = @"media:list;numeric";
+NSString * const CSMediaBooleanList = @"media:bool;enc=utf-8;list";
 NSString * const CSMediaObjectList = @"media:list;record";
 NSString * const CSMediaIdentity = @"media:";
 NSString * const CSMediaVoid = @"media:void";
@@ -54,87 +53,87 @@ NSString * const CSMediaWebm = @"media:ext=webm;video";
 NSString * const CSMediaMkv = @"media:ext=mkv;video";
 // Semantic AI input types
 NSString * const CSMediaAudioSpeech = @"media:audio;ext=wav;speech";
-NSString * const CSMediaTextablePage = @"media:ext=txt;page;plain-text;textable";
+NSString * const CSMediaTextablePage = @"media:enc=utf-8;ext=txt;page;plain-text";
 // Document types (PRIMARY naming - type IS the format)
 NSString * const CSMediaPdf = @"media:ext=pdf";
 NSString * const CSMediaEpub = @"media:ext=epub";
 // Text format types (PRIMARY naming - type IS the format)
-NSString * const CSMediaMd = @"media:ext=md;textable";
-NSString * const CSMediaTxt = @"media:ext=txt;textable";
-NSString * const CSMediaRst = @"media:ext=rst;textable";
-NSString * const CSMediaLog = @"media:ext=log;textable";
-NSString * const CSMediaHtml = @"media:ext=html;textable";
-NSString * const CSMediaXml = @"media:ext=xml;textable";
-NSString * const CSMediaJson = @"media:json;record;textable";
-NSString * const CSMediaJsonSchema = @"media:json;json-schema;record;textable";
-NSString * const CSMediaYaml = @"media:record;textable;yaml";
+NSString * const CSMediaMd = @"media:enc=utf-8;ext=md";
+NSString * const CSMediaTxt = @"media:enc=utf-8;ext=txt";
+NSString * const CSMediaRst = @"media:enc=utf-8;ext=rst";
+NSString * const CSMediaLog = @"media:enc=utf-8;ext=log";
+NSString * const CSMediaHtml = @"media:enc=utf-8;ext=html";
+NSString * const CSMediaXml = @"media:enc=utf-8;ext=xml";
+NSString * const CSMediaJson = @"media:fmt=json;record";
+NSString * const CSMediaJsonSchema = @"media:fmt=json;json-schema;record";
+NSString * const CSMediaYaml = @"media:fmt=yaml;record";
 // Semantic input types
-NSString * const CSMediaModelSpec = @"media:model-spec;textable";
-NSString * const CSMediaModelRepo = @"media:model-repo;record;textable";
-NSString * const CSMediaHfToken = @"media:hf-token;secret;textable";
-NSString * const CSMediaModelArchList = @"media:model-arch-list;json;record;textable";
-NSString * const CSMediaModelSearchRequest = @"media:model-search-request;json;record;textable";
-NSString * const CSMediaModelSearchResponse = @"media:model-search-response;json;record;textable";
-NSString * const CSMediaModelFilterResolution = @"media:model-filter-resolution;json;record;textable";
+NSString * const CSMediaModelSpec = @"media:enc=utf-8;model-spec";
+NSString * const CSMediaModelRepo = @"media:enc=utf-8;model-repo;record";
+NSString * const CSMediaHfToken = @"media:enc=utf-8;hf-token;secret";
+NSString * const CSMediaModelArchList = @"media:fmt=json;model-arch-list;record";
+NSString * const CSMediaModelSearchRequest = @"media:fmt=json;model-search-request;record";
+NSString * const CSMediaModelSearchResponse = @"media:fmt=json;model-search-response;record";
+NSString * const CSMediaModelFilterResolution = @"media:fmt=json;model-filter-resolution;record";
 // Backend-narrowed model-spec supertypes
-NSString * const CSMediaModelSpecCandle = @"media:candle;model-spec;textable";
-NSString * const CSMediaModelSpecGguf = @"media:gguf;model-spec;textable";
-NSString * const CSMediaModelSpecMlx = @"media:mlx;model-spec;textable";
+NSString * const CSMediaModelSpecCandle = @"media:candle;enc=utf-8;model-spec";
+NSString * const CSMediaModelSpecGguf = @"media:enc=utf-8;gguf;model-spec";
+NSString * const CSMediaModelSpecMlx = @"media:enc=utf-8;mlx;model-spec";
 // Backend+use-case specific model-spec variants
-NSString * const CSMediaModelSpecGgufVision = @"media:model-spec;gguf;textable;vision";
-NSString * const CSMediaModelSpecGgufLlm = @"media:model-spec;gguf;textable;llm";
-NSString * const CSMediaModelSpecGgufEmbeddings = @"media:model-spec;gguf;textable;embeddings";
-NSString * const CSMediaModelSpecMlxVision = @"media:model-spec;mlx;textable;vision";
-NSString * const CSMediaModelSpecMlxLlm = @"media:model-spec;mlx;textable;llm";
-NSString * const CSMediaModelSpecMlxEmbeddings = @"media:model-spec;mlx;textable;embeddings";
-NSString * const CSMediaModelSpecCandleVision = @"media:model-spec;candle;textable;vision";
-NSString * const CSMediaModelSpecCandleEmbeddings = @"media:model-spec;candle;textable;embeddings";
-NSString * const CSMediaModelSpecCandleImageEmbeddings = @"media:model-spec;candle;image-embeddings;textable";
-NSString * const CSMediaModelSpecCandleTranscription = @"media:model-spec;candle;textable;transcription";
+NSString * const CSMediaModelSpecGgufVision = @"media:enc=utf-8;gguf;model-spec;vision";
+NSString * const CSMediaModelSpecGgufLlm = @"media:enc=utf-8;gguf;llm;model-spec";
+NSString * const CSMediaModelSpecGgufEmbeddings = @"media:embeddings;enc=utf-8;gguf;model-spec";
+NSString * const CSMediaModelSpecMlxVision = @"media:enc=utf-8;mlx;model-spec;vision";
+NSString * const CSMediaModelSpecMlxLlm = @"media:enc=utf-8;llm;mlx;model-spec";
+NSString * const CSMediaModelSpecMlxEmbeddings = @"media:embeddings;enc=utf-8;mlx;model-spec";
+NSString * const CSMediaModelSpecCandleVision = @"media:candle;enc=utf-8;model-spec;vision";
+NSString * const CSMediaModelSpecCandleEmbeddings = @"media:candle;embeddings;enc=utf-8;model-spec";
+NSString * const CSMediaModelSpecCandleImageEmbeddings = @"media:candle;enc=utf-8;image-embeddings;model-spec";
+NSString * const CSMediaModelSpecCandleTranscription = @"media:candle;enc=utf-8;model-spec;transcription";
 // File path type — single URN; cardinality lives on is_sequence.
-NSString * const CSMediaFilePath = @"media:file-path;textable";
+NSString * const CSMediaFilePath = @"media:enc=utf-8;file-path";
 // Semantic input types (continued)
-NSString * const CSMediaMlxModelPath = @"media:mlx-model-path;textable";
+NSString * const CSMediaMlxModelPath = @"media:enc=utf-8;mlx-model-path";
 // Semantic output types
-NSString * const CSMediaImageDescription = @"media:ext=txt;image-description;plain-text;textable";
-NSString * const CSMediaModelDim = @"media:integer;model-dim;numeric;textable";
-NSString * const CSMediaDownloadOutput = @"media:download-result;record;textable";
-NSString * const CSMediaListOutput = @"media:model-list;record;textable";
-NSString * const CSMediaStatusOutput = @"media:model-status;record;textable";
-NSString * const CSMediaContentsOutput = @"media:model-contents;record;textable";
-NSString * const CSMediaAvailabilityOutput = @"media:model-availability;record;textable";
-NSString * const CSMediaPathOutput = @"media:model-path;record;textable";
-NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;record;textable";
-NSString * const CSMediaCaptionOutput = @"media:image-caption;record;textable";
-NSString * const CSMediaPlainText = @"media:ext=txt;plain-text;textable";
-NSString * const CSMediaTranscriptionOutput = @"media:record;textable;transcription";
-NSString * const CSMediaDecision = @"media:decision;json;record;textable";
-NSString * const CSMediaAdapterSelection = @"media:adapter-selection;json;record";
+NSString * const CSMediaImageDescription = @"media:enc=utf-8;ext=txt;image-description;plain-text";
+NSString * const CSMediaModelDim = @"media:integer;model-dim;numeric";
+NSString * const CSMediaDownloadOutput = @"media:download-result;enc=utf-8;record";
+NSString * const CSMediaListOutput = @"media:enc=utf-8;model-list;record";
+NSString * const CSMediaStatusOutput = @"media:enc=utf-8;model-status;record";
+NSString * const CSMediaContentsOutput = @"media:enc=utf-8;model-contents;record";
+NSString * const CSMediaAvailabilityOutput = @"media:enc=utf-8;model-availability;record";
+NSString * const CSMediaPathOutput = @"media:enc=utf-8;model-path;record";
+NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;enc=utf-8;record";
+NSString * const CSMediaCaptionOutput = @"media:enc=utf-8;image-caption;record";
+NSString * const CSMediaPlainText = @"media:enc=utf-8;ext=txt;plain-text";
+NSString * const CSMediaTranscriptionOutput = @"media:enc=utf-8;record;transcription";
+NSString * const CSMediaDecision = @"media:decision;fmt=json;record";
+NSString * const CSMediaAdapterSelection = @"media:adapter-selection;fmt=json;record";
 // Fabric registry lookup wire types
-NSString * const CSMediaCapUrn = @"media:cap-urn;textable";
-NSString * const CSMediaMediaUrn = @"media:media-urn;textable";
-NSString * const CSMediaCapDefinition = @"media:cap-definition;json;record;textable";
-NSString * const CSMediaMediaDefinition = @"media:media-definition;json;record;textable";
+NSString * const CSMediaCapUrn = @"media:cap-urn;enc=utf-8";
+NSString * const CSMediaMediaUrn = @"media:enc=utf-8;media-urn";
+NSString * const CSMediaCapDefinition = @"media:cap-definition;fmt=json;record";
+NSString * const CSMediaMediaDefinition = @"media:fmt=json;media-definition;record";
 // Fabric registry per-definition version (defver). Carried as data alongside a
 // URN when a cap looks up a definition pinned to a specific manifest snapshot.
 // Absent ⇒ defver 0 (legacy v0 flat-path lookup).
-NSString * const CSMediaFabricDefver = @"media:defver;textable";
+NSString * const CSMediaFabricDefver = @"media:defver;enc=utf-8";
 // Fabric lookup caps (implemented by fetchcartridge)
 NSString * const CSCapLookupCapFabric =
-    @"cap:in=\"media:cap-urn;textable\";fabric;lookup-cap;out=\"media:cap-definition;json;record;textable\"";
+    @"cap:in=\"media:cap-urn;enc=utf-8\";fabric;lookup-cap;out=\"media:cap-definition;fmt=json;record\"";
 NSString * const CSCapLookupMediaDefFabric =
-    @"cap:in=\"media:media-urn;textable\";fabric;lookup-media-def;out=\"media:media-definition;json;record;textable\"";
+    @"cap:in=\"media:enc=utf-8;media-urn\";fabric;lookup-media-def;out=\"media:fmt=json;media-definition;record\"";
 // Format-specific variants for JSON, YAML, CSV
-NSString * const CSMediaJsonValue = @"media:json;textable";
-NSString * const CSMediaJsonRecord = @"media:json;record;textable";
-NSString * const CSMediaJsonList = @"media:json;list;textable";
-NSString * const CSMediaJsonListRecord = @"media:json;list;record;textable";
-NSString * const CSMediaYamlValue = @"media:textable;yaml";
-NSString * const CSMediaYamlRecord = @"media:record;textable;yaml";
-NSString * const CSMediaYamlList = @"media:list;textable;yaml";
-NSString * const CSMediaYamlListRecord = @"media:list;record;textable;yaml";
-NSString * const CSMediaCsv = @"media:ext=csv;list;record;textable";
-NSString * const CSMediaCsvList = @"media:ext=csv;list;record;textable";
+NSString * const CSMediaJsonValue = @"media:fmt=json";
+NSString * const CSMediaJsonRecord = @"media:fmt=json;record";
+NSString * const CSMediaJsonList = @"media:fmt=json;list";
+NSString * const CSMediaJsonListRecord = @"media:fmt=json;list;record";
+NSString * const CSMediaYamlValue = @"media:fmt=yaml";
+NSString * const CSMediaYamlRecord = @"media:fmt=yaml;record";
+NSString * const CSMediaYamlList = @"media:fmt=yaml;list";
+NSString * const CSMediaYamlListRecord = @"media:fmt=yaml;list;record";
+NSString * const CSMediaCsv = @"media:fmt=csv;list;record";
+NSString * const CSMediaCsvList = @"media:fmt=csv;list;record";
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION
@@ -224,22 +223,32 @@ static BOOL CSMediaUrnHasMarkerTag(NSString *mediaUrn, NSString *tagName) {
     return value != nil && [value isEqualToString:@"*"];
 }
 
-/// Public function to check if a media URN represents binary data.
-/// Validation is handled by CSTaggedUrn.
-BOOL CSMediaUrnIsBinary(NSString *mediaUrn) {
-    return !CSMediaUrnHasTag(mediaUrn, @"textable");
+/// Helper to read a tag's value (nil if absent) from a media URN string.
+/// Requires a valid, non-empty media URN - fails hard otherwise.
+static NSString * _Nullable CSMediaUrnTagValue(NSString *mediaUrn, NSString *tagName) {
+    NSError *error = nil;
+    CSTaggedUrn *parsed = [CSTaggedUrn fromString:mediaUrn error:&error];
+    if (parsed == nil || error != nil) {
+        [NSException raise:NSInvalidArgumentException
+                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
+    }
+    return [parsed getTag:tagName];
 }
 
-/// Public function to check if a media URN represents text data.
+/// Public function to check if a media URN is text-representable, i.e. it
+/// declares a character encoding via the `enc=` tag. Replaces the old
+/// textable-based text/binary distinction (everything is bytes at the wire
+/// level; text is the orthogonal `enc=` axis).
 /// Validation is handled by CSTaggedUrn.
-BOOL CSMediaUrnIsText(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"textable");
+BOOL CSMediaUrnHasEncoding(NSString *mediaUrn) {
+    return CSMediaUrnTagValue(mediaUrn, @"enc") != nil;
 }
 
-/// Public function to check if a media URN represents JSON data.
+/// Public function to check if a media URN represents JSON content
+/// (carries the `fmt=json` content-format tag).
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnIsJson(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"json");
+    return [CSMediaUrnTagValue(mediaUrn, @"fmt") isEqualToString:@"json"];
 }
 
 /// Public function to check if a media URN represents a list (has list marker tag).
@@ -358,10 +367,6 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
     return [self withContentType:contentType profile:profile schema:nil];
 }
 
-- (BOOL)isBinary {
-    return !CSMediaUrnHasTag(self.mediaUrn, @"textable");
-}
-
 - (BOOL)isRecord {
     return CSMediaUrnHasMarkerTag(self.mediaUrn, @"record");
 }
@@ -379,11 +384,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
 }
 
 - (BOOL)isJSON {
-    return CSMediaUrnHasTag(self.mediaUrn, @"json");
-}
-
-- (BOOL)isText {
-    return CSMediaUrnHasTag(self.mediaUrn, @"textable");
+    return [CSMediaUrnTagValue(self.mediaUrn, @"fmt") isEqualToString:@"json"];
 }
 
 - (NSString *)primaryType {

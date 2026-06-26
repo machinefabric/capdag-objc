@@ -102,9 +102,10 @@
         return NO;
     }
 
-    // For binary outputs, check type compatibility
+    // For binary outputs, check type compatibility.
+    // A media is text-representable iff it carries enc=; otherwise it is bytes.
     if (self.contentType == CSResponseContentTypeBinary) {
-        if (![mediaDef isBinary]) {
+        if (CSMediaUrnHasEncoding(mediaDef.mediaUrn)) {
             if (error) {
                 NSString *message = [NSString stringWithFormat:@"Cap %@ expects %@ output but received binary data",
                                    [cap urnString], output.mediaUrn];
@@ -197,12 +198,13 @@
             return [mediaDef isRecord] || [mediaDef isJSON];
 
         case CSResponseContentTypeText:
-            // Text response matches textable outputs that are opaque (no internal structure)
-            return [mediaDef isText] && [mediaDef isOpaque];
+            // Text response matches text-representable (enc=) outputs that are
+            // opaque (no internal structure)
+            return CSMediaUrnHasEncoding(mediaDef.mediaUrn) && [mediaDef isOpaque];
 
         case CSResponseContentTypeBinary:
-            // Binary response matches binary outputs
-            return [mediaDef isBinary];
+            // Binary response matches non-text-representable (no enc=) outputs
+            return !CSMediaUrnHasEncoding(mediaDef.mediaUrn);
     }
 }
 

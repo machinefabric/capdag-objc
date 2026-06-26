@@ -33,7 +33,7 @@ extern NSString * const CSCapDiscard;
  * Standard, NOT mandatory. Every cartridge gets a default implementation that
  * returns empty END (no match). Cartridges that inspect file content override
  * this with a handler that returns {"media_urns": [...]}.
- * URN: cap:in="media:";out="media:adapter-selection;json;record"
+ * URN: cap:in="media:";out="media:adapter-selection;fmt=json;record"
  */
 extern NSString * const CSCapAdapterSelection;
 

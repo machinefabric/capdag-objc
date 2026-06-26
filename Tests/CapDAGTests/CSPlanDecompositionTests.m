@@ -20,10 +20,10 @@ static CSMachinePlan *buildForeachPlanWithCollect(void) {
     [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:pdf" cardinality:CSInputCardinalitySingle]];
     [plan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=media:pdf;out=media:pdf-page;list"]];
     [plan addNode:[CSMachineNode forEachNode:@"foreach_0" inputNode:@"cap_0" bodyEntry:@"body_cap_0" bodyExit:@"body_cap_1"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=media:text;textable"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_1" capUrn:@"cap:in=media:text;textable;out=media:decision;json;record;textable"]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=media:enc=utf-8;text"]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_1" capUrn:@"cap:in=media:enc=utf-8;text;out=media:decision;fmt=json;record"]];
     [plan addNode:[CSMachineNode collectNode:@"collect_0" inputNodes:@[@"body_cap_1"]]];
-    [plan addNode:[CSMachineNode capNode:@"cap_post" capUrn:@"cap:in=media:decision;json;record;textable;out=media:json;textable"]];
+    [plan addNode:[CSMachineNode capNode:@"cap_post" capUrn:@"cap:in=media:decision;fmt=json;record;out=media:fmt=json"]];
     [plan addNode:[CSMachineNode outputNode:@"output" outputName:@"result" sourceNode:@"cap_post"]];
 
     [plan addEdge:[CSMachinePlanEdge directFrom:@"input_slot" to:@"cap_0"]];
@@ -45,7 +45,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:pdf" cardinality:CSInputCardinalitySingle]];
     [plan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=media:pdf;out=media:pdf-page;list"]];
     [plan addNode:[CSMachineNode forEachNode:@"foreach_0" inputNode:@"cap_0" bodyEntry:@"body_cap_0" bodyExit:@"body_cap_0"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=media:decision;json;record;textable"]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=media:decision;fmt=json;record"]];
     [plan addNode:[CSMachineNode outputNode:@"output" outputName:@"result" sourceNode:@"body_cap_0"]];
 
     [plan addEdge:[CSMachinePlanEdge directFrom:@"input_slot" to:@"cap_0"]];
@@ -206,7 +206,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
 
     NSError *error = nil;
-    CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;json;record;textable" error:&error];
+    CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;fmt=json;record" error:&error];
     XCTAssertNotNil(suffix, @"should succeed: %@", error);
 
     // Should have: synthetic input, cap_post, output
@@ -248,7 +248,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     NSError *error = nil;
     CSMachinePlan *prefix = [plan extractPrefixTo:@"cap_0" error:&error];
     CSMachinePlan *body = [plan extractForeachBody:@"foreach_0" itemMediaUrn:@"media:pdf-page" error:&error];
-    CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;json;record;textable" error:&error];
+    CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;fmt=json;record" error:&error];
 
     XCTAssertNotNil(prefix);
     XCTAssertNotNil(body);
@@ -292,7 +292,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 - (void)test763_suffixIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
-    CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;json;record;textable" error:&error];
+    CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;fmt=json;record" error:&error];
     XCTAssertNotNil(suffix);
     XCTAssertNotNil([suffix topologicalOrder:&error]);
 }

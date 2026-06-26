@@ -39,6 +39,7 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
             (.badInstallation,     "bad_installation"),
             (.disabled,            "disabled"),
             (.registryUnreachable, "registry_unreachable"),
+            (.fabricManifestVersionMismatch, "fabric_manifest_version_mismatch"),
         ]
         for (kind, expectedRaw) in expected {
             XCTAssertEqual(
@@ -61,6 +62,7 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
             .incompatible, .manifestInvalid, .handshakeFailed,
             .identityRejected, .entryPointMissing, .quarantined,
             .badInstallation, .disabled, .registryUnreachable,
+            .fabricManifestVersionMismatch,
         ]
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
@@ -98,6 +100,7 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
             ("bad_installation",    .badInstallation),
             ("disabled",            .disabled),
             ("registry_unreachable",.registryUnreachable),
+            ("fabric_manifest_version_mismatch", .fabricManifestVersionMismatch),
         ]
         let decoder = JSONDecoder()
         for (raw, expectedKind) in wireExpectations {

@@ -53,8 +53,8 @@ static NSString *buildRegistryURL(NSString *urn) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     
     // Test that registry checks if cap exists in cache
-    BOOL exists1 = [registry capExists:@"cap:in=media:void;extract;out=\"media:record;textable\";target=metadata"];
-    BOOL exists2 = [registry capExists:@"cap:in=media:void;different;out=\"media:record;textable\""];
+    BOOL exists1 = [registry capExists:@"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata"];
+    BOOL exists2 = [registry capExists:@"cap:in=media:void;different;out=\"media:enc=utf-8;record\""];
     
     // These should both be NO since cache is empty initially
     XCTAssertFalse(exists1);
@@ -66,7 +66,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 /// Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters
 /// in the path, so no percent-encoding gymnastics.
 - (void)test0166_PerCapURLUsesSHA256 {
-    NSString *registryURL = buildRegistryURL(@"cap:in=media:string;test;out=\"media:record;textable\"");
+    NSString *registryURL = buildRegistryURL(@"cap:in=media:string;test;out=\"media:enc=utf-8;record\"");
 
     XCTAssertTrue([registryURL containsString:@"/caps/"], @"URL must use the /caps/ path prefix");
     XCTAssertFalse([registryURL containsString:@"cap:"] || [registryURL containsString:@"cap%3A"],
@@ -120,12 +120,12 @@ static NSString *buildRegistryURL(NSString *urn) {
     
     XCTestExpectation *expectation = [self expectationWithDescription:@"Get cap definition"];
     
-    [registry getCapDefinition:@"cap:in=media:void;extract;out=\"media:record;textable\";target=metadata" completion:^(CSRegistryCapDefinition *definition, NSError *error) {
+    [registry getCapDefinition:@"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata" completion:^(CSRegistryCapDefinition *definition, NSError *error) {
         if (error) {
             NSLog(@"Skipping real registry test: %@", error);
         } else {
             XCTAssertNotNil(definition);
-            XCTAssertEqualObjects(definition.urn, @"cap:in=media:void;extract;out=\"media:record;textable\";target=metadata");
+            XCTAssertEqualObjects(definition.urn, @"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata");
             XCTAssertNotNil(definition.version);
             XCTAssertNotNil(definition.command);
         }
@@ -140,7 +140,7 @@ static NSString *buildRegistryURL(NSString *urn) {
     CSRegistryValidator *validator = [CSRegistryValidator validator];
     
     NSError *error;
-    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=media:void;extract;out=\"media:record;textable\";target=metadata" error:&error];
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata" error:&error];
     XCTAssertNotNil(urn);
     
     CSCap *cap = [CSCap capWithUrn:urn

@@ -305,12 +305,12 @@ public final class InputPackage: Sequence, @unchecked Sendable {
 /// etc.) and the planner emits exactly that URN on the stream.
 ///
 /// For cap-args declared in TOML with rich dim profiles (e.g.
-/// `media:max-tokens;inference;limit;user;task;textable;numeric` —
-/// richer than the bare `media:max-tokens;textable;numeric` shape the
+/// `media:max-tokens;inference;limit;user;task;numeric` —
+/// richer than the bare `media:max-tokens;numeric` shape the
 /// handler thinks about), use `findStreamConforming` instead. Equality
 /// matching against the bare form silently misses the rich form, and
 /// any conforming-but-unmatched stream then falls through to a
-/// downstream `media:textable` catch-all and overwrites the prompt
+/// downstream `media:enc=utf-8` catch-all and overwrites the prompt
 /// body — that's the gibberish-output bug.
 public func findStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) -> Data? {
     guard let target = try? CSMediaUrn.fromString(mediaUrn) else { return nil }
@@ -331,7 +331,7 @@ public func findStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn
 
 /// Find a stream whose URN *conforms to* the given pattern. The
 /// pattern is the broad form the handler knows about (e.g.
-/// `media:max-tokens;textable;numeric`); any stream URN with at
+/// `media:max-tokens;numeric`); any stream URN with at
 /// least those tags (more tags = more specific) matches. This is
 /// the right matcher for cap-args whose TOML URN is a refinement
 /// of the bare handler form — see `findStream` for the equality
@@ -1036,7 +1036,7 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>) -> InputPackag
 
 /// Unified argument for cap invocation - arguments are identified by media_urn.
 public struct CapArgumentValue: Sendable {
-    /// Semantic identifier, e.g., "media:model-spec;textable"
+    /// Semantic identifier, e.g., "media:enc=utf-8;model-spec"
     public let mediaUrn: String
     /// Value bytes (UTF-8 for text, raw for binary)
     public let value: Data

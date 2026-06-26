@@ -111,10 +111,6 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 
 // MARK: - Predicates (mirror Rust MediaUrn predicates)
 
-/// Check if this represents binary data (textable marker tag absent).
-/// Mirrors Rust: pub fn is_binary(&self) -> bool
-- (BOOL)isBinary;
-
 // MARK: - Cardinality (list marker)
 
 /// Returns true if this media is a list (has `list` marker tag).
@@ -139,21 +135,17 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn is_opaque(&self) -> bool
 - (BOOL)isOpaque;
 
-/// Check if this represents JSON data (json marker tag present).
+/// Check if this value's content format is JSON (carries `fmt=json`).
 /// Mirrors Rust: pub fn is_json(&self) -> bool
 - (BOOL)isJson;
 
-/// Check if this represents YAML representation (yaml marker tag present).
+/// Check if this value's content format is YAML (carries `fmt=yaml`).
 /// Mirrors Rust: pub fn is_yaml(&self) -> bool
 - (BOOL)isYaml;
 
-/// Check if this represents CSV representation (csv marker tag present).
+/// Check if this value's content format is CSV (carries `fmt=csv`).
 /// Mirrors Rust: pub fn is_csv(&self) -> bool
 - (BOOL)isCsv;
-
-/// Check if this represents text data (textable marker tag present).
-/// Mirrors Rust: pub fn is_text(&self) -> bool
-- (BOOL)isText;
 
 /// Check if this represents void (void marker tag present) — the
 /// **unit type** in the type-theoretic reading. media:void is the
