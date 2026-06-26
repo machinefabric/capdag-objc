@@ -68,7 +68,7 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// Absolute path to the file
 @property (nonatomic, copy, readonly) NSString *path;
 
-/// Detected media URN with list/record markers (e.g., "media:json;record;textable")
+/// Detected media URN with list/record markers (e.g., "media:enc=utf-8;fmt=json;record")
 @property (nonatomic, copy, readonly) NSString *mediaUrn;
 
 /// File size in bytes

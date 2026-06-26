@@ -10,7 +10,7 @@
 #import "CSArgumentBinding.h"
 
 /// Media URN for a collection input structure (machine internal)
-static NSString * const COLLECTION_MEDIA_URN = @"media:collection;record;textable";
+static NSString * const COLLECTION_MEDIA_URN = @"media:collection;enc=utf-8;record";
 
 // MARK: - CollectionFile
 
