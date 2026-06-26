@@ -430,8 +430,8 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSError *parseError = nil;
     CSMediaUrn *urn = [CSMediaUrn fromString:mediaUrn error:&parseError];
     XCTAssertNotNil(urn, @"detected URN must parse: %@ (parse error: %@)", mediaUrn, parseError);
-    XCTAssertNotNil([urn getTag:@"pdf"],
-                    @"PDF extension must produce URN with pdf tag, got: %@", mediaUrn);
+    XCTAssertEqualObjects([urn getTag:@"ext"], @"pdf",
+                    @"PDF extension must produce URN with ext=pdf tag, got: %@", mediaUrn);
 }
 
 #pragma mark - Types Tests (Rust types.rs: TEST1144, TEST1145)
@@ -514,17 +514,17 @@ static CSFabricRegistry *testFabricRegistry(void) {
 // Mirror-specific: CSResolvedInputSet aggregates totalSize across files
 - (void)test0144_resolved_input_set_total_size {
     CSResolvedFile *file1 = [CSResolvedFile fileWithPath:@"/a.txt"
-                                                mediaUrn:@"media:txt"
+                                                mediaUrn:@"media:ext=txt"
                                                sizeBytes:100
                                         contentStructure:CSContentStructureScalarOpaque];
     CSResolvedFile *file2 = [CSResolvedFile fileWithPath:@"/b.txt"
-                                                mediaUrn:@"media:txt"
+                                                mediaUrn:@"media:ext=txt"
                                                sizeBytes:200
                                         contentStructure:CSContentStructureScalarOpaque];
 
     CSResolvedInputSet *set = [CSResolvedInputSet setWithFiles:@[file1, file2]
                                                     isSequence:YES
-                                                   commonMedia:@"media:txt"];
+                                                   commonMedia:@"media:ext=txt"];
 
     XCTAssertEqual([set totalSize], 300);
     XCTAssertTrue([set isHomogeneous]);

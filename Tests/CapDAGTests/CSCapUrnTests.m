@@ -1021,10 +1021,10 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual([genericCap specificity], 10000 * 6 + 100 * 0 + 2);
     // specific:
     //   out = media:image;png;thumbnail -> 6
-    //   in  = media:ext=pdf                 -> 2
+    //   in  = media:ext=pdf             -> 4 (ext=pdf is an exact-value tag, not a bare marker)
     //   y   = generate-thumbnail marker -> 2
-    //   spec_C = 10000*6 + 100*2 + 2 = 60202
-    XCTAssertEqual([specificCap specificity], 10000 * 6 + 100 * 2 + 2);
+    //   spec_C = 10000*6 + 100*4 + 2 = 60402
+    XCTAssertEqual([specificCap specificity], 10000 * 6 + 100 * 4 + 2);
 
     XCTAssertGreaterThan([specificCap specificity], [genericCap specificity],
         @"pdf cap must be more specific than generic cap");
@@ -1542,7 +1542,7 @@ static NSString* testUrn(NSString *tags) {
 - (void)test1804_kind_transform_for_normal_data_processors {
     NSError *error = nil;
 
-    CSCapUrn *extract = [CSCapUrn fromString:@"cap:extract;in=media:pdf;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *extract = [CSCapUrn fromString:@"cap:extract;in=\"media:ext=pdf\";out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(extract);
     XCTAssertEqual([extract kind], CSCapKindTransform);
 
@@ -1559,7 +1559,7 @@ static NSString* testUrn(NSString *tags) {
 
     NSArray *cases = @[
         @[@"cap:effect=none", @"cap:in=media:;out=media:;effect=none", @(CSCapKindIdentity)],
-        @[@"cap:extract;in=media:pdf;out=media:record",
+        @[@"cap:extract;in=\"media:ext=pdf\";out=media:record",
           @"cap:extract;in=\"media:ext=pdf\";out=\"media:record\"",
           @(CSCapKindTransform)],
         @[@"cap:in=media:void;out=media:record;warm",
@@ -1874,7 +1874,7 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *bigOut = [CSCapUrn fromString:@"cap:in=media:;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(bigOut);
     CSCapUrn *bigInAndY = [CSCapUrn fromString:
-        @"cap:in=media:pdf;out=media:record;!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft"
+        @"cap:in=\"media:ext=pdf\";out=media:record;!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft"
         error:&error];
     XCTAssertNotNil(bigInAndY);
     XCTAssertGreaterThan([bigOut specificity], [bigInAndY specificity],
@@ -1884,7 +1884,7 @@ static NSString* testUrn(NSString *tags) {
 // TEST1845: With equal out, in-axis dominates over y-axis.
 - (void)test1845_axis_weighting_in_dominates_y {
     NSError *error = nil;
-    CSCapUrn *bigIn = [CSCapUrn fromString:@"cap:in=media:pdf;out=media:record" error:&error];
+    CSCapUrn *bigIn = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";out=media:record" error:&error];
     XCTAssertNotNil(bigIn);
     CSCapUrn *bigY = [CSCapUrn fromString:
         @"cap:in=media:;out=media:record;!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft"
