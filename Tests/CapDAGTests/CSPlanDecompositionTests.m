@@ -20,10 +20,10 @@ static CSMachinePlan *buildForeachPlanWithCollect(void) {
     [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:pdf" cardinality:CSInputCardinalitySingle]];
     [plan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=media:pdf;out=media:pdf-page;list"]];
     [plan addNode:[CSMachineNode forEachNode:@"foreach_0" inputNode:@"cap_0" bodyEntry:@"body_cap_0" bodyExit:@"body_cap_1"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=media:enc=utf-8;text"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_1" capUrn:@"cap:in=media:enc=utf-8;text;out=media:decision;fmt=json;record"]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=\"media:enc=utf-8;text\""]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_1" capUrn:@"cap:in=\"media:enc=utf-8;text\";out=\"media:decision;fmt=json;record\""]];
     [plan addNode:[CSMachineNode collectNode:@"collect_0" inputNodes:@[@"body_cap_1"]]];
-    [plan addNode:[CSMachineNode capNode:@"cap_post" capUrn:@"cap:in=media:decision;fmt=json;record;out=media:fmt=json"]];
+    [plan addNode:[CSMachineNode capNode:@"cap_post" capUrn:@"cap:in=\"media:decision;fmt=json;record\";out=\"media:fmt=json\""]];
     [plan addNode:[CSMachineNode outputNode:@"output" outputName:@"result" sourceNode:@"cap_post"]];
 
     [plan addEdge:[CSMachinePlanEdge directFrom:@"input_slot" to:@"cap_0"]];
@@ -45,7 +45,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:pdf" cardinality:CSInputCardinalitySingle]];
     [plan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=media:pdf;out=media:pdf-page;list"]];
     [plan addNode:[CSMachineNode forEachNode:@"foreach_0" inputNode:@"cap_0" bodyEntry:@"body_cap_0" bodyExit:@"body_cap_0"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=media:decision;fmt=json;record"]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=\"media:decision;fmt=json;record\""]];
     [plan addNode:[CSMachineNode outputNode:@"output" outputName:@"result" sourceNode:@"body_cap_0"]];
 
     [plan addEdge:[CSMachinePlanEdge directFrom:@"input_slot" to:@"cap_0"]];
