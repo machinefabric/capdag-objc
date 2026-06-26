@@ -52,7 +52,7 @@ typedef NS_ENUM(NSInteger, CSSourceEntityType) {
 /// Actual filesystem path to the file
 @property (nonatomic, copy) NSString *filePath;
 
-/// Media URN describing the file type (e.g., "media:pdf")
+/// Media URN describing the file type (e.g., "media:ext=pdf")
 @property (nonatomic, copy) NSString *mediaUrn;
 
 /// Optional file metadata

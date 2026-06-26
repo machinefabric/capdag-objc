@@ -434,7 +434,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original getOutSpec], @"media:enc=utf-8;record"); // Original unchanged
 
     CSCapUrn *identity = [CSCapUrn fromString:@"cap:effect=none" error:&error];
-    XCTAssertThrowsSpecificNamed([identity withOutSpec:@"media:pdf"], NSException, NSInternalInconsistencyException);
+    XCTAssertThrowsSpecificNamed([identity withOutSpec:@"media:ext=pdf"], NSException, NSInternalInconsistencyException);
 }
 
 // TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local)
@@ -960,10 +960,10 @@ static NSString* testUrn(NSString *tags) {
 - (void)test1412_directionSemanticMatching {
     NSError *error = nil;
 
-    // A cap accepting media: (generic) should match a request with media:pdf (specific)
+    // A cap accepting media: (generic) should match a request with media:ext=pdf (specific)
     CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(genericCap, @"Failed to parse generic cap: %@", error);
-    CSCapUrn *pdfRequest = [CSCapUrn fromString:@"cap:in=\"media:pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *pdfRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(pdfRequest, @"Failed to parse pdf request: %@", error);
     XCTAssertTrue([genericCap accepts:pdfRequest],
         @"Generic provider must match specific pdf request");
@@ -975,7 +975,7 @@ static NSString* testUrn(NSString *tags) {
         @"Generic provider must match epub request");
 
     // Reverse: specific cap does NOT match generic request
-    CSCapUrn *pdfCap = [CSCapUrn fromString:@"cap:in=\"media:pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *pdfCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(pdfCap, @"Failed to parse pdf cap: %@", error);
     CSCapUrn *genericRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(genericRequest, @"Failed to parse generic request: %@", error);
@@ -1009,7 +1009,7 @@ static NSString* testUrn(NSString *tags) {
 
     CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(genericCap, @"Failed to parse generic cap: %@", error);
-    CSCapUrn *specificCap = [CSCapUrn fromString:@"cap:in=\"media:pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
+    CSCapUrn *specificCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:image;png;thumbnail\"" error:&error];
     XCTAssertNotNil(specificCap, @"Failed to parse specific cap: %@", error);
 
     // Cap-URN spec: 10000*spec_U(out) + 100*spec_U(in) + spec_U(y).
@@ -1021,7 +1021,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual([genericCap specificity], 10000 * 6 + 100 * 0 + 2);
     // specific:
     //   out = media:image;png;thumbnail -> 6
-    //   in  = media:pdf                 -> 2
+    //   in  = media:ext=pdf                 -> 2
     //   y   = generate-thumbnail marker -> 2
     //   spec_C = 10000*6 + 100*2 + 2 = 60202
     XCTAssertEqual([specificCap specificity], 10000 * 6 + 100 * 2 + 2);
@@ -1140,8 +1140,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST823: is_dispatchable — exact match provider dispatches request
 - (void)test823_isDispatchable_exactMatch {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertTrue([provider isDispatchable:request], @"Exact match should dispatch");
@@ -1151,7 +1151,7 @@ static NSString* testUrn(NSString *tags) {
 - (void)test824_isDispatchable_broaderInputHandlesSpecific {
     NSError *error;
     CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertTrue([provider isDispatchable:request], @"Provider accepting any input should dispatch request with specific pdf input");
@@ -1161,7 +1161,7 @@ static NSString* testUrn(NSString *tags) {
 // media: on the request input axis means "unconstrained" — vacuously true
 - (void)test825_isDispatchable_unconstrainedInput {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
@@ -1171,8 +1171,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST826: is_dispatchable — provider output must satisfy request output (covariance)
 - (void)test826_isDispatchable_providerOutputSatisfiesRequest {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertTrue([provider isDispatchable:request], @"Provider output enc=utf-8;record should satisfy request needing enc=utf-8");
@@ -1181,8 +1181,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST827: is_dispatchable — provider with generic output cannot satisfy specific request
 - (void)test827_isDispatchable_genericOutputCannotSatisfySpecific {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertFalse([provider isDispatchable:request], @"Provider with generic output cannot guarantee specific output");
@@ -1211,8 +1211,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST830: is_dispatchable — provider extra tags are refinement, always OK
 - (void)test830_isDispatchable_providerExtraTags {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:backend=mlx;in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:backend=mlx;in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertTrue([provider isDispatchable:request], @"Provider with extra backend tag should still dispatch");
@@ -1232,7 +1232,7 @@ static NSString* testUrn(NSString *tags) {
 - (void)test832_isDispatchable_asymmetric {
     NSError *error;
     CSCapUrn *broad = [CSCapUrn fromString:@"cap:in=\"media:\";process;out=\"media:enc=utf-8;record\"" error:&error];
-    CSCapUrn *narrow = [CSCapUrn fromString:@"cap:in=\"media:pdf\";process;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *narrow = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";process;out=\"media:enc=utf-8\"" error:&error];
     XCTAssertNotNil(broad);
     XCTAssertNotNil(narrow);
     XCTAssertTrue([broad isDispatchable:narrow], @"Broad provider should dispatch narrow request");
@@ -1242,8 +1242,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST833: is_comparable — both directions checked
 - (void)test833_isComparable_symmetric {
     NSError *error;
-    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(a);
     XCTAssertNotNil(b);
     XCTAssertTrue([a isComparable:b]);
@@ -1253,7 +1253,7 @@ static NSString* testUrn(NSString *tags) {
 // TEST834: is_comparable — unrelated caps are NOT comparable
 - (void)test834_isComparable_unrelated {
     NSError *error;
-    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
     CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:audio\";transcribe;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(a);
     XCTAssertNotNil(b);
@@ -1264,8 +1264,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST835: is_equivalent — identical caps
 - (void)test835_isEquivalent_identical {
     NSError *error;
-    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
     XCTAssertNotNil(a);
     XCTAssertNotNil(b);
     XCTAssertTrue([a isEquivalent:b]);
@@ -1274,8 +1274,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST836: is_equivalent — non-equivalent comparable caps
 - (void)test836_isEquivalent_nonEquivalent {
     NSError *error;
-    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *a = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *b = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(a);
     XCTAssertNotNil(b);
     XCTAssertTrue([a isComparable:b], @"Should be comparable");
@@ -1285,8 +1285,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST837: is_dispatchable — op tag mismatch rejects
 - (void)test837_isDispatchable_opTagMismatch {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";transform;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";transform;out=\"media:enc=utf-8\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertFalse([provider isDispatchable:request], @"Different op tags should prevent dispatch");
@@ -1295,8 +1295,8 @@ static NSString* testUrn(NSString *tags) {
 // TEST838: is_dispatchable — request with wildcard output accepts any provider output
 - (void)test838_isDispatchable_requestWildcardOutput {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
-    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:pdf\";extract;out=\"media:\"" error:&error];
+    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:\"" error:&error];
     XCTAssertNotNil(provider);
     XCTAssertNotNil(request);
     XCTAssertTrue([provider isDispatchable:request], @"Request with wildcard output should accept any provider output");
@@ -1560,7 +1560,7 @@ static NSString* testUrn(NSString *tags) {
     NSArray *cases = @[
         @[@"cap:effect=none", @"cap:in=media:;out=media:;effect=none", @(CSCapKindIdentity)],
         @[@"cap:extract;in=media:pdf;out=media:record",
-          @"cap:extract;in=\"media:pdf\";out=\"media:record\"",
+          @"cap:extract;in=\"media:ext=pdf\";out=\"media:record\"",
           @(CSCapKindTransform)],
         @[@"cap:in=media:void;out=media:record;warm",
           @"cap:warm;out=media:record;in=media:void",
@@ -1596,12 +1596,12 @@ static NSString* testUrn(NSString *tags) {
 
     CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
     XCTAssertNotNil(png, @"%@", error.localizedDescription);
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
     XCTAssertNotNil(pdf, @"%@", error.localizedDescription);
 
     XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:png error:&error] toString], @"media:image;png");
     XCTAssertNil(error);
-    XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:pdf error:&error] toString], @"media:pdf");
+    XCTAssertEqualObjects([[decimate inferRuntimeOutputMedia:pdf error:&error] toString], @"media:ext=pdf");
     XCTAssertNil(error);
 }
 
@@ -1634,7 +1634,7 @@ static NSString* testUrn(NSString *tags) {
 // TEST0311: invalid effect=none declarations fail hard
 - (void)test0311_invalidEffectNoneFailsHard {
     NSError *error = nil;
-    CSCapUrn *invalid = [CSCapUrn fromString:@"cap:in=\"media:pdf\";out=\"media:enc=utf-8\";effect=none" error:&error];
+    CSCapUrn *invalid = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";out=\"media:enc=utf-8\";effect=none" error:&error];
     XCTAssertNil(invalid);
     XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }

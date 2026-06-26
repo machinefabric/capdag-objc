@@ -69,9 +69,9 @@ final class ManifestTests: XCTestCase {
             capDescription: "Roundtrip process cap",
             args: [
                 CapArg(
-                    mediaUrn: "media:pdf",
+                    mediaUrn: "media:ext=pdf",
                     required: true,
-                    sources: [.stdin("media:pdf")]
+                    sources: [.stdin("media:ext=pdf")]
                 ),
                 CapArg(
                     mediaUrn: "media:chunk-size;numeric",

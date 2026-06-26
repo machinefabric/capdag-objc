@@ -17,7 +17,7 @@
 // TEST852: LUB of identical URNs returns the same URN
 - (void)test852_lub_identical {
     NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
     XCTAssertNotNil(pdf);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf, pdf]];
     XCTAssertTrue([lub isEquivalentTo:pdf]);
@@ -26,7 +26,7 @@
 // TEST853: LUB of URNs with no common tags returns media: (universal)
 - (void)test853_lub_no_common_tags {
     NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
     CSMediaUrn *png = [CSMediaUrn fromString:@"media:image;png" error:&error];
     XCTAssertNotNil(pdf);
     XCTAssertNotNil(png);
@@ -77,7 +77,7 @@
 // TEST857: LUB of single input returns that input
 - (void)test857_lub_single {
     NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
     XCTAssertNotNil(pdf);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf]];
     XCTAssertTrue([lub isEquivalentTo:pdf]);

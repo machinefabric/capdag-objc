@@ -17,7 +17,7 @@
 static CSMachinePlan *buildForeachPlanWithCollect(void) {
     CSMachinePlan *plan = [CSMachinePlan planWithName:@"ForEach test plan"];
 
-    [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:pdf" cardinality:CSInputCardinalitySingle]];
+    [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:ext=pdf" cardinality:CSInputCardinalitySingle]];
     [plan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=media:pdf;out=media:pdf-page;list"]];
     [plan addNode:[CSMachineNode forEachNode:@"foreach_0" inputNode:@"cap_0" bodyEntry:@"body_cap_0" bodyExit:@"body_cap_1"]];
     [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=\"media:enc=utf-8;text\""]];
@@ -42,7 +42,7 @@ static CSMachinePlan *buildForeachPlanWithCollect(void) {
 static CSMachinePlan *buildForeachPlanUnclosed(void) {
     CSMachinePlan *plan = [CSMachinePlan planWithName:@"Unclosed ForEach test plan"];
 
-    [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:pdf" cardinality:CSInputCardinalitySingle]];
+    [plan addNode:[CSMachineNode inputSlotNode:@"input_slot" slotName:@"input" mediaUrn:@"media:ext=pdf" cardinality:CSInputCardinalitySingle]];
     [plan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=media:pdf;out=media:pdf-page;list"]];
     [plan addNode:[CSMachineNode forEachNode:@"foreach_0" inputNode:@"cap_0" bodyEntry:@"body_cap_0" bodyExit:@"body_cap_0"]];
     [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=\"media:decision;fmt=json;record\""]];
@@ -91,7 +91,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 // TEST935: findFirstForeach returns nil for linear plans
 - (void)test935_findFirstForeachLinear {
     CSMachinePlan *plan = [CSMachinePlan linearChainPlan:@[@"cap:a", @"cap:b"]
-                                                       inputMedia:@"media:pdf"
+                                                       inputMedia:@"media:ext=pdf"
                                                       outputMedia:@"media:image;png"
                                                   filePathArgNames:@[@"input_a", @"input_b"]];
     XCTAssertNil([plan findFirstForeach]);
@@ -103,7 +103,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertTrue([foreachPlan hasForeach]);
 
     CSMachinePlan *linearPlan = [CSMachinePlan linearChainPlan:@[@"cap:a"]
-                                                             inputMedia:@"media:pdf"
+                                                             inputMedia:@"media:ext=pdf"
                                                             outputMedia:@"media:image;png"
                                                         filePathArgNames:@[@"input_a"]];
     XCTAssertFalse([linearPlan hasForeach]);

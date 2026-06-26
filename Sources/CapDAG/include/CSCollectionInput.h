@@ -24,7 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Full filesystem path to the file
 @property (nonatomic, copy) NSString *filePath;
 
-/// Media URN describing the file type (e.g., "media:pdf")
+/// Media URN describing the file type (e.g., "media:ext=pdf")
 @property (nonatomic, copy) NSString *mediaUrn;
 
 /// Optional human-readable title

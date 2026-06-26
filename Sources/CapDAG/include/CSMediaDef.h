@@ -199,7 +199,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
  */
 @interface CSMediaDef : NSObject
 
-/// The media URN identifier (e.g., "media:pdf")
+/// The media URN identifier (e.g., "media:ext=pdf")
 @property (nonatomic, readonly, nullable) NSString *mediaUrn;
 
 /// The MIME content type (e.g., "application/json", "image/png")

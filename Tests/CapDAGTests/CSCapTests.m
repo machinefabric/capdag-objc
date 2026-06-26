@@ -177,7 +177,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST0318: Canonical dictionary deserialization
 - (void)test0318_CanonicalDictionaryDeserialization {
     // Test CSCap.capWithDictionary with new args format (stdin is part of arg sources)
-    NSString *stdinMediaType = @"media:pdf";
+    NSString *stdinMediaType = @"media:ext=pdf";
     NSDictionary *capDict = @{
         @"urn": @"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata",
         @"title": @"Extract Metadata",
@@ -521,7 +521,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // TEST0327: Cap manifest dictionary deserialization
 - (void)test0327_CapManifestDictionaryDeserialization {
-    NSString *stdinMediaType = @"media:pdf";
+    NSString *stdinMediaType = @"media:ext=pdf";
     NSDictionary *manifestDict = @{
         @"name": @"TestComponent",
         @"version": @"0.1.0",

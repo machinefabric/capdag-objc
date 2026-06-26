@@ -269,7 +269,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let rid = MessageId.newUUID()
         var req = Frame.req(
             id: rid,
-            capUrn: "cap:in=\"media:pdf\";unknown;out=\"media:text\"",
+            capUrn: "cap:in=\"media:ext=pdf\";unknown;out=\"media:text\"",
             payload: Data(),
             contentType: "application/cbor"
         )
@@ -289,7 +289,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST0110: InProcessCartridgeHost manifest includes identity cap and handler caps
     func test0110_manifestIncludesAllCaps() throws {
-        let capUrn = "cap:in=\"media:pdf\";thumbnail;out=\"media:image;png\""
+        let capUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:image;png\""
         let cap = makeTestCap(capUrn)
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "thumb-host"),
@@ -392,7 +392,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     // TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity
     func test660_closestSpecificityRouting() throws {
-        let specificUrn = "cap:in=\"media:pdf\";thumbnail;out=\"media:image;png\""
+        let specificUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:image;png\""
         let genericUrn = "cap:in=\"media:image\";thumbnail;out=\"media:image;png\""
 
         let specificCap = makeTestCap(specificUrn)
@@ -422,7 +422,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         // Skip RelayNotify
         _ = try! reader.read()!
 
-        // Request with specific input (media:pdf) — should route to "specific" handler
+        // Request with specific input (media:ext=pdf) — should route to "specific" handler
         let rid = MessageId.newUUID()
         var req = Frame.req(id: rid, capUrn: specificUrn, payload: Data(), contentType: "application/cbor")
         req.routingId = MessageId.uint(1)

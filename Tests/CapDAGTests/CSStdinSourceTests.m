@@ -32,7 +32,7 @@
     NSString *trackedFileID = @"tracked-file-123";
     NSString *originalPath = @"/path/to/original.pdf";
     NSData *securityBookmark = [@"security-bookmark-data" dataUsingEncoding:NSUTF8StringEncoding];
-    NSString *mediaUrn = @"media:pdf";
+    NSString *mediaUrn = @"media:ext=pdf";
 
     CSStdinSource *source = [CSStdinSource sourceWithFileReference:trackedFileID
                                                       originalPath:originalPath
@@ -85,7 +85,7 @@
     uint8_t bookmarkBytes[] = {0x62, 0x6F, 0x6F, 0x6B, 0x00, 0x00, 0x00, 0x00};
     NSData *securityBookmark = [NSData dataWithBytes:bookmarkBytes length:sizeof(bookmarkBytes)];
 
-    NSString *mediaUrn = @"media:pdf";
+    NSString *mediaUrn = @"media:ext=pdf";
 
     CSStdinSource *source = [CSStdinSource sourceWithFileReference:trackedFileID
                                                       originalPath:originalPath
