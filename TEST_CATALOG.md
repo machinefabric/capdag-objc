@@ -1,8 +1,8 @@
-# Swift/ObjC Test Catalog
+# CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 806
+**Total Tests:** 815
 
-**Numbered Tests:** 806
+**Numbered Tests:** 815
 
 **Unnumbered Tests:** 0
 
@@ -12,7 +12,7 @@
 
 All numbered test numbers are unique.
 
-This catalog lists all tests in the Swift/ObjC codebase.
+This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
@@ -822,6 +822,15 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1877 | `test1877_registryCartridgeUnderWrongSlugIsBadInstall` | TEST1877: a registry cartridge hand-copied under the WRONG registry slug folder fails the three-place rule (BadInstallation) — scan-all does not mean "accept anywhere", placement must still be self-consistent. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:137 |
 | test1878 | `test1878_bundledProviderWithoutBakedHashIsRejected` |  | Tests/BifaciTests/CartridgeDiscoveryTests.swift:157 |
 | test1879 | `test1879_syncRosterAddsAndRemovesRegisteredDirLive` | TEST1879: SyncRoster updates the LIVE host inventory in place — the engine sees an added registered-dir cartridge via a fresh RelayNotify without reconnecting, and a subsequent empty sync removes it. This is the macOS-XPC `syncDiscoveryOutcomes` parity path the daemon uses after a registry verdict flips a held cartridge to Listed. | Tests/BifaciTests/SyncRosterTests.swift:40 |
+| test1880 | `test1880_AliasNameNormalizationRules` | TEST1880: alias name normalization lowercases and accepts the allowed char class; rejects colon, whitespace, and out-of-class chars. | Tests/CapDAGTests/CSFabricAliasTests.m:38 |
+| test1881 | `test1881_TokenURNvsAliasDetection` | TEST1881: URN-vs-alias detection keys purely on the presence of ':'. | Tests/CapDAGTests/CSFabricAliasTests.m:50 |
+| test1882 | `test1882_ClassifyAliasTargetByPrefix` | TEST1882: alias target classification distinguishes cap from media by prefix and rejects a non-URN target. | Tests/CapDAGTests/CSFabricAliasTests.m:60 |
+| test1887 | `test1887_ManifestRoundTripsAliases` | TEST1887: the manifest round-trips an `aliases` map. | Tests/CapDAGTests/CSFabricAliasTests.m:72 |
+| test1888 | `test1888_ResolveAliasReturnsTarget` | TEST1888: resolveAlias returns the alias target untyped; case-insensitive; malformed name rejected. | Tests/CapDAGTests/CSFabricAliasTests.m:84 |
+| test1889 | `test1889_ResolveAliasTypedEnforcesKind` | TEST1889: resolveAliasTyped enforces the expected kind. | Tests/CapDAGTests/CSFabricAliasTests.m:109 |
+| test1890 | `test1890_GetCapViaAliasAndTypeMismatch` | TEST1890: getCap accepts a cap alias and returns the aliased cap; a media alias passed to getCap fails hard (typed boundary). | Tests/CapDAGTests/CSFabricAliasTests.m:133 |
+| test1891 | `test1891_GetMediaDefViaAliasAndTypeMismatch` | TEST1891: getMediaDef accepts a media alias and returns the aliased spec; a cap alias passed to getMediaDef fails hard. | Tests/CapDAGTests/CSFabricAliasTests.m:158 |
+| test1892 | `test1892_UnknownAliasIsNotFound` | TEST1892: an unknown alias name is a hard not-found, never a silent empty. | Tests/CapDAGTests/CSFabricAliasTests.m:182 |
 ---
 
 ## Numbered Tests Missing Descriptions
@@ -832,9 +841,9 @@ These tests still participate in numeric indexing, but the cataloger did not fin
 
 ---
 
-*Generated from Swift/ObjC source tree*
-*Total tests: 806*
-*Total numbered tests: 806*
+*Generated from CapDag-ObjC/Swift source tree*
+*Total tests: 815*
+*Total numbered tests: 815*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 1*
 *Total numbering mismatches: 0*
