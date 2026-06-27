@@ -55,6 +55,65 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
 @end
 
+// MARK: - Alias primitives (free functions)
+
+BOOL CSTokenIsURN(NSString *token) {
+    return [token rangeOfString:@":"].location != NSNotFound;
+}
+
+BOOL CSIsAliasToken(NSString *token) {
+    return !CSTokenIsURN(token);
+}
+
+NSString *_Nullable CSNormalizeAliasName(NSString *name, NSError *_Nullable *_Nullable error) {
+    NSError *(^mk)(NSString *) = ^NSError *(NSString *msg) {
+        return [NSError errorWithDomain:@"CSFabricRegistryError"
+                                   code:1020
+                               userInfo:@{NSLocalizedDescriptionKey: msg}];
+    };
+    if (name.length == 0) {
+        if (error) *error = mk(@"alias name is empty");
+        return nil;
+    }
+    if ([name rangeOfString:@":"].location != NSNotFound) {
+        if (error) *error = mk([NSString stringWithFormat:
+            @"alias name '%@' contains ':' — aliases must never look like a tagged URN", name]);
+        return nil;
+    }
+    if ([name rangeOfCharacterFromSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]].location != NSNotFound) {
+        if (error) *error = mk([NSString stringWithFormat:@"alias name '%@' contains whitespace", name]);
+        return nil;
+    }
+    NSString *lowered = [name lowercaseString];
+    static NSCharacterSet *allowed = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        allowed = [NSCharacterSet characterSetWithCharactersInString:
+                   @"abcdefghijklmnopqrstuvwxyz0123456789._-"];
+    });
+    NSCharacterSet *disallowed = [allowed invertedSet];
+    if ([lowered rangeOfCharacterFromSet:disallowed].location != NSNotFound) {
+        if (error) *error = mk([NSString stringWithFormat:
+            @"alias name '%@' contains invalid characters; allowed: lowercase letters, digits, '.', '_', '-'", name]);
+        return nil;
+    }
+    return lowered;
+}
+
+BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKind) {
+    NSError *e = nil;
+    if ([CSCapUrn fromString:target error:&e]) {
+        if (outKind) *outKind = CSAliasTargetKindCap;
+        return YES;
+    }
+    e = nil;
+    if ([CSMediaUrn fromString:target error:&e]) {
+        if (outKind) *outKind = CSAliasTargetKindMedia;
+        return YES;
+    }
+    return NO;
+}
+
 // MARK: - Cache entries
 
 @interface CSCapCacheEntry : NSObject
@@ -92,9 +151,17 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 @property (nonatomic, strong) NSString *mediaCacheDirectory;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, CSCap *> *cachedCaps;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedSpecs;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedAliases;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *extensionIndex;
 @property (nonatomic, strong) NSLock *cacheLock;
 @property (nonatomic, strong, readwrite) CSFabricRegistryConfig *config;
+// Manifest pin. manifestVersion == 0 ⇒ legacy v0 / flat-path mode (no manifest
+// consulted). >= 1 ⇒ manifest-driven (alias resolution requires >= 1). The
+// three maps are name/urn → defver, mirroring the Rust Manifest.
+@property (nonatomic) uint32_t manifestVersion;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestCaps;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestMedia;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestAliases;
 @end
 
 @implementation CSFabricRegistry
@@ -129,11 +196,31 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
         _cachedCaps = [[NSMutableDictionary alloc] init];
         _cachedSpecs = [[NSMutableDictionary alloc] init];
+        _cachedAliases = [[NSMutableDictionary alloc] init];
         _extensionIndex = [[NSMutableDictionary alloc] init];
         _cacheLock = [[NSLock alloc] init];
 
+        // Manifest pin from the workspace-baked fabric manifest version
+        // (env MFR_FABRIC_MANIFEST_VERSION; absent ⇒ 0 = legacy v0).
+        NSString *mvRaw = [[NSProcessInfo processInfo] environment][@"MFR_FABRIC_MANIFEST_VERSION"];
+        _manifestVersion = (mvRaw.length > 0) ? (uint32_t)[mvRaw intValue] : 0;
+        _manifestCaps = [[NSMutableDictionary alloc] init];
+        _manifestMedia = [[NSMutableDictionary alloc] init];
+        _manifestAliases = [[NSMutableDictionary alloc] init];
+
         [self loadAllCachedCaps];
         [self loadAllCachedMediaDefs];
+    }
+    return self;
+}
+
+/// Test constructor: an empty registry pinned at manifest v1, so test helpers
+/// (insertCachedCapForTest:/insertCachedAliasForTest:/addMediaDef:) flow into
+/// the manifest at their declared version — mirrors Rust new_for_test.
+- (instancetype)initForTest {
+    self = [self initWithConfig:[CSFabricRegistryConfig defaultConfig]];
+    if (self) {
+        _manifestVersion = 1;
     }
     return self;
 }
@@ -175,6 +262,17 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
 - (void)getCapWithUrn:(NSString *)urn
            completion:(void (^)(CSCap *_Nullable cap, NSError *_Nullable error))completion {
+    // An alias (a colon-free token) is resolved first; because this is the
+    // typed cap boundary, an alias whose target is not a cap URN is a hard
+    // error.
+    if (CSIsAliasToken(urn)) {
+        [self resolveAliasTyped:urn expected:CSAliasTargetKindCap completion:^(NSString *target, NSError *error) {
+            if (error) { completion(nil, error); return; }
+            [self getCapWithUrn:target completion:completion];
+        }];
+        return;
+    }
+
     NSString *normalized = [self normalizeCapUrn:urn];
 
     [self.cacheLock lock];
@@ -268,6 +366,17 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
 - (void)getMediaDef:(NSString *)urn
           completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion {
+    // An alias (a colon-free token) is resolved first; because this is the
+    // typed media boundary, an alias whose target is not a media URN is a
+    // hard error.
+    if (CSIsAliasToken(urn)) {
+        [self resolveAliasTyped:urn expected:CSAliasTargetKindMedia completion:^(NSString *target, NSError *error) {
+            if (error) { completion(nil, error); return; }
+            [self getMediaDef:target completion:completion];
+        }];
+        return;
+    }
+
     NSString *normalized = [self normalizeMediaUrn:urn];
 
     [self.cacheLock lock];
@@ -334,6 +443,7 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
     [self.cacheLock lock];
     [self.cachedCaps removeAllObjects];
     [self.cachedSpecs removeAllObjects];
+    [self.cachedAliases removeAllObjects];
     [self.extensionIndex removeAllObjects];
     [self.cacheLock unlock];
 
@@ -466,8 +576,24 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
         return;
     }
     NSString *normalized = [self normalizeMediaUrn:rawUrn];
+    // Record in the manifest at the spec's version; a spec with no/zero
+    // version is stamped to the pinned manifest version (mirrors Rust/py/go).
+    uint32_t specVersion = 0;
+    NSNumber *v = spec[@"version"];
+    if ([v isKindOfClass:[NSNumber class]]) {
+        specVersion = (uint32_t)[v unsignedIntValue];
+    }
+    if (specVersion == 0 && self.manifestVersion >= 1) {
+        specVersion = self.manifestVersion;
+        NSMutableDictionary *stamped = [spec mutableCopy];
+        stamped[@"version"] = @(specVersion);
+        spec = [stamped copy];
+    }
     [self.cacheLock lock];
     self.cachedSpecs[normalized] = spec;
+    if (self.manifestVersion >= 1) {
+        self.manifestMedia[normalized] = @(specVersion);
+    }
     NSArray *extensions = spec[@"extensions"];
     if ([extensions isKindOfClass:[NSArray class]]) {
         for (id ext in extensions) {
@@ -661,6 +787,147 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
         completion(json, nil);
     }];
     [task resume];
+}
+
+// MARK: - Alias surface
+
+- (uint32_t)aliasDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error {
+    NSError *nerr = nil;
+    NSString *normalized = CSNormalizeAliasName(name, &nerr);
+    if (!normalized) {
+        if (error) *error = nerr;
+        return 0;
+    }
+    [self.cacheLock lock];
+    uint32_t mv = self.manifestVersion;
+    NSNumber *defver = self.manifestAliases[normalized];
+    [self.cacheLock unlock];
+    if (mv == 0) {
+        if (error) *error = [NSError errorWithDomain:@"CSFabricRegistryError" code:1021
+            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                @"alias '%@' cannot resolve: registry is pinned at v0 (aliases are a versioned-regime concept)", normalized]}];
+        return 0;
+    }
+    if (!defver) {
+        if (error) *error = [NSError errorWithDomain:@"CSFabricRegistryError" code:1022
+            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                @"alias '%@' is not part of manifest v%u", normalized, mv]}];
+        return 0;
+    }
+    return (uint32_t)[defver unsignedIntValue];
+}
+
+- (void)getAlias:(NSString *)name
+      completion:(void (^)(NSDictionary *_Nullable alias, NSError *_Nullable error))completion {
+    NSError *nerr = nil;
+    NSString *normalized = CSNormalizeAliasName(name, &nerr);
+    if (!normalized) {
+        completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError" code:1020
+            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"invalid alias name: %@",
+                nerr.localizedDescription]}]);
+        return;
+    }
+    [self.cacheLock lock];
+    NSDictionary *cached = self.cachedAliases[normalized];
+    [self.cacheLock unlock];
+    if (cached) {
+        completion(cached, nil);
+        return;
+    }
+    // Not cached: confirm manifest membership so an unknown alias is a hard
+    // not-found rather than a silent miss. (The objc media registry does not
+    // fetch aliases over the network; they are seeded or loaded from disk.)
+    NSError *defErr = nil;
+    [self aliasDefverFor:normalized error:&defErr];
+    if (defErr) {
+        completion(nil, defErr);
+        return;
+    }
+    completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError" code:1023
+        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+            @"alias '%@' is in manifest v%u but not present in cache", normalized, self.manifestVersion]}]);
+}
+
+- (void)resolveAlias:(NSString *)name
+          completion:(void (^)(NSString *_Nullable target, NSError *_Nullable error))completion {
+    [self getAlias:name completion:^(NSDictionary *alias, NSError *error) {
+        if (error) { completion(nil, error); return; }
+        completion(alias[@"target"], nil);
+    }];
+}
+
+- (void)resolveAliasTyped:(NSString *)name
+                 expected:(NSInteger)expected
+               completion:(void (^)(NSString *_Nullable target, NSError *_Nullable error))completion {
+    [self getAlias:name completion:^(NSDictionary *alias, NSError *error) {
+        if (error) { completion(nil, error); return; }
+        NSString *target = alias[@"target"];
+        CSAliasTargetKind actual;
+        if (!CSClassifyAliasTarget(target, &actual)) {
+            completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError" code:1024
+                userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"alias '%@' target '%@' is neither a cap nor a media URN", alias[@"name"], target]}]);
+            return;
+        }
+        if (expected >= 0 && actual != (CSAliasTargetKind)expected) {
+            NSString *actualStr = (actual == CSAliasTargetKindCap) ? @"cap" : @"media";
+            NSString *expStr = ((CSAliasTargetKind)expected == CSAliasTargetKindCap) ? @"cap" : @"media";
+            completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError" code:1025
+                userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"alias '%@' resolves to a %@ URN ('%@') but a %@ was required here",
+                    alias[@"name"], actualStr, target, expStr]}]);
+            return;
+        }
+        completion(target, nil);
+    }];
+}
+
+- (NSString *)resolveAliasCached:(NSString *)name {
+    NSError *nerr = nil;
+    NSString *normalized = CSNormalizeAliasName(name, &nerr);
+    if (!normalized) return nil;
+    [self.cacheLock lock];
+    NSDictionary *alias = self.cachedAliases[normalized];
+    [self.cacheLock unlock];
+    return alias ? alias[@"target"] : nil;
+}
+
+- (void)insertCachedAliasForTest:(NSDictionary *)alias {
+    NSString *name = alias[@"name"];
+    NSNumber *version = alias[@"version"];
+    if (![name isKindOfClass:[NSString class]]) return;
+    [self.cacheLock lock];
+    self.cachedAliases[name] = alias;
+    if (self.manifestVersion >= 1 && [version isKindOfClass:[NSNumber class]]) {
+        self.manifestAliases[name] = version;
+    }
+    [self.cacheLock unlock];
+}
+
+- (void)insertCachedCapForTest:(CSCap *)cap {
+    if (cap.version == 0 && self.manifestVersion >= 1) {
+        cap.version = self.manifestVersion;
+    }
+    NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString]];
+    [self.cacheLock lock];
+    self.cachedCaps[normalized] = cap;
+    if (self.manifestVersion >= 1) {
+        self.manifestCaps[normalized] = @(cap.version);
+    }
+    [self.cacheLock unlock];
+}
+
+- (NSDictionary *)manifestDictionary {
+    [self.cacheLock lock];
+    NSDictionary *dict = @{
+        @"version": @(self.manifestVersion),
+        @"previous": @(self.manifestVersion > 0 ? self.manifestVersion - 1 : 0),
+        @"caps": [self.manifestCaps copy],
+        @"media": [self.manifestMedia copy],
+        @"aliases": [self.manifestAliases copy],
+    };
+    [self.cacheLock unlock];
+    return dict;
 }
 
 @end

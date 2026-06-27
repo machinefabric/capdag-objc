@@ -14,6 +14,32 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// The kind of thing a fabric alias resolves to. An alias target is always a
+/// URN; the kind is determined by the URN prefix.
+typedef NS_ENUM(NSInteger, CSAliasTargetKind) {
+    CSAliasTargetKindCap,
+    CSAliasTargetKindMedia,
+};
+
+/// A contiguous token "looks like a URN" iff it contains ':'. Every tagged
+/// URN has the shape prefix:..., so the presence of ':' is the unambiguous
+/// discriminator between a URN and an alias name.
+BOOL CSTokenIsURN(NSString *token);
+
+/// Complement of CSTokenIsURN: a colon-free token is an alias candidate
+/// (still subject to CSNormalizeAliasName validation).
+BOOL CSIsAliasToken(NSString *token);
+
+/// Normalize and validate an alias name. Lowercases the input, then requires
+/// it non-empty, free of ':' (so it can never look like a tagged URN), free
+/// of whitespace, and matching [a-z0-9._-]+. Returns the canonical lowercased
+/// name, or nil + error — there is no lenient path.
+NSString *_Nullable CSNormalizeAliasName(NSString *name, NSError *_Nullable *_Nullable error);
+
+/// Classify an alias target URN by prefix. Returns YES + writes *outKind on a
+/// cap or media URN; returns NO for anything else.
+BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKind);
+
 /**
  * CSFabricRegistryConfig holds configuration for the unified registry.
  */
@@ -63,6 +89,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Initialize with a custom registry URL.
 - (instancetype)initWithRegistryURL:(NSString *)registryURL;
+
+/// Test constructor: empty registry pinned at manifest v1 so test helpers flow
+/// caps/media/aliases into the manifest at their declared version.
+- (instancetype)initForTest;
 
 // MARK: Cap surface
 
@@ -115,6 +145,44 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// All extensions currently in the index.
 - (NSArray<NSString *> *)allExtensions;
+
+// MARK: Alias surface
+
+/// Resolve an alias to the cap or media URN it points at (untyped): the
+/// completion fires with whatever the alias targets, or an error.
+- (void)resolveAlias:(NSString *)name
+          completion:(void (^)(NSString *_Nullable target, NSError *_Nullable error))completion;
+
+/// Resolve an alias and assert its target kind. The completion fires with the
+/// target URN, or an error if the resolved target is the wrong kind. Pass a
+/// negative `expected` (e.g. -1) to accept either kind.
+- (void)resolveAliasTyped:(NSString *)name
+                 expected:(NSInteger)expected
+               completion:(void (^)(NSString *_Nullable target, NSError *_Nullable error))completion;
+
+/// Fetch the full stored alias dict ({name,target,version}) for a name.
+- (void)getAlias:(NSString *)name
+      completion:(void (^)(NSDictionary *_Nullable alias, NSError *_Nullable error))completion;
+
+/// Synchronous, in-memory-only alias resolution. Returns the target URN if the
+/// alias is cached, nil otherwise (including for a malformed name).
+- (nullable NSString *)resolveAliasCached:(NSString *)name;
+
+/// Look up an alias name's pinned defver under the manifest. Returns 0 and
+/// writes *error if the name is malformed or absent from the manifest.
+- (uint32_t)aliasDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error;
+
+/// Insert an alias ({name,target,version}) directly into the in-memory cache
+/// and register its defver in the manifest (test helper).
+- (void)insertCachedAliasForTest:(NSDictionary *)alias;
+
+/// Insert a cap directly into the in-memory cap cache and register its defver
+/// in the manifest (test helper).
+- (void)insertCachedCapForTest:(CSCap *)cap;
+
+/// The registry-snapshot manifest as a dict ({version,previous,caps,media,
+/// aliases}). Test/diagnostic surface.
+- (NSDictionary *)manifestDictionary;
 
 // MARK: Cache lifecycle
 
