@@ -40,6 +40,23 @@ NSString *_Nullable CSNormalizeAliasName(NSString *name, NSError *_Nullable *_Nu
 /// cap or media URN; returns NO for anything else.
 BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKind);
 
+/// Reserved on-disk slug for an absent registry (a dev cartridge). The literal
+/// "dev" can never collide with the 16-char hex slug space — distinguishable by
+/// length alone. Mirrors Rust `cartridge_slug::DEV_SLUG`.
+extern NSString * const CSCartridgeDevSlug;
+
+/// Number of hex characters in a registry slug. Must match Rust's
+/// `cartridge_slug::SLUG_HEX_LEN` so the slug is byte-identical cross-mirror.
+extern const NSUInteger CSCartridgeSlugHexLen;
+
+/// Deterministic on-disk slug for a registry URL — the same scheme the
+/// cartridge registry layout uses. `nil` → the literal `CSCartridgeDevSlug`.
+/// Non-nil → the first `CSCartridgeSlugHexLen` lowercase hex chars of
+/// sha256(url UTF-8 bytes). The URL is hashed verbatim (no normalization), so
+/// any byte difference yields a different slug. Mirrors Rust
+/// `cartridge_slug::slug_for`.
+NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
+
 /**
  * CSFabricRegistryConfig holds configuration for the unified registry.
  */
@@ -93,6 +110,16 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 /// Test constructor: empty registry pinned at manifest v1 so test helpers flow
 /// caps/media/aliases into the manifest at their declared version.
 - (instancetype)initForTest;
+
+/// The on-disk cache root for a given registry origin:
+/// `<NSCachesDirectory>/capdag/<CSSlugForRegistryURL(registryBaseURL)>`.
+///
+/// The cache holds per-cap and per-media JSON keyed by URN-hash — values that
+/// DIFFER between registry origins (staging serves different bytes than prod
+/// for the same URN/version). Namespacing by the slug of the base URL keeps two
+/// origins from ever sharing a cache slot, so a prod-populated cache can never
+/// satisfy a staging lookup (or vice versa). Network-free; exposed for tests.
++ (NSString *)defaultCacheRootForRegistryURL:(NSString *)registryBaseURL;
 
 // MARK: Cap surface
 

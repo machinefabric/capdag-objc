@@ -114,6 +114,27 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     return NO;
 }
 
+// MARK: - Registry slug (cartridge-registry slug scheme)
+
+NSString * const CSCartridgeDevSlug = @"dev";
+const NSUInteger CSCartridgeSlugHexLen = 16;
+
+NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
+    if (registryURL == nil) {
+        return CSCartridgeDevSlug;
+    }
+    // Hash the URL verbatim — no normalization, scheme stripping, or slash
+    // trimming. Two URLs differing in any byte hash to distinct slugs.
+    NSData *data = [registryURL dataUsingEncoding:NSUTF8StringEncoding];
+    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+        [hex appendFormat:@"%02x", digest[i]];
+    }
+    return [hex substringToIndex:CSCartridgeSlugHexLen];
+}
+
 // MARK: - Cache entries
 
 @interface CSCapCacheEntry : NSObject
@@ -166,6 +187,13 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
 @implementation CSFabricRegistry
 
++ (NSString *)defaultCacheRootForRegistryURL:(NSString *)registryBaseURL {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+    NSString *cacheDir = [paths firstObject];
+    NSString *root = [cacheDir stringByAppendingPathComponent:@"capdag"];
+    return [root stringByAppendingPathComponent:CSSlugForRegistryURL(registryBaseURL)];
+}
+
 - (instancetype)init {
     return [self initWithConfig:[CSFabricRegistryConfig defaultConfig]];
 }
@@ -184,9 +212,13 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
         sessionConfig.timeoutIntervalForResource = HTTP_TIMEOUT_SECONDS;
         _session = [NSURLSession sessionWithConfiguration:sessionConfig];
 
-        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-        NSString *cacheDir = [paths firstObject];
-        _cacheDirectory = [cacheDir stringByAppendingPathComponent:@"capdag"];
+        // Namespace the cache root by the registry origin. Prod and staging
+        // serve different bytes for the same URN/version; a single shared
+        // `capdag/` root would let a prod-populated cache satisfy a staging
+        // lookup (and vice versa), silently resolving against the wrong
+        // snapshot. The caps/ and media/ subdirs derive from this namespaced
+        // root so no cache is left origin-blind.
+        _cacheDirectory = [[self class] defaultCacheRootForRegistryURL:config.registryBaseURL];
         _capsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"caps"];
         _mediaCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"media"];
 

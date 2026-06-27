@@ -111,6 +111,37 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertEqualObjects(url1, url2, @"Different tag orders should produce the same URL");
 }
 
+// TEST1893: cache root namespaced per registry origin — prod and staging serve
+// different bytes for the same URN/version, so they must never share a cache
+// root; the same origin must map to a stable (deterministic) root or caching
+// never hits; and the final path component is exactly slugFor(url) under the
+// shared "capdag" cache directory — one slug scheme across the codebase. The
+// old origin-blind code rooted every origin at the same "capdag" directory,
+// which makes the prod≠staging assertion below fail.
+- (void)test1893_cacheRootIsNamespacedPerRegistryOrigin {
+    NSString *prod = [CSFabricRegistry defaultCacheRootForRegistryURL:@"https://fabric.capdag.com"];
+    NSString *staging = [CSFabricRegistry defaultCacheRootForRegistryURL:@"https://fabric-staging.capdag.com"];
+    NSString *stagingAgain = [CSFabricRegistry defaultCacheRootForRegistryURL:@"https://fabric-staging.capdag.com"];
+
+    XCTAssertNotNil(prod);
+    XCTAssertNotNil(staging);
+
+    XCTAssertNotEqualObjects(prod, staging,
+        @"prod and staging must not share a cache root — they serve different bytes for the same URN/version");
+    XCTAssertEqualObjects(staging, stagingAgain,
+        @"the same registry origin must map to a stable cache root, or caching never hits");
+
+    // The final path component is exactly the cartridge-registry slug of the
+    // origin URL — one slug scheme across the codebase.
+    NSString *slug = CSSlugForRegistryURL(@"https://fabric-staging.capdag.com");
+    XCTAssertEqualObjects([staging lastPathComponent], slug,
+        @"cache root must end in slugFor(registryURL)");
+
+    // And the parent of that slug is the shared "capdag" cache directory.
+    XCTAssertEqualObjects([[staging stringByDeletingLastPathComponent] lastPathComponent], @"capdag",
+        @"the per-origin slug must live under the capdag cache directory");
+}
+
 // Note: These tests would make actual HTTP requests to capdag.com
 // Uncomment to test with real registry
 /*
