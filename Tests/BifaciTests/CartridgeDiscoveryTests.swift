@@ -82,13 +82,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1875
 
-    // TEST1875: scan-all — a registry slug folder AND the dev slot present on
-    // disk are BOTH scanned, regardless of the host's own baked registry. The
-    // dev cartridge (null registry under dev/) and the registry cartridge (its
-    // url hashing to its slug folder) each reach their probe. Both fixtures lack
-    // a real bifaci binary, so both end at HandshakeFailed — proving discovery
-    // REACHED them (was not filtered out by a registry pin). A registry-pin
-    // rejection would instead surface BadInstallation and never probe.
+    // TEST1875: scan-all — a registry slug folder AND the dev slot present on disk are BOTH scanned, regardless of the host's own baked registry. The dev cartridge (null registry under dev/) and the registry cartridge (its url hashing to its slug folder) each reach their probe. Both fixtures lack a real bifaci binary, so both end at HandshakeFailed — proving discovery REACHED them (was not filtered out by a registry pin), which is the behavior under test. A registry-pin rejection would instead surface BadInstallation and never probe.
     func test1875_scanAllReachesBothDevAndRegistrySlugs() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -115,9 +109,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1876
 
-    // TEST1876: only the host's channel subtree is scanned. A cartridge under a
-    // slug's `release/` folder is invisible to a nightly host even though the
-    // slug folder is present (its `nightly/` subtree is absent).
+    // TEST1876: only the host's channel subtree is scanned. A cartridge under a slug's `release/` folder is invisible to a nightly host even though the slug folder is present (its `nightly/` subtree is absent).
     func test1876_otherChannelSubtreeIsSkipped() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -131,9 +123,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1877
 
-    // TEST1877: a registry cartridge hand-copied under the WRONG registry slug
-    // folder fails the three-place rule (BadInstallation) — scan-all does not
-    // mean "accept anywhere", placement must still be self-consistent.
+    // TEST1877: a registry cartridge hand-copied under the WRONG registry slug folder fails the three-place rule (BadInstallation) — scan-all does not mean "accept anywhere", placement must still be self-consistent.
     func test1877_registryCartridgeUnderWrongSlugIsBadInstall() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -148,13 +138,13 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1878
 
-    // TEST6744: a cartridge marked `installed_from: bundle` with no baked hash
+    // TEST1878: a cartridge marked `installed_from: bundle` with no baked hash
     // is rejected as BadInstallation — the bundled-integrity gate fires before
     // the probe. Non-macOS only: on macOS the baked-hash path is intentionally
     // absent (OS code-signature is the guard), so a bundled provider is accepted
     // there and would instead end at the probe.
     #if !os(macOS)
-    func test6744_bundledProviderWithoutBakedHashIsRejected() throws {
+    func test1878_bundledProviderWithoutBakedHashIsRejected() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
         // Dev slug (null registry) but installed_from=bundle — placement is

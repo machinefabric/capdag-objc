@@ -316,8 +316,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertNil(host.findCartridgeForCap("cap:unknown"), "Unregistered cap must not be found")
     }
 
-    // TEST414: capabilities() returns empty JSON initially (no running cartridges)
-    func test414_capabilitiesEmptyInitially() {
+    // TEST6594: capabilities() returns empty JSON initially (no running cartridges)
+    func test6594_capabilitiesEmptyInitially() {
         let host = CartridgeHost()
         // Capabilities are rebuilt from running cartridges — no running cartridges means empty
         let caps = host.capabilities
@@ -1118,14 +1118,14 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // MARK: - Cartridge Death and Known Caps Tests (TEST661-665)
 
-    // TEST661: Cartridge death keeps known_caps advertised for on-demand respawn.
+    // TEST6623: Cartridge death keeps caps advertised for on-demand respawn.
     // Identity is the gating filter for advertisement; we provision a
     // real cartridge directory with a valid `cartridge.json` so the
     // cartridge has a resolvable identity. cap_table routes regardless
     // of identity (in-process / attached cartridges still need to be
     // dispatchable), but the relay payload only advertises cartridges
     // with identity records.
-    func test661_cartridgeDeathKeepsKnownCapsAdvertised() async throws {
+    func test6623_cartridgeDeathKeepsKnownCapsAdvertised() async throws {
         let dir = makeCartridgeFixture(id: "respawn-fixture")
         let host = CartridgeHost()
 
@@ -1146,10 +1146,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(capsStr.contains("cap:respawn-test"), "Registered cap must be advertised, got: \(capsStr)")
     }
 
-    // TEST662: rebuild_capabilities includes non-running cartridges'
-    // caps. cap_groups is the source of truth and advertisement does
-    // not gate on `running` — only on identity (cartridge.json
-    // present) and on `helloFailed`.
+    // TEST662: rebuild_capabilities includes non-running cartridges' caps (each cartridge's `cap_groups` is the source of truth, regardless of whether its process has been spawned yet).
     func test662_rebuildCapabilitiesIncludesNonRunningCartridges() async throws {
         let dir1 = makeCartridgeFixture(id: "fixture-one")
         let dir2 = makeCartridgeFixture(id: "fixture-two")
@@ -1213,8 +1210,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             "Failed cartridge must not be in capabilities")
     }
 
-    // TEST6625: Running cartridge uses manifest caps, not known_caps
-    func test6625_runningCartridgeUsesManifestCaps() async throws {
+    // TEST664: Running cartridge uses manifest caps, not known_caps
+    func test664_runningCartridgeUsesManifestCaps() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
 
@@ -1252,11 +1249,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         try? await cartridgeTask.value
     }
 
-    // TEST665: Cap table aggregates caps from every healthy cartridge
-    // — attached/running cartridges contribute their post-HELLO
-    // cap_groups; registered-but-not-yet-spawned cartridges contribute
-    // their probe-time cap_groups. Both flow through the same
-    // `cap_urns()` view derived from cap_groups.
+    // TEST665: Cap table aggregates caps from every healthy cartridge — attached/running cartridges contribute their post-HELLO cap_groups, registered-but-not-yet-spawned cartridges contribute their probe-time cap_groups. Both flow through the same `cap_urns()` view.
     func test665_capTableMixedRunningAndNonRunning() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()

@@ -381,8 +381,8 @@ final class StreamingAPITests: XCTestCase {
         }
     }
 
-    // TEST6281: OutputStream empty stream sends STREAM_START and STREAM_END only
-    func test6281_outputStreamCloseWithoutStartIsNoop() throws {
+    // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
+    func test542_outputStreamCloseWithoutStartIsNoop() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
             sentFrames.append(frame)
@@ -587,7 +587,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(String(data: found!, encoding: .utf8), "data")
     }
 
-    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:llm-generation-request;fmt=json;record".
+    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:fmt=json;llm-generation-request;record".
     func test679_findStreamBaseUrnDoesNotMatchFullUrn() throws {
         let streams: [(mediaUrn: String, bytes: Data)] = [
             ("media:llm-generation-request;fmt=json;record", Data("data".utf8)),

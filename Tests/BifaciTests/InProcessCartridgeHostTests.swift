@@ -100,8 +100,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         }
     }
 
-    // TEST6302: InProcessCartridgeHost routes REQ to matching handler and returns response
-    func test6302_routesReqToHandler() throws {
+    // TEST6748: InProcessCartridgeHost routes REQ to matching handler and returns response
+    func test6748_routesReqToHandler() throws {
         let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
         let cap = makeTestCap(capUrn)
         let handlers: [(name: String, caps: [CSCap], handler: FrameHandler)] = [
@@ -184,8 +184,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // TEST6303: InProcessCartridgeHost handles identity verification (echo nonce)
-    func test6303_identityVerification() throws {
+    // TEST6749: InProcessCartridgeHost handles identity verification (echo nonce)
+    func test6749_identityVerification() throws {
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "in-process-test"),
             handlers: []
@@ -245,8 +245,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // TEST6304: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
-    func test6304_noHandlerReturnsErr() throws {
+    // TEST6750: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
+    func test6750_noHandlerReturnsErr() throws {
         let host = InProcessCartridgeHost(
             identity: InProcessHostIdentity.forTest(id: "in-process-test"),
             handlers: []
@@ -287,8 +287,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
-    // TEST6305: InProcessCartridgeHost manifest includes identity cap and handler caps
-    func test6305_manifestIncludesAllCaps() throws {
+    // TEST6751: InProcessCartridgeHost manifest includes identity cap and handler caps
+    func test6751_manifestIncludesAllCaps() throws {
         let capUrn = "cap:in=\"media:ext=pdf\";thumbnail;out=\"media:ext=png;image\""
         let cap = makeTestCap(capUrn)
         let host = InProcessCartridgeHost(

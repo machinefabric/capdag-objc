@@ -160,7 +160,7 @@ final class OrchestratorTests: XCTestCase {
     }
 
     // Mirror-specific coverage: Validate that cycles are rejected
-    func test6250_rejectCycles() async throws {
+    func test950_rejectCycles() async throws {
         let registry = TestcartridgeRegistry()
 
         // Create a self-loop using identity cap

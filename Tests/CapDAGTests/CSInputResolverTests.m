@@ -237,8 +237,8 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertEqual(error.code, CSInputResolverErrorEmptyInput);
 }
 
-// TEST6683: Symlink to file resolves to its target
-- (void)test6683_symlink_to_file {
+// TEST1014: Symlink to file
+- (void)test1014_symlink_to_file {
     NSString *target = [self createTestFile:@"target.txt" content:@"data"];
     NSString *link = [self.testDir stringByAppendingPathComponent:@"link.txt"];
     NSError *linkError = nil;
@@ -436,7 +436,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
 
 #pragma mark - Types Tests (Rust types.rs: TEST1144, TEST1145)
 
-// TEST1144: ContentStructure is_list/is_record helpers are correct
+// TEST1144: ContentStructure is_list/is_record helpers and Display implementation are correct
 - (void)test1144_content_structure_helpers {
     CSResolvedFile *scalarOpaque = [CSResolvedFile fileWithPath:@"/x"
                                                        mediaUrn:@"media:ext=pdf"

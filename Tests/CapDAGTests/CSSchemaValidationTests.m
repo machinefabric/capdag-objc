@@ -412,7 +412,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Complex Schema Validation Tests
 
-// TEST6314: Complex nested schema
+// TEST6314: Complex nested schema validation
 - (void)test6314_ComplexNestedSchema {
     NSDictionary *complexSchema = @{
         @"type": @"object",

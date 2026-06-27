@@ -33,8 +33,7 @@ static CSCap *buildExtractCap(void) {
                 metadataJSON:nil];
 }
 
-// TEST1880: alias name normalization lowercases and accepts the allowed char
-// class; rejects colon, whitespace, and out-of-class chars.
+// TEST1880: alias name normalization lowercases and accepts the allowed character class; rejects colon, whitespace, and out-of-class chars with the right error. A broken validator would let a URN-shaped or whitespace name through, or mangle a valid name.
 - (void)test1880_AliasNameNormalizationRules {
     NSError *err = nil;
     XCTAssertEqualObjects(CSNormalizeAliasName(@"JSONDoc", &err), @"jsondoc");
@@ -46,7 +45,7 @@ static CSCap *buildExtractCap(void) {
     XCTAssertNil(CSNormalizeAliasName(@"a/b", &err));
 }
 
-// TEST1881: URN-vs-alias detection keys purely on the presence of ':'.
+// TEST1881: URN-vs-alias detection keys purely on the presence of ':'. The whole design rests on this discriminator being exact.
 - (void)test1881_TokenURNvsAliasDetection {
     XCTAssertTrue(CSTokenIsURN(@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\""));
     XCTAssertTrue(CSTokenIsURN(@"media:fmt=json;record"));
@@ -55,8 +54,7 @@ static CSCap *buildExtractCap(void) {
     XCTAssertFalse(CSIsAliasToken(@"media:enc=utf-8"));
 }
 
-// TEST1882: alias target classification distinguishes cap from media by
-// prefix and rejects a non-URN target.
+// TEST1882: alias target classification distinguishes cap from media by prefix and rejects a non-URN target. The typed-boundary enforcement in the registry depends on this.
 - (void)test1882_ClassifyAliasTargetByPrefix {
     CSAliasTargetKind kind;
     XCTAssertTrue(CSClassifyAliasTarget(@"media:fmt=json;record", &kind));
@@ -79,7 +77,7 @@ static CSCap *buildExtractCap(void) {
     XCTAssertEqualObjects(aliases[@"jsondoc"], @1);
 }
 
-// TEST1888: resolve alias returns the alias target untyped; case-insensitive; malformed name rejected.
+// TEST1888: resolve_alias returns the alias target untyped. Seeding a media alias and resolving it yields the media URN; a malformed alias name is rejected before any lookup.
 - (void)test1888_ResolveAliasReturnsTarget {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
@@ -127,8 +125,7 @@ static CSCap *buildExtractCap(void) {
     [self waitForExpectationsWithTimeout:5.0 handler:nil];
 }
 
-// TEST1890: getCap accepts a cap alias and returns the aliased cap; a media
-// alias passed to getCap fails hard (typed boundary).
+// TEST1890: get_cap accepts a cap alias and returns the aliased cap; a media alias passed to get_cap fails hard (typed boundary). This proves alias substitution AND type enforcement at the registry's cap surface.
 - (void)test1890_GetCapViaAliasAndTypeMismatch {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     CSCap *cap = buildExtractCap();
@@ -152,8 +149,7 @@ static CSCap *buildExtractCap(void) {
     [self waitForExpectationsWithTimeout:5.0 handler:nil];
 }
 
-// TEST1891: getMediaDef accepts a media alias and returns the aliased spec; a
-// cap alias passed to getMediaDef fails hard.
+// TEST1891: get_media_def accepts a media alias and returns the aliased spec; a cap alias passed to get_media_def fails hard.
 - (void)test1891_GetMediaDefViaAliasAndTypeMismatch {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     [reg addMediaDef:@{@"urn": @"media:fmt=json;record", @"media_type": @"application/json", @"title": @"JSON"}];
@@ -177,7 +173,7 @@ static CSCap *buildExtractCap(void) {
     [self waitForExpectationsWithTimeout:5.0 handler:nil];
 }
 
-// TEST1892: an unknown alias name is a hard not-found, never a silent empty.
+// TEST1892: an unknown alias name is a hard not-found, never a silent empty; unknown and malformed names are treated the same. This is the "expose issues, no fallback" contract.
 - (void)test1892_UnknownAliasIsNotFound {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
 

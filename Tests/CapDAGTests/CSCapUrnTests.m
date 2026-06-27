@@ -27,7 +27,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Basic Creation Tests
 
-// TEST001: Test that cap URN is created with tags parsed correctly and direction specs accessible
+// TEST1: Test that cap URN is created with tags parsed correctly and direction specs accessible
 - (void)test001_capUrnCreation {
     NSError *error;
     // Use type=data_processing key=value instead of flag
@@ -46,7 +46,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getOutSpec], @"media:enc=utf-8;record");
 }
 
-// TEST011: Test that serialization uses smart quoting (no quotes for simple lowercase, quotes for special chars/uppercase)
+// TEST11: Test that serialization uses smart quoting (no quotes for simple lowercase, quotes for special chars/uppercase)
 - (void)test011_serializationSmartQuoting {
     NSError *error;
     CSCapUrn *capUrn = [CSCapUrn fromString:testUrn(@"generate;target=thumbnail;ext=pdf") error:&error];
@@ -59,7 +59,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn toString], @"cap:ext=pdf;generate;in=media:void;out=\"media:enc=utf-8;record\";target=thumbnail");
 }
 
-// TEST015: Test that cap: prefix is required and case-insensitive
+// TEST15: Test that cap: prefix is required and case-insensitive
 - (void)test015_capPrefixRequired {
     NSError *error;
     // Missing cap: prefix should fail
@@ -76,7 +76,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([capUrn hasMarkerTag:@"generate"]);
 }
 
-// TEST016: Test that trailing semicolon is equivalent (same hash, same string, matches)
+// TEST16: Test that trailing semicolon is equivalent (same hash, same string, matches)
 - (void)test016_trailingSemicolonEquivalence {
     NSError *error;
     // Both with and without trailing semicolon should be equivalent
@@ -100,16 +100,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap2 accepts:cap1]);
 }
 
-// TEST939: The canonical form drops default `in=media:`, `out=media:`,
-// and `effect=declared`. Every spelling of the same declared-effect
-// wildcard cap collapses to one byte-identical canonical string. This is the
-// contract that makes registry lookups work: the cap-publisher hashes
-// `<canonical-urn>` to compute the cache key, and every language
-// port (Rust, Go, Python, JS, ObjC) must agree on the canonical form
-// for cross-language lookups to land on the same key. A regression
-// that emitted the wildcard segments would silently move the
-// published cap to a different SHA-256 bucket, 404'ing every reader
-// that hashes the canonical form.
+// TEST939: The canonical form drops `in=media:` and `out=media:` segments. Every spelling of "the same cap with wildcard in/out" collapses to one byte-identical canonical string. This is the contract that makes registry lookups work: the cap-publisher hashes `<canonical-urn>` to compute the cache key, and every language port (Rust, Go, Python, JS, ObjC) must agree on the canonical form for cross-language lookups to land on the same key. A regression that emitted the wildcard segments would silently move the published cap to a different SHA-256 bucket, 404'ing every reader that hashes the canonical form.
 - (void)test939_capUrnCanonicalFormDropsWildcardInOut {
     NSString *canonical = @"cap:decimate-sequence";
     NSArray<NSString *> *variants = @[
@@ -177,7 +168,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Required Direction Tests
 
-// TEST002: Test that missing 'in' or 'out' defaults to media: wildcard
+// TEST2: Test that missing 'in' or 'out' defaults to media: wildcard
 - (void)test002_directionSpecsDefaultToWildcard {
     NSError *error = nil;
     // Missing 'in' defaults to media:
@@ -199,8 +190,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([capUrn getOutSpec], @"media:");
 }
 
-// TEST6201: Empty cap URN is the illegal bare top form
-- (void)test6201_emptyCapUrnIsIllegal {
+// TEST28: Test empty cap URN is illegal after effect transition
+- (void)test28_emptyCapUrnIsIllegal {
     NSError *error = nil;
     CSCapUrn *empty = [CSCapUrn fromString:@"cap:" error:&error];
     XCTAssertNil(empty);
@@ -215,7 +206,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([missingInOut hasMarkerTag:@"raw"]);
 }
 
-// TEST029: Test minimal valid cap URN has just in and out, empty tags
+// TEST29: Test minimal valid cap URN has just in and out, empty tags
 - (void)test029_minimalCapUrn {
     NSError *error = nil;
     // Minimal valid cap URN has just in and out
@@ -227,7 +218,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(minimal.tags.count, 0); // No extra tags
 }
 
-// TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
+// TEST3: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
 - (void)test003_directionMatching {
     NSError *error = nil;
     // Different inSpec should not match
@@ -265,7 +256,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Tag Matching Tests
 
-// TEST017: Test tag matching: exact match, subset match, wildcard match, value mismatch
+// TEST17: Test tag matching: exact match, subset match, wildcard match, value mismatch
 - (void)test017_tagMatching {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"generate;ext=pdf;target=thumbnail") error:&error];
@@ -292,7 +283,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([request4 accepts:cap]);
 }
 
-// TEST019: Missing tag in instance causes rejection — pattern's tags are constraints
+// TEST19: Missing tag in instance causes rejection — pattern's tags are constraints
 - (void)test019_missingTagHandling {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"generate") error:&error];
@@ -345,7 +336,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap2 isMoreSpecificThan:cap1]);
 }
 
-// TEST024: Directional accepts — pattern's tags are constraints, instance must satisfy
+// TEST24: Directional accepts — pattern's tags are constraints, instance must satisfy
 - (void)test024_directionalAccepts {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
@@ -376,7 +367,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Convenience Methods Tests
 
-// TEST039: Test get_tag returns direction specs (in/out) with case-insensitive lookup
+// TEST39: Test get_tag returns direction specs (in/out) with case-insensitive lookup
 - (void)test039_getTagReturnsDirectionSpecs {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"generate;ext=pdf;output=binary;target=thumbnail") error:&error];
@@ -390,7 +381,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap getTag:@"out"], @"media:enc=utf-8;record");
 }
 
-// TEST036: Test with_tag preserves value case
+// TEST36: Test with_tag preserves value case
 - (void)test036_withTagPreservesValue {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate") error:&error];
@@ -404,8 +395,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([original toString], @"cap:generate;in=media:void;out=\"media:enc=utf-8;record\"");
 }
 
-// TEST1407: withTag rejects reserved structural keys (mirror-local)
-- (void)test1407_withTagRejectsStructuralKeys {
+// TEST566: with_tag rejects structural keys
+- (void)test566_withTagRejectsStructuralKeys {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate") error:&error];
 
@@ -437,8 +428,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertThrowsSpecificNamed([identity withOutSpec:@"media:ext=pdf"], NSException, NSInternalInconsistencyException);
 }
 
-// TEST1410: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local)
-- (void)test1410_withoutTag {
+// TEST559: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local)
+- (void)test559_withoutTag {
     NSError *error;
     CSCapUrn *original = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
     CSCapUrn *modified = [original withoutTag:@"ext"];
@@ -461,7 +452,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertThrowsSpecificNamed([original withoutTag:@"effect"], NSException, NSInvalidArgumentException);
 }
 
-// TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out
+// TEST27: Test with_wildcard_tag sets tag to wildcard, including in/out
 - (void)test027_wildcardTag {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"ext=pdf") error:&error];
@@ -489,7 +480,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([wildcardOut getOutSpec], @"media:");
 }
 
-// TEST026: Test merge combines tags from both caps, subset keeps only specified tags
+// TEST26: Test merge combines tags from both caps, subset keeps only specified tags
 - (void)test026_mergeAndSubset {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"generate;ext=pdf;output=binary;target=thumbnail") error:&error];
@@ -565,7 +556,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Extended Character Support Tests
 
-// TEST030: Test extended characters (forward slashes, colons) in tag values
+// TEST30: Test extended characters (forward slashes, colons) in tag values
 - (void)test030_extendedCharacterSupport {
     NSError *error = nil;
     // Test forward slashes and colons in tag components
@@ -576,7 +567,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap getTag:@"path"], @"/some/file");
 }
 
-// TEST031: Test wildcard rejected in keys but accepted in values
+// TEST31: Test wildcard rejected in keys but accepted in values
 - (void)test031_wildcardRestrictions {
     NSError *error = nil;
     // Wildcard should be rejected in keys
@@ -595,7 +586,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([validValue getTag:@"key"], @"*");
 }
 
-// TEST032: Test duplicate keys are rejected with DuplicateKey error
+// TEST32: Test duplicate keys are rejected with DuplicateKey error
 - (void)test032_duplicateKeyRejection {
     NSError *error = nil;
     // Duplicate keys should be rejected
@@ -605,7 +596,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorDuplicateKey);
 }
 
-// TEST033: Test pure numeric keys rejected, mixed alphanumeric allowed, numeric values allowed
+// TEST33: Test pure numeric keys rejected, mixed alphanumeric allowed, numeric values allowed
 - (void)test033_numericKeyRestriction {
     NSError *error = nil;
 
@@ -638,7 +629,7 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Quoted Value Tests
 
-// TEST004: Test that unquoted keys and values are normalized to lowercase
+// TEST4: Test that unquoted keys and values are normalized to lowercase
 - (void)test004_unquotedValuesLowercased {
     NSError *error = nil;
     // Unquoted values are normalized to lowercase
@@ -664,7 +655,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects(cap, cap2);
 }
 
-// TEST005: Test that quoted values preserve case while unquoted are lowercased
+// TEST5: Test that quoted values preserve case while unquoted are lowercased
 - (void)test005_quotedValuesPreserveCase {
     NSError *error = nil;
     // Quoted values preserve their case
@@ -693,7 +684,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNotEqualObjects(unquoted, quoted); // NOT equal
 }
 
-// TEST006: Test that quoted values can contain special characters (semicolons, equals, spaces)
+// TEST6: Test that quoted values can contain special characters (semicolons, equals, spaces)
 - (void)test006_quotedValueSpecialChars {
     NSError *error = nil;
     // Semicolons in quoted values
@@ -717,7 +708,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap3 getTag:@"key"], @"hello world");
 }
 
-// TEST007: Test that escape sequences in quoted values (\" and \\) are parsed correctly
+// TEST7: Test that escape sequences in quoted values (\" and \\) are parsed correctly
 - (void)test007_quotedValueEscapeSequences {
     NSError *error = nil;
     // Escaped quotes
@@ -734,7 +725,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap2 getTag:@"key"], @"path\\file");
 }
 
-// TEST008: Test that mixed quoted and unquoted values in same URN parse correctly
+// TEST8: Test that mixed quoted and unquoted values in same URN parse correctly
 - (void)test008_mixedQuotedUnquoted {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:a=\"Quoted\";b=simple;in=media:void;out=\"media:enc=utf-8;record\"" error:&error];
@@ -744,7 +735,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap getTag:@"b"], @"simple");
 }
 
-// TEST009: Test that unterminated quote produces UnterminatedQuote error
+// TEST9: Test that unterminated quote produces UnterminatedQuote error
 - (void)test009_unterminatedQuoteError {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:void;key=\"unterminated;out=\"media:enc=utf-8;record\"" error:&error];
@@ -753,7 +744,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorUnterminatedQuote);
 }
 
-// TEST010: Test that invalid escape sequences (like \n, \x) produce InvalidEscapeSequence error
+// TEST10: Test that invalid escape sequences (like \n, \x) produce InvalidEscapeSequence error
 - (void)test010_invalidEscapeSequenceError {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:void;key=\"bad\\n\";out=\"media:enc=utf-8;record\"" error:&error];
@@ -762,7 +753,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorInvalidEscapeSequence);
 }
 
-// TEST012: Test that simple cap URN round-trips (parse -> serialize -> parse equals original)
+// TEST12: Test that simple cap URN round-trips (parse -> serialize -> parse equals original)
 - (void)test012_roundTripSimple {
     NSError *error = nil;
     NSString *original = testUrn(@"generate;ext=pdf");
@@ -774,7 +765,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects(cap, reparsed);
 }
 
-// TEST013: Test that quoted values round-trip preserving case and spaces
+// TEST13: Test that quoted values round-trip preserving case and spaces
 - (void)test013_roundTripQuoted {
     NSError *error = nil;
     NSString *original = @"cap:in=media:void;key=\"Value With Spaces\";out=\"media:enc=utf-8;record\"";
@@ -787,7 +778,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([reparsed getTag:@"key"], @"Value With Spaces");
 }
 
-// TEST035: Test has_tag is case-sensitive for values, case-insensitive for keys, works for in/out
+// TEST35: Test has_tag is case-sensitive for values, case-insensitive for keys, works for in/out
 - (void)test035_hasTagCaseSensitive {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:void;key=\"Value\";out=\"media:enc=utf-8;record\"" error:&error];
@@ -810,7 +801,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap hasTag:@"out" withValue:@"media:enc=utf-8;record"]);
 }
 
-// TEST038: Test semantic equivalence of unquoted and quoted simple lowercase values
+// TEST38: Test semantic equivalence of unquoted and quoted simple lowercase values
 - (void)test038_semanticEquivalence {
     NSError *error = nil;
     // Unquoted and quoted simple lowercase values are equivalent
@@ -832,7 +823,7 @@ static NSString* testUrn(NSString *tags) {
 // All implementations (Rust, Go, JS, ObjC) must pass these identically
 // ============================================================================
 
-// TEST040: Matching semantics - exact match succeeds
+// TEST40: Matching semantics - exact match succeeds
 - (void)test040_matchingSemantics_exactMatch {
     // Test 1: Exact match
     NSError *error = nil;
@@ -845,7 +836,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap accepts:request], @"Test 1: Exact match should succeed");
 }
 
-// TEST041: Matching semantics - cap missing tag matches (implicit wildcard)
+// TEST41: Matching semantics - cap missing tag matches (implicit wildcard)
 - (void)test041_matchingSemantics_capMissingTag {
     // Test 2: Cap missing tag (implicit wildcard)
     NSError *error = nil;
@@ -858,7 +849,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap accepts:request], @"Test 2: Cap missing tag should match (implicit wildcard)");
 }
 
-// TEST042: Pattern rejects instance missing required tags
+// TEST42: Pattern rejects instance missing required tags
 - (void)test042_matchingSemantics_capHasExtraTag {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"generate;ext=pdf;version=2") error:&error];
@@ -869,7 +860,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([request accepts:cap], @"Request pattern satisfied by more-specific cap");
 }
 
-// TEST043: Matching semantics - request wildcard matches specific cap value
+// TEST43: Matching semantics - request wildcard matches specific cap value
 - (void)test043_matchingSemantics_requestHasWildcard {
     // Test 4: Request has wildcard
     NSError *error = nil;
@@ -882,7 +873,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap accepts:request], @"Test 4: Request wildcard should match");
 }
 
-// TEST044: Matching semantics - cap wildcard matches specific request value
+// TEST44: Matching semantics - cap wildcard matches specific request value
 - (void)test044_matchingSemantics_capHasWildcard {
     // Test 5: Cap has wildcard
     NSError *error = nil;
@@ -895,7 +886,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap accepts:request], @"Test 5: Cap wildcard should match");
 }
 
-// TEST045: Matching semantics - value mismatch does not match
+// TEST45: Matching semantics - value mismatch does not match
 - (void)test045_matchingSemantics_valueMismatch {
     // Test 6: Value mismatch
     NSError *error = nil;
@@ -908,7 +899,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap accepts:request], @"Test 6: Value mismatch should not match");
 }
 
-// TEST046: Matching semantics - fallback pattern (cap missing tag = implicit wildcard)
+// TEST46: Matching semantics - fallback pattern (cap missing tag = implicit wildcard)
 - (void)test046_matchingSemantics_fallbackPattern {
     // Test 7: Fallback pattern (cap missing tag = implicit wildcard)
     NSError *error = nil;
@@ -921,7 +912,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap accepts:request], @"Test 7: Fallback pattern should match");
 }
 
-// TEST048: Matching semantics - wildcard direction matches anything
+// TEST48: Matching semantics - wildcard direction matches anything
 - (void)test048_matchingSemantics_wildcardDirectionMatchesAnything {
     NSError *error = nil;
     CSCapUrn *wildcardCap = [CSCapUrn fromString:@"cap:generate" error:&error];
@@ -933,7 +924,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([wildcardCap accepts:request], @"Test 8: Generic declared directions should accept a more specific matching request");
 }
 
-// TEST049: Non-overlapping tags — neither direction accepts
+// TEST49: Non-overlapping tags — neither direction accepts
 - (void)test049_matchingSemantics_crossDimensionIndependence {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"generate") error:&error];
@@ -943,7 +934,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([request accepts:cap], @"Reverse also rejects — non-overlapping tags");
 }
 
-// TEST050: Matching semantics - direction mismatch prevents matching
+// TEST50: Matching semantics - direction mismatch prevents matching
 - (void)test050_matchingSemantics_directionMismatch {
     // Test 10: Direction mismatch prevents match even with matching tags
     NSError *error = nil;
@@ -956,8 +947,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap accepts:request], @"Test 10: Direction mismatch should prevent match");
 }
 
-// TEST1412: Semantic direction matching - generic provider matches specific request (mirror-local variant of TEST051)
-- (void)test1412_directionSemanticMatching {
+// TEST890: Semantic direction matching - generic provider matches specific request
+- (void)test890_directionSemanticMatching {
     NSError *error = nil;
 
     // A cap accepting media: (generic) should match a request with media:ext=pdf (specific)
@@ -1003,8 +994,8 @@ static NSString* testUrn(NSString *tags) {
         @"Cap producing generic image must NOT satisfy request requiring image;png;thumbnail");
 }
 
-// TEST1413: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052)
-- (void)test1413_directionSemanticSpecificity {
+// TEST891: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052)
+- (void)test891_directionSemanticSpecificity {
     NSError *error = nil;
 
     CSCapUrn *genericCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
@@ -1031,7 +1022,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_001: cap: (empty) is illegal
-- (void)test6536_Wildcard001EmptyCapIsIllegal {
+- (void)test639_Wildcard001EmptyCapIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:" error:&error];
     XCTAssertNil(cap);
@@ -1039,7 +1030,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_002: cap:in collapses to the same illegal bare top form
-- (void)test6538_Wildcard002InOnlyIsIllegal {
+- (void)test640_Wildcard002InOnlyIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in" error:&error];
     XCTAssertNil(cap);
@@ -1047,7 +1038,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_003: cap:out collapses to the same illegal bare top form
-- (void)test6540_Wildcard003OutOnlyIsIllegal {
+- (void)test641_Wildcard003OutOnlyIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:out" error:&error];
     XCTAssertNil(cap);
@@ -1063,7 +1054,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_005: cap:in=*;out=* is illegal
-- (void)test0294_Wildcard005ExplicitAsteriskIsIllegal {
+- (void)test0643_Wildcard005ExplicitAsteriskIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=*;out=*" error:&error];
     XCTAssertNil(cap);
@@ -1071,7 +1062,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_006: cap:in=media:;out=* is illegal
-- (void)test0295_Wildcard006SpecificInWildcardOutIsIllegal {
+- (void)test0644_Wildcard006SpecificInWildcardOutIsIllegal {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:;out=*" error:&error];
     XCTAssertNil(cap);
@@ -1079,7 +1070,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_007: cap:in=*;out=media:text has wildcard in, specific out
-- (void)test0296_Wildcard007WildcardInSpecificOut {
+- (void)test0645_Wildcard007WildcardInSpecificOut {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=*;out=media:text" error:&error];
     XCTAssertNotNil(cap);
@@ -1088,7 +1079,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_008: cap:in=foo fails (invalid media URN)
-- (void)test0297_Wildcard008InvalidInSpecFails {
+- (void)test0646_Wildcard008InvalidInSpecFails {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=foo;out=media:" error:&error];
     XCTAssertNil(cap, @"Invalid in spec should fail");
@@ -1097,7 +1088,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_009: cap:in=media:;out=bar fails (invalid media URN)
-- (void)test0298_Wildcard009InvalidOutSpecFails {
+- (void)test0647_Wildcard009InvalidOutSpecFails {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:;out=bar" error:&error];
     XCTAssertNil(cap, @"Invalid out spec should fail");
@@ -1106,7 +1097,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_010: Wildcard in/out match specific caps
-- (void)test6542_Wildcard010WildcardAcceptsSpecific {
+- (void)test648_Wildcard010WildcardAcceptsSpecific {
     NSError *error = nil;
     CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
     CSCapUrn *specific = [CSCapUrn fromString:@"cap:out=media:text;raw" error:&error];
@@ -1116,7 +1107,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count
-- (void)test6543_Wildcard011SpecificityScoring {
+- (void)test649_Wildcard011SpecificityScoring {
     NSError *error = nil;
     CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
     CSCapUrn *specific = [CSCapUrn fromString:@"cap:out=media:text;raw" error:&error];
@@ -1126,7 +1117,7 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST_WILDCARD_012: cap:in=media:;out=media:;test preserves other tags
-- (void)test0302_Wildcard012PreserveOtherTags {
+- (void)test0650_Wildcard012PreserveOtherTags {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:;out=media:;test" error:&error];
     XCTAssertNotNil(cap);
@@ -1158,7 +1149,6 @@ static NSString* testUrn(NSString *tags) {
 }
 
 // TEST825: is_dispatchable — request with unconstrained input dispatches to specific provider media: on the request input axis means "unconstrained" — vacuously true
-// media: on the request input axis means "unconstrained" — vacuously true
 - (void)test825_isDispatchable_unconstrainedInput {
     NSError *error;
     CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
@@ -1302,7 +1292,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([provider isDispatchable:request], @"Request with wildcard output should accept any provider output");
 }
 
-// TEST014: Test that escape sequences round-trip correctly
+// TEST14: Test that escape sequences round-trip correctly
 - (void)test014_roundTripEscapes {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:void\";key=\"value\\\"with\\\\escapes\";out=\"media:enc=utf-8;record\"" error:&error];
@@ -1314,7 +1304,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap toString], [reparsed toString]);
 }
 
-// TEST018: Test that quoted values with different case do NOT match (case-sensitive)
+// TEST18: Test that quoted values with different case do NOT match (case-sensitive)
 - (void)test018_matchingCaseSensitiveValues {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:testUrn(@"key=\"Value\"") error:&error];
@@ -1329,7 +1319,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap1 accepts:cap3]);
 }
 
-// TEST021: Test builder creates cap URN with correct tags and direction specs
+// TEST21: Test builder creates cap URN with correct tags and direction specs
 - (void)test021_builder {
     NSError *error;
     CSCapUrn *cap = [[[[[[[CSCapUrnBuilder builder]
@@ -1347,7 +1337,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([cap getOutSpec], @"media:enc=utf-8;record");
 }
 
-// TEST022: Test builder requires both in_spec and out_spec
+// TEST22: Test builder requires both in_spec and out_spec
 - (void)test022_builderRequiresDirection {
     NSError *error;
 
@@ -1375,8 +1365,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNotNil(result3);
 }
 
-// TEST0303: Test builder lowercases keys but preserves value case
-- (void)test0303_builderPreservesCase {
+// TEST23: Test builder lowercases keys but preserves value case
+- (void)test0023_builderPreservesCase {
     NSError *error;
     CSCapUrn *cap = [[[[[CSCapUrnBuilder builder]
         inSpec:@"media:void"]
@@ -1404,7 +1394,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorNumericKey);
 }
 
-// TEST025: Test find_best_match returns most specific matching cap
+// TEST25: Test find_best_match returns most specific matching cap
 - (void)test025_bestMatch {
     NSError *error;
     CSCapUrn *cap1 = [CSCapUrn fromString:testUrn(@"op") error:&error];
@@ -1423,7 +1413,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([best getTag:@"ext"], @"pdf");
 }
 
-// TEST034: Test empty values are rejected
+// TEST34: Test empty values are rejected
 - (void)test034_emptyValueError {
     NSError *error;
     CSCapUrn *result1 = [CSCapUrn fromString:testUrn(@"key=") error:&error];
@@ -1434,7 +1424,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNil(result2);
 }
 
-// TEST037: Test with_tag rejects empty value
+// TEST37: Test with_tag rejects empty value
 - (void)test037_withTagRejectsEmptyValue {
     NSError *error;
     CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"") error:&error];
@@ -1442,7 +1432,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertThrowsSpecificNamed([cap withTag:@"key" value:@""], NSException, NSInvalidArgumentException);
 }
 
-// TEST047: Matching semantics - thumbnail fallback with void input
+// TEST47: Matching semantics - thumbnail fallback with void input
 - (void)test047_matchingSemantics_thumbnailVoidInput {
     NSError *error;
     NSString *outBin = @"media:binary";
@@ -1463,11 +1453,11 @@ static NSString* testUrn(NSString *tags) {
 // inconsistency — the kind taxonomy is part of the protocol's public
 // surface, not a per-port detail.
 
-// TEST6728: Identity classifier — only explicit effect=none qualifies.
+// TEST1800: Identity classifier — only explicit effect=none qualifies.
 // Adding any tag (even one that doesn't constrain in/out) demotes
 // the cap to Transform because the operation/metadata axis is no
 // longer fully generic.
-- (void)test6728_kind_identity_only_for_bare_cap {
+- (void)test1800_kind_identity_only_for_bare_cap {
     NSError *error = nil;
 
     CSCapUrn *identity = [CSCapUrn fromString:@"cap:effect=none" error:&error];
@@ -1537,8 +1527,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual([bare kind], CSCapKindEffect);
 }
 
-// TEST1804: Transform classifier — at least one side non-void, and
-// the cap is not the bare identity.
+// TEST1804: Transform classifier — at least one side non-void, and the cap is not the bare identity. The default kind for ordinary data-processing caps.
 - (void)test1804_kind_transform_for_normal_data_processors {
     NSError *error = nil;
 
@@ -1551,9 +1540,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual([labeled kind], CSCapKindTransform);
 }
 
-// TEST1805: Kind is invariant under canonicalization. The same
-// morphism written in many surface forms must classify the same way
-// once parsed.
+// TEST1805: Kind is invariant under canonicalization. The same morphism written in many surface forms must classify the same way once parsed. This pins the rule that kind is a property of the cap as a structured object, not of any particular spelling.
 - (void)test1805_kind_invariant_under_canonical_spellings {
     NSError *error = nil;
 
@@ -1588,8 +1575,8 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
-// TEST6545: effect=none preserves runtime media identity
-- (void)test6545_effectNonePreservesRuntimeMedia {
+// TEST125: effect=none preserves runtime media identity
+- (void)test125_effectNonePreservesRuntimeMedia {
     NSError *error = nil;
     CSCapUrn *decimate = [CSCapUrn fromString:@"cap:decimate-sequence;effect=none" error:&error];
     XCTAssertNotNil(decimate, @"%@", error.localizedDescription);
@@ -1605,8 +1592,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNil(error);
 }
 
-// TEST6546: default declared effect uses declared output media
-- (void)test6546_effectDeclaredUsesDeclaredOutput {
+// TEST126: default effect=declared uses the declared output
+- (void)test126_effectDeclaredUsesDeclaredOutput {
     NSError *error = nil;
     CSCapUrn *resize = [CSCapUrn fromString:@"cap:in=media:image;resize;out=media:image" error:&error];
     XCTAssertNotNil(resize, @"%@", error.localizedDescription);
@@ -1631,16 +1618,16 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([result toString], @"media:ext=png;image");
 }
 
-// TEST0311: invalid effect=none declarations fail hard
-- (void)test0311_invalidEffectNoneFailsHard {
+// TEST127: invalid effect=none declarations fail hard
+- (void)test0127_invalidEffectNoneFailsHard {
     NSError *error = nil;
     CSCapUrn *invalid = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";out=\"media:enc=utf-8\";effect=none" error:&error];
     XCTAssertNil(invalid);
     XCTAssertEqual(error.code, CSCapUrnErrorIllegalDeclaration);
 }
 
-// TEST6548: omitted effect means declared; ?effect must be explicit
-- (void)test6548_effectDispatchRequiresExplicitWildcard {
+// TEST128: omitted effect means declared; unconstrained effect must be explicit
+- (void)test128_effectDispatchRequiresExplicitWildcard {
     NSError *error = nil;
     CSCapUrn *declaredProvider = [CSCapUrn fromString:@"cap:thumbnail" error:&error];
     XCTAssertNotNil(declaredProvider, @"%@", error.localizedDescription);
@@ -1720,8 +1707,7 @@ static NSString* testUrn(NSString *tags) {
         @"target=metadata (exact value) must score 4");
 }
 
-// TEST1824: All six forms compose additively on a single cap.
-// y combining 0+1+2+3+4+5 must sum to 15.
+// TEST1824: All six forms compose additively on a single cap. This pins the truth-table sum across the y axis as a whole.
 - (void)test1824_specificity_combined_y_axis {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:!constrained;?target;extract;stage!=alpha;target2=metadata;ver?=draft" error:&error];
@@ -1732,8 +1718,8 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Six-form canonicalization tests (test1830–test1835)
 
-// TEST6729: Canonicalize no constraint
-- (void)test6729_canonicalize_no_constraint {
+// TEST1830: ?x ≡ x? ≡ x=? all canonicalize to ?x.
+- (void)test1830_canonicalize_no_constraint {
     NSError *error = nil;
     NSString *canonical = @"cap:?x";
     for (NSString *input in @[@"cap:?x", @"cap:x?", @"cap:x=?"]) {
@@ -1744,10 +1730,7 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
-// TEST1831: ?x=v and x?=v both canonicalize to x?=v. The third
-// hypothetical form `x=?v` is NOT recognized as a qualifier — a
-// value starting with `?` is just an exact value beginning with
-// a `?` character.
+// TEST1831: ?x=v and x?=v both canonicalize to x?=v. The third hypothetical form `x=?v` is NOT recognized as a qualifier — a value starting with `?` is just an exact value beginning with a `?` character.
 - (void)test1831_canonicalize_absent_or_not_value {
     NSError *error = nil;
     NSString *canonical = @"cap:x?=foo";
@@ -1766,8 +1749,8 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([exact getTag:@"x"], @"?foo");
 }
 
-// TEST6730: Canonicalize must have any
-- (void)test6730_canonicalize_must_have_any {
+// TEST1832: x ≡ x=* both canonicalize to bare x.
+- (void)test1832_canonicalize_must_have_any {
     NSError *error = nil;
     NSString *canonical = @"cap:x";
     for (NSString *input in @[@"cap:x", @"cap:x=*"]) {
@@ -1778,10 +1761,7 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
-// TEST1833: !x=v and x!=v both canonicalize to x!=v. The third
-// hypothetical form `x=!v` is NOT recognized as a qualifier — a
-// value starting with `!` is just an exact value beginning with
-// a `!` character.
+// TEST1833: !x=v and x!=v both canonicalize to x!=v. The third hypothetical form `x=!v` is NOT recognized as a qualifier — a value starting with `!` is just an exact value beginning with a `!` character.
 - (void)test1833_canonicalize_present_not_value {
     NSError *error = nil;
     NSString *canonical = @"cap:x!=foo";
@@ -1800,16 +1780,16 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([exact getTag:@"x"], @"!foo");
 }
 
-// TEST6731: Canonicalize exact value
-- (void)test6731_canonicalize_exact_value {
+// TEST1834: Canonicalize exact value
+- (void)test1834_canonicalize_exact_value {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:x=foo" error:&error];
     XCTAssertNotNil(cap);
     XCTAssertEqualObjects([cap toString], @"cap:x=foo");
 }
 
-// TEST6732: Canonicalize must not have
-- (void)test6732_canonicalize_must_not_have {
+// TEST1835: !x ≡ x! ≡ x=! all canonicalize to !x.
+- (void)test1835_canonicalize_must_not_have {
     NSError *error = nil;
     NSString *canonical = @"cap:!x";
     for (NSString *input in @[@"cap:!x", @"cap:x!", @"cap:x=!"]) {
@@ -1820,8 +1800,8 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
-// TEST6733: Full 6×6 truth table.
-- (void)test6733_truth_table_full_cross_product {
+// TEST1842: Full 6×6 truth table.
+- (void)test1842_truth_table_full_cross_product {
     NSError *error = nil;
     NSArray *forms = @[@"", @"?x", @"x?=v", @"x", @"x!=v", @"x=v", @"!x"];
     BOOL expected[7][7] = {
@@ -1852,8 +1832,8 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
-// TEST1843: Invalid qualifier combinations must be rejected.
-- (void)test1843_reject_invalid_combinations {
+// TEST6734: Invalid qualifier combinations must be rejected.
+- (void)test6734_reject_invalid_combinations {
     NSError *error = nil;
     NSArray *invalid = @[
         @"cap:?x?=v", @"cap:!x!=v", @"cap:?!x", @"cap:!?x",
@@ -1868,8 +1848,8 @@ static NSString* testUrn(NSString *tags) {
     }
 }
 
-// TEST1844: out-axis difference dominates combined in+y differences.
-- (void)test1844_axis_weighting_out_dominates {
+// TEST6735: out-axis difference dominates combined in+y differences.
+- (void)test6735_axis_weighting_out_dominates {
     NSError *error = nil;
     CSCapUrn *bigOut = [CSCapUrn fromString:@"cap:in=media:;out=\"media:enc=utf-8;record\"" error:&error];
     XCTAssertNotNil(bigOut);
@@ -1881,7 +1861,7 @@ static NSString* testUrn(NSString *tags) {
         @"out-axis difference must dominate combined in+y differences");
 }
 
-// TEST1845: With equal out, in-axis dominates over y-axis.
+// TEST1845: With equal out-axis, in-axis dominates over y-axis.
 - (void)test1845_axis_weighting_in_dominates_y {
     NSError *error = nil;
     CSCapUrn *bigIn = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";out=media:record" error:&error];
@@ -1894,8 +1874,8 @@ static NSString* testUrn(NSString *tags) {
         @"in-axis difference must dominate y-axis");
 }
 
-// TEST1846: Decoded layout — 10000*out + 100*in + y.
-- (void)test1846_axis_weighting_decoded_layout {
+// TEST6736: Decoded layout — 10000*out + 100*in + y.
+- (void)test6736_axis_weighting_decoded_layout {
     NSError *error = nil;
     CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:a;b\";out=\"media:a;b;c;d\";extract" error:&error];
     XCTAssertNotNil(cap);

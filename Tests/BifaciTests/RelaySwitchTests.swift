@@ -580,12 +580,12 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST6596: URN matching (exact vs accepts())
+    // TEST435: URN matching (exact vs accepts())
     // Dispatch is contravariant on input (request input must conform to provider input — i.e. request
     // can be more specific) and covariant on output (provider output must conform to request output —
     // i.e. provider can be more specific). A request whose input is in a different type family than
     // any registered provider has no handler.
-    func test6596_urn_matching_exact_and_accepts() throws {
+    func test435_urn_matching_exact_and_accepts() throws {
         let pair1 = FileHandle.socketPair()  // engine_read, slave_write
         let pair2 = FileHandle.socketPair()  // slave_read, engine_write
 
@@ -839,8 +839,8 @@ final class CborRelaySwitchTests: XCTestCase {
         // Cleanup (no switch_ because construction failed)
     }
 
-    // TEST6601: add_master dynamically connects new host to running switch
-    func test6601_addMasterDynamic() throws {
+    // TEST132: add_master dynamically connects new host to running switch
+    func test132_addMasterDynamic() throws {
         // Start with empty switch
         let switch_ = try RelaySwitch(sockets: [])
         XCTAssertEqual(String(data: switch_.capabilities(), encoding: .utf8), "[]")
@@ -898,7 +898,7 @@ final class CborRelaySwitchTests: XCTestCase {
     // entries keyed by index. Accumulating zombie slots on each
     // reconnect was the bug class these tests guard against.
 
-    func test6276_ReattachByIdPreservesSlotIndex() throws {
+    func test133_ReattachByIdPreservesSlotIndex() throws {
         // Phase 1: build a switch with one slot at id "xpc-service".
         let pair1a = FileHandle.socketPair()
         let pair2a = FileHandle.socketPair()
@@ -949,8 +949,8 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST6278: Add master with duplicate healthy id errors
-    func test6278_AddMasterWithDuplicateHealthyIdErrors() throws {
+    // TEST134: Add master with duplicate healthy id errors
+    func test134_AddMasterWithDuplicateHealthyIdErrors() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
         let done = DispatchSemaphore(value: 0)
@@ -988,8 +988,8 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST6252: Relay switch init rejects duplicate ids
-    func test6252_RelaySwitchInitRejectsDuplicateIds() throws {
+    // TEST6745: RelaySwitch::new rejects duplicate ids in its cardinality list.
+    func test6745_RelaySwitchInitRejectsDuplicateIds() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
         let pair3 = FileHandle.socketPair()

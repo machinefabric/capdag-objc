@@ -71,8 +71,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(resolved.metadata, @"Should have nil metadata when not provided");
 }
 
-// TEST6407: Metadata with validation
-- (void)test6407_MetadataWithValidation {
+// TEST106: Metadata with validation
+- (void)test106_MetadataWithValidation {
     // Ensure metadata and validation can coexist
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -164,8 +164,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqual(resolved.extensions.count, 0, @"Should have empty extensions array when not provided");
 }
 
-// TEST6427: Extensions with metadata and validation
-- (void)test6427_ExtensionsWithMetadataAndValidation {
+// TEST893: Test extensions can coexist with metadata and validation
+- (void)test893_ExtensionsWithMetadataAndValidation {
     // Ensure extensions, metadata, and validation can coexist
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -197,8 +197,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.extensions[0], @"json", @"Should have json extension");
 }
 
-// TEST6430: Multiple extensions
-- (void)test6430_MultipleExtensions {
+// TEST894: Test multiple extensions in a media def
+- (void)test894_MultipleExtensions {
     // Test multiple extensions in a media def
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -233,9 +233,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - ResolvedMediaDef predicate tests
 
-// TEST099: The identity media (`media:`) carries no encoding, no record
-// marker, and no format. The old isBinary delegate is gone (binary/text is
-// no longer a distinction); a media is text-representable iff it declares enc=.
+// TEST99: The identity media (`media:`) carries no encoding, no record marker, and no format. The old is_binary() delegate is gone (binary/text is no longer a distinction); a media is text-representable iff it declares enc=.
 - (void)test099_resolved_is_binary {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:",
@@ -295,7 +293,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertFalse([resolved isScalar]);
 }
 
-// TEST103: Test ResolvedMediaDef is_json returns true when fmt=json tag is present
+// TEST103: Test ResolvedMediaDef is_json returns true when json tag is present
 - (void)test103_resolved_is_json {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:fmt=json;record",
@@ -309,10 +307,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertTrue([resolved isRecord]);
 }
 
-// TEST104: Text-representability is now carried by the orthogonal `enc=` tag.
-// The old isText/isBinary delegates on the resolved media def are gone; a media
-// is text iff its URN declares an encoding. `media:enc=utf-8` is plain UTF-8
-// text — has enc, is not JSON.
+// TEST104: Text-representability is now carried by the orthogonal `enc=` tag. The old is_text()/is_binary() delegates on ResolvedMediaDef are gone; a media is text iff its URN declares an encoding. `media:enc=utf-8` is plain UTF-8 text — has enc, is not JSON.
 - (void)test104_resolved_is_text {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:enc=utf-8",
@@ -326,9 +321,9 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertFalse([resolved isJSON]);
 }
 
-#pragma mark - Resolve with local overrides
+#pragma mark - Resolve custom media defs from the registry
 
-// TEST6282: Test resolving custom media URN from local media_defs takes precedence over registry
+// TEST6282: Test resolving a custom media URN from a registry-seeded media def
 - (void)test6282_resolve_custom_media_def {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:custom-spec;fmt=json",
@@ -346,7 +341,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(resolved.schema);
 }
 
-// TEST6283: Test resolving custom record media def with schema from local media_defs
+// TEST6283: Test resolving a custom record media def carrying a schema from a registry-seeded media def
 - (void)test6283_resolve_custom_with_schema {
     NSDictionary *schema = @{
         @"type": @"object",

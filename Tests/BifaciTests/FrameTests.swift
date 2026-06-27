@@ -296,8 +296,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertFalse(frame.isEof)
     }
 
-    // TEST6225: Test Limits::default provides the documented default values
-    func test6225_limitsDefault() {
+    // TEST198: Test Limits::default provides the documented default values
+    func test198_limitsDefault() {
         let limits = Limits()
         XCTAssertEqual(limits.maxFrame, DEFAULT_MAX_FRAME)
         XCTAssertEqual(limits.maxChunk, DEFAULT_MAX_CHUNK)
@@ -356,8 +356,8 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - Encode/Decode Roundtrip Tests (TEST205-213)
 
-    // TEST6233: Test REQ frame encode/decode roundtrip preserves all fields
-    func test6233_encodeDecodeRoundtrip() throws {
+    // TEST205: Test REQ frame encode/decode roundtrip preserves all fields
+    func test205_encodeDecodeRoundtrip() throws {
         let id = MessageId.newUUID()
         let original = Frame.req(
             id: id,
@@ -1071,8 +1071,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.mediaUrn, "")
     }
 
-    // TEST6241: StreamStart encode/decode roundtrip preserves stream_id and media_urn
-    func test6241_streamStartRoundtrip() throws {
+    // TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn
+    func test389_streamStartRoundtrip() throws {
         let id = MessageId.newUUID()
         let streamId = "stream-abc-123"
         let mediaUrn = "media:"
@@ -1678,8 +1678,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.chunkCount, 100)
     }
 
-    // TEST907: Offline flag blocks fetch_from_registry without making HTTP request
-    func test907_cborRejectsStreamEndWithoutChunkCount() throws {
+    // TEST6672: Offline flag blocks fetch_from_registry without making HTTP request
+    func test6672_cborRejectsStreamEndWithoutChunkCount() throws {
         // Manually construct a STREAM_END frame without chunk_count
         var map: [CBOR: CBOR] = [:]
         map[.unsignedInt(FrameKey.version.rawValue)] = .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))

@@ -29,7 +29,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // MARK: - Basic Tests (unnumbered, match Rust unnumbered tests)
 
-- (void)test0373_AddCapAndBasicTraversal {
+- (void)test1150_AddCapAndBasicTraversal {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract_text", @"Extract Text");
@@ -47,8 +47,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(targets[0].minDepth, 1u);
 }
 
-// TEST0374: Exact vs conformance matching
-- (void)test0374_ExactVsConformanceMatching {
+// TEST1151: Exact vs conformance matching
+- (void)test1151_ExactVsConformanceMatching {
     // Verify is_equivalent distinguishes singular vs list
     NSError *error = nil;
     CSMediaUrn *singular = [CSMediaUrn fromString:@"media:analysis-result" error:&error];
@@ -78,8 +78,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(pathsPlural.count, 1u, @"list query should find exactly 1 path");
 }
 
-// TEST0375: Multi step path
-- (void)test0375_MultiStepPath {
+// TEST1152: Multi step path
+- (void)test1152_MultiStepPath {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract", @"Extract");
@@ -99,8 +99,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqualObjects(paths[0].steps[1].capUrn, [cap2.capUrn toString]);
 }
 
-// TEST0376: Deterministic ordering
-- (void)test0376_DeterministicOrdering {
+// TEST1153: Deterministic ordering
+- (void)test1153_DeterministicOrdering {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract_a", @"Extract A");
@@ -124,8 +124,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     }
 }
 
-// TEST0377: Sync from caps
-- (void)test0377_SyncFromCaps {
+// TEST1154: Sync from caps
+- (void)test1154_SyncFromCaps {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     NSArray *caps = @[
@@ -349,7 +349,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertTrue(hasForEachSeq, @"Sequence input should produce ForEach step");
 }
 
-// TEST790: Identity URN is specific, not equivalent to everything
+// TEST790: Tests identity_urn is specific and doesn't match everything
 - (void)test790_identityUrnSpecific {
     NSError *error = nil;
     CSCapUrn *identity = [CSCapUrn fromString:CSCapIdentity error:&error];

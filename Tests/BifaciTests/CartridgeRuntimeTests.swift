@@ -5,18 +5,7 @@ import CapDAG
 @testable import Bifaci
 import Ops
 
-// =============================================================================
-// CartridgeRuntime + CapArgumentValue Tests
-//
-// Covers TEST248-273 from cartridge_runtime.rs and TEST274-283 from caller.rs
-// in the reference Rust implementation.
-//
-// N/A tests (Rust-specific traits):
 // TEST253: Test OpFactory can be cloned via Arc and sent across tasks (Send + Sync)
-//   TEST279: cap_argument_value_clone (Swift structs are value types, always copied)
-//   TEST280: cap_argument_value_debug (Rust Debug trait has no Swift equivalent)
-//   TEST281: cap_argument_value_into_string (Rust Into trait - Swift uses String directly)
-// =============================================================================
 
 // MARK: - Helper Functions for Frame-Based Testing
 
@@ -192,7 +181,6 @@ final class CartridgeRuntimeTests: XCTestCase {
     }
 
     // TEST250: Test Op handler collects input and processes it
-    // Handlers manually deserialize JSON from input bytes if needed - no automatic deserialization
 
     // TEST251: Test Op handler propagates errors through RuntimeError::Handler
 
@@ -309,7 +297,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(result, payload)
     }
 
-    // TEST260: Test extract_effective_payload with empty content_type returns raw payload unchanged
+    // TEST260: Test extract_effective_payload with None content_type returns raw payload unchanged
     func test260_extractEffectivePayloadNoContentType() throws {
         let cap = makeTestCap(urn: "cap:in=\"media:void\";test;out=\"media:void\"", args: [])
         let payload = "raw data".data(using: .utf8)!
@@ -446,9 +434,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertEqual(val, binaryData)
     }
 
-    // MARK: - CliStreamEmitter Tests (TEST266-267)
     // TEST266: Test CliFrameSender wraps CliStreamEmitter correctly (basic construction)
-    // TEST267: REMOVED - CliStreamEmitter removed
 
     // MARK: - RuntimeError Display Tests (TEST268)
 
@@ -743,8 +729,7 @@ final class CborFilePathConversionTests: XCTestCase {
                        "Handler receives file bytes after auto-conversion")
     }
 
-    // TEST337: file-path arg without stdin source passes path as string (no conversion).
-    // Mirrors Rust test337_file_path_without_stdin_passes_string.
+    // TEST337: file-path arg without stdin source passes path as string (no conversion)
     func test337_file_path_without_stdin_passes_string() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test337_input.txt")
@@ -773,8 +758,7 @@ final class CborFilePathConversionTests: XCTestCase {
                       "Should receive file path string when no stdin source: \(valueStr)")
     }
 
-    // TEST338: file-path arg reads file via --file CLI flag.
-    // Mirrors Rust test338_file_path_via_cli_flag.
+    // TEST338: file-path arg reads file via --file CLI flag
     func test338_file_path_via_cli_flag() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test338.pdf")
@@ -800,15 +784,15 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(fileContents, Data("PDF via flag 338".utf8), "Should read file from --file flag")
     }
 
-    // TEST6585: A sequence-declared file-path arg (isSequence=true) expands a
+    // TEST339: A sequence-declared file-path arg (isSequence=true) expands a
     // glob into N files and the runtime delivers them as a CBOR Array of
     // bytes — one item per matched file. List-ness comes from the arg
     // declaration, NOT from any `;list` URN tag.
     // TEST339: A sequence-declared file-path arg expands a glob to N files
     // and the runtime delivers them as a CBOR Array of bytes — one item per
     // matched file. List-ness comes from the arg declaration, not from any
-    // `;list` URN tag. Mirrors Rust test6585_file_path_array_glob_expansion.
-    func test6585_file_path_array_glob_expansion() throws {
+    // `;list` URN tag. Mirrors Rust test339_file_path_array_glob_expansion.
+    func test339_file_path_array_glob_expansion() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test339")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -871,8 +855,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST341: stdin takes precedence over file-path in source order.
-    // Mirrors Rust test341_stdin_precedence_over_file_path.
+    // TEST341: stdin takes precedence over file-path in source order
     func test341_stdin_precedence_over_file_path() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test341_input.txt")
@@ -901,8 +884,7 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(result, stdinData, "stdin source should take precedence")
     }
 
-    // TEST342: file-path with position 0 reads first positional arg as file.
-    // Mirrors Rust test342_file_path_position_zero_reads_first_arg.
+    // TEST342: file-path with position 0 reads first positional arg as file
     func test342_file_path_position_zero_reads_first_arg() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test342.dat")
@@ -928,8 +910,7 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(result, Data("binary data 342".utf8), "Should read file at position 0")
     }
 
-    // TEST343: Non-file-path args are not affected by file reading.
-    // Mirrors Rust test343_non_file_path_args_unaffected.
+    // TEST343: Non-file-path args are not affected by file reading
     func test343_non_file_path_args_unaffected() throws {
         let cap = createCap(
             urn: "cap:in=\"media:void\";test;out=\"media:void\"",
@@ -951,10 +932,10 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(valueStr, "mlx-community/Llama-3.2-3B-Instruct-4bit")
     }
 
-    // TEST344: A scalar file-path arg receiving a nonexistent path fails
+    // TEST6586: A scalar file-path arg receiving a nonexistent path fails
     // hard with a clear error that names the path. The runtime refuses to
     // silently swallow user mistakes like typos or wrong directories.
-    func test344_file_path_array_invalid_json_fails() throws {
+    func test6586_file_path_array_invalid_json_fails() throws {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
@@ -982,9 +963,8 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST345: file-path arg with literal nonexistent path fails hard.
-    // Mirrors Rust test345_file_path_array_one_file_missing_fails_hard.
-    func test345_file_path_array_one_file_missing_fails_hard() throws {
+    // TEST6587: file-path-array with literal nonexistent path fails hard
+    func test6587_file_path_array_one_file_missing_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let missingPath = tempDir.appendingPathComponent("test345_missing.txt")
 
@@ -1088,8 +1068,7 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(result, Data(), "Empty file should produce empty bytes")
     }
 
-    // TEST348: file-path conversion respects source order.
-    // Mirrors Rust test348_file_path_conversion_respects_source_order.
+    // TEST348: file-path conversion respects source order
     func test348_file_path_conversion_respects_source_order() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test348.txt")
@@ -1188,10 +1167,10 @@ final class CborFilePathConversionTests: XCTestCase {
                        "Handler receives file bytes after auto-conversion")
     }
 
-    // TEST351: file-path arg in CBOR mode with empty Array value returns
+    // TEST6588: file-path arg in CBOR mode with empty Array value returns
     // empty. CBOR Array (not JSON) is the multi-input wire form for sequence
-    // args. Mirrors Rust test351_file_path_array_empty_array.
-    func test351_file_path_array_empty_array() throws {
+    // args. Mirrors Rust test6588_file_path_array_empty_array.
+    func test6588_file_path_array_empty_array() throws {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
@@ -1323,8 +1302,7 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(bytes, [UInt8]("test value".utf8))
     }
 
-    // TEST354: Glob pattern with no matches fails hard (NO FALLBACK).
-    // Mirrors Rust test354_glob_pattern_no_matches_empty_array.
+    // TEST354: Glob pattern with no matches fails hard (NO FALLBACK)
     func test354_glob_pattern_no_matches_fails_hard() throws {
         let tempDir = FileManager.default.temporaryDirectory
 
@@ -1353,7 +1331,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
     }
 
-    // TEST355: Glob pattern skips directories.
+    // TEST355: Glob pattern skips directories
     func test355_glob_pattern_skips_directories() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test355")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -1391,9 +1369,9 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    // TEST6591: Multiple glob patterns combined as CBOR Array (CBOR mode).
-    // Mirrors Rust test6591_multiple_glob_patterns_combined.
-    func test6591_multiple_glob_patterns_combined() throws {
+    // TEST356: Multiple glob patterns combined as CBOR Array (CBOR mode).
+    // Mirrors Rust test356_multiple_glob_patterns_combined.
+    func test356_multiple_glob_patterns_combined() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test356")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -1519,9 +1497,8 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST6592: Invalid glob pattern fails with a clear error.
-    // Mirrors Rust test6592_invalid_glob_pattern_fails.
-    func test6592_invalid_glob_pattern_fails() {
+    // TEST359: Invalid glob pattern fails with clear error
+    func test359_invalid_glob_pattern_fails() {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
@@ -1922,10 +1899,10 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(resultHolder.data, pdfContent, "Handler should receive chunked content")
     }
 
-    // TEST6593: CBOR mode with file path - file-path arg in CBOR mode is
+    // TEST364: CBOR mode with file path - file-path arg in CBOR mode is
     // auto-converted to file bytes via extract_effective_payload.
-    // Mirrors Rust test6593_cbor_mode_file_path.
-    func test6593_cbor_mode_file_path() throws {
+    // Mirrors Rust test364_cbor_mode_file_path.
+    func test364_cbor_mode_file_path() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test364.pdf")
         let pdfContent = Data("PDF content for CBOR file path test".utf8)

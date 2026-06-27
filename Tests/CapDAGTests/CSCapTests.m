@@ -28,8 +28,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 @implementation CSCapTests
 
-// TEST0313: Cap creation
-- (void)test0313_CapCreation {
+// TEST108: Cap creation
+- (void)test0108_CapCreation {
     NSError *error;
     CSCapUrn *key = [CSCapUrn fromString:@"cap:in=media:void;transform;out=\"media:enc=utf-8;record\";format=json;data_processing" error:&error];
     XCTAssertNotNil(key, @"Failed to create cap URN: %@", error);
@@ -119,8 +119,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertTrue([cap2 acceptsStdin], @"Cap should accept stdin");
 }
 
-// TEST0316: Cap matching
-- (void)test0316_CapMatching {
+// TEST110: Cap matching
+- (void)test0110_CapMatching {
     NSError *error;
     // Use type=data_processing key=value for proper matching tests
     CSCapUrn *key = [CSCapUrn fromString:@"cap:in=media:void;transform;out=\"media:enc=utf-8;record\";format=json;type=data_processing" error:&error];
@@ -367,7 +367,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(cap.output.mediaUrn, @"my:output.v1");
 }
 
-// TEST6317: Media urn resolution through registry
+// TEST6317: Media urn resolution with registry
 - (void)test6317_MediaUrnResolutionThroughRegistry {
     // Caps no longer carry inline media defs; the unified
     // CSFabricRegistry is the only source. This test seeds three
@@ -457,8 +457,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(manifest.author);
 }
 
-// TEST6363: Cap manifest with author
-- (void)test6363_CapManifestWithAuthor {
+// TEST149: Cap manifest with author
+- (void)test149_CapManifestWithAuthor {
     NSError *error;
     CSCapUrn *key = [CSCapUrn fromString:@"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata" error:&error];
     XCTAssertNotNil(key, @"Failed to create cap URN: %@", error);
@@ -487,8 +487,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(manifest.author, @"Test Author");
 }
 
-// TEST6561: Cap manifest with page url
-- (void)test6561_CapManifestWithPageUrl {
+// TEST6363: Cap manifest with page url
+- (void)test6363_CapManifestWithPageUrl {
     NSError *error;
     CSCapUrn *key = [CSCapUrn fromString:@"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata" error:&error];
     XCTAssertNotNil(key, @"Failed to create cap URN: %@", error);

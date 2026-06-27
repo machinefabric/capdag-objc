@@ -13,7 +13,7 @@
 
 @implementation CSProgressMapperTests
 
-// TEST908: Cached caps remain accessible when offline
+// TEST908: cached caps remain accessible while offline.
 - (void)test908_map_progress_basic_mapping {
     // Identity mapping: base=0, weight=1
     XCTAssertEqualWithAccuracy(CSMapProgress(0.0f, 0.0f, 1.0f), 0.0f, 0.001f);
@@ -30,8 +30,8 @@
     XCTAssertEqualWithAccuracy(CSMapProgress(1.5f, 0.2f, 0.6f), 0.8f, 0.001f);
 }
 
-// TEST909: set_offline(false) restores fetch ability (would fail with HTTP error, not NetworkBlocked)
-- (void)test909_map_progress_deterministic {
+// TEST1126: set_offline(false) restores fetch ability (would fail with HTTP error, not NetworkBlocked)
+- (void)test1126_map_progress_deterministic {
     for (int i = 0; i <= 100; i++) {
         float p = (float)i / 100.0f;
         float a = CSMapProgress(p, 0.1f, 0.8f);

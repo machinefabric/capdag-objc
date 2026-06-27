@@ -632,8 +632,8 @@ final class CborIntegrationTests: XCTestCase {
 
     // MARK: - Full Path Integration Tests (TEST896-907)
 
-    // TEST896: All cap input media defs that represent user files must have extensions. These are the entry points — the file types users can right-click on.
-    func test896_fullPathEngineReqToCartridgeResponse() throws {
+    // TEST1122: All cap input media defs that represent user files must have extensions. These are the entry points — the file types users can right-click on.
+    func test1122_fullPathEngineReqToCartridgeResponse() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         let cartridgeSemaphore = DispatchSemaphore(value: 0)
@@ -699,8 +699,8 @@ final class CborIntegrationTests: XCTestCase {
         XCTAssertEqual(String(data: accumulated, encoding: .utf8), "full-path-response")
     }
 
-    // TEST897: Verify that specific cap output URNs resolve to the correct extension. This catches misconfigurations where a spec exists but has the wrong extension.
-    func test897_cartridgeErrorFlowsToEngine() throws {
+    // TEST1123: Verify that specific cap output URNs resolve to the correct extension. This catches misconfigurations where a spec exists but has the wrong extension.
+    func test1123_cartridgeErrorFlowsToEngine() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         let cartridgeSemaphore = DispatchSemaphore(value: 0)

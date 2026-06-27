@@ -65,11 +65,7 @@ final class CartridgeRepoTests: XCTestCase {
 
     // MARK: - TEST1847
 
-    // TEST1847: A build from a registry manifest published BEFORE `packages[]`
-    // existed carries only the legacy singular `package` (no `format`). It must
-    // still deserialize (a missing `packages` must not fail the whole parse) and
-    // `primaryPackage()` must fall back to that legacy package. When `packages[]`
-    // is present it is preferred over the legacy field.
+    // TEST1847: A build from a registry manifest published BEFORE `packages[]` existed carries only the legacy singular `package` (no `format`). It must still deserialize (a missing `packages` must not fail the whole parse) and `primary_package()` must fall back to that legacy package, so a registry not yet republished with the dual-write keeps installing. When `packages[]` is present it is preferred over the legacy field.
     func test1847_cartridgeBuildLegacyPackageFallback() throws {
         // Legacy-only: `package`, no `packages`.
         let legacyJSON = """
@@ -111,8 +107,7 @@ final class CartridgeRepoTests: XCTestCase {
 
     // MARK: - resolveForHost (TEST1849-1852)
 
-    // TEST1849: latest version has a host build → Compatible, resolving to the
-    // latest version and that platform's native-format package.
+    // TEST1849: latest version has a host build → Compatible, resolving to the latest version and that platform's native-format package.
     func test1849_resolveForHostCompatibleLatest() {
         let cartridge = cartridgeWithVersions("c", [
             ("1.2.0", [
@@ -131,9 +126,7 @@ final class CartridgeRepoTests: XCTestCase {
         XCTAssertEqual(r.hostPlatform, "linux-x86_64")
     }
 
-    // TEST1850: the latest version lacks a host build but an older version has
-    // one → CompatibleOutdated, resolving to the older version with a reason
-    // naming both the latest and the resolved version.
+    // TEST1850: the latest version lacks a host build but an older version has one → CompatibleOutdated, resolving to the older version with a reason naming both the latest and the resolved version.
     func test1850_resolveForHostCompatibleOutdated() {
         let cartridge = cartridgeWithVersions("c", [
             // Latest 1.3.0 ships only macOS.
@@ -156,8 +149,7 @@ final class CartridgeRepoTests: XCTestCase {
         XCTAssertTrue(reason?.contains("1.2.0") ?? false, "reason names the resolved: \(String(describing: r.reason))")
     }
 
-    // TEST1851: no version ships a host build → Incompatible, no resolved
-    // version/package, reason states the host platform.
+    // TEST1851: no version ships a host build → Incompatible, no resolved version/package, reason states the host platform.
     func test1851_resolveForHostIncompatible() {
         let cartridge = cartridgeWithVersions("c", [
             ("1.2.0", [("darwin-arm64", "pkg", "c-1.2.0.pkg")]),
@@ -171,9 +163,7 @@ final class CartridgeRepoTests: XCTestCase {
         XCTAssertTrue(r.reason?.contains("windows-x86_64") ?? false)
     }
 
-    // TEST1852: a host build whose packages[] is empty AND has no legacy
-    // `package` ships no installer; resolution must SKIP it (not resolve to an
-    // un-downloadable version) and fall through to an older usable version.
+    // TEST1852: a host build whose packages[] is empty AND has no legacy `package` ships no installer; resolution must SKIP it (not resolve to an un-downloadable version) and fall through to an older usable version.
     func test1852_resolveForHostSkipsBuildWithNoInstaller() {
         var cartridge = cartridgeWithVersions("c", [
             // Latest has a linux build entry but we strip its installer below.
@@ -195,8 +185,7 @@ final class CartridgeRepoTests: XCTestCase {
 
     // MARK: - TEST1853
 
-    // TEST1853: hostPlatform() returns a normalized {os}-{arch} string with
-    // arch aarch64 mapped to arm64 — the exact form the registry uses.
+    // TEST1853: host_platform() returns a normalized {os}-{arch} string with arch aarch64 mapped to arm64 — the exact form the registry uses.
     func test1853_hostPlatformNormalizedForm() {
         let p = hostPlatform()
         let parts = p.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)

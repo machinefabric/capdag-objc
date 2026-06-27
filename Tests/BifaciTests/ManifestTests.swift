@@ -23,9 +23,9 @@ final class ManifestTests: XCTestCase {
 
     // MARK: - Swift Manifest Tests
 
-    // TEST6409: Cap manifest construction stores name, version, channel,
+    // TEST148: Cap manifest construction stores name, version, channel,
     // description, and the cap_groups verbatim.
-    func test6409_capManifestCreation() throws {
+    func test148_capManifestCreation() throws {
         let cap = CapDefinition(urn: "cap:test", title: "Test Cap", command: "test")
         let manifest = Manifest(
             name: "test-cartridge",
@@ -132,10 +132,10 @@ final class ManifestTests: XCTestCase {
         )
     }
 
-    // TEST6414: Manifest deserialization fails when any required field is
+    // TEST151: Manifest deserialization fails when any required field is
     // missing — including channel, which is part of the cartridge's
     // identity. There is no fallback default; missing means broken.
-    func test6414_capManifestRequiredFields() throws {
+    func test151_capManifestRequiredFields() throws {
         let decoder = JSONDecoder()
 
         // Missing "name" field
@@ -171,9 +171,9 @@ final class ManifestTests: XCTestCase {
         }
     }
 
-    // TEST6416: Multiple caps across multiple cap_groups serialize and
+    // TEST152: Multiple caps across multiple cap_groups serialize and
     // deserialize correctly, preserving group structure.
-    func test6416_capManifestWithMultipleCaps() throws {
+    func test152_capManifestWithMultipleCaps() throws {
         let processCap = CapDefinition(urn: "cap:process", title: "Process", command: "process")
         let transformCap = CapDefinition(urn: "cap:in=text:;out=text:", title: "Transform", command: "transform")
         let convertCap = CapDefinition(urn: "cap:in=image:;out=image:", title: "Convert", command: "convert")
@@ -207,9 +207,9 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(decoded.capGroups[1].caps.count, 2)
     }
 
-    // TEST6418: An empty cap_groups list round-trips without losing the
+    // TEST153: An empty cap_groups list round-trips without losing the
     // channel / version envelope.
-    func test6418_capManifestEmptyCapGroups() throws {
+    func test153_capManifestEmptyCapGroups() throws {
         let manifest = Manifest(
             name: "empty-groups-cartridge",
             version: "1.0.0",
@@ -231,9 +231,9 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(decoded.channel, "nightly")
     }
 
-    // TEST6420: Optional author field on CSCapManifest is nil by default
+    // TEST154: Optional author field on CSCapManifest is nil by default
     // and round-trips through `withAuthor`.
-    func test6420_capManifestOptionalAuthorField() throws {
+    func test154_capManifestOptionalAuthorField() throws {
         let manifestNoAuthor = CSCapManifest(
             name: "test",
             version: "1.0.0",
@@ -304,31 +304,25 @@ final class ManifestTests: XCTestCase {
 
     // MARK: - registryURLFromBuildEnv (TEST1872-1874)
 
-    // TEST1872: `registryURLFromBuildEnv` passes a non-empty registry URL
-    // through unchanged. This is the function that decides the engine's baked
-    // PRIMARY registry (surfaced over SystemService.HealthStatus); a published
-    // build must report exactly the URL it was compiled with.
+    // TEST1872: `registry_url_from_build_env` passes a non-empty registry URL through unchanged. This is the function that decides the engine's baked PRIMARY registry (surfaced over SystemService.HealthStatus); a published build must report exactly the URL it was compiled with.
     func test1872_registryUrlFromBuildEnvPassesThroughNonempty() throws {
         let url = "https://cartridges.machinefabric.com/manifest"
         XCTAssertEqual(try registryURLFromBuildEnv(url), url)
     }
 
-    // TEST1873: an unset env (nil) yields nil — a dev build has no baked
-    // registry, so the engine reports an empty primary-registry URL and loads
-    // only `dev/` cartridges. This is the dev-engine contract the registry
-    // sheets rely on to omit the read-only "Primary · built-in" row.
+    // TEST1873: an unset env (None) yields None — a dev build has no baked registry, so the engine reports an empty primary-registry URL and loads only `dev/` cartridges. This is the dev-engine contract the registry sheets rely on to omit the read-only "Primary · built-in" row.
     func test1873_registryUrlFromBuildEnvNoneForDev() throws {
         XCTAssertNil(try registryURLFromBuildEnv(nil))
     }
 
-    // TEST6743: an exported-but-empty env (the empty string) is neither a dev
+    // TEST1874: an exported-but-empty env (the empty string) is neither a dev
     // build nor a valid identity and MUST fail hard, so the build can never
     // silently hash the empty string into a fake registry slug. We assert the
     // failure AND its exact message — the catchable Swift analog of Rust's
     // compile-time panic — so a regression that dropped the check (or replaced
     // it with a silent fallback) is caught rather than passing on a bogus empty
     // primary registry.
-    func test6743_registryUrlFromBuildEnvRejectsEmptyString() {
+    func test1874_registryUrlFromBuildEnvRejectsEmptyString() {
         XCTAssertThrowsError(try registryURLFromBuildEnv("")) { error in
             guard let buildEnvError = error as? ManifestBuildEnvError else {
                 return XCTFail("expected ManifestBuildEnvError, got \(error)")

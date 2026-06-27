@@ -41,8 +41,8 @@ static NSString *buildRegistryURL(NSString *urn) {
 
 @implementation CSFabricRegistryTests
 
-// TEST6325: Registry creation
-- (void)test6325_RegistryCreation {
+// TEST614: Registry creation
+- (void)test614_RegistryCreation {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     XCTAssertNotNil(registry);
 }
@@ -76,7 +76,7 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertFalse([registryURL containsString:@"%3B"], @"URL must not contain percent-encoded URN characters");
 }
 
-/// TEST6393: Equivalent URNs (different tag order, etc.) hash to the
+/// TEST6391: Equivalent URNs (different tag order, etc.) hash to the
 /// same key. This is the property that makes cross-language lookups
 /// land at the same registry object regardless of which capdag
 /// implementation issued the request. Inputs MUST quote any
@@ -84,7 +84,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 /// `out=media:task;id` was actually a different URN (the bare
 /// `media:task` plus a separate `id` op tag), and treating those
 /// two URNs as equivalent here masked a real spec violation.
-- (void)test6393_sameCapDifferentSpellingsSameURL {
+- (void)test6391_sameCapDifferentSpellingsSameURL {
     NSString *urlA = buildRegistryURL(@"cap:in=\"media:listing-id\";use-grinder;out=\"media:task;id\"");
     NSString *urlB = buildRegistryURL(@"cap:out=\"media:task;id\";in=\"media:listing-id\";use-grinder");
     XCTAssertEqualObjects(urlA, urlB, @"Equivalent URNs must hash to the same registry key");
