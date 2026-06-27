@@ -138,7 +138,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 }
 
 // Obj-C specific: unresolved spec ID fails hard during schema validation
-- (void)test0129_ArgumentValidationWithUnknownSpecFails {
+- (void)test6358_ArgumentValidationWithUnknownSpecFails {
     // Create argument with non-existent spec ID
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"unknown:spec.v1"
                                              required:YES
@@ -157,7 +157,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 }
 
 // Obj-C specific: Non-structured argument skips schema validation
-- (void)test0130_NonStructuredArgumentSkipsSchemaValidation {
+- (void)test6362_NonStructuredArgumentSkipsSchemaValidation {
     // Create string argument (no schema validation expected for non-structured types)
     // Media URNs must be defined in mediaDefs (no built-in resolution)
     NSArray<NSDictionary *> *mediaDefs = @[
@@ -229,8 +229,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(error, @"Error should be nil for valid data");
 }
 
-// TEST0131: Output with embedded schema validation failure
-- (void)test0131_OutputWithEmbeddedSchemaValidationFailure {
+// TEST6366: Output with embedded schema validation failure
+- (void)test6366_OutputWithEmbeddedSchemaValidationFailure {
     NSDictionary *schema = @{
         @"type": @"object",
         @"properties": @{
@@ -271,8 +271,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Integration with CSCapValidator Tests
 
-// TEST0132: Integration with input validation
-- (void)test0132_IntegrationWithInputValidation {
+// TEST6370: Integration with input validation
+- (void)test6370_IntegrationWithInputValidation {
     // Create cap with schema-enabled arguments
     // Use media:enc=utf-8;record instead of media:object to indicate textable object data
     CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record"] tag:@"op" value:@"process"] tag:@"target" value:@"user"] build:nil];
@@ -342,8 +342,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqual(validationError.validationType, CSValidationErrorTypeSchemaValidationFailed);
 }
 
-// TEST0133: Integration with output validation
-- (void)test0133_IntegrationWithOutputValidation {
+// TEST6373: Integration with output validation
+- (void)test6373_IntegrationWithOutputValidation {
     // Create cap with schema-enabled output
     // Use media:enc=utf-8;record instead of media:object to indicate textable object data
     CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record"] tag:@"op" value:@"query"] tag:@"target" value:@"data"] build:nil];
@@ -412,8 +412,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Complex Schema Validation Tests
 
-// TEST0134: Complex nested schema
-- (void)test0134_ComplexNestedSchema {
+// TEST6314: Complex nested schema
+- (void)test6314_ComplexNestedSchema {
     NSDictionary *complexSchema = @{
         @"type": @"object",
         @"properties": @{
@@ -504,8 +504,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Error Handling Tests
 
-// TEST0135: Schema validation error details
-- (void)test0135_SchemaValidationErrorDetails {
+// TEST6378: Schema validation error details
+- (void)test6378_SchemaValidationErrorDetails {
     NSDictionary *schema = @{
         @"type": @"object",
         @"properties": @{
@@ -551,8 +551,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Built-in Spec ID Tests
 
-// TEST0136: Builtin spec ids resolve
-- (void)test0136_BuiltinSpecIdsResolve {
+// TEST6381: Builtin spec ids resolve
+- (void)test6381_BuiltinSpecIdsResolve {
     // Media URNs must be defined in mediaDefs array (no built-in resolution)
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -606,8 +606,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - MediaDefs Without Schema Tests
 
-// TEST0137: Media defs without schema skips validation
-- (void)test0137_MediaDefsWithoutSchemaSkipsValidation {
+// TEST6384: Media defs without schema skips validation
+- (void)test6384_MediaDefsWithoutSchemaSkipsValidation {
     // Test that media definitions without schema skip schema validation
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -633,8 +633,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Performance Tests
 
-// TEST0138: Schema validation performance
-- (void)test0138_SchemaValidationPerformance {
+// TEST6387: Schema validation performance
+- (void)test6387_SchemaValidationPerformance {
     // Create a large schema
     NSDictionary *schema = @{
         @"type": @"array",
@@ -692,8 +692,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Cap Full Validation Tests
 
-// TEST0139: Full cap validation with media defs
-- (void)test0139_FullCapValidationWithMediaDefs {
+// TEST6390: Full cap validation with media defs
+- (void)test6390_FullCapValidationWithMediaDefs {
     // Test complete cap validation flow with mediaDefs resolution
     // Use media:enc=utf-8;record instead of media:object to indicate textable object data
     NSError *error = nil;

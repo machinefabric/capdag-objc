@@ -381,8 +381,8 @@ final class StreamingAPITests: XCTestCase {
         }
     }
 
-    // TEST0090: OutputStream empty stream sends STREAM_START and STREAM_END only
-    func test0090_outputStreamCloseWithoutStartIsNoop() throws {
+    // TEST6281: OutputStream empty stream sends STREAM_START and STREAM_END only
+    func test6281_outputStreamCloseWithoutStartIsNoop() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
             sentFrames.append(frame)
@@ -404,7 +404,7 @@ final class StreamingAPITests: XCTestCase {
     }
 
     // TEST542b: OutputStream start + close sends STREAM_START + STREAM_END (empty stream)
-    func test0093_b_outputStreamStartThenCloseEmpty() throws {
+    func test6285_b_outputStreamStartThenCloseEmpty() throws {
         var sentFrames: [Frame] = []
         let mockSender = MockFrameSender { frame in
             sentFrames.append(frame)
@@ -434,7 +434,7 @@ final class StreamingAPITests: XCTestCase {
     }
 
     // TEST542c: OutputStream write without start() throws
-    func test0095_c_outputStreamWriteWithoutStartThrows() throws {
+    func test6289_c_outputStreamWriteWithoutStartThrows() throws {
         let mockSender = MockFrameSender { _ in }
 
         let output = Bifaci.OutputStream(
@@ -450,7 +450,7 @@ final class StreamingAPITests: XCTestCase {
     }
 
     // TEST542d: OutputStream start() twice throws
-    func test0096_d_outputStreamDoubleStartThrows() throws {
+    func test6291_d_outputStreamDoubleStartThrows() throws {
         let mockSender = MockFrameSender { _ in }
 
         let output = Bifaci.OutputStream(
@@ -467,7 +467,7 @@ final class StreamingAPITests: XCTestCase {
     }
 
     // TEST542e: OutputStream mode conflict throws (start write, call emitListItem)
-    func test0097_e_outputStreamModeConflictThrows() throws {
+    func test6293_e_outputStreamModeConflictThrows() throws {
         let mockSender = MockFrameSender { _ in }
 
         let output = Bifaci.OutputStream(

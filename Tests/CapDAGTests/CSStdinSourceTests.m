@@ -11,8 +11,8 @@
 
 @implementation CSStdinSourceTests
 
-// TEST0169: Source with data
-- (void)test0169_SourceWithData {
+// TEST6445: Source with data
+- (void)test6445_SourceWithData {
     NSData *testData = [@"test data content" dataUsingEncoding:NSUTF8StringEncoding];
     CSStdinSource *source = [CSStdinSource sourceWithData:testData];
 
@@ -27,8 +27,8 @@
     XCTAssertNil(source.mediaUrn);
 }
 
-// TEST0170: Source with file reference
-- (void)test0170_SourceWithFileReference {
+// TEST6447: Source with file reference
+- (void)test6447_SourceWithFileReference {
     NSString *trackedFileID = @"tracked-file-123";
     NSString *originalPath = @"/path/to/original.pdf";
     NSData *securityBookmark = [@"security-bookmark-data" dataUsingEncoding:NSUTF8StringEncoding];
@@ -50,8 +50,8 @@
     XCTAssertEqualObjects(source.mediaUrn, mediaUrn);
 }
 
-// TEST0183: Data source with empty data
-- (void)test0183_DataSourceWithEmptyData {
+// TEST6461: Data source with empty data
+- (void)test6461_DataSourceWithEmptyData {
     NSData *emptyData = [NSData data];
     CSStdinSource *source = [CSStdinSource sourceWithData:emptyData];
 
@@ -61,8 +61,8 @@
     XCTAssertEqual(source.data.length, 0);
 }
 
-// TEST0198: Data source with binary content
-- (void)test0198_DataSourceWithBinaryContent {
+// TEST6477: Data source with binary content
+- (void)test6477_DataSourceWithBinaryContent {
     // Test with PNG header bytes
     uint8_t pngHeader[] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
     NSData *binaryData = [NSData dataWithBytes:pngHeader length:sizeof(pngHeader)];
@@ -75,8 +75,8 @@
     XCTAssertEqual(source.data.length, 8);
 }
 
-// TEST0205: File reference with all fields
-- (void)test0205_FileReferenceWithAllFields {
+// TEST6485: File reference with all fields
+- (void)test6485_FileReferenceWithAllFields {
     // Verify all fields are properly stored and retrievable
     NSString *trackedFileID = @"uuid-12345-67890";
     NSString *originalPath = @"/Users/test/Documents/large-file.pdf";

@@ -42,7 +42,7 @@ final class CartridgeHostRoutingTableGCTests: XCTestCase {
     /// kick in if pre-state crossed the hard cap before insertion
     /// completed, which production prevents by gc-ing on every
     /// insert).
-    func test0098_GcReducesTableBelowSoftWatermarkInOnePass() {
+    func test6295_GcReducesTableBelowSoftWatermarkInOnePass() {
         let host = CartridgeHost()
         let preCount = CartridgeHost.routingTableSoftWatermarkForTest + 256
         XCTAssertLessThan(preCount, CartridgeHost.routingTableHardCapForTest,
@@ -105,7 +105,7 @@ final class CartridgeHostRoutingTableGCTests: XCTestCase {
     /// this one — so this is the assertion that catches a "wrong
     /// victims" bug, which is the more dangerous one (silently
     /// drops in-flight continuation frames).
-    func test0105_GcEvictsOldestEntriesByTouchedAt() {
+    func test6300_GcEvictsOldestEntriesByTouchedAt() {
         let host = CartridgeHost()
         let preCount = CartridgeHost.routingTableSoftWatermarkForTest + 256
         let evictionCount = max(1, Int(Double(preCount) * CartridgeHost.routingTableGcEvictionFractionForTest))
@@ -169,7 +169,7 @@ final class CartridgeHostRoutingTableGCTests: XCTestCase {
     /// secondary pass, a single GC at the soft watermark would
     /// not be enough to recover headroom and the table could
     /// grow without bound between bursts.
-    func test0106_GcSecondaryPassEnforcesHardCap() {
+    func test6301_GcSecondaryPassEnforcesHardCap() {
         let host = CartridgeHost()
         // Size the seed so a SINGLE eviction-fraction pass is NOT
         // enough to bring the table under the hard cap. We need

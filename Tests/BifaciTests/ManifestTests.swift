@@ -23,9 +23,9 @@ final class ManifestTests: XCTestCase {
 
     // MARK: - Swift Manifest Tests
 
-    // TEST148: Cap manifest construction stores name, version, channel,
+    // TEST6409: Cap manifest construction stores name, version, channel,
     // description, and the cap_groups verbatim.
-    func test148_capManifestCreation() throws {
+    func test6409_capManifestCreation() throws {
         let cap = CapDefinition(urn: "cap:test", title: "Test Cap", command: "test")
         let manifest = Manifest(
             name: "test-cartridge",
@@ -45,8 +45,8 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(manifest.capGroups[0].caps[0].urn, "cap:test")
     }
 
-    // TEST149: Author field round-trips through CSCapManifest.withAuthor.
-    func test149_capManifestWithAuthor() throws {
+    // TEST6411: Author field round-trips through CSCapManifest.withAuthor.
+    func test6411_capManifestWithAuthor() throws {
         let csManifest = CSCapManifest(
             name: "test-cartridge",
             version: "1.0.0",
@@ -59,8 +59,8 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(csManifest.author, "Test Author")
     }
 
-    // TEST150: JSON roundtrip preserves channel and cap_groups.
-    func test150_capManifestJsonRoundtrip() throws {
+    // TEST6412: JSON roundtrip preserves channel and cap_groups.
+    func test6412_capManifestJsonRoundtrip() throws {
         let capUrn = "cap:test"
         let cap = CapDefinition(
             urn: capUrn,
@@ -132,10 +132,10 @@ final class ManifestTests: XCTestCase {
         )
     }
 
-    // TEST151: Manifest deserialization fails when any required field is
+    // TEST6414: Manifest deserialization fails when any required field is
     // missing — including channel, which is part of the cartridge's
     // identity. There is no fallback default; missing means broken.
-    func test151_capManifestRequiredFields() throws {
+    func test6414_capManifestRequiredFields() throws {
         let decoder = JSONDecoder()
 
         // Missing "name" field
@@ -171,9 +171,9 @@ final class ManifestTests: XCTestCase {
         }
     }
 
-    // TEST152: Multiple caps across multiple cap_groups serialize and
+    // TEST6416: Multiple caps across multiple cap_groups serialize and
     // deserialize correctly, preserving group structure.
-    func test152_capManifestWithMultipleCaps() throws {
+    func test6416_capManifestWithMultipleCaps() throws {
         let processCap = CapDefinition(urn: "cap:process", title: "Process", command: "process")
         let transformCap = CapDefinition(urn: "cap:in=text:;out=text:", title: "Transform", command: "transform")
         let convertCap = CapDefinition(urn: "cap:in=image:;out=image:", title: "Convert", command: "convert")
@@ -207,9 +207,9 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(decoded.capGroups[1].caps.count, 2)
     }
 
-    // TEST153: An empty cap_groups list round-trips without losing the
+    // TEST6418: An empty cap_groups list round-trips without losing the
     // channel / version envelope.
-    func test153_capManifestEmptyCapGroups() throws {
+    func test6418_capManifestEmptyCapGroups() throws {
         let manifest = Manifest(
             name: "empty-groups-cartridge",
             version: "1.0.0",
@@ -231,9 +231,9 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(decoded.channel, "nightly")
     }
 
-    // TEST154: Optional author field on CSCapManifest is nil by default
+    // TEST6420: Optional author field on CSCapManifest is nil by default
     // and round-trips through `withAuthor`.
-    func test154_capManifestOptionalAuthorField() throws {
+    func test6420_capManifestOptionalAuthorField() throws {
         let manifestNoAuthor = CSCapManifest(
             name: "test",
             version: "1.0.0",
@@ -248,10 +248,10 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(manifestWithAuthor.author, "Author Name")
     }
 
-    // TEST155: CSCapManifest exposes name / version / channel /
+    // TEST6422: CSCapManifest exposes name / version / channel /
     // description / cap_groups via its accessors. The Obj-C bridge is
     // schema-equivalent to the Swift `Manifest` struct.
-    func test155_componentMetadataAccessors() throws {
+    func test6422_componentMetadataAccessors() throws {
         let capUrn = try CSCapUrn.fromString("cap:process")
         let cap = CSCap(urn: capUrn, title: "Test", command: "test")
         let group = CSCapGroup(name: "default", caps: [cap], adapterUrns: [])
@@ -274,7 +274,7 @@ final class ManifestTests: XCTestCase {
 
     // MARK: - CSCapManifest With PageUrl Test
 
-    func test0023_csCapManifestWithPageUrl() throws {
+    func test6200_csCapManifestWithPageUrl() throws {
         let manifest = CSCapManifest(
             name: "cartridge-with-url",
             version: "1.0.0",
@@ -290,7 +290,7 @@ final class ManifestTests: XCTestCase {
     // Channel is part of the cartridge's identity; the deserializer
     // accepts the closed enum {release, nightly} only. Anything else
     // is a publish-pipeline bug we want to surface.
-    func test0051_csCapManifestRejectsUnknownChannel() {
+    func test6205_csCapManifestRejectsUnknownChannel() {
         let dict: [String: Any] = [
             "name": "weird-cartridge",
             "version": "1.0.0",
@@ -321,14 +321,14 @@ final class ManifestTests: XCTestCase {
         XCTAssertNil(try registryURLFromBuildEnv(nil))
     }
 
-    // TEST1874: an exported-but-empty env (the empty string) is neither a dev
+    // TEST6743: an exported-but-empty env (the empty string) is neither a dev
     // build nor a valid identity and MUST fail hard, so the build can never
     // silently hash the empty string into a fake registry slug. We assert the
     // failure AND its exact message — the catchable Swift analog of Rust's
     // compile-time panic — so a regression that dropped the check (or replaced
     // it with a silent fallback) is caught rather than passing on a bogus empty
     // primary registry.
-    func test1874_registryUrlFromBuildEnvRejectsEmptyString() {
+    func test6743_registryUrlFromBuildEnvRejectsEmptyString() {
         XCTAssertThrowsError(try registryURLFromBuildEnv("")) { error in
             guard let buildEnvError = error as? ManifestBuildEnvError else {
                 return XCTFail("expected ManifestBuildEnvError, got \(error)")

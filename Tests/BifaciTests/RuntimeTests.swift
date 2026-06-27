@@ -1102,7 +1102,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Response Types (TEST316)
 
     // Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk
-    func test0052_concatenatedVsFinalPayloadDivergence() {
+    func test6207_concatenatedVsFinalPayloadDivergence() {
         let chunks = [
             ResponseChunk(payload: "AAAA".data(using: .utf8)!, seq: 0, offset: nil, len: nil, isEof: false),
             ResponseChunk(payload: "BBBB".data(using: .utf8)!, seq: 1, offset: nil, len: nil, isEof: false),
@@ -1213,8 +1213,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             "Failed cartridge must not be in capabilities")
     }
 
-    // TEST664: Running cartridge uses manifest caps, not known_caps
-    func test664_runningCartridgeUsesManifestCaps() async throws {
+    // TEST6625: Running cartridge uses manifest caps, not known_caps
+    func test6625_runningCartridgeUsesManifestCaps() async throws {
         let hostToCartridge = Pipe()
         let cartridgeToHost = Pipe()
 

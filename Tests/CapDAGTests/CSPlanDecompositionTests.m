@@ -60,7 +60,7 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
 
 // MARK: - Standalone Collect Node Tests
 
-- (void)test0209_StandaloneCollectNode {
+- (void)test6490_StandaloneCollectNode {
     // Standalone Collect: has outputMediaUrn set, single input node
     CSMachineNode *node = [CSMachineNode collectNode:@"collect_0" inputNodes:@[@"cap_0"]];
     node.outputMediaUrn = @"media:list;text";
@@ -72,8 +72,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertFalse([node isFanOut]);
 }
 
-// TEST0265: Cap and for each are not standalone collect
-- (void)test0265_CapAndForEachAreNotStandaloneCollect {
+// TEST6523: Cap and for each are not standalone collect
+- (void)test6523_CapAndForEachAreNotStandaloneCollect {
     CSMachineNode *cap = [CSMachineNode capNode:@"cap_0" capUrn:@"cap:test"];
     XCTAssertFalse([cap isFanIn]);
 
@@ -81,8 +81,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertFalse([forEach isFanIn]);
 }
 
-// MARK: - TEST934: findFirstForeach detects ForEach
-- (void)test934_findFirstForeach {
+// MARK: - TEST6677: findFirstForeach detects ForEach
+- (void)test6677_findFirstForeach {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSString *foreachId = [plan findFirstForeach];
     XCTAssertEqualObjects(foreachId, @"foreach_0");
@@ -97,8 +97,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNil([plan findFirstForeach]);
 }
 
-// TEST936: hasForeach
-- (void)test936_hasForeach {
+// TEST6678: hasForeach
+- (void)test6678_hasForeach {
     CSMachinePlan *foreachPlan = buildForeachPlanWithCollect();
     XCTAssertTrue([foreachPlan hasForeach]);
 
@@ -231,8 +231,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNotNil(error);
 }
 
-// TEST760: Full decomposition covers all cap nodes
-- (void)test760_decompositionCoversAllCaps {
+// TEST6641: Full decomposition covers all cap nodes
+- (void)test6641_decompositionCoversAllCaps {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
 
     // Get all original cap node IDs
@@ -270,8 +270,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
                           @"Decomposition should cover all cap nodes");
 }
 
-// TEST761: Prefix is valid DAG
-- (void)test761_prefixIsDag {
+// TEST6642: Prefix is valid DAG
+- (void)test6642_prefixIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *prefix = [plan extractPrefixTo:@"cap_0" error:&error];
@@ -279,8 +279,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNotNil([prefix topologicalOrder:&error]);
 }
 
-// TEST762: Body is valid DAG
-- (void)test762_bodyIsDag {
+// TEST6643: Body is valid DAG
+- (void)test6643_bodyIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *body = [plan extractForeachBody:@"foreach_0" itemMediaUrn:@"media:pdf-page" error:&error];
@@ -288,8 +288,8 @@ static CSMachinePlan *buildForeachPlanUnclosed(void) {
     XCTAssertNotNil([body topologicalOrder:&error]);
 }
 
-// TEST763: Suffix is valid DAG
-- (void)test763_suffixIsDag {
+// TEST6644: Suffix is valid DAG
+- (void)test6644_suffixIsDag {
     CSMachinePlan *plan = buildForeachPlanWithCollect();
     NSError *error = nil;
     CSMachinePlan *suffix = [plan extractSuffixFrom:@"collect_0" sourceMediaUrn:@"media:decision;fmt=json;record" error:&error];

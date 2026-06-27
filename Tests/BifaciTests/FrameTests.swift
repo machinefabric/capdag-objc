@@ -296,15 +296,15 @@ final class CborFrameTests: XCTestCase {
         XCTAssertFalse(frame.isEof)
     }
 
-    // TEST0057: Test Limits::default provides the documented default values
-    func test0057_limitsDefault() {
+    // TEST6225: Test Limits::default provides the documented default values
+    func test6225_limitsDefault() {
         let limits = Limits()
         XCTAssertEqual(limits.maxFrame, DEFAULT_MAX_FRAME)
         XCTAssertEqual(limits.maxChunk, DEFAULT_MAX_CHUNK)
     }
 
     // TEST198 (continued): Limits negotiation picks minimum of both sides
-    func test0058_b_limitsNegotiation() {
+    func test6229_b_limitsNegotiation() {
         let local = Limits(maxFrame: 1_000_000, maxChunk: 100_000)
         let remote = Limits(maxFrame: 500_000, maxChunk: 200_000)
         let negotiated = local.negotiate(with: remote)
@@ -356,8 +356,8 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - Encode/Decode Roundtrip Tests (TEST205-213)
 
-    // TEST0059: Test REQ frame encode/decode roundtrip preserves all fields
-    func test0059_encodeDecodeRoundtrip() throws {
+    // TEST6233: Test REQ frame encode/decode roundtrip preserves all fields
+    func test6233_encodeDecodeRoundtrip() throws {
         let id = MessageId.newUUID()
         let original = Frame.req(
             id: id,
@@ -891,7 +891,7 @@ final class CborFrameTests: XCTestCase {
     // MARK: - All Frame Types Roundtrip (combined TEST for TEST205-213 coverage)
 
     // Covers all frame types in a single loop for comprehensive roundtrip verification
-    func test0069_b_allFrameTypesRoundtrip() throws {
+    func test6237_b_allFrameTypesRoundtrip() throws {
         let chunkPayload = "chunk".data(using: .utf8)!
         let testCases: [(Frame, String)] = [
             (Frame.hello(limits: Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)), "HELLO"),
@@ -1071,8 +1071,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.mediaUrn, "")
     }
 
-    // TEST0070: StreamStart encode/decode roundtrip preserves stream_id and media_urn
-    func test0070_streamStartRoundtrip() throws {
+    // TEST6241: StreamStart encode/decode roundtrip preserves stream_id and media_urn
+    func test6241_streamStartRoundtrip() throws {
         let id = MessageId.newUUID()
         let streamId = "stream-abc-123"
         let mediaUrn = "media:"
@@ -1088,7 +1088,7 @@ final class CborFrameTests: XCTestCase {
     }
 
     // TEST389b: STREAM_START with isSequence roundtrips correctly
-    func test0073_b_streamStartIsSequenceRoundtrip() throws {
+    func test6243_b_streamStartIsSequenceRoundtrip() throws {
         let id = MessageId.newUUID()
 
         // isSequence=false
@@ -1787,8 +1787,8 @@ final class CborFrameTests: XCTestCase {
     // instead of crashing.
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST1500: Writing to a closed FrameWriter must throw FrameError.ioError("writer closed"), never raise an Objective-C NSException that aborts the process.
-    func test1500_writeAfterCloseThrowsCleanly() throws {
+    // TEST6720: Writing to a closed FrameWriter must throw FrameError.ioError("writer closed"), never raise an Objective-C NSException that aborts the process.
+    func test6720_writeAfterCloseThrowsCleanly() throws {
         let pipe = Pipe()
         let writer = FrameWriter(handle: pipe.fileHandleForWriting)
         writer.close()
@@ -1812,8 +1812,8 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST1501: Calling close() twice on a FrameWriter is a no-op — the second call must not throw, must not double-close the underlying fd, and must leave the writer in the closed state.
-    func test1501_doubleCloseIsIdempotent() throws {
+    // TEST6721: Calling close() twice on a FrameWriter is a no-op — the second call must not throw, must not double-close the underlying fd, and must leave the writer in the closed state.
+    func test6721_doubleCloseIsIdempotent() throws {
         let pipe = Pipe()
         let writer = FrameWriter(handle: pipe.fileHandleForWriting)
         writer.close()
@@ -1835,8 +1835,8 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST1502: flush() on a closed FrameWriter — even with an empty buffer — must throw FrameError.ioError, not silently succeed. A flush call after close() is a programmer error and must surface, not be papered over.
-    func test1502_flushAfterCloseThrowsCleanly() throws {
+    // TEST6722: flush() on a closed FrameWriter — even with an empty buffer — must throw FrameError.ioError, not silently succeed. A flush call after close() is a programmer error and must surface, not be papered over.
+    func test6722_flushAfterCloseThrowsCleanly() throws {
         let pipe = Pipe()
         let writer = FrameWriter(handle: pipe.fileHandleForWriting)
         writer.close()
@@ -1849,8 +1849,8 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST1503: Concurrent close() + write() must not raise an Objective-C NSException. This is the regression test for the CartridgeXPCService crash on cartridge OOM: the old writer accessed `handle.fileDescriptor` on every write, so a close() racing a write() called the accessor on a closed handle and aborted the process. The cached-fd writer keeps the descriptor in the writer's own state, so the worst outcome of the race is a clean FrameError thrown from write().
-    func test1503_concurrentCloseAndWriteDoesNotCrash() throws {
+    // TEST6723: Concurrent close() + write() must not raise an Objective-C NSException. This is the regression test for the CartridgeXPCService crash on cartridge OOM: the old writer accessed `handle.fileDescriptor` on every write, so a close() racing a write() called the accessor on a closed handle and aborted the process. The cached-fd writer keeps the descriptor in the writer's own state, so the worst outcome of the race is a clean FrameError thrown from write().
+    func test6723_concurrentCloseAndWriteDoesNotCrash() throws {
         // Run the race many times to exercise both orderings — close-wins
         // and write-wins. Either outcome is acceptable; what is NOT
         // acceptable is a process abort.
@@ -1916,8 +1916,8 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST1504: After FrameWriter.close(), the underlying FileHandle is closed. A subsequent read on the paired read end must observe EOF — proving that close() actually closes the pipe (not just marks the writer dead in software). This guards against the regression where close() flips the writer flag but leaves the pipe open, which would let buffered data still drain into a peer that's been told the writer is gone.
-    func test1504_closeShutsTheUnderlyingPipe() throws {
+    // TEST6724: After FrameWriter.close(), the underlying FileHandle is closed. A subsequent read on the paired read end must observe EOF — proving that close() actually closes the pipe (not just marks the writer dead in software). This guards against the regression where close() flips the writer flag but leaves the pipe open, which would let buffered data still drain into a peer that's been told the writer is gone.
+    func test6724_closeShutsTheUnderlyingPipe() throws {
         let pipe = Pipe()
         let writer = FrameWriter(handle: pipe.fileHandleForWriting)
         writer.close()
@@ -1928,8 +1928,8 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST1505: A FrameWriter going through deinit must NOT touch the underlying handle's `fileDescriptor` accessor. The original bug used to deinit-flush by reading `handle.fileDescriptor`, which raises NSFileHandleOperationException on a closed handle and aborts the process. The new contract: deinit does no I/O. This test deinits a writer whose handle was closed externally, then asserts the test process is still alive (i.e. did not crash via NSException).
-    func test1505_deinitDoesNotAccessClosedHandle() throws {
+    // TEST6725: A FrameWriter going through deinit must NOT touch the underlying handle's `fileDescriptor` accessor. The original bug used to deinit-flush by reading `handle.fileDescriptor`, which raises NSFileHandleOperationException on a closed handle and aborts the process. The new contract: deinit does no I/O. This test deinits a writer whose handle was closed externally, then asserts the test process is still alive (i.e. did not crash via NSException).
+    func test6725_deinitDoesNotAccessClosedHandle() throws {
         // Close the underlying handle out from under the writer
         // before letting it deinit. With the old code,
         // `FrameWriter.deinit` would call `handle.fileDescriptor`

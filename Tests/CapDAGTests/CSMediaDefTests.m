@@ -21,8 +21,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 @implementation CSMediaDefTests
 
-// TEST0145: Metadata propagation from object def
-- (void)test0145_MetadataPropagationFromObjectDef {
+// TEST6403: Metadata propagation from object def
+- (void)test6403_MetadataPropagationFromObjectDef {
     // Create a media definition with metadata
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -52,8 +52,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.metadata[@"display_index"], @5, @"Should have display_index");
 }
 
-// TEST0146: Metadata nil by default
-- (void)test0146_MetadataNilByDefault {
+// TEST6405: Metadata nil by default
+- (void)test6405_MetadataNilByDefault {
     // Media defs without metadata field should have nil metadata
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -71,8 +71,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(resolved.metadata, @"Should have nil metadata when not provided");
 }
 
-// TEST0147: Metadata with validation
-- (void)test0147_MetadataWithValidation {
+// TEST6407: Metadata with validation
+- (void)test6407_MetadataWithValidation {
     // Ensure metadata and validation can coexist
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -108,8 +108,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.metadata[@"ui_type"], @"SETTING_UI_TYPE_SLIDER", @"Should have ui_type");
 }
 
-// TEST0156: Resolve media urn not found
-- (void)test0156_ResolveMediaUrnNotFound {
+// TEST6424: Resolve media urn not found
+- (void)test6424_ResolveMediaUrnNotFound {
     // Should fail hard for unknown media URNs
     NSError *error = nil;
     CSMediaDef *resolved = CSResolveMediaUrn(@"media:unknown;type", registryWithSpecs(@[]), &error);
@@ -121,7 +121,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // Extensions field tests
 
-- (void)test0157_ExtensionsPropagationFromObjectDef {
+- (void)test6425_ExtensionsPropagationFromObjectDef {
     // Create a media definition with extensions array
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -144,8 +144,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.extensions[0], @"pdf", @"Should have pdf extension");
 }
 
-// TEST0158: Extensions empty when not set
-- (void)test0158_ExtensionsEmptyWhenNotSet {
+// TEST6426: Extensions empty when not set
+- (void)test6426_ExtensionsEmptyWhenNotSet {
     // Media defs without extensions field should have empty array
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -164,8 +164,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqual(resolved.extensions.count, 0, @"Should have empty extensions array when not provided");
 }
 
-// TEST0159: Extensions with metadata and validation
-- (void)test0159_ExtensionsWithMetadataAndValidation {
+// TEST6427: Extensions with metadata and validation
+- (void)test6427_ExtensionsWithMetadataAndValidation {
     // Ensure extensions, metadata, and validation can coexist
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -197,8 +197,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.extensions[0], @"json", @"Should have json extension");
 }
 
-// TEST0160: Multiple extensions
-- (void)test0160_MultipleExtensions {
+// TEST6430: Multiple extensions
+- (void)test6430_MultipleExtensions {
     // Test multiple extensions in a media def
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
@@ -328,8 +328,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - Resolve with local overrides
 
-// TEST091: Test resolving custom media URN from local media_defs takes precedence over registry
-- (void)test091_resolve_custom_media_def {
+// TEST6282: Test resolving custom media URN from local media_defs takes precedence over registry
+- (void)test6282_resolve_custom_media_def {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:custom-spec;fmt=json",
         @"media_type": @"application/json",
@@ -346,8 +346,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(resolved.schema);
 }
 
-// TEST092: Test resolving custom record media def with schema from local media_defs
-- (void)test092_resolve_custom_with_schema {
+// TEST6283: Test resolving custom record media def with schema from local media_defs
+- (void)test6283_resolve_custom_with_schema {
     NSDictionary *schema = @{
         @"type": @"object",
         @"properties": @{
@@ -371,8 +371,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(resolved.schema[@"type"], @"object");
 }
 
-// TEST094: Test local media_defs definition overrides registry definition for same URN
-- (void)test094_local_overrides_registry {
+// TEST6287: Test local media_defs definition overrides registry definition for same URN
+- (void)test6287_local_overrides_registry {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:enc=utf-8",
         @"media_type": @"application/json",

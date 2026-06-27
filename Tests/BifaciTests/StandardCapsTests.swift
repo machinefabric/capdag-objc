@@ -37,8 +37,8 @@ final class StandardCapsTests: XCTestCase {
 
     // MARK: - Manifest Validation Tests (TEST475-477)
 
-    // TEST475: CapManifest::validate() passes when CAP_IDENTITY is present
-    func test475_manifestValidatePassesWithIdentity() throws {
+    // TEST6598: CapManifest::validate() passes when CAP_IDENTITY is present
+    func test6598_manifestValidatePassesWithIdentity() throws {
         let identityUrn = try CSCapUrn.fromString(CSCapIdentity)
         let identityCap = CSCap(urn: identityUrn, title: "Identity", command: "identity")
         let group = CSCapGroup(name: "default", caps: [identityCap], adapterUrns: [])
@@ -52,8 +52,8 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertNoThrow(try manifest.validate(), "Manifest with CAP_IDENTITY must validate successfully")
     }
 
-    // TEST476: CapManifest::validate() fails when CAP_IDENTITY is missing
-    func test476_manifestValidateFailsWithoutIdentity() throws {
+    // TEST6599: CapManifest::validate() fails when CAP_IDENTITY is missing
+    func test6599_manifestValidateFailsWithoutIdentity() throws {
         let otherUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
         let otherCap = CSCap(urn: otherUrn, title: "Test", command: "test")
         let group = CSCapGroup(name: "default", caps: [otherCap], adapterUrns: [])
@@ -68,7 +68,7 @@ final class StandardCapsTests: XCTestCase {
     }
 
     // Mirror-specific coverage: Manifest.ensureIdentity() adds if missing, idempotent if present
-    func test0077_manifestEnsureIdentityIdempotent() throws {
+    func test6244_manifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
         let testUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
         let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")

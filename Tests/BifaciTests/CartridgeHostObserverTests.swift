@@ -50,8 +50,8 @@ private final class RecordingObserver: CartridgeHostObserver, @unchecked Sendabl
 
 final class CartridgeHostObserverTests: XCTestCase {
 
-    // TEST0055: Host constructs and closes without an observer
-    func test0055_HostConstructsAndClosesWithoutAnObserver() {
+    // TEST6217: Host constructs and closes without an observer
+    func test6217_HostConstructsAndClosesWithoutAnObserver() {
         let host = CartridgeHost()
         // Empty host with no cartridges → no spawn moments, no death
         // moments. close() must not crash even though the observer
@@ -60,8 +60,8 @@ final class CartridgeHostObserverTests: XCTestCase {
         host.close()
     }
 
-    // TEST0056: Set observer nil clears the previously registered observer
-    func test0056_SetObserverNilClearsThePreviouslyRegisteredObserver() {
+    // TEST6221: Set observer nil clears the previously registered observer
+    func test6221_SetObserverNilClearsThePreviouslyRegisteredObserver() {
         let host = CartridgeHost()
         let observer = RecordingObserver()
 

@@ -41,15 +41,15 @@ static NSString *buildRegistryURL(NSString *urn) {
 
 @implementation CSFabricRegistryTests
 
-// TEST0161: Registry creation
-- (void)test0161_RegistryCreation {
+// TEST6325: Registry creation
+- (void)test6325_RegistryCreation {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     XCTAssertNotNil(registry);
 }
 
 // Registry validator tests removed - not part of current API
 
-- (void)test0162_RegistryValidCapCheck {
+- (void)test6435_RegistryValidCapCheck {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
     
     // Test that registry checks if cap exists in cache
@@ -65,7 +65,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 
 /// Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters
 /// in the path, so no percent-encoding gymnastics.
-- (void)test0166_PerCapURLUsesSHA256 {
+- (void)test6388_PerCapURLUsesSHA256 {
     NSString *registryURL = buildRegistryURL(@"cap:in=media:string;test;out=\"media:enc=utf-8;record\"");
 
     XCTAssertTrue([registryURL containsString:@"/caps/"], @"URL must use the /caps/ path prefix");
@@ -76,7 +76,7 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertFalse([registryURL containsString:@"%3B"], @"URL must not contain percent-encoded URN characters");
 }
 
-/// TEST140: Equivalent URNs (different tag order, etc.) hash to the
+/// TEST6393: Equivalent URNs (different tag order, etc.) hash to the
 /// same key. This is the property that makes cross-language lookups
 /// land at the same registry object regardless of which capdag
 /// implementation issued the request. Inputs MUST quote any
@@ -84,7 +84,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 /// `out=media:task;id` was actually a different URN (the bare
 /// `media:task` plus a separate `id` op tag), and treating those
 /// two URNs as equivalent here masked a real spec violation.
-- (void)test140_sameCapDifferentSpellingsSameURL {
+- (void)test6393_sameCapDifferentSpellingsSameURL {
     NSString *urlA = buildRegistryURL(@"cap:in=\"media:listing-id\";use-grinder;out=\"media:task;id\"");
     NSString *urlB = buildRegistryURL(@"cap:out=\"media:task;id\";in=\"media:listing-id\";use-grinder");
     XCTAssertEqualObjects(urlA, urlB, @"Equivalent URNs must hash to the same registry key");
@@ -114,8 +114,8 @@ static NSString *buildRegistryURL(NSString *urn) {
 // Note: These tests would make actual HTTP requests to capdag.com
 // Uncomment to test with real registry
 /*
-// TEST0167: Get cap definition real
-- (void)test0167_GetCapDefinitionReal {
+// TEST6441: Get cap definition real
+- (void)test6441_GetCapDefinitionReal {
     CSFabricRegistry *registry = [CSFabricRegistry registry];
     
     XCTestExpectation *expectation = [self expectationWithDescription:@"Get cap definition"];
@@ -135,8 +135,8 @@ static NSString *buildRegistryURL(NSString *urn) {
     [self waitForExpectationsWithTimeout:15.0 handler:nil];
 }
 
-// TEST0168: Validate cap canonical
-- (void)test0168_ValidateCapCanonical {
+// TEST6443: Validate cap canonical
+- (void)test6443_ValidateCapCanonical {
     CSRegistryValidator *validator = [CSRegistryValidator validator];
     
     NSError *error;

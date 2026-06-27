@@ -149,8 +149,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
 // MARK: - Numbered Tests
 
-// TEST772: Multi-step path through intermediate node
-- (void)test772_findPathsMultiStep {
+// TEST6650: Multi-step path through intermediate node
+- (void)test6650_findPathsMultiStep {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
@@ -171,8 +171,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqualObjects(path.steps[1].capUrn, [cap2.capUrn toString]);
 }
 
-// TEST773: Empty when target unreachable
-- (void)test773_findPathsEmptyWhenNoPath {
+// TEST6651: Empty when target unreachable
+- (void)test6651_findPathsEmptyWhenNoPath {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
@@ -187,8 +187,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(paths.count, 0u, @"Should find no paths when target unreachable");
 }
 
-// TEST774: BFS finds multiple direct targets
-- (void)test774_getReachableTargetsAll {
+// TEST6652: BFS finds multiple direct targets
+- (void)test6652_getReachableTargetsAll {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap1 = makeTestCap(@"media:a", @"media:b", @"step1", @"A to B");
@@ -210,8 +210,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertTrue([targetMediaUrns containsObject:@"media:d"], @"D should be reachable");
 }
 
-// TEST777: PDF cap does not match PNG input
-- (void)test777_typeMismatchPdfPng {
+// TEST6653: PDF cap does not match PNG input
+- (void)test6653_typeMismatchPdfPng {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:ext=pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
@@ -225,8 +225,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(paths.count, 0u, @"Should NOT find path from PNG via PDF cap");
 }
 
-// TEST778: PNG cap does not match PDF input
-- (void)test778_typeMismatchPngPdf {
+// TEST6654: PNG cap does not match PDF input
+- (void)test6654_typeMismatchPngPdf {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *cap = makeTestCap(@"media:ext=png;image", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
@@ -240,8 +240,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(paths.count, 0u, @"Should NOT find path from PDF via PNG cap");
 }
 
-// TEST779: BFS respects type matching
-- (void)test779_reachableTargetsTypeMatching {
+// TEST6655: BFS respects type matching
+- (void)test6655_reachableTargetsTypeMatching {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *pdfCap = makeTestCap(@"media:ext=pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
@@ -263,8 +263,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqualObjects(((CSReachableTargetInfo *)pdfTargets[0]).mediaUrn, @"media:enc=utf-8");
 }
 
-// TEST781: Multi-step type chain enforcement
-- (void)test781_findPathsTypeChain {
+// TEST6656: Multi-step type chain enforcement
+- (void)test6656_findPathsTypeChain {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *resize = makeTestCap(@"media:ext=png;image", @"media:resized-png", @"resize", @"Resize PNG");
@@ -286,8 +286,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(pdfPaths.count, 0u, @"PDF should find no path to thumbnail");
 }
 
-// TEST787: Sorting prefers shorter paths
-- (void)test787_sortingShorterFirst {
+// TEST6657: Sorting prefers shorter paths
+- (void)test6657_sortingShorterFirst {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     CSCap *direct = makeTestCap(@"media:format-a", @"media:format-c", @"direct", @"Direct");
@@ -308,8 +308,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqualObjects(paths[0].steps[0].capUrn, [direct.capUrn toString]);
 }
 
-// TEST788: ForEach synthesized when input is a sequence
-- (void)test788_forEachWithSequenceInput {
+// TEST6658: ForEach synthesized when input is a sequence
+- (void)test6658_forEachWithSequenceInput {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     // Two caps: pdf→page and text(enc=utf-8)→decision

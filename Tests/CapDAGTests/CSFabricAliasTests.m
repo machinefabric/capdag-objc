@@ -68,7 +68,7 @@ static CSCap *buildExtractCap(void) {
     XCTAssertFalse(CSClassifyAliasTarget(@"not-a-urn", NULL));
 }
 
-// TEST1887: the manifest round-trips an `aliases` map.
+// TEST1887: the Manifest type round-trips an `aliases` map.
 - (void)test1887_ManifestRoundTripsAliases {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     [reg insertCachedAliasForTest:@{@"name": @"pdf2text", @"target": @"cap:effect=none", @"version": @3}];
@@ -79,8 +79,7 @@ static CSCap *buildExtractCap(void) {
     XCTAssertEqualObjects(aliases[@"jsondoc"], @1);
 }
 
-// TEST1888: resolveAlias returns the alias target untyped; case-insensitive;
-// malformed name rejected.
+// TEST1888: resolve alias returns the alias target untyped; case-insensitive; malformed name rejected.
 - (void)test1888_ResolveAliasReturnsTarget {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
@@ -105,7 +104,7 @@ static CSCap *buildExtractCap(void) {
     [self waitForExpectationsWithTimeout:5.0 handler:nil];
 }
 
-// TEST1889: resolveAliasTyped enforces the expected kind.
+// TEST1889: resolve alias typed enforces the expected kind.
 - (void)test1889_ResolveAliasTypedEnforcesKind {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];

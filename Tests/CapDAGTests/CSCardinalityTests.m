@@ -168,15 +168,15 @@
 // for these enums; the parity check is value distinctness, which exposes any enum-shape
 // regression equivalent to a JSON tag drift.
 
-// TEST714: Tests InputCardinality enum values are distinct (parity for Rust serde round-trip)
-- (void)test714_cardinality_serialization {
+// TEST6631: Tests InputCardinality enum values are distinct (parity for Rust serde round-trip)
+- (void)test6631_cardinality_serialization {
     XCTAssertNotEqual(CSInputCardinalitySingle, CSInputCardinalitySequence);
     XCTAssertNotEqual(CSInputCardinalitySingle, CSInputCardinalityAtLeastOne);
     XCTAssertNotEqual(CSInputCardinalitySequence, CSInputCardinalityAtLeastOne);
 }
 
-// TEST715: Tests CardinalityPattern enum values are distinct (parity for Rust serde round-trip)
-- (void)test715_pattern_serialization {
+// TEST6633: Tests CardinalityPattern enum values are distinct (parity for Rust serde round-trip)
+- (void)test6633_pattern_serialization {
     XCTAssertNotEqual(CSCardinalityPatternOneToOne, CSCardinalityPatternOneToMany);
     XCTAssertNotEqual(CSCardinalityPatternOneToOne, CSCardinalityPatternManyToOne);
     XCTAssertNotEqual(CSCardinalityPatternOneToOne, CSCardinalityPatternManyToMany);

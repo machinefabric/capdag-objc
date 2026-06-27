@@ -800,15 +800,15 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(fileContents, Data("PDF via flag 338".utf8), "Should read file from --file flag")
     }
 
-    // TEST339: A sequence-declared file-path arg (isSequence=true) expands a
+    // TEST6585: A sequence-declared file-path arg (isSequence=true) expands a
     // glob into N files and the runtime delivers them as a CBOR Array of
     // bytes — one item per matched file. List-ness comes from the arg
     // declaration, NOT from any `;list` URN tag.
     // TEST339: A sequence-declared file-path arg expands a glob to N files
     // and the runtime delivers them as a CBOR Array of bytes — one item per
     // matched file. List-ness comes from the arg declaration, not from any
-    // `;list` URN tag. Mirrors Rust test339_file_path_array_glob_expansion.
-    func test339_file_path_array_glob_expansion() throws {
+    // `;list` URN tag. Mirrors Rust test6585_file_path_array_glob_expansion.
+    func test6585_file_path_array_glob_expansion() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test339")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -1391,9 +1391,9 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    // TEST356: Multiple glob patterns combined as CBOR Array (CBOR mode).
-    // Mirrors Rust test356_multiple_glob_patterns_combined.
-    func test356_multiple_glob_patterns_combined() throws {
+    // TEST6591: Multiple glob patterns combined as CBOR Array (CBOR mode).
+    // Mirrors Rust test6591_multiple_glob_patterns_combined.
+    func test6591_multiple_glob_patterns_combined() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("test356")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -1519,9 +1519,9 @@ final class CborFilePathConversionTests: XCTestCase {
         try? FileManager.default.removeItem(at: testFile)
     }
 
-    // TEST359: Invalid glob pattern fails with a clear error.
-    // Mirrors Rust test359_invalid_glob_pattern_fails.
-    func test359_invalid_glob_pattern_fails() {
+    // TEST6592: Invalid glob pattern fails with a clear error.
+    // Mirrors Rust test6592_invalid_glob_pattern_fails.
+    func test6592_invalid_glob_pattern_fails() {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
@@ -1922,10 +1922,10 @@ final class CborFilePathConversionTests: XCTestCase {
         XCTAssertEqual(resultHolder.data, pdfContent, "Handler should receive chunked content")
     }
 
-    // TEST364: CBOR mode with file path - file-path arg in CBOR mode is
+    // TEST6593: CBOR mode with file path - file-path arg in CBOR mode is
     // auto-converted to file bytes via extract_effective_payload.
-    // Mirrors Rust test364_cbor_mode_file_path.
-    func test364_cbor_mode_file_path() throws {
+    // Mirrors Rust test6593_cbor_mode_file_path.
+    func test6593_cbor_mode_file_path() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test364.pdf")
         let pdfContent = Data("PDF content for CBOR file path test".utf8)
