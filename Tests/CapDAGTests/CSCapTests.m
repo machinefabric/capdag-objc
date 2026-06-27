@@ -297,7 +297,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"metadata": @{@"engine": @"jq", @"performance": @"high"},
         @"media_defs": @[
             @{
-                @"urn": @"my:output.v1",
+                @"urn": @"media:output",
                 @"media_type": @"application/json",
                 @"profile_uri": @"https://capdag.com/schema/transform-output"
             }
@@ -330,7 +330,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
             }
         ],
         @"output": @{
-            @"media_urn": @"my:output.v1",
+            @"media_urn": @"media:output",
             @"output_description": @"Transformed data"
         }
     };
@@ -364,7 +364,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Verify output
     XCTAssertNotNil(cap.output);
-    XCTAssertEqualObjects(cap.output.mediaUrn, @"my:output.v1");
+    XCTAssertEqualObjects(cap.output.mediaUrn, @"media:output");
 }
 
 // TEST6317: Media urn resolution with registry
@@ -377,7 +377,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
 
     [registry addMediaDef:@{
-        @"urn": @"my:custom-output.v1",
+        @"urn": @"media:custom-output",
         @"media_type": @"application/json",
         @"profile_uri": @"https://example.com/schema/custom-output",
         @"schema": @{
@@ -389,7 +389,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         }
     }];
     [registry addMediaDef:@{
-        @"urn": @"my:text-input.v1",
+        @"urn": @"media:text-input",
         @"media_type": @"text/plain",
         @"profile_uri": @"https://example.com/schema/text-input"
     }];
@@ -400,13 +400,13 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     }];
 
     // Custom spec
-    CSMediaDef *resolved = CSResolveMediaUrn(@"my:custom-output.v1", registry, &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:custom-output", registry, &error);
     XCTAssertNotNil(resolved, @"Should resolve custom URN through registry: %@", error);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertNotNil(resolved.schema);
 
     // Text spec
-    CSMediaDef *resolvedText = CSResolveMediaUrn(@"my:text-input.v1", registry, &error);
+    CSMediaDef *resolvedText = CSResolveMediaUrn(@"media:text-input", registry, &error);
     XCTAssertNotNil(resolvedText, @"Should resolve text URN through registry: %@", error);
     XCTAssertEqualObjects(resolvedText.contentType, @"text/plain");
 
@@ -907,11 +907,11 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(output.outputDescription, @"JSON output");
 
     // Test with custom spec ID
-    CSCapOutput *customOutput = [CSCapOutput outputWithMediaUrn:@"my:custom-output.v1"
+    CSCapOutput *customOutput = [CSCapOutput outputWithMediaUrn:@"media:custom-output"
                                               outputDescription:@"Custom output"];
 
     XCTAssertNotNil(customOutput);
-    XCTAssertEqualObjects(customOutput.mediaUrn, @"my:custom-output.v1");
+    XCTAssertEqualObjects(customOutput.mediaUrn, @"media:custom-output");
 }
 
 // Mirrors TEST920 in capdag/src/cap/definition.rs and the JS
