@@ -1,8 +1,8 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 816
+**Total Tests:** 817
 
-**Numbered Tests:** 816
+**Numbered Tests:** 817
 
 **Unnumbered Tests:** 0
 
@@ -99,8 +99,8 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test132 | `test132_addMasterDynamic` | TEST132: add_master dynamically connects new host to running switch | Tests/BifaciTests/RelaySwitchTests.swift:843 |
 | test133 | `test133_ReattachByIdPreservesSlotIndex` | Reattach-by-id tests for the cardinality-stable slot model. When a master dies and the host reconnects, the new socket MUST attach to the same slot index — preserving routing entries keyed by index. Accumulating zombie slots on each reconnect was the bug class these tests guard against. | Tests/BifaciTests/RelaySwitchTests.swift:901 |
 | test134 | `test134_AddMasterWithDuplicateHealthyIdErrors` | TEST134: Add master with duplicate healthy id errors | Tests/BifaciTests/RelaySwitchTests.swift:953 |
-| test141 | `test141_perCapURLShape` | / TEST141: URL has the right shape — protocol, host, /caps/ prefix, / 64 hex chars, no extension. | Tests/CapDAGTests/CSFabricRegistryTests.m:95 |
-| test142 | `test142_normalizeHandlesDifferentTagOrders` | / TEST142: Different tag orders normalise to the same URL — the / canonicaliser strips the variation before hashing. | Tests/CapDAGTests/CSFabricRegistryTests.m:108 |
+| test141 | `test141_perCapURLShape` | / TEST141: URL has the right shape — protocol, host, /caps/ prefix, / 64 hex chars, no extension. | Tests/CapDAGTests/CSFabricRegistryTests.m:104 |
+| test142 | `test142_normalizeHandlesDifferentTagOrders` | / TEST142: Different tag orders normalise to the same URL — the / canonicaliser strips the variation before hashing. | Tests/CapDAGTests/CSFabricRegistryTests.m:117 |
 | test148 | `test148_capManifestCreation` | TEST148: Cap manifest construction stores name, version, channel, description, and the cap_groups verbatim. | Tests/BifaciTests/ManifestTests.swift:28 |
 | test149 | `test149_CapManifestWithAuthor` | TEST149: Cap manifest with author | Tests/CapDAGTests/CSCapTests.m:461 |
 | test151 | `test151_capManifestRequiredFields` | TEST151: Manifest deserialization fails when any required field is missing — including channel, which is part of the cartridge's identity. There is no fallback default; missing means broken. | Tests/BifaciTests/ManifestTests.swift:138 |
@@ -413,7 +413,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test559 | `test559_withoutTag` | TEST559: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:432 |
 | test566 | `test566_withTagRejectsStructuralKeys` | TEST566: with_tag rejects structural keys | Tests/CapDAGTests/CSCapUrnTests.m:399 |
 | test597 | `test597_capArgWithFullDefinition` | TEST597: CapArg::with_full_definition stores all fields including optional ones | Tests/CapDAGTests/CSCapTests.m:873 |
-| test614 | `test614_RegistryCreation` | TEST614: Registry creation | Tests/CapDAGTests/CSFabricRegistryTests.m:45 |
+| test614 | `test614_RegistryCreation` | TEST614: Registry creation | Tests/CapDAGTests/CSFabricRegistryTests.m:54 |
 | test638 | `test638_noPeerRouterRejectsAll` | TEST638: Verify NoPeerRouter rejects all requests with PeerInvokeNotSupported | Tests/BifaciTests/RouterTests.swift:14 |
 | test639 | `test639_Wildcard001EmptyCapIsIllegal` | TEST_WILDCARD_001: cap: (empty) is illegal | Tests/CapDAGTests/CSCapUrnTests.m:1025 |
 | test640 | `test640_Wildcard002InOnlyIsIllegal` | TEST_WILDCARD_002: cap:in collapses to the same illegal bare top form | Tests/CapDAGTests/CSCapUrnTests.m:1033 |
@@ -704,7 +704,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1890 | `test1890_GetCapViaAliasAndTypeMismatch` | TEST1890: get_cap accepts a cap alias and returns the aliased cap; a media alias passed to get_cap fails hard (typed boundary). This proves alias substitution AND type enforcement at the registry's cap surface. | Tests/CapDAGTests/CSFabricAliasTests.m:129 |
 | test1891 | `test1891_GetMediaDefViaAliasAndTypeMismatch` | TEST1891: get_media_def accepts a media alias and returns the aliased spec; a cap alias passed to get_media_def fails hard. | Tests/CapDAGTests/CSFabricAliasTests.m:153 |
 | test1892 | `test1892_UnknownAliasIsNotFound` | TEST1892: an unknown alias name is a hard not-found, never a silent empty; unknown and malformed names are treated the same. This is the "expose issues, no fallback" contract. | Tests/CapDAGTests/CSFabricAliasTests.m:177 |
-| test1893 | `test1893_cacheRootIsNamespacedPerRegistryOrigin` | TEST1893: cache root namespaced per registry origin — prod and staging serve different bytes for the same URN/version, so they must never share a cache root; the same origin must map to a stable (deterministic) root or caching never hits; and the final path component is exactly slugFor(url) under the shared "capdag" cache directory — one slug scheme across the codebase. The old origin-blind code rooted every origin at the same "capdag" directory, which makes the prod≠staging assertion below fail. | Tests/CapDAGTests/CSFabricRegistryTests.m:121 |
+| test1893 | `test1893_cacheRootIsNamespacedPerRegistryOrigin` | TEST1893: cache root namespaced per registry origin — prod and staging serve different bytes for the same URN/version, so they must never share a cache root; the same origin must map to a stable (deterministic) root or caching never hits; and the final path component is exactly slugFor(url) under the shared "capdag" cache directory — one slug scheme across the codebase. The old origin-blind code rooted every origin at the same "capdag" directory, which makes the prod≠staging assertion below fail. | Tests/CapDAGTests/CSFabricRegistryTests.m:130 |
 | test6200 | `test6200_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:277 |
 | test6205 | `test6205_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:293 |
 | test6207 | `test6207_concatenatedVsFinalPayloadDivergence` | Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk | Tests/BifaciTests/RuntimeTests.swift:1105 |
@@ -759,9 +759,10 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test6381 | `test6381_BuiltinSpecIdsResolve` | TEST6381: Builtin spec ids resolve | Tests/CapDAGTests/CSSchemaValidationTests.m:555 |
 | test6384 | `test6384_MediaDefsWithoutSchemaSkipsValidation` | TEST6384: Media defs without schema skips validation | Tests/CapDAGTests/CSSchemaValidationTests.m:610 |
 | test6387 | `test6387_SchemaValidationPerformance` | TEST6387: Schema validation performance | Tests/CapDAGTests/CSSchemaValidationTests.m:637 |
-| test6388 | `test6388_PerCapURLUsesSHA256` | / Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters / in the path, so no percent-encoding gymnastics. | Tests/CapDAGTests/CSFabricRegistryTests.m:68 |
+| test6388 | `test6388_PerCapURLUsesSHA256` | / Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters / in the path, so no percent-encoding gymnastics. | Tests/CapDAGTests/CSFabricRegistryTests.m:77 |
 | test6390 | `test6390_FullCapValidationWithMediaDefs` | TEST6390: Full cap validation with media defs | Tests/CapDAGTests/CSSchemaValidationTests.m:696 |
-| test6391 | `test6391_sameCapDifferentSpellingsSameURL` | / TEST6391: Equivalent URNs (different tag order, etc.) hash to the / same key. This is the property that makes cross-language lookups / land at the same registry object regardless of which capdag / implementation issued the request. Inputs MUST quote any / multi-tag media URN value — the previous unquoted spelling / `out=media:task;id` was actually a different URN (the bare / `media:task` plus a separate `id` op tag), and treating those / two URNs as equivalent here masked a real spec violation. | Tests/CapDAGTests/CSFabricRegistryTests.m:87 |
+| test6391 | `test6391_sameCapDifferentSpellingsSameURL` | / TEST6391: Equivalent URNs (different tag order, etc.) hash to the / same key. This is the property that makes cross-language lookups / land at the same registry object regardless of which capdag / implementation issued the request. Inputs MUST quote any / multi-tag media URN value — the previous unquoted spelling / `out=media:task;id` was actually a different URN (the bare / `media:task` plus a separate `id` op tag), and treating those / two URNs as equivalent here masked a real spec violation. | Tests/CapDAGTests/CSFabricRegistryTests.m:96 |
+| test6396 | `test6396_malformedCapUrnFailsHard` | TEST6396: A malformed cap URN must FAIL HARD — surfaced as an NSError, not passed through raw (the old fallback) to surface later as a misleading not-found. The `out` value below contains an unquoted `=`, which the cap grammar rejects. Against the old `parsed ? [parsed toString] : urn` fallback, normalizeCapUrn: returned the raw string and the cache lookup reported a (misleading) miss; this test asserts the truthful error and that the process never crashes. Mirrors Rust test6396_malformed_cap_urn_fails_hard. | Tests/CapDAGTests/CSFabricRegistryTests.m:161 |
 | test6399 | `test6399_glob_pattern_detection` | Mirror-specific: glob pattern detection is an objc-only helper used by the resolver internals. Rust uses globwalk; these checks exercise the BSD glob detection logic. | Tests/CapDAGTests/CSInputResolverTests.m:506 |
 | test6401 | `test6401_resolved_input_set_total_size` | Mirror-specific: CSResolvedInputSet aggregates totalSize across files | Tests/CapDAGTests/CSInputResolverTests.m:515 |
 | test6403 | `test6403_MetadataPropagationFromObjectDef` | TEST6403: Metadata propagation from object def | Tests/CapDAGTests/CSMediaDefTests.m:25 |
@@ -772,9 +773,9 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test6424 | `test6424_ResolveMediaUrnNotFound` | TEST6424: Resolve media urn not found | Tests/CapDAGTests/CSMediaDefTests.m:112 |
 | test6425 | `test6425_ExtensionsPropagationFromObjectDef` | Extensions field tests | Tests/CapDAGTests/CSMediaDefTests.m:124 |
 | test6426 | `test6426_ExtensionsEmptyWhenNotSet` | TEST6426: Extensions empty when not set | Tests/CapDAGTests/CSMediaDefTests.m:148 |
-| test6435 | `test6435_RegistryValidCapCheck` | Registry validator tests removed - not part of current API | Tests/CapDAGTests/CSFabricRegistryTests.m:52 |
-| test6441 | `test6441_GetCapDefinitionReal` | TEST6441: Get cap definition real | Tests/CapDAGTests/CSFabricRegistryTests.m:149 |
-| test6443 | `test6443_ValidateCapCanonical` | TEST6443: Validate cap canonical | Tests/CapDAGTests/CSFabricRegistryTests.m:170 |
+| test6435 | `test6435_RegistryValidCapCheck` | Registry validator tests removed - not part of current API | Tests/CapDAGTests/CSFabricRegistryTests.m:61 |
+| test6441 | `test6441_GetCapDefinitionReal` | TEST6441: Get cap definition real | Tests/CapDAGTests/CSFabricRegistryTests.m:192 |
+| test6443 | `test6443_ValidateCapCanonical` | TEST6443: Validate cap canonical | Tests/CapDAGTests/CSFabricRegistryTests.m:213 |
 | test6445 | `test6445_SourceWithData` | TEST6445: Source with data | Tests/CapDAGTests/CSStdinSourceTests.m:15 |
 | test6447 | `test6447_SourceWithFileReference` | TEST6447: Source with file reference | Tests/CapDAGTests/CSStdinSourceTests.m:31 |
 | test6461 | `test6461_DataSourceWithEmptyData` | TEST6461: Data source with empty data | Tests/CapDAGTests/CSStdinSourceTests.m:54 |
@@ -916,8 +917,8 @@ These tests have a numbering disagreement between the function name and the auth
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 816*
-*Total numbered tests: 816*
+*Total tests: 817*
+*Total numbered tests: 817*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 1*
 *Total numbering mismatches: 66*
