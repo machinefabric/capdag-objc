@@ -102,15 +102,15 @@
 // TEST859: LUB with valued tags (non-marker) that differ
 - (void)test859_lub_valued_tags {
     NSError *error;
-    CSMediaUrn *v1 = [CSMediaUrn fromString:@"media:image;format=png" error:&error];
-    CSMediaUrn *v2 = [CSMediaUrn fromString:@"media:image;format=jpeg" error:&error];
+    CSMediaUrn *v1 = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
+    CSMediaUrn *v2 = [CSMediaUrn fromString:@"media:ext=jpeg;image" error:&error];
     XCTAssertNotNil(v1);
     XCTAssertNotNil(v2);
     CSMediaUrn *lub = [CSMediaUrn lub:@[v1, v2]];
     CSMediaUrn *expected = [CSMediaUrn fromString:@"media:image" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should drop conflicting format tag, got %@", [lub toString]);
+        @"LUB should drop conflicting ext tag, got %@", [lub toString]);
 }
 
 #pragma mark - Parsing & Prefix
