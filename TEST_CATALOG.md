@@ -1,4 +1,4 @@
-# CapDag-ObjC/Swift Test Catalog
+# Swift/ObjC Test Catalog
 
 **Total Tests:** 816
 
@@ -12,7 +12,7 @@
 
 All numbered test numbers are unique.
 
-This catalog lists all tests in the CapDag-ObjC/Swift codebase.
+This catalog lists all tests in the Swift/ObjC codebase.
 
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
@@ -915,7 +915,7 @@ These tests have a numbering disagreement between the function name and the auth
 
 ---
 
-*Generated from CapDag-ObjC/Swift source tree*
+*Generated from Swift/ObjC source tree*
 *Total tests: 816*
 *Total numbered tests: 816*
 *Total unnumbered tests: 0*
