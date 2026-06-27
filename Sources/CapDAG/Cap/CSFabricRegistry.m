@@ -259,16 +259,39 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 
 // MARK: - URN normalization helpers
 
-- (NSString *)normalizeCapUrn:(NSString *)urn {
-    NSError *error = nil;
-    CSCapUrn *parsed = [CSCapUrn fromString:urn error:&error];
-    return parsed ? [parsed toString] : urn;
+// URN normalisation no longer falls back to the raw input on a parse failure.
+// A malformed URN returns nil and (when an error-out is supplied) populates an
+// NSError. Callers MUST decide: propagate the error (resolution paths with an
+// error/completion channel), log+nil (nullable cache lookups), or log+skip
+// (void mutator/loader loops). A non-canonical/garbage string must NEVER reach
+// a cache or manifest key. Mirrors Rust normalize_cap_urn/normalize_media_urn.
+
+- (nullable NSString *)normalizeCapUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error {
+    NSError *parseError = nil;
+    CSCapUrn *parsed = [CSCapUrn fromString:urn error:&parseError];
+    if (!parsed) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSFabricRegistryError" code:1030
+                userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"malformed cap URN '%@': %@", urn, parseError.localizedDescription ?: @"parse failed"]}];
+        }
+        return nil;
+    }
+    return [parsed toString];
 }
 
-- (NSString *)normalizeMediaUrn:(NSString *)urn {
-    NSError *error = nil;
-    CSMediaUrn *parsed = [CSMediaUrn fromString:urn error:&error];
-    return parsed ? [parsed toString] : urn;
+- (nullable NSString *)normalizeMediaUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error {
+    NSError *parseError = nil;
+    CSMediaUrn *parsed = [CSMediaUrn fromString:urn error:&parseError];
+    if (!parsed) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSFabricRegistryError" code:1031
+                userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                    @"malformed media URN '%@': %@", urn, parseError.localizedDescription ?: @"parse failed"]}];
+        }
+        return nil;
+    }
+    return [parsed toString];
 }
 
 - (NSString *)sha256HexForString:(NSString *)s {
@@ -305,7 +328,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         return;
     }
 
-    NSString *normalized = [self normalizeCapUrn:urn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeCapUrn:urn error:&normError];
+    if (!normalized) {
+        completion(nil, normError);
+        return;
+    }
 
     [self.cacheLock lock];
     CSCap *cached = self.cachedCaps[normalized];
@@ -387,7 +415,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 }
 
 - (BOOL)capExists:(NSString *)urn {
-    NSString *normalized = [self normalizeCapUrn:urn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeCapUrn:urn error:&normError];
+    if (!normalized) {
+        NSLog(@"[CSFabricRegistry] capExists: malformed cap URN treated as not-present: %@", normError.localizedDescription);
+        return NO;
+    }
     [self.cacheLock lock];
     BOOL exists = (self.cachedCaps[normalized] != nil);
     [self.cacheLock unlock];
@@ -409,7 +442,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         return;
     }
 
-    NSString *normalized = [self normalizeMediaUrn:urn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeMediaUrn:urn error:&normError];
+    if (!normalized) {
+        completion(nil, normError);
+        return;
+    }
 
     [self.cacheLock lock];
     NSDictionary *cached = self.cachedSpecs[normalized];
@@ -430,7 +468,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 }
 
 - (NSDictionary *)getCachedMediaDef:(NSString *)urn {
-    NSString *normalized = [self normalizeMediaUrn:urn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeMediaUrn:urn error:&normError];
+    if (!normalized) {
+        NSLog(@"[CSFabricRegistry] getCachedMediaDef: malformed media URN treated as not-found: %@", normError.localizedDescription);
+        return nil;
+    }
     [self.cacheLock lock];
     NSDictionary *spec = self.cachedSpecs[normalized];
     [self.cacheLock unlock];
@@ -539,9 +582,15 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
                 completion(nil, mediaError);
                 return;
             }
+            NSError *normError = nil;
+            NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString] error:&normError];
+            if (!normalized) {
+                completion(nil, normError);
+                return;
+            }
             [self saveCapToCache:cap];
             [self.cacheLock lock];
-            self.cachedCaps[[self normalizeCapUrn:[cap.capUrn toString]]] = cap;
+            self.cachedCaps[normalized] = cap;
             [self.cacheLock unlock];
             completion(cap, nil);
         }];
@@ -607,7 +656,13 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     if (![rawUrn isKindOfClass:[NSString class]] || rawUrn.length == 0) {
         return;
     }
-    NSString *normalized = [self normalizeMediaUrn:rawUrn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeMediaUrn:rawUrn error:&normError];
+    if (!normalized) {
+        NSLog(@"[CSFabricRegistry] insertMediaDefInMemory: skipping spec with malformed media URN '%@': %@",
+              rawUrn, normError.localizedDescription);
+        return;
+    }
     // Record in the manifest at the spec's version; a spec with no/zero
     // version is stamped to the pinned manifest version (mirrors Rust/py/go).
     uint32_t specVersion = 0;
@@ -646,18 +701,27 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 
 // MARK: - Disk cache I/O
 
-- (NSString *)capCacheFilePathForUrn:(NSString *)urn {
+- (nullable NSString *)capCacheFilePathForUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error {
+    NSString *normalized = [self normalizeCapUrn:urn error:error];
+    if (!normalized) return nil;
     return [self.capsCacheDirectory stringByAppendingPathComponent:
-            [[self sha256HexForString:[self normalizeCapUrn:urn]] stringByAppendingString:@".json"]];
+            [[self sha256HexForString:normalized] stringByAppendingString:@".json"]];
 }
 
-- (NSString *)mediaCacheFilePathForUrn:(NSString *)urn {
+- (nullable NSString *)mediaCacheFilePathForUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error {
+    NSString *normalized = [self normalizeMediaUrn:urn error:error];
+    if (!normalized) return nil;
     return [self.mediaCacheDirectory stringByAppendingPathComponent:
-            [[self sha256HexForString:[self normalizeMediaUrn:urn]] stringByAppendingString:@".json"]];
+            [[self sha256HexForString:normalized] stringByAppendingString:@".json"]];
 }
 
 - (void)saveCapToCache:(CSCap *)cap {
-    NSString *cacheFile = [self capCacheFilePathForUrn:[cap.capUrn toString]];
+    NSError *pathError = nil;
+    NSString *cacheFile = [self capCacheFilePathForUrn:[cap.capUrn toString] error:&pathError];
+    if (!cacheFile) {
+        NSLog(@"[CSFabricRegistry] saveCapToCache: skipping cap with malformed URN: %@", pathError.localizedDescription);
+        return;
+    }
     NSDictionary *capDict = [cap toDictionary];
     NSDictionary *entry = @{
         @"definition": capDict,
@@ -674,7 +738,13 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 - (void)saveMediaDefToCache:(NSDictionary *)spec {
     NSString *rawUrn = spec[@"urn"];
     if (![rawUrn isKindOfClass:[NSString class]]) return;
-    NSString *cacheFile = [self mediaCacheFilePathForUrn:rawUrn];
+    NSError *pathError = nil;
+    NSString *cacheFile = [self mediaCacheFilePathForUrn:rawUrn error:&pathError];
+    if (!cacheFile) {
+        NSLog(@"[CSFabricRegistry] saveMediaDefToCache: skipping spec with malformed URN '%@': %@",
+              rawUrn, pathError.localizedDescription);
+        return;
+    }
     NSDictionary *entry = @{
         @"spec": spec,
         @"cached_at": @([[NSDate date] timeIntervalSince1970]),
@@ -711,7 +781,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         CSCap *cap = [CSCap capWithDictionary:capDict error:&err];
         if (!cap) continue;
 
-        NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString]];
+        NSError *normError = nil;
+        NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString] error:&normError];
+        if (!normalized) {
+            NSLog(@"[CSFabricRegistry] loadAllCachedCaps: skipping cached cap with malformed URN: %@", normError.localizedDescription);
+            continue;
+        }
         [self.cacheLock lock];
         self.cachedCaps[normalized] = cap;
         [self.cacheLock unlock];
@@ -749,7 +824,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 
 - (void)fetchCapFromRegistry:(NSString *)urn
                   completion:(void (^)(CSCap *cap, NSError *error))completion {
-    NSString *normalized = [self normalizeCapUrn:urn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeCapUrn:urn error:&normError];
+    if (!normalized) {
+        completion(nil, normError);
+        return;
+    }
     NSString *digest = [self sha256HexForString:normalized];
     NSString *urlString = [NSString stringWithFormat:@"%@/caps/%@", self.config.registryBaseURL, digest];
     NSURL *url = [NSURL URLWithString:urlString];
@@ -790,7 +870,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 
 - (void)fetchMediaDefFromRegistry:(NSString *)urn
                         completion:(void (^)(NSDictionary *spec, NSError *error))completion {
-    NSString *normalized = [self normalizeMediaUrn:urn];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeMediaUrn:urn error:&normError];
+    if (!normalized) {
+        completion(nil, normError);
+        return;
+    }
     NSString *digest = [self sha256HexForString:normalized];
     NSString *urlString = [NSString stringWithFormat:@"%@/media/%@", self.config.registryBaseURL, digest];
     NSURL *url = [NSURL URLWithString:urlString];
@@ -940,7 +1025,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     if (cap.version == 0 && self.manifestVersion >= 1) {
         cap.version = self.manifestVersion;
     }
-    NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString]];
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString] error:&normError];
+    if (!normalized) {
+        NSLog(@"[CSFabricRegistry] insertCachedCapForTest: skipping cap with malformed URN: %@", normError.localizedDescription);
+        return;
+    }
     [self.cacheLock lock];
     self.cachedCaps[normalized] = cap;
     if (self.manifestVersion >= 1) {

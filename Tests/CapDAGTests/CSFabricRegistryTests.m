@@ -15,6 +15,15 @@
 
 @end
 
+/// The URN-normalisation helpers are internal to CSFabricRegistry.m (not in the
+/// public header). Declare the error-returning selectors here so TEST6396 can
+/// assert the direct normalisation contract — that a malformed URN yields nil +
+/// NSError, never a raw fallback string.
+@interface CSFabricRegistry (CSFabricRegistryTestsInternal)
+- (nullable NSString *)normalizeCapUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error;
+- (nullable NSString *)normalizeMediaUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error;
+@end
+
 // Per-cap URL construction. The new scheme uses /caps/<sha256>,
 // where the hash is computed over the canonical URN's UTF-8 bytes.
 // This replicates the construction logic from CSFabricRegistry.
@@ -140,6 +149,40 @@ static NSString *buildRegistryURL(NSString *urn) {
     // And the parent of that slug is the shared "capdag" cache directory.
     XCTAssertEqualObjects([[staging stringByDeletingLastPathComponent] lastPathComponent], @"capdag",
         @"the per-origin slug must live under the capdag cache directory");
+}
+
+// TEST6396: A malformed cap URN must FAIL HARD — surfaced as an NSError, not
+// passed through raw (the old fallback) to surface later as a misleading
+// not-found. The `out` value below contains an unquoted `=`, which the cap
+// grammar rejects. Against the old `parsed ? [parsed toString] : urn` fallback,
+// normalizeCapUrn: returned the raw string and the cache lookup reported a
+// (misleading) miss; this test asserts the truthful error and that the process
+// never crashes. Mirrors Rust test6396_malformed_cap_urn_fails_hard.
+- (void)test6396_malformedCapUrnFailsHard {
+    NSString *malformed = @"cap:coerce;in=\"media:integer;numeric\";out=media:enc=utf-8";
+
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
+
+    // Direct normalisation path: nil + populated NSError, never the raw string.
+    NSError *normError = nil;
+    NSString *normalized = [registry normalizeCapUrn:malformed error:&normError];
+    XCTAssertNil(normalized, @"malformed cap URN must not normalise to a (raw) string");
+    XCTAssertNotNil(normError, @"malformed cap URN must populate an NSError");
+    XCTAssertNotEqualObjects(normalized, malformed,
+        @"normalizeCapUrn: must not fall back to the raw input on parse failure");
+
+    // Public resolution path (getCapWithUrn:) must surface a parse error, NOT a
+    // misleading not-found, and must not crash.
+    XCTestExpectation *expectation = [self expectationWithDescription:@"malformed cap URN resolution"];
+    [registry getCapWithUrn:malformed completion:^(CSCap *cap, NSError *error) {
+        XCTAssertNil(cap, @"malformed cap URN must not resolve to a cap");
+        XCTAssertNotNil(error, @"malformed cap URN must surface an error through the resolution path");
+        XCTAssertTrue([error.localizedDescription containsString:@"malformed cap URN"],
+            @"error must identify the malformed URN, not report a misleading not-found: %@",
+            error.localizedDescription);
+        [expectation fulfill];
+    }];
+    [self waitForExpectationsWithTimeout:5.0 handler:nil];
 }
 
 // Note: These tests would make actual HTTP requests to capdag.com
