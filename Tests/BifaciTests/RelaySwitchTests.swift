@@ -1006,6 +1006,404 @@ final class CborRelaySwitchTests: XCTestCase {
                 "error should name the duplicate id: \(msg)")
         }
     }
+
+    // ============================================================
+    // Deferred runtime identity probe / health-filtered routing /
+    // capability-watch cluster. Ports the Rust reference tests
+    // test0131 / test0135 / test0138 / test0141 plus Swift-specific
+    // coverage of the peer-REQ NO_HANDLER-ERR-to-caller behaviour and
+    // addMaster's identity-failure → register-unhealthy behaviour.
+    //
+    // Swift note: these run end-to-end through the per-master reader
+    // threads and the lazily-spawned probe-driver thread. No engine
+    // pump (readFromMasters) is needed for the deferred-probe tests —
+    // the probe completes autonomously; the test only polls the public
+    // health / routability surface. Routability is ALWAYS checked via
+    // the dispatch path (routableMaster → findMasterForCap →
+    // isDispatchable), NEVER by string-comparing cap URNs.
+
+    /// Send an EMPTY initial RelayNotify (no installed cartridges, no
+    /// caps), so `RelaySwitch.init` skips the synchronous identity probe
+    /// and the master joins capless+healthy.
+    private func sendNotifyEmpty(writer: FrameWriter, limits: Limits) throws {
+        let manifestBytes = try JSONSerialization.data(withJSONObject: [
+            "installed_cartridges": [] as [Any]
+        ])
+        try writer.write(Frame.relayNotify(manifest: manifestBytes, limits: limits))
+    }
+
+    /// Test slave for the DEFERRED runtime-identity-probe path. Mirrors
+    /// the Rust helper `slave_deferred_identity`: an EMPTY initial
+    /// RelayNotify (init skips the synchronous probe), then a POPULATED
+    /// RelayNotify carrying `caps` (the empty→non-empty transition the
+    /// relay must re-verify before routing). It then answers the runtime
+    /// identity probe: if `succeed`, it echoes the probe's nonce back on
+    /// the same flow (probe passes → master flips healthy → caps
+    /// routable); if `!succeed`, it replies ERR (probe fails → master
+    /// stays unhealthy, caps held back).
+    ///
+    /// The echo frames are assigned contiguous per-flow seq numbers via a
+    /// `SeqAssigner`, because the switch's master-read path validates
+    /// ordering through a `ReorderBuffer` keyed by (rid, xid) — exactly
+    /// what a real CartridgeHost / RelaySlave does on its outbound stage.
+    private func slaveDeferredIdentity(
+        readHandle: FileHandle,
+        writeHandle: FileHandle,
+        caps: [String],
+        limits: Limits,
+        succeed: Bool
+    ) {
+        var reader = FrameReader(handle: readHandle)
+        let writer = FrameWriter(handle: writeHandle)
+        let seq = SeqAssigner()
+
+        // 1. Empty initial RelayNotify — init skips the synchronous probe.
+        try? sendNotifyEmpty(writer: writer, limits: limits)
+        // 2. Populated RelayNotify — the empty→non-empty transition.
+        try? sendNotify(writer: writer, capabilities: caps, limits: limits)
+
+        // 3. Answer the runtime identity probe.
+        var probeRid: MessageId? = nil
+        var probeXid: MessageId? = nil
+        var nonce = Data()
+        while true {
+            guard let frameOpt = try? reader.read(), let frame = frameOpt else { return }
+            switch frame.frameType {
+            case .req:
+                probeRid = frame.id
+                probeXid = frame.routingId
+                if !succeed {
+                    // Broken identity handler: reply ERR on the same flow.
+                    var err = Frame.err(id: frame.id, code: "BROKEN", message: "test cartridge")
+                    err.routingId = frame.routingId
+                    seq.assign(&err)
+                    try? writer.write(err)
+                    return
+                }
+            case .chunk:
+                if let p = frame.payload { nonce.append(p) }
+            case .end:
+                guard let rid = probeRid, let xid = probeXid else { return }
+                let streamId = "identity-echo"
+                var ss = Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:")
+                ss.routingId = xid
+                seq.assign(&ss)
+                try? writer.write(ss)
+                let checksum = Frame.computeChecksum(nonce)
+                var chunk = Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
+                chunk.routingId = xid
+                seq.assign(&chunk)
+                try? writer.write(chunk)
+                var se = Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1)
+                se.routingId = xid
+                seq.assign(&se)
+                try? writer.write(se)
+                var end = Frame.end(id: rid)
+                end.routingId = xid
+                seq.assign(&end)
+                try? writer.write(end)
+                return
+            default:
+                break
+            }
+        }
+    }
+
+    // TEST0131: empty→non-empty cap transition requires a runtime identity
+    // probe; a master that fails the probe (ERR) ends up UNHEALTHY with
+    // lastError populated, and its caps are NOT routable.
+    func test0131_runtimeIdentityProbeRequiredOnEmptyToNonemptyTransition() throws {
+        let pair1 = FileHandle.socketPair()  // engine_read, slave_write
+        let pair2 = FileHandle.socketPair()  // slave_read, engine_write
+
+        DispatchQueue.global().async {
+            self.slaveDeferredIdentity(
+                readHandle: pair2.read,
+                writeHandle: pair1.write,
+                caps: [CSCapIdentity, "cap:in=\"media:void\";test;out=\"media:void\""],
+                limits: Limits(),
+                succeed: false  // broken identity handler → master stays unhealthy
+            )
+        }
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0131", read: pair1.read, write: pair2.write)])
+
+        // Poll until the probe driver fails the probe and marks the master
+        // unhealthy with a recorded error.
+        let deadline = Date().addingTimeInterval(15)
+        var unhealthy = false
+        while Date() < deadline {
+            let health = switch_.getMasterHealth()
+            if let m = health.first, !m.healthy, m.lastError != nil {
+                unhealthy = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(unhealthy, "master must be marked unhealthy with lastError after the runtime identity probe fails")
+
+        // The unhealthy master's caps must NOT be routable — checked via
+        // the dispatch path, never a string compare.
+        XCTAssertNil(
+            switch_.routableMaster(forCap: "cap:in=\"media:void\";test;out=\"media:void\""),
+            "an unverified master's caps must be excluded from routing"
+        )
+
+        switch_.shutdown()
+    }
+
+    // TEST0135: the runtime identity probe SUCCESS path — a master that
+    // advertises caps AFTER connecting (empty→non-empty) and then passes
+    // the probe must flip healthy and its caps must become routable.
+    func test0135_runtimeIdentityProbeSuccessMakesCapsRoutable() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+
+        DispatchQueue.global().async {
+            self.slaveDeferredIdentity(
+                readHandle: pair2.read,
+                writeHandle: pair1.write,
+                caps: [CSCapIdentity, "cap:in=\"media:void\";test;out=\"media:void\""],
+                limits: Limits(),
+                succeed: true  // probe succeeds
+            )
+        }
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0135", read: pair1.read, write: pair2.write)])
+
+        // The post-init advertised cap becomes routable only AFTER the
+        // probe passes (held back while the master is unhealthy).
+        let deadline = Date().addingTimeInterval(15)
+        var routable = false
+        while Date() < deadline {
+            if switch_.routableMaster(forCap: "cap:in=\"media:void\";test;out=\"media:void\"") == 0 {
+                routable = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(routable, "after a successful runtime identity probe the master's post-init advertised cap must become routable")
+
+        let health = switch_.getMasterHealth()
+        XCTAssertEqual(health.first?.healthy, true, "master must be healthy after a successful runtime identity probe")
+        XCTAssertNil(health.first?.lastError, "lastError must be cleared after a successful probe")
+
+        switch_.shutdown()
+    }
+
+    // TEST0138: the installed-cartridge INVENTORY is NOT health-filtered.
+    // A master held unhealthy by a failed runtime identity probe still has
+    // its cartridges visible in the aggregate inventory, even though its
+    // caps are excluded from ROUTING. Pins the deliberate asymmetry.
+    func test0138_unhealthyMasterInventoryRetainedButNotRoutable() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+
+        DispatchQueue.global().async {
+            self.slaveDeferredIdentity(
+                readHandle: pair2.read,
+                writeHandle: pair1.write,
+                caps: [CSCapIdentity, "cap:in=\"media:void\";test;out=\"media:void\""],
+                limits: Limits(),
+                succeed: false  // probe fails → master stays unhealthy
+            )
+        }
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0138", read: pair1.read, write: pair2.write)])
+
+        let deadline = Date().addingTimeInterval(15)
+        var unhealthy = false
+        while Date() < deadline {
+            let health = switch_.getMasterHealth()
+            if let m = health.first, !m.healthy, m.lastError != nil {
+                unhealthy = true
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(unhealthy, "master must be unhealthy after the probe fails")
+
+        // ROUTING: the unhealthy master's caps are excluded.
+        XCTAssertNil(
+            switch_.routableMaster(forCap: "cap:in=\"media:void\";test;out=\"media:void\""),
+            "an unhealthy master's caps must NOT be routable"
+        )
+
+        // INVENTORY: the cartridge is STILL visible — the inventory
+        // aggregate is deliberately not health-filtered.
+        let inventory = switch_.installedCartridges()
+        XCTAssertTrue(
+            inventory.contains { $0.id == "test-cartridge" },
+            "an unhealthy master's installed cartridges must remain visible in the inventory aggregate, got: \(inventory.map { $0.id })"
+        )
+
+        switch_.shutdown()
+    }
+
+    // TEST0141: the routable-capability watch (subscribeCapabilities). A
+    // subscriber must receive the CURRENT routable cap set on subscribe
+    // even though it was rebuilt during construction — BEFORE any receiver
+    // existed (the watch must persist the value, i.e. send_replace
+    // semantics). The delivered set must be the health-filtered routable
+    // cap URNs.
+    func test0141_subscribeCapabilitiesDeliversRoutableSet() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            var reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try! self.sendNotify(
+                writer: writer,
+                capabilities: [CSCapIdentity, "cap:in=\"media:void\";test;out=\"media:void\""],
+                limits: Limits()
+            )
+            done.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+        }
+        XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
+
+        // Capabilities are rebuilt inside init — before we subscribe.
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0141", read: pair1.read, write: pair2.write)])
+
+        let rx = switch_.subscribeCapabilities()
+        let watched = rx.value()
+
+        // The watch must mirror the synchronous getter: identical
+        // serialized routable-set snapshot. This is a snapshot-identity
+        // check (same bytes from the same source) and catches the bug this
+        // guards: the snapshot is rebuilt inside init BEFORE any subscriber
+        // exists, so the watch must persist it (send_replace). A plain
+        // fire-and-forget send would leave the watch holding the empty
+        // initial value while the getter returns the populated set.
+        XCTAssertEqual(
+            watched,
+            switch_.capabilities(),
+            "the capability watch must deliver the same routable-set snapshot as capabilities()"
+        )
+
+        // Prove that snapshot is the live ROUTABLE set the only correct way
+        // — via dispatch conformance, not string comparison of URNs.
+        XCTAssertEqual(
+            switch_.routableMaster(forCap: "cap:in=\"media:void\";test;out=\"media:void\""),
+            0,
+            "the routable set the watch delivers must make the master's advertised cap dispatchable"
+        )
+
+        switch_.shutdown()
+    }
+
+    // TEST0142 (Swift-specific, gap 3): a peer cartridge→cartridge REQ for
+    // a cap with NO handler must NOT abort the pump. The switch sends an
+    // ERR("NO_HANDLER") frame straight back to the calling master (stamped
+    // with the synthetic XID) so the caller fails fast, and
+    // handleMasterFrame returns nil — it must NOT throw.
+    func test0142_peerReqNoHandlerSendsErrToCaller() throws {
+        let pair1 = FileHandle.socketPair()  // engine_read, slave_write
+        let pair2 = FileHandle.socketPair()  // slave_read, engine_write
+
+        let ready = DispatchSemaphore(value: 0)
+        let errReceived = DispatchSemaphore(value: 0)
+        var receivedCode: String? = nil
+        var receivedHadXid = false
+
+        DispatchQueue.global().async {
+            var reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            ready.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+
+            // Send a peer REQ (no XID) for a cap no master handles.
+            let req = Frame.req(
+                id: MessageId.uint(7),
+                capUrn: "cap:in=\"media:void\";nonexistent;out=\"media:void\"",
+                payload: Data(),
+                contentType: "application/octet-stream"
+            )
+            try! writer.write(req)
+
+            // Expect an ERR("NO_HANDLER") stamped with an XID to come back.
+            while let frameOpt = try? reader.read(), let frame = frameOpt {
+                if frame.frameType == .err {
+                    receivedCode = frame.errorCode
+                    receivedHadXid = frame.routingId != nil
+                    errReceived.signal()
+                    return
+                }
+            }
+        }
+        XCTAssertEqual(ready.wait(timeout: .now() + 2), .success)
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0142", read: pair1.read, write: pair2.write)])
+
+        // Pump the master frames in the background so the peer REQ is
+        // processed (the call returns nil after sending the ERR; it must
+        // NOT throw — try? would swallow a throw, so we assert the ERR
+        // actually arrives at the caller, which only happens on the
+        // non-throwing path).
+        DispatchQueue.global().async {
+            _ = try? switch_.readFromMasters(timeout: 3.0)
+        }
+
+        XCTAssertEqual(errReceived.wait(timeout: .now() + 4), .success, "caller must receive an ERR frame, not hang")
+        XCTAssertEqual(receivedCode, "NO_HANDLER", "ERR code must be NO_HANDLER")
+        XCTAssertTrue(receivedHadXid, "the NO_HANDLER ERR must carry the synthetic XID (path-C invariant)")
+
+        switch_.shutdown()
+    }
+
+    // TEST0143 (Swift-specific, gap 5): addMaster whose identity probe
+    // FAILS must register the master UNHEALTHY (keeping its inventory
+    // visible) rather than throwing. Caps stay held back from routing.
+    func test0143_addMasterIdentityFailureRegistersUnhealthy() throws {
+        let switch_ = try RelaySwitch(sockets: [])
+
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let ready = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try! self.sendNotify(
+                writer: writer,
+                capabilities: [CSCapIdentity, "cap:in=\"media:void\";test;out=\"media:void\""],
+                limits: Limits()
+            )
+            ready.signal()
+            // Reply ERR to the identity REQ — a broken identity handler.
+            if let frameOpt = try? reader.read(), let frame = frameOpt, frame.frameType == .req {
+                try! writer.write(Frame.err(id: frame.id, code: "IDENTITY_FAILED", message: "Rejected"))
+            }
+        }
+        XCTAssertEqual(ready.wait(timeout: .now() + 2), .success)
+
+        // addMaster MUST NOT throw on identity failure — it registers the
+        // master unhealthy and returns its slot index.
+        let idx = try switch_.addMaster(SocketPair(id: "broken-master", read: pair1.read, write: pair2.write))
+        XCTAssertEqual(idx, 0)
+
+        let health = switch_.getMasterHealth()
+        XCTAssertEqual(health.count, 1)
+        XCTAssertEqual(health.first?.healthy, false, "a master whose identity probe failed must be registered unhealthy")
+        XCTAssertNotNil(health.first?.lastError, "the failure reason must be recorded in lastError")
+
+        // Caps are NOT routable (cap_table skips unhealthy masters).
+        XCTAssertNil(
+            switch_.routableMaster(forCap: "cap:in=\"media:void\";test;out=\"media:void\""),
+            "an unhealthy master's caps must NOT be routable"
+        )
+
+        // Inventory remains visible — not health-filtered.
+        XCTAssertTrue(
+            switch_.installedCartridges().contains { $0.id == "test-cartridge" },
+            "the failed master's installed cartridges must remain visible in the inventory aggregate"
+        )
+
+        switch_.shutdown()
+    }
 }
 
 // Helper extension for creating socket pairs

@@ -1,8 +1,8 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 819
+**Total Tests:** 825
 
-**Numbered Tests:** 819
+**Numbered Tests:** 825
 
 **Unnumbered Tests:** 0
 
@@ -96,11 +96,17 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test0127 | `test0127_invalidEffectNoneFailsHard` | TEST127: invalid effect=none declarations fail hard | Tests/CapDAGTests/CSCapUrnTests.m:1622 |
 | test128 | `test128_effectDispatchRequiresExplicitWildcard` | TEST128: omitted effect means declared; unconstrained effect must be explicit | Tests/CapDAGTests/CSCapUrnTests.m:1630 |
 | test129 | `test129_GcEvictsOldestEntriesByTouchedAt` | / Contract #2 — the GC drops the OLDEST entries by / `touchedAt`, not arbitrary keys. We seed a known age / distribution and recompute the expected victim set / independently of the production code, then assert that / the post-GC table contains exactly the entries the test / computed should survive. / / A regression where the GC e.g. iterates the dictionary and / drops the first N entries (dictionary iteration order is / arbitrary in Swift) would still pass contract #1 but fail / this one — so this is the assertion that catches a "wrong / victims" bug, which is the more dangerous one (silently / drops in-flight continuation frames). | Tests/BifaciTests/CartridgeHostRoutingTableGCTests.swift:108 |
+| test0131 | `test0131_runtimeIdentityProbeRequiredOnEmptyToNonemptyTransition` | TEST0131: empty→non-empty cap transition requires a runtime identity probe; a master that fails the probe (ERR) ends up UNHEALTHY with lastError populated, and its caps are NOT routable. | Tests/BifaciTests/RelaySwitchTests.swift:1115 |
 | test132 | `test132_addMasterDynamic` | TEST132: add_master dynamically connects new host to running switch | Tests/BifaciTests/RelaySwitchTests.swift:843 |
 | test133 | `test133_ReattachByIdPreservesSlotIndex` | Reattach-by-id tests for the cardinality-stable slot model. When a master dies and the host reconnects, the new socket MUST attach to the same slot index — preserving routing entries keyed by index. Accumulating zombie slots on each reconnect was the bug class these tests guard against. | Tests/BifaciTests/RelaySwitchTests.swift:901 |
 | test134 | `test134_AddMasterWithDuplicateHealthyIdErrors` | TEST134: Add master with duplicate healthy id errors | Tests/BifaciTests/RelaySwitchTests.swift:953 |
+| test0135 | `test0135_runtimeIdentityProbeSuccessMakesCapsRoutable` | TEST0135: the runtime identity probe SUCCESS path — a master that advertises caps AFTER connecting (empty→non-empty) and then passes the probe must flip healthy and its caps must become routable. | Tests/BifaciTests/RelaySwitchTests.swift:1158 |
+| test0138 | `test0138_unhealthyMasterInventoryRetainedButNotRoutable` | TEST0138: the installed-cartridge INVENTORY is NOT health-filtered. A master held unhealthy by a failed runtime identity probe still has its cartridges visible in the aggregate inventory, even though its caps are excluded from ROUTING. Pins the deliberate asymmetry. | Tests/BifaciTests/RelaySwitchTests.swift:1198 |
+| test0141 | `test0141_subscribeCapabilitiesDeliversRoutableSet` | TEST0141: the routable-capability watch (subscribeCapabilities). A subscriber must receive the CURRENT routable cap set on subscribe even though it was rebuilt during construction — BEFORE any receiver existed (the watch must persist the value, i.e. send_replace semantics). The delivered set must be the health-filtered routable cap URNs. | Tests/BifaciTests/RelaySwitchTests.swift:1249 |
 | test141 | `test141_perCapURLShape` | / TEST141: URL has the right shape — protocol, host, /caps/ prefix, / 64 hex chars, no extension. | Tests/CapDAGTests/CSFabricRegistryTests.m:104 |
+| test0142 | `test0142_peerReqNoHandlerSendsErrToCaller` | TEST0142 (Swift-specific, gap 3): a peer cartridge→cartridge REQ for a cap with NO handler must NOT abort the pump. The switch sends an ERR("NO_HANDLER") frame straight back to the calling master (stamped with the synthetic XID) so the caller fails fast, and handleMasterFrame returns nil — it must NOT throw. | Tests/BifaciTests/RelaySwitchTests.swift:1302 |
 | test142 | `test142_normalizeHandlesDifferentTagOrders` | / TEST142: Different tag orders normalise to the same URL — the / canonicaliser strips the variation before hashing. | Tests/CapDAGTests/CSFabricRegistryTests.m:117 |
+| test0143 | `test0143_addMasterIdentityFailureRegistersUnhealthy` | TEST0143 (Swift-specific, gap 5): addMaster whose identity probe FAILS must register the master UNHEALTHY (keeping its inventory visible) rather than throwing. Caps stay held back from routing. | Tests/BifaciTests/RelaySwitchTests.swift:1360 |
 | test148 | `test148_capManifestCreation` | TEST148: Cap manifest construction stores name, version, channel, description, and the cap_groups verbatim. | Tests/BifaciTests/ManifestTests.swift:28 |
 | test149 | `test149_CapManifestWithAuthor` | TEST149: Cap manifest with author | Tests/CapDAGTests/CSCapTests.m:461 |
 | test151 | `test151_capManifestRequiredFields` | TEST151: Manifest deserialization fails when any required field is missing — including channel, which is part of the cartridge's identity. There is no fallback default; missing means broken. | Tests/BifaciTests/ManifestTests.swift:138 |
@@ -919,8 +925,8 @@ These tests have a numbering disagreement between the function name and the auth
 ---
 
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 819*
-*Total numbered tests: 819*
+*Total tests: 825*
+*Total numbered tests: 825*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 1*
 *Total numbering mismatches: 66*
