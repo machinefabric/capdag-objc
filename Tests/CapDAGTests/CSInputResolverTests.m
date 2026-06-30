@@ -15,7 +15,7 @@
 /// input-resolver tests reference. The unified registry hydrates
 /// extensions from spec arrival; tests must seed explicitly.
 static CSFabricRegistry *testFabricRegistry(void) {
-    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
     [registry addMediaDef:@{
         @"urn": @"media:ext=pdf",
         @"media_type": @"application/pdf",

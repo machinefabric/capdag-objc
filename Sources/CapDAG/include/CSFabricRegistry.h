@@ -199,6 +199,21 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
 /// writes *error if the name is malformed or absent from the manifest.
 - (uint32_t)aliasDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error;
 
+/// Resolve a cap URN to its pinned defver under the manifest. Returns YES and
+/// writes *outDefver on success; returns NO and writes *error when the URN is
+/// malformed or not part of the pinned snapshot (a hard NotFound — never a
+/// silent flat-path fallback). Mirrors Rust cap_defver_for.
+- (BOOL)capDefverFor:(NSString *)urn
+              defver:(uint32_t *)outDefver
+               error:(NSError *_Nullable *_Nullable)error;
+
+/// Resolve a media URN to its pinned defver under the manifest. Same contract as
+/// capDefverFor:defver:error:. The bare `media:` wildcard resolves to 0. Mirrors
+/// Rust media_defver_for.
+- (BOOL)mediaDefverFor:(NSString *)urn
+                defver:(uint32_t *)outDefver
+                 error:(NSError *_Nullable *_Nullable)error;
+
 /// Insert an alias ({name,target,version}) directly into the in-memory cache
 /// and register its defver in the manifest (test helper).
 - (void)insertCachedAliasForTest:(NSDictionary *)alias;

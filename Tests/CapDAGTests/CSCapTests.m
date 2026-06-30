@@ -19,7 +19,7 @@
 @end
 
 static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
-    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
     for (NSDictionary *spec in specs) {
         [registry addMediaDef:spec];
     }
@@ -374,7 +374,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // specs into a fresh registry and verifies each resolves through
     // CSResolveMediaUrn, plus that an unseeded URN fails hard.
     NSError *error;
-    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
 
     [registry addMediaDef:@{
         @"urn": @"media:custom-output",

@@ -19,7 +19,7 @@
 @end
 
 static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
-    CSFabricRegistry *registry = [[CSFabricRegistry alloc] init];
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
     for (NSDictionary *spec in specs) {
         [registry addMediaDef:spec];
     }

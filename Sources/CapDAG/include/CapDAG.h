@@ -34,6 +34,7 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 #import "CSCapValidator.h"
 #import "CSSchemaValidator.h"
 #import "CSFabricRegistry.h"
+#import "CSFabricManifestVersion.h"
 
 // Cartridge communication infrastructure
 #import "CSPacket.h"
