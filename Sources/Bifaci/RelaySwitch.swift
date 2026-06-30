@@ -1717,11 +1717,16 @@ public final class RelaySwitch: @unchecked Sendable {
         // + END on the same flow.
         let deadline = DispatchTime.now() + runtimeProbeTimeout
         var accumulated = Data()
-        var outcome: Result<Void, String> = .failure("runtime identity probe timed out after \(runtimeProbeTimeout)s")
+        // Failure detail, or `nil` once the probe has succeeded. Starts as a
+        // timeout failure so a silent channel resolves to the timeout error,
+        // matching Rust's `Result<(), String>` default. (Swift `Result`
+        // requires `Failure: Error`, which a bare `String` is not, so the
+        // outcome is modelled as an optional detail rather than a Result.)
+        var failureDetail: String? = "runtime identity probe timed out after \(runtimeProbeTimeout)s"
 
         recvLoop: while true {
             guard let frame = channel.recv(deadline: deadline) else {
-                outcome = .failure("runtime identity probe timed out after \(runtimeProbeTimeout)s")
+                failureDetail = "runtime identity probe timed out after \(runtimeProbeTimeout)s"
                 break
             }
             switch frame.frameType {
@@ -1733,24 +1738,25 @@ public final class RelaySwitch: @unchecked Sendable {
                 }
             case .end:
                 if accumulated != nonce {
-                    outcome = .failure("identity probe payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))")
+                    failureDetail = "identity probe payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))"
                 } else {
-                    outcome = .success(())
+                    failureDetail = nil
                 }
                 break recvLoop
             case .err:
                 let code = frame.errorCode ?? "UNKNOWN"
                 let msg = frame.errorMessage ?? "no message"
-                outcome = .failure("identity probe failed: [\(code)] \(msg)")
+                failureDetail = "identity probe failed: [\(code)] \(msg)"
                 break recvLoop
             default:
-                outcome = .failure("identity probe: unexpected frame type \(frame.frameType)")
+                failureDetail = "identity probe: unexpected frame type \(frame.frameType)"
                 break recvLoop
             }
         }
 
-        switch outcome {
-        case .success:
+        if let detail = failureDetail {
+            failProbe(masterIdx: masterIdx, key: key, rid: rid, detail: detail)
+        } else {
             // Probe passed — flip the master back to healthy and rebuild
             // the cap table so its caps become routable. We held it
             // unhealthy from the moment caps went non-empty until
@@ -1765,8 +1771,6 @@ public final class RelaySwitch: @unchecked Sendable {
             rebuildCapabilities()
             lock.unlock()
             fputs("[RelaySwitch] runtime identity probe passed — master \(masterIdx) is now healthy\n", stderr)
-        case .failure(let detail):
-            failProbe(masterIdx: masterIdx, key: key, rid: rid, detail: detail)
         }
     }
 
