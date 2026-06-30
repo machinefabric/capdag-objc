@@ -270,7 +270,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
 
     // TEST462: An attached cartridge (pre-connected over raw streams, no
     // on-disk anchor) gets a resolvable install identity derived from its
-    // HELLO manifest — `ManagedCartridge.installedCartridgeRecordFromManifest`.
+    // HELLO manifest — `installedCartridgeRecordFromManifest`.
     // Identity gates advertisement (`buildInstalledCartridgeRecordsLocked` drops
     // a cartridge whose record is nil), so a nil here means the cartridge is
     // silently dropped from every RelayNotify and the engine can never route to
@@ -285,7 +285,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         "title":"Identity","command":"identity"}]}]}
         """.data(using: .utf8)!
 
-        guard let rec = ManagedCartridge.installedCartridgeRecordFromManifest(manifest) else {
+        guard let rec = installedCartridgeRecordFromManifest(manifest) else {
             XCTFail("attached cartridge identity must be derivable from a valid manifest (else it is dropped from advertisement)")
             return
         }
@@ -300,7 +300,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         // An unparseable manifest yields no record (honestly absent, not a
         // fabricated id) — the producer must surface the gap, not hide it.
         XCTAssertNil(
-            ManagedCartridge.installedCartridgeRecordFromManifest("{not json".data(using: .utf8)!),
+            installedCartridgeRecordFromManifest("{not json".data(using: .utf8)!),
             "unparseable manifest must yield nil, not a placeholder identity"
         )
     }

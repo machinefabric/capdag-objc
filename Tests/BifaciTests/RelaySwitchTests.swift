@@ -1067,7 +1067,7 @@ final class CborRelaySwitchTests: XCTestCase {
         var probeXid: MessageId? = nil
         var nonce = Data()
         while true {
-            guard let frameOpt = try? reader.read(), let frame = frameOpt else { return }
+            guard let frame = try? reader.read() else { return }
             switch frame.frameType {
             case .req:
                 probeRid = frame.id
@@ -1325,7 +1325,7 @@ final class CborRelaySwitchTests: XCTestCase {
             try! writer.write(req)
 
             // Expect an ERR("NO_HANDLER") stamped with an XID to come back.
-            while let frameOpt = try? reader.read(), let frame = frameOpt {
+            while let frame = try? reader.read() {
                 if frame.frameType == .err {
                     receivedCode = frame.errorCode
                     receivedHadXid = frame.routingId != nil
@@ -1374,7 +1374,7 @@ final class CborRelaySwitchTests: XCTestCase {
             )
             ready.signal()
             // Reply ERR to the identity REQ — a broken identity handler.
-            if let frameOpt = try? reader.read(), let frame = frameOpt, frame.frameType == .req {
+            if let frame = try? reader.read(), frame.frameType == .req {
                 try! writer.write(Frame.err(id: frame.id, code: "IDENTITY_FAILED", message: "Rejected"))
             }
         }

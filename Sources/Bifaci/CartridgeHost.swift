@@ -391,6 +391,31 @@ internal func buildInstalledCartridgeRecord(
     )
 }
 
+/// Build the `InstalledCartridgeRecord` for an ATTACHED cartridge directly from
+/// its HELLO manifest bytes (no on-disk anchor). An attached cartridge has
+/// already completed HELLO + identity verification by the time this is called,
+/// so it is operational by construction. Returns nil if the manifest does not
+/// parse (the caller still attaches; the record is honestly absent — never a
+/// fabricated identity). Hoisted to file scope (like `buildInstalledCartridgeRecord`)
+/// so unit tests can drive it without reaching into the private `ManagedCartridge`.
+/// Mirrors the reference `installed_cartridge_record_from_manifest`.
+internal func installedCartridgeRecordFromManifest(_ manifest: Data) -> InstalledCartridgeRecord? {
+    guard let parsed = try? JSONDecoder().decode(Manifest.self, from: manifest) else {
+        return nil
+    }
+    return InstalledCartridgeRecord(
+        registryURL: parsed.registryURL,
+        id: parsed.name,
+        channel: parsed.channel,
+        version: parsed.version,
+        sha256: sha256Hex(for: manifest),
+        capGroups: [],
+        attachmentError: nil,
+        runtimeStats: nil,
+        lifecycle: .operational
+    )
+}
+
 // MARK: - Activity Timeout Constants
 
 /// Default timeout (seconds) for inactivity during cap execution.
@@ -734,20 +759,7 @@ private class ManagedCartridge {
     /// manifest does not parse (the caller still attaches; the record is
     /// honestly absent).
     static func installedCartridgeRecordFromManifest(_ manifest: Data) -> InstalledCartridgeRecord? {
-        guard let parsed = try? JSONDecoder().decode(Manifest.self, from: manifest) else {
-            return nil
-        }
-        return InstalledCartridgeRecord(
-            registryURL: parsed.registryURL,
-            id: parsed.name,
-            channel: parsed.channel,
-            version: parsed.version,
-            sha256: sha256Hex(for: manifest),
-            capGroups: [],
-            attachmentError: nil,
-            runtimeStats: nil,
-            lifecycle: .operational
-        )
+        return Bifaci.installedCartridgeRecordFromManifest(manifest)
     }
 
     /// Record a per-cartridge attachment failure and mark the cartridge as

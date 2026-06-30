@@ -78,15 +78,21 @@ static NSString *buildRegistryURL(NSString *urn) {
 
     NSString *urn = @"media:enc=utf-8;ext=md";
     NSString *digest = [registry sha256HexForString:urn];
+    // Assert against the registry's OWN configured base URL, not a hardcoded
+    // host: under `dx test --staging` the process env points the default config
+    // at fabric-staging.capdag.com, and the URL rule (versioned vs flat) is
+    // independent of which origin is configured. Mirrors the Rust test, which
+    // builds the expected URL from config.registry_base_url.
+    NSString *base = registry.config.registryBaseURL;
 
     NSString *versioned = [registry objectURLForKind:@"media" digest:digest defver:1];
     XCTAssertEqualObjects(versioned,
-        ([NSString stringWithFormat:@"https://fabric.capdag.com/media/%@/1.json", digest]),
+        ([NSString stringWithFormat:@"%@/media/%@/1.json", base, digest]),
         @"a def at manifest defver 1 must resolve to the versioned object path");
 
     NSString *flat = [registry objectURLForKind:@"media" digest:digest defver:0];
     XCTAssertEqualObjects(flat,
-        ([NSString stringWithFormat:@"https://fabric.capdag.com/media/%@", digest]),
+        ([NSString stringWithFormat:@"%@/media/%@", base, digest]),
         @"defver 0 is the legacy flat path — the wrong target for a versioned registry");
 
     // 2. Manifest-driven defver: a media def seeded under a v >= 1 manifest
