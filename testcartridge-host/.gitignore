@@ -583,8 +583,8 @@ MachineFabricSDK/Tests/data
 
 /engine
 /engine-signed
-/pluginsrv
-/pluginsrv-signed
+/cartridgesrv
+/cartridgesrv-signed
 .scrap/
 
 .wsb/
