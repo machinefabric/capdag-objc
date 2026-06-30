@@ -351,4 +351,58 @@ class CborRelayTests: XCTestCase {
         let r2 = try masterReader.read()!
         XCTAssertEqual(r2.frameType, .end)
     }
+
+    // TEST414: RelaySlave forwards a host-originated RelayNotify (local→socket),
+    // dropping only RelayState. The CartridgeHost publishes capability updates
+    // — the installed-cartridge inventory the engine routes by — as RelayNotify
+    // frames through the slave's local→socket path; the slave MUST forward
+    // them. Regression lock for the drift (reproduced in the go mirror) where
+    // Task 2 dropped RelayNotify alongside RelayState, stranding the host's
+    // inventory so the engine never learned the cartridge existed. Unlike
+    // test407/test408 (which hand-roll the forwarding), this drives the real
+    // RelaySlave.run() loop.
+    func test414_relaySlaveForwardsHostRelayNotify() throws {
+        let masterToSlave = createPipe()   // master → slave (socketRead)
+        let slaveToMaster = createPipe()   // slave → master (socketWrite)
+        let runtimeToSlave = createPipe()  // host → slave (localRead)
+        let slaveToRuntime = createPipe()  // slave → host (localWrite, unused here)
+
+        let slave = RelaySlave(localRead: runtimeToSlave.read, localWrite: slaveToRuntime.write)
+        let limits = Limits()
+        let initial = "{\"installed_cartridges\":[]}".data(using: .utf8)!
+
+        // run() blocks (spawns its own forwarding threads), so drive it on a
+        // background queue and observe the socket side from the test thread.
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? slave.run(
+                socketRead: masterToSlave.read,
+                socketWrite: slaveToMaster.write,
+                initialNotify: (manifest: initial, limits: limits)
+            )
+        }
+
+        let masterReader = FrameReader(handle: slaveToMaster.read)
+
+        // Frame 1: the initial RelayNotify the slave emits on start.
+        let f1 = try masterReader.read()!
+        XCTAssertEqual(f1.frameType, .relayNotify)
+
+        // Host writes a RelayState (must be DROPPED) then a populated
+        // RelayNotify (must be FORWARDED).
+        let hostWriter = FrameWriter(handle: runtimeToSlave.write)
+        try hostWriter.write(Frame.relayState(resources: "{\"memory\":1}".data(using: .utf8)!))
+        let manifest = "{\"installed_cartridges\":[{\"id\":\"CartA\"}]}".data(using: .utf8)!
+        try hostWriter.write(Frame.relayNotify(manifest: manifest, limits: limits))
+
+        // The next frame the master sees MUST be the RelayNotify — proving the
+        // RelayState was dropped and the RelayNotify forwarded (not the reverse).
+        let f2 = try masterReader.read()!
+        XCTAssertEqual(f2.frameType, .relayNotify,
+                       "RelayState must be dropped, RelayNotify forwarded")
+        XCTAssertEqual(f2.relayNotifyManifest, manifest)
+
+        // Terminate the slave: EOF its local + socket readers so run() returns.
+        runtimeToSlave.write.closeFile()
+        masterToSlave.write.closeFile()
+    }
 }

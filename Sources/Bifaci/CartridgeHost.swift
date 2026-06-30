@@ -669,40 +669,85 @@ private class ManagedCartridge {
         if isRemoved {
             return nil
         }
-        // Attached cartridges (no on-disk anchor) are pre-connected for
-        // in-process / test use — they never hold an attachment error in
-        // production. If a caller tags one with an attachment error it's a
-        // programming mistake upstream, so fail hard rather than
-        // manufacturing a placeholder id.
-        guard !cartridgeDir.isEmpty else {
+        let baseRecord: InstalledCartridgeRecord
+        if cartridgeDir.isEmpty {
+            // Attached cartridge (no on-disk anchor) — pre-connected for
+            // in-process / interop / host-embedded use. Its identity is
+            // derived from the HELLO manifest (the same
+            // (registry_url, channel, id, version) four-tuple a
+            // registered install carries), with the sha256 taken over the
+            // manifest bytes — the only stable artefact available without
+            // a file on disk. Mirrors the reference
+            // `installed_cartridge_record_from_manifest`
+            // (capdag/src/bifaci/host_runtime.rs) and capdag-go's
+            // `installedCartridgeRecordFromManifest`. WITHOUT this an
+            // attached cartridge is silently dropped from every
+            // RelayNotify (identity gates advertisement), so the engine
+            // never learns it exists and the relay switch waits forever
+            // for capabilities. Attached cartridges never hold an
+            // attachment error in production — tagging one is an upstream
+            // bug, so fail hard rather than manufacturing a placeholder id.
             if attachmentError != nil {
                 fatalError("BUG: attached cartridge (no cartridgeDir) carries an attachment error — this code path has no resolvable identity")
             }
-            return nil
-        }
-        guard var record = buildInstalledCartridgeRecord(
-            cartridgeDir: cartridgeDir,
-            attachmentError: attachmentError
-        ) else {
-            return nil
+            guard let fromManifest = Self.installedCartridgeRecordFromManifest(manifest) else {
+                // Manifest does not parse — the record is honestly absent.
+                return nil
+            }
+            baseRecord = fromManifest
+        } else {
+            guard let dirRecord = buildInstalledCartridgeRecord(
+                cartridgeDir: cartridgeDir,
+                attachmentError: attachmentError
+            ) else {
+                return nil
+            }
+            baseRecord = dirRecord
         }
         // Override the builder's default lifecycle (which is
         // `.discovered`, the safe sentinel) with the per-cartridge
         // tracked phase. The builder doesn't know about the host's
         // `ManagedCartridge` state — so we layer the host-side
         // truth on top here.
-        record = InstalledCartridgeRecord(
-            registryURL: record.registryURL,
-            id: record.id,
-            channel: record.channel,
-            version: record.version,
-            sha256: record.sha256,
-            capGroups: record.capGroups,
-            attachmentError: record.attachmentError,
-            runtimeStats: record.runtimeStats,
+        return InstalledCartridgeRecord(
+            registryURL: baseRecord.registryURL,
+            id: baseRecord.id,
+            channel: baseRecord.channel,
+            version: baseRecord.version,
+            sha256: baseRecord.sha256,
+            capGroups: baseRecord.capGroups,
+            attachmentError: baseRecord.attachmentError,
+            runtimeStats: baseRecord.runtimeStats,
             lifecycle: lifecycle
         )
-        return record
+    }
+
+    /// Build the install identity for a cartridge attached over raw
+    /// streams (no on-disk anchor: the dev / host-embedded / interop
+    /// path). The identity four-tuple `(registry_url, channel, id,
+    /// version)` comes from the HELLO manifest; the sha256 is taken over
+    /// the manifest bytes (the only stable artefact available without a
+    /// file on disk). An attached cartridge has already completed
+    /// HELLO + identity verification by the time this is called, so it is
+    /// operational by construction. Mirrors the reference
+    /// `installed_cartridge_record_from_manifest`. Returns nil if the
+    /// manifest does not parse (the caller still attaches; the record is
+    /// honestly absent).
+    static func installedCartridgeRecordFromManifest(_ manifest: Data) -> InstalledCartridgeRecord? {
+        guard let parsed = try? JSONDecoder().decode(Manifest.self, from: manifest) else {
+            return nil
+        }
+        return InstalledCartridgeRecord(
+            registryURL: parsed.registryURL,
+            id: parsed.name,
+            channel: parsed.channel,
+            version: parsed.version,
+            sha256: sha256Hex(for: manifest),
+            capGroups: [],
+            attachmentError: nil,
+            runtimeStats: nil,
+            lifecycle: .operational
+        )
     }
 
     /// Record a per-cartridge attachment failure and mark the cartridge as
@@ -719,6 +764,13 @@ private class ManagedCartridge {
         cartridge.manifest = manifest
         cartridge.limits = limits
         cartridge.running = true
+        // Attached ⇒ HELLO + identity verification already succeeded ⇒
+        // operational (and therefore dispatchable). Without this the
+        // default `.discovered` lifecycle would hold the cartridge out of
+        // the dispatchable set in `installedCartridgeRecord()` even though
+        // it is live. Mirrors the `Lifecycle: Operational` the reference /
+        // capdag-go stamp on the manifest-derived attached record.
+        cartridge.lifecycle = .operational
         return cartridge
     }
 

@@ -1,8 +1,8 @@
-# Swift/ObjC Test Catalog
+# CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 817
+**Total Tests:** 819
 
-**Numbered Tests:** 817
+**Numbered Tests:** 819
 
 **Unnumbered Tests:** 0
 
@@ -12,7 +12,7 @@
 
 All numbered test numbers are unique.
 
-This catalog lists all tests in the Swift/ObjC codebase.
+This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
@@ -286,6 +286,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test411 | `test411_socketCloseDetection` | TEST411: Socket close detection (both directions) | Tests/BifaciTests/RelayTests.swift:284 |
 | test412 | `test412_bidirectionalConcurrentFlow` | TEST412: Bidirectional concurrent frame flow through relay | Tests/BifaciTests/RelayTests.swift:310 |
 | test413 | `test413_registerCartridgeAddsToCaptable` | TEST413: Register cartridge adds entries to cap_table | Tests/BifaciTests/RuntimeTests.swift:312 |
+| test414 | `test414_relaySlaveForwardsHostRelayNotify` | TEST414: RelaySlave forwards a host-originated RelayNotify (local→socket), dropping only RelayState. The CartridgeHost publishes capability updates — the installed-cartridge inventory the engine routes by — as RelayNotify frames through the slave's local→socket path; the slave MUST forward them. Regression lock for the drift (reproduced in the go mirror) where Task 2 dropped RelayNotify alongside RelayState, stranding the host's inventory so the engine never learned the cartridge existed. Unlike test407/test408 (which hand-roll the forwarding), this drives the real RelaySlave.run() loop. | Tests/BifaciTests/RelayTests.swift:364 |
 | test415 | `test415_reqTriggersSpawnError` | TEST415: REQ for known cap triggers spawn attempt (verified by expected spawn error). Mirrors Rust test415_req_for_known_cap_triggers_spawn: production install layout — versioned cartridge directory with cartridge.json (carrying the channel) plus an entry-point binary that isn't executable, so spawn fails. | Tests/BifaciTests/RuntimeTests.swift:695 |
 | test416 | `test416_attachCartridgeUpdatesCaps` | TEST416: Attach cartridge performs HELLO handshake, extracts manifest, updates capabilities | Tests/BifaciTests/RuntimeTests.swift:339 |
 | test417 | `test417_fullPathRequestResponse` | TEST417: Route REQ to correct cartridge by cap_urn (with two attached cartridges) | Tests/BifaciTests/RuntimeTests.swift:369 |
@@ -333,6 +334,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test459 | `test459_reorderBufferTerminalEnd` | TEST459: Terminal END frame flows through correctly | Tests/BifaciTests/FlowOrderingTests.swift:390 |
 | test460 | `test460_reorderBufferTerminalErr` | TEST460: Terminal ERR frame flows through correctly | Tests/BifaciTests/FlowOrderingTests.swift:408 |
 | test461 | `test461_writeChunkedSeqZero` | TEST461: write_chunked produces frames with seq=0; SeqAssigner assigns at output stage | Tests/BifaciTests/FlowOrderingTests.swift:427 |
+| test462 | `test462_attachedCartridgeIdentityFromManifest` | TEST462: An attached cartridge (pre-connected over raw streams, no on-disk anchor) gets a resolvable install identity derived from its HELLO manifest — `ManagedCartridge.installedCartridgeRecordFromManifest`. Identity gates advertisement (`buildInstalledCartridgeRecordsLocked` drops a cartridge whose record is nil), so a nil here means the cartridge is silently dropped from every RelayNotify and the engine can never route to it. Regression lock for the attached-cartridge identity path this mirror regressed on: `installedCartridgeRecord()` returned nil for attached cartridges, so they never reached the engine. Mirrors the reference `installed_cartridge_record_from_manifest`. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:281 |
 | test472 | `test472_handshakeNegotiatesReorderBuffer` | TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides) | Tests/BifaciTests/FlowOrderingTests.swift:457 |
 | test473 | `test473_capDiscardParsesAsValidCapUrn` | TEST473: CAP_DISCARD parses as valid CapUrn with in=media: and out=media:void | Tests/BifaciTests/StandardCapsTests.swift:14 |
 | test474 | `test474_capDiscardAcceptsVoidOutputCaps` | TEST474: CAP_DISCARD accepts specific-input/void-output caps | Tests/BifaciTests/StandardCapsTests.swift:23 |
@@ -916,9 +918,9 @@ These tests have a numbering disagreement between the function name and the auth
 
 ---
 
-*Generated from Swift/ObjC source tree*
-*Total tests: 817*
-*Total numbered tests: 817*
+*Generated from CapDag-ObjC/Swift source tree*
+*Total tests: 819*
+*Total numbered tests: 819*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 1*
 *Total numbering mismatches: 66*

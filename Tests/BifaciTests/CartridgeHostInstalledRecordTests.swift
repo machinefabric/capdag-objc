@@ -267,4 +267,41 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         XCTAssertNil(identity,
                      "gone-manifest must win over upstream attachmentError")
     }
+
+    // TEST462: An attached cartridge (pre-connected over raw streams, no
+    // on-disk anchor) gets a resolvable install identity derived from its
+    // HELLO manifest — `ManagedCartridge.installedCartridgeRecordFromManifest`.
+    // Identity gates advertisement (`buildInstalledCartridgeRecordsLocked` drops
+    // a cartridge whose record is nil), so a nil here means the cartridge is
+    // silently dropped from every RelayNotify and the engine can never route to
+    // it. Regression lock for the attached-cartridge identity path this mirror
+    // regressed on: `installedCartridgeRecord()` returned nil for attached
+    // cartridges, so they never reached the engine. Mirrors the reference
+    // `installed_cartridge_record_from_manifest`.
+    func test462_attachedCartridgeIdentityFromManifest() throws {
+        let manifest = """
+        {"name":"TestCart","version":"1.2.3","channel":"nightly","registry_url":null,\
+        "description":"d","cap_groups":[{"name":"g","caps":[{"urn":"cap:effect=none",\
+        "title":"Identity","command":"identity"}]}]}
+        """.data(using: .utf8)!
+
+        guard let rec = ManagedCartridge.installedCartridgeRecordFromManifest(manifest) else {
+            XCTFail("attached cartridge identity must be derivable from a valid manifest (else it is dropped from advertisement)")
+            return
+        }
+        XCTAssertEqual(rec.id, "TestCart", "id comes from manifest name")
+        XCTAssertEqual(rec.version, "1.2.3")
+        XCTAssertEqual(rec.channel, "nightly")
+        XCTAssertNil(rec.registryURL, "dev build → null registry_url")
+        XCTAssertFalse(rec.sha256.isEmpty, "sha256 taken over manifest bytes")
+        // Attached ⇒ HELLO + identity verification already succeeded ⇒ operational.
+        XCTAssertEqual(rec.lifecycle, .operational)
+
+        // An unparseable manifest yields no record (honestly absent, not a
+        // fabricated id) — the producer must surface the gap, not hide it.
+        XCTAssertNil(
+            ManagedCartridge.installedCartridgeRecordFromManifest("{not json".data(using: .utf8)!),
+            "unparseable manifest must yield nil, not a placeholder identity"
+        )
+    }
 }
