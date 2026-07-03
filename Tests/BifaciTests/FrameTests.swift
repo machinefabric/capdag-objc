@@ -30,9 +30,8 @@ final class CborFrameTests: XCTestCase {
 
     // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     func test172_invalidFrameType() {
-        XCTAssertNil(FrameType(rawValue: 13), "rawValue 13 is one past Cancel")
+        XCTAssertNil(FrameType(rawValue: 14), "rawValue 14 is one past Credit")
         XCTAssertNil(FrameType(rawValue: 100), "rawValue 100 must be invalid")
-        XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
         XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
     }
 
@@ -51,6 +50,7 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(FrameType.relayNotify.rawValue, 10)
         XCTAssertEqual(FrameType.relayState.rawValue, 11)
         XCTAssertEqual(FrameType.cancel.rawValue, 12)
+        XCTAssertEqual(FrameType.credit.rawValue, 13)
     }
 
     // MARK: - Message ID Tests (TEST174-177, TEST202-203)
@@ -301,6 +301,7 @@ final class CborFrameTests: XCTestCase {
         let limits = Limits()
         XCTAssertEqual(limits.maxFrame, DEFAULT_MAX_FRAME)
         XCTAssertEqual(limits.maxChunk, DEFAULT_MAX_CHUNK)
+        XCTAssertEqual(limits.initialCredit, 32, "default initial_credit = 32 chunks")
     }
 
     // TEST198 (continued): Limits negotiation picks minimum of both sides
@@ -313,9 +314,9 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(negotiated.maxChunk, 100_000)   // min(100_000, 200_000)
     }
 
-    // TEST199: Test PROTOCOL_VERSION is 2
+    // TEST199: Test PROTOCOL_VERSION is 3
     func test199_protocolVersionConstant() {
-        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 2)
+        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 3)
     }
 
     // TEST200: Test integer key constants match the protocol specification
@@ -1180,7 +1181,9 @@ final class CborFrameTests: XCTestCase {
     // TEST403: Verify from_u8 returns None for values past the last valid frame type
     func test403_invalidFrameTypePastCancel() {
         XCTAssertEqual(FrameType(rawValue: 12), .cancel, "12 is Cancel")
-        XCTAssertNil(FrameType(rawValue: 13), "13 is past the last valid frame type")
+        XCTAssertEqual(FrameType(rawValue: 13), .credit, "13 is Credit")
+        XCTAssertNil(FrameType(rawValue: 14), "14 is past the last valid frame type")
+        XCTAssertNil(FrameType(rawValue: 2), "2 (old Res) is still invalid")
     }
 
     // TEST521: RelayNotify CBOR roundtrip preserves manifest and limits
@@ -1678,27 +1681,18 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.chunkCount, 100)
     }
 
-    // TEST6672: Offline flag blocks fetch_from_registry without making HTTP request
-    func test6672_cborRejectsStreamEndWithoutChunkCount() throws {
-        // Manually construct a STREAM_END frame without chunk_count
-        var map: [CBOR: CBOR] = [:]
-        map[.unsignedInt(FrameKey.version.rawValue)] = .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
-        map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(UInt64(FrameType.streamEnd.rawValue))
-        map[.unsignedInt(FrameKey.id.rawValue)] = .unsignedInt(1)
-        map[.unsignedInt(FrameKey.seq.rawValue)] = .unsignedInt(0)
-        map[.unsignedInt(FrameKey.streamId.rawValue)] = .utf8String("s1")
-        // Missing chunkCount!
+    // TEST6672: CBOR decode ACCEPTS STREAM_END without chunk_count — unbounded streams make no length promise (v3, L16)
+    func test6672_cborAcceptsStreamEndWithoutChunkCount() throws {
+        let reqId = MessageId.newUUID()
+        let frame = Frame.streamEndUnbounded(reqId: reqId, streamId: "s1")
+        XCTAssertNil(frame.chunkCount)
 
-        let cbor = CBOR.map(map)
-        let encoded = Data(cbor.encode())
-
-        XCTAssertThrowsError(try decodeFrame(encoded)) { error in
-            guard case FrameError.protocolError(let msg) = error else {
-                XCTFail("Expected protocolError, got \(error)")
-                return
-            }
-            XCTAssertTrue(msg.contains("chunkCount"), "Error should mention chunkCount: \(msg)")
-        }
+        let encoded = try encodeFrame(frame)
+        let decoded = try decodeFrame(encoded)
+        XCTAssertEqual(decoded.frameType, .streamEnd)
+        XCTAssertEqual(decoded.id, reqId)
+        XCTAssertEqual(decoded.streamId, "s1")
+        XCTAssertNil(decoded.chunkCount, "absent chunk_count must decode as nil, not a default")
     }
 
     // MARK: - Progress Frame Roundtrip Tests (TEST846-847)

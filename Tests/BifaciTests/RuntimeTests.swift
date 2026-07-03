@@ -14,7 +14,7 @@ final class TransformOp: Op, @unchecked Sendable {
         let input = try req.takeInput()
         _ = try? input.collectAllBytes()
         try req.output().start(isSequence: false)
-        try req.output().write("transformed".data(using: .utf8)!)
+        try req.output().blockingWrite("transformed".data(using: .utf8)!)
     }
     func metadata() -> OpMetadata { OpMetadata.builder("TransformOp").build() }
 }

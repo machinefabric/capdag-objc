@@ -100,15 +100,132 @@ protocol FrameSender: Sendable {
     func send(_ frame: Frame) throws
 }
 
+/// Shared per-stream credit window used for receive-side violation
+/// accounting (L12). The demux decrements it per arriving chunk; the
+/// handler's consumption grants (via `InputGrantEmitter`) extend it.
+final class WindowCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Int64
+
+    init(_ initial: Int64) {
+        self.value = initial
+    }
+
+    func add(_ n: Int64) {
+        lock.lock()
+        value += n
+        lock.unlock()
+    }
+
+    /// Decrement by one and return the value BEFORE the decrement.
+    func fetchSub() -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        let before = value
+        value -= 1
+        return before
+    }
+}
+
+/// Emits CREDIT grants for one input stream as the handler consumes it (L10).
+/// Grants are batched: one CREDIT per `batch` consumed chunks.
+final class InputGrantEmitter: @unchecked Sendable {
+    private let sender: any FrameSender
+    private let rid: MessageId
+    private let xid: MessageId?
+    /// Some = grant a specific stream; nil = grant the request's sole stream
+    /// (single-stream peer responses).
+    private let streamId: String?
+    /// Which side's stream these grants credit (routing discriminator, L11):
+    /// `.request` for handler-input consumption, `.response` for peer-response
+    /// consumption.
+    private let direction: CreditDirection
+    private let batch: UInt64
+    private var consumedSinceGrant: UInt64 = 0
+    /// Shared with the demux's violation accounting: granting extends the
+    /// window the demux checks arriving chunks against.
+    private let window: WindowCounter
+    private let lock = NSLock()
+
+    init(sender: any FrameSender, rid: MessageId, xid: MessageId?, streamId: String?, direction: CreditDirection, batch: UInt64, window: WindowCounter) {
+        self.sender = sender
+        self.rid = rid
+        self.xid = xid
+        self.streamId = streamId
+        self.direction = direction
+        self.batch = max(batch, 1)
+        self.window = window
+    }
+
+    /// Record one consumed chunk; emit a batched CREDIT grant when due.
+    func consumed() {
+        lock.lock()
+        consumedSinceGrant += 1
+        let due = consumedSinceGrant >= batch
+        lock.unlock()
+        if due {
+            flush()
+        }
+    }
+
+    /// Emit any pending (sub-batch) grant immediately.
+    ///
+    /// Deadlock-freedom rule (L10): a receiver MUST flush pending grants
+    /// before blocking on an empty input. Batching is a latency optimization
+    /// negotiated per link — the sender's window may come from a DIFFERENT
+    /// link's negotiation, so a sender can legally stall below this
+    /// receiver's batch threshold. Flushing at the block point guarantees
+    /// progress under any window/batch mismatch.
+    func flush() {
+        lock.lock()
+        guard consumedSinceGrant > 0 else {
+            lock.unlock()
+            return
+        }
+        let n = consumedSinceGrant
+        consumedSinceGrant = 0
+        lock.unlock()
+        window.add(Int64(n))
+        var frame = Frame.credit(targetRid: rid, streamId: streamId, credits: n, direction: direction)
+        frame.routingId = xid
+        // A failed grant send means the runtime is shutting down; the
+        // sender-side gate will be closed by the terminal path (counted
+        // at the ChannelFrameSender).
+        try? sender.send(frame)
+    }
+}
+
+/// Everything the demux needs to credit a request's input streams:
+/// grant plumbing for the handler side and per-stream violation windows.
+struct InputCreditContext {
+    let sender: any FrameSender
+    let rid: MessageId
+    let xid: MessageId?
+    let initialCredit: UInt64
+}
+
 /// A single input stream — yields decoded CBOR values from CHUNK frames.
 /// Handler never sees Frame, STREAM_START, STREAM_END, checksum, seq, or index.
+///
+/// Streams are delivered INCREMENTALLY (protocol v3, L16): items arrive from
+/// a live channel as the producer emits them — never buffered to completion.
+/// Consumption replenishes the sender's flow-control window (L10) — a slow
+/// handler naturally throttles the producer.
 public final class InputStream: Sequence, @unchecked Sendable {
     private let _mediaUrn: String
     private let rx: UnsafeTransfer<AnyIterator<Result<CBOR, StreamError>>>
+    /// Whether the sender declared this stream unbounded (no length promise).
+    /// Buffering collectors refuse unbounded streams (L16).
+    private let _unbounded: Bool
+    /// Grant emitter: consuming chunks replenishes the sender's window (L10).
+    /// nil = uncredited context (in-process host, CLI mode, tests).
+    private let grants: InputGrantEmitter?
 
-    init(mediaUrn: String, rx: AnyIterator<Result<CBOR, StreamError>>) {
+    init(mediaUrn: String, rx: AnyIterator<Result<CBOR, StreamError>>, unbounded: Bool = false, grants: InputGrantEmitter? = nil) {
         self._mediaUrn = mediaUrn
         self.rx = UnsafeTransfer(rx)
+        self._unbounded = unbounded
+        self.grants = grants
     }
 
     /// Media URN of this stream (from STREAM_START).
@@ -116,10 +233,30 @@ public final class InputStream: Sequence, @unchecked Sendable {
         _mediaUrn
     }
 
+    /// Whether the sender declared this stream unbounded — no length promise;
+    /// consume incrementally via iteration, never with the `collect*`
+    /// buffering helpers (L16).
+    public var isUnbounded: Bool {
+        _unbounded
+    }
+
+    /// Refuse buffering on unbounded streams (L16) — buffering an unbounded
+    /// stream is unbounded memory; the failure must be explicit, not an OOM.
+    private func checkBounded(_ method: String) throws {
+        if _unbounded {
+            throw StreamError.protocolError(
+                "\(method) refused: stream is unbounded (no length promise) — consume incrementally (L16)"
+            )
+        }
+    }
+
     /// Collect each chunk as a separate item with its raw bytes.
     /// For sequence streams (is_sequence=true), each chunk is one item.
     /// Returns an array of raw byte items, CBOR-unwrapped.
+    ///
+    /// Fails hard on streams declared unbounded (L16).
     public func collectItems() throws -> [Data] {
+        try checkBounded("collectItems")
         var items: [Data] = []
         for itemResult in self {
             let item = try itemResult.get()
@@ -139,7 +276,11 @@ public final class InputStream: Sequence, @unchecked Sendable {
     /// Collect all chunks into a single byte vector (scalar path).
     /// Extracts inner bytes from .byteString/.utf8String and concatenates.
     /// Use this for scalar (non-list) streams.
+    ///
+    /// Fails hard on streams declared unbounded (L16) — there is no finite
+    /// buffer for a stream with no length promise.
     public func collectBytes() throws -> Data {
+        try checkBounded("collectBytes")
         var result = Data()
         for itemResult in self {
             let item = try itemResult.get()
@@ -164,7 +305,10 @@ public final class InputStream: Sequence, @unchecked Sendable {
     /// item. Use `splitCborSequence()` to iterate the items.
     ///
     /// Use this for list-tagged streams (where `CSMediaUrnIsList(mediaUrn)` is true).
+    ///
+    /// Fails hard on streams declared unbounded (L16).
     public func collectCborSequence() throws -> Data {
+        try checkBounded("collectCborSequence")
         var result = Data()
         for itemResult in self {
             let item = try itemResult.get()
@@ -176,15 +320,28 @@ public final class InputStream: Sequence, @unchecked Sendable {
     }
 
     /// Collect a single CBOR value (expects exactly one chunk).
+    ///
+    /// Fails hard on streams declared unbounded (L16).
     public func collectValue() throws -> CBOR {
-        guard let first = rx.value.next() else {
+        try checkBounded("collectValue")
+        guard let first = makeIterator().next() else {
             throw StreamError.closed
         }
         return try first.get()
     }
 
     public func makeIterator() -> AnyIterator<Result<CBOR, StreamError>> {
-        rx.value
+        let base = rx.value
+        let grants = self.grants
+        return AnyIterator {
+            let item = base.next()
+            // Consumption replenishes the sender's window (L10): a slow
+            // handler naturally throttles the producer.
+            if case .some(.success) = item {
+                grants?.consumed()
+            }
+            return item
+        }
     }
 }
 
@@ -206,15 +363,26 @@ public enum PeerResponseItem {
 /// silently discard them and return only data.
 public final class PeerResponse: @unchecked Sendable {
     private let items: UnsafeTransfer<AnyIterator<PeerResponseItem>>
+    /// Consumption grants for the responding peer's output window (L10/L14).
+    /// nil = uncredited context (in-process host, synthetic test responses).
+    private let grants: InputGrantEmitter?
 
-    init(items: AnyIterator<PeerResponseItem>) {
+    init(items: AnyIterator<PeerResponseItem>, grants: InputGrantEmitter? = nil) {
         self.items = UnsafeTransfer(items)
+        self.grants = grants
     }
 
     /// Receive the next item (data or LOG) from the peer response.
     /// Returns nil when the stream ends.
+    ///
+    /// Data consumption replenishes the responding peer's output window —
+    /// a slow consumer naturally throttles the producer (L10).
     public func recv() -> PeerResponseItem? {
-        items.value.next()
+        let item = items.value.next()
+        if let item = item, case .data(.success) = item {
+            grants?.consumed()
+        }
+        return item
     }
 
     /// Collect all data chunks into a single byte vector, discarding LOG frames.
@@ -370,15 +538,56 @@ public func requireStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], media
     return str
 }
 
+/// A handler's terminal status override, carried in END terminal metadata
+/// (L3/L5). Declared via `OutputStream.finish(progress:message:)`.
+public struct FinalStatus: Sendable {
+    public let progress: Double
+    public let message: String?
+
+    public init(progress: Double, message: String?) {
+        self.progress = progress
+        self.message = message
+    }
+}
+
+/// Thread-safe holder for the handler-declared terminal status. Shared
+/// between the handler's `OutputStream` and the runtime, which reads it after
+/// the handler returns to stamp the END frame's terminal metadata.
+final class FinalStatusHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var status: FinalStatus?
+
+    func set(_ s: FinalStatus) {
+        lock.lock()
+        status = s
+        lock.unlock()
+    }
+
+    func take() -> FinalStatus? {
+        lock.lock()
+        defer { lock.unlock() }
+        let s = status
+        status = nil
+        return s
+    }
+}
+
 /// Writable stream handle for handler output or peer call arguments.
 /// Manages STREAM_START/CHUNK/STREAM_END framing automatically.
 ///
-/// Mirrors Rust's OutputStream exactly:
-/// - `start(isSequence:)` must be called exactly once before any output.
-/// - `write()` requires `start(isSequence: false)`.
-/// - `emitListItem()` requires `start(isSequence: true)`.
-/// - `emitCbor()` requires `start(isSequence: false)`.
-/// - `close()` is idempotent. No-op if `start()` was never called.
+/// Mirrors Rust's OutputStream:
+/// - `start(isSequence:)` / `startUnbounded(isSequence:)` must be called
+///   exactly once before any output.
+/// - `write()` / `emitCbor()` require write mode (`isSequence: false`).
+/// - `emitListItem()` requires sequence mode (`isSequence: true`).
+/// - `close()` is idempotent. No-op if `start()` was never called. Unbounded
+///   streams close with a STREAM_END that carries no chunk_count (L16).
+///
+/// Flow control (protocol v3, L9): when constructed with a credit router,
+/// every CHUNK acquires one credit before it is sent — the async variants
+/// await an exhausted window; `blockingWrite`/`blockingEmitListItem` block
+/// the calling thread instead (FFI threads, non-async contexts). Uncredited
+/// streams (CLI mode, tests, in-process host) never wait.
 public final class OutputStream: @unchecked Sendable {
     private let sender: any FrameSender
     private let streamId: String
@@ -390,6 +599,9 @@ public final class OutputStream: @unchecked Sendable {
     /// None = not started, Some(false) = write mode, Some(true) = sequence mode
     private let streamModeLock = NSLock()
     private var _streamMode: Bool? = nil
+    /// Whether this stream was started unbounded (no length promise, L16).
+    /// Guarded by `streamModeLock`.
+    private var _unbounded = false
 
     private let chunkStateLock = NSLock()
     private var _chunkIndex: UInt64 = 0
@@ -398,13 +610,28 @@ public final class OutputStream: @unchecked Sendable {
     private let closedLock = NSLock()
     private var _closed = false
 
+    /// Per-stream flow-control window (L9). One credit is acquired per CHUNK
+    /// before it is sent; the receiver replenishes via CREDIT frames.
+    /// nil = uncredited context — writes never wait.
+    private let creditGate: CreditGate?
+    /// Router the gate registers with on `start()` so inbound CREDIT frames
+    /// find it. Present iff `creditGate` is.
+    private let creditRouter: CreditRouter?
+
+    /// Handler-declared terminal status (progress + message), delivered in
+    /// the END frame's terminal metadata (L3/L5). Unset means the runtime
+    /// stamps the default: progress 1.0 on success.
+    let finalStatusHolder = FinalStatusHolder()
+
     init(
         sender: any FrameSender,
         streamId: String,
         mediaUrn: String,
         requestId: MessageId,
         routingId: MessageId?,
-        maxChunk: Int
+        maxChunk: Int,
+        initialCredit: UInt64 = 0,
+        creditRouter: CreditRouter? = nil
     ) {
         self.sender = sender
         self.streamId = streamId
@@ -412,11 +639,77 @@ public final class OutputStream: @unchecked Sendable {
         self.requestId = requestId
         self.routingId = routingId
         self.maxChunk = maxChunk
+        if let router = creditRouter {
+            self.creditGate = CreditGate(initialCredit: initialCredit)
+            self.creditRouter = router
+        } else {
+            self.creditGate = nil
+            self.creditRouter = nil
+        }
     }
 
     /// Media URN of this stream.
     public var mediaUrn: String {
         _mediaUrn
+    }
+
+    /// Acquire one chunk of credit, waiting if the window is exhausted.
+    /// Uncredited streams return immediately. A closed gate (request
+    /// terminated/cancelled) fails the write — the producer must stop (L13).
+    private func acquireCredit() async throws {
+        if let gate = creditGate {
+            do {
+                try await gate.acquire(1)
+            } catch {
+                throw CartridgeRuntimeError.handlerError("\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Blocking-context counterpart of `acquireCredit` (FFI threads,
+    /// non-async contexts).
+    private func blockingAcquireCredit() throws {
+        if let gate = creditGate {
+            do {
+                try gate.blockingAcquire(1)
+            } catch {
+                throw CartridgeRuntimeError.handlerError("\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Declare the request's terminal status (final progress + message),
+    /// delivered in the END frame's terminal metadata when the handler
+    /// completes successfully (L3/L5). Optional — without a call, a
+    /// successful END carries progress 1.0. The last call before the handler
+    /// returns wins. Do NOT emit a trailing 100% progress LOG frame; the END
+    /// terminal metadata IS the final progress event and cannot race END.
+    public func finish(progress: Float, message: String) {
+        finalStatusHolder.set(FinalStatus(
+            progress: Double(progress),
+            message: message.isEmpty ? nil : message
+        ))
+    }
+
+    /// Common start bookkeeping: set the mode exactly once and register the
+    /// credit gate so inbound CREDIT frames find it.
+    private func markStarted(isSequence: Bool, unbounded: Bool) throws {
+        streamModeLock.lock()
+        let alreadyStarted = _streamMode != nil
+        if !alreadyStarted {
+            _streamMode = isSequence
+            _unbounded = unbounded
+        }
+        streamModeLock.unlock()
+
+        if alreadyStarted {
+            throw CartridgeRuntimeError.handlerError("stream already started")
+        }
+
+        // Register this stream's credit gate so inbound CREDIT frames find it.
+        if let gate = creditGate, let router = creditRouter {
+            router.register(rid: requestId, streamId: streamId, gate: gate)
+        }
     }
 
     /// Send STREAM_START with the given mode. Must be called exactly once
@@ -425,18 +718,26 @@ public final class OutputStream: @unchecked Sendable {
     /// - `isSequence = false` — write mode: each chunk is a complete CBOR value
     /// - `isSequence = true`  — sequence mode: chunks are CBOR fragments (RFC 8742)
     public func start(isSequence: Bool) throws {
-        streamModeLock.lock()
-        let alreadyStarted = _streamMode != nil
-        if !alreadyStarted {
-            _streamMode = isSequence
-        }
-        streamModeLock.unlock()
-
-        if alreadyStarted {
-            throw CartridgeRuntimeError.handlerError("stream already started")
-        }
+        try markStarted(isSequence: isSequence, unbounded: false)
 
         var startFrame = Frame.streamStart(
+            reqId: requestId,
+            streamId: streamId,
+            mediaUrn: _mediaUrn,
+            isSequence: isSequence
+        )
+        startFrame.routingId = routingId
+        try sender.send(startFrame)
+    }
+
+    /// Send STREAM_START for an UNBOUNDED stream — one that makes no length
+    /// promise (L16). The receiver must consume it incrementally; buffering
+    /// collectors refuse it. `close()` on an unbounded stream sends
+    /// STREAM_END without a chunkCount. Otherwise identical to `start()`.
+    public func startUnbounded(isSequence: Bool) throws {
+        try markStarted(isSequence: isSequence, unbounded: true)
+
+        var startFrame = Frame.streamStartUnbounded(
             reqId: requestId,
             streamId: streamId,
             mediaUrn: _mediaUrn,
@@ -489,7 +790,11 @@ public final class OutputStream: @unchecked Sendable {
 
     /// Write raw bytes. Splits into maxChunk pieces, each wrapped as CBOR byteString.
     /// Requires `start(isSequence: false)` to have been called first.
-    public func write(_ data: Data) throws {
+    ///
+    /// Awaits per chunk when the flow-control window is exhausted (L9); the
+    /// receiver's consumption replenishes it. Use `blockingWrite` from
+    /// non-async contexts.
+    public func write(_ data: Data) async throws {
         try checkMode(false)
         if data.isEmpty {
             return
@@ -498,9 +803,49 @@ public final class OutputStream: @unchecked Sendable {
         while offset < data.count {
             let chunkSize = min(data.count - offset, maxChunk)
             let chunkBytes = data.subdata(in: offset..<(offset + chunkSize))
+            try await acquireCredit()
             try sendChunk(.byteString([UInt8](chunkBytes)))
             offset += chunkSize
         }
+    }
+
+    /// Blocking-context counterpart of `write(_:)` — for FFI threads and
+    /// non-async contexts. Identical framing; the credit wait blocks the
+    /// calling thread instead of yielding.
+    public func blockingWrite(_ data: Data) throws {
+        try checkMode(false)
+        if data.isEmpty {
+            return
+        }
+        var offset = 0
+        while offset < data.count {
+            let chunkSize = min(data.count - offset, maxChunk)
+            let chunkBytes = data.subdata(in: offset..<(offset + chunkSize))
+            try blockingAcquireCredit()
+            try sendChunk(.byteString([UInt8](chunkBytes)))
+            offset += chunkSize
+        }
+    }
+
+    /// Send one raw sequence-item chunk (payload = raw CBOR fragment bytes).
+    private func sendItemChunk(_ chunkPayload: Data) throws {
+        chunkStateLock.lock()
+        let currentChunkIndex = _chunkIndex
+        _chunkIndex += 1
+        _chunkCount += 1
+        chunkStateLock.unlock()
+
+        let checksum = Frame.computeChecksum(chunkPayload)
+        var frame = Frame.chunk(
+            reqId: requestId,
+            streamId: streamId,
+            seq: 0,
+            payload: chunkPayload,
+            chunkIndex: currentChunkIndex,
+            checksum: checksum
+        )
+        frame.routingId = routingId
+        try sender.send(frame)
     }
 
     /// Emit a single CBOR value as one item in an RFC 8742 CBOR sequence.
@@ -514,7 +859,10 @@ public final class OutputStream: @unchecked Sendable {
     /// Unlike `emitCbor` (which re-wraps each piece as a separate CBOR value),
     /// this sends raw CBOR bytes as frame payloads directly.
     /// Requires `start(isSequence: true)` to have been called first.
-    public func emitListItem(_ value: CBOR) throws {
+    ///
+    /// Awaits per chunk when the flow-control window is exhausted (L9). Use
+    /// `blockingEmitListItem` from non-async contexts.
+    public func emitListItem(_ value: CBOR) async throws {
         try checkMode(true)
         let cborBytes = Data(value.encode())
 
@@ -522,24 +870,23 @@ public final class OutputStream: @unchecked Sendable {
         while offset < cborBytes.count {
             let chunkSize = min(cborBytes.count - offset, maxChunk)
             let chunkPayload = cborBytes.subdata(in: offset..<(offset + chunkSize))
+            try await acquireCredit()
+            try sendItemChunk(chunkPayload)
+            offset += chunkSize
+        }
+    }
 
-            chunkStateLock.lock()
-            let currentChunkIndex = _chunkIndex
-            _chunkIndex += 1
-            _chunkCount += 1
-            chunkStateLock.unlock()
+    /// Blocking-context counterpart of `emitListItem(_:)`.
+    public func blockingEmitListItem(_ value: CBOR) throws {
+        try checkMode(true)
+        let cborBytes = Data(value.encode())
 
-            let checksum = Frame.computeChecksum(chunkPayload)
-            var frame = Frame.chunk(
-                reqId: requestId,
-                streamId: streamId,
-                seq: 0,
-                payload: chunkPayload,
-                chunkIndex: currentChunkIndex,
-                checksum: checksum
-            )
-            frame.routingId = routingId
-            try sender.send(frame)
+        var offset = 0
+        while offset < cborBytes.count {
+            let chunkSize = min(cborBytes.count - offset, maxChunk)
+            let chunkPayload = cborBytes.subdata(in: offset..<(offset + chunkSize))
+            try blockingAcquireCredit()
+            try sendItemChunk(chunkPayload)
             offset += chunkSize
         }
     }
@@ -547,7 +894,9 @@ public final class OutputStream: @unchecked Sendable {
     /// Emit a CBOR value. Handles byteString/utf8String/array/map chunking.
     /// Uses write mode (isSequence=false) — each chunk is a complete CBOR value.
     /// Requires `start(isSequence: false)` to have been called first.
-    public func emitCbor(_ value: CBOR) throws {
+    ///
+    /// Awaits per chunk when the flow-control window is exhausted (L9).
+    public func emitCbor(_ value: CBOR) async throws {
         try checkMode(false)
         switch value {
         case .byteString(let bytes):
@@ -555,6 +904,7 @@ public final class OutputStream: @unchecked Sendable {
             while offset < bytes.count {
                 let chunkSize = min(bytes.count - offset, maxChunk)
                 let chunkBytes = Array(bytes[offset..<(offset + chunkSize)])
+                try await acquireCredit()
                 try sendChunk(.byteString(chunkBytes))
                 offset += chunkSize
             }
@@ -577,23 +927,27 @@ public final class OutputStream: @unchecked Sendable {
                 }
                 let chunkData = textBytes.subdata(in: offset..<(offset + chunkSize))
                 let chunkText = String(data: chunkData, encoding: .utf8)!
+                try await acquireCredit()
                 try sendChunk(.utf8String(chunkText))
                 offset += chunkSize
             }
 
         case .array(let elements):
             for element in elements {
+                try await acquireCredit()
                 try sendChunk(element)
             }
 
         case .map(let entries):
             for (key, val) in entries {
                 let entry = CBOR.array([key, val])
+                try await acquireCredit()
                 try sendChunk(entry)
             }
 
         default:
             // Other types (int, float, bool, null): send as single chunk
+            try await acquireCredit()
             try sendChunk(value)
         }
     }
@@ -653,6 +1007,8 @@ public final class OutputStream: @unchecked Sendable {
     /// Close the output stream (sends STREAM_END). Idempotent.
     /// If `start()` was never called, this is a no-op (no STREAM_START was sent,
     /// so no STREAM_END is needed — the handler produced no output).
+    /// Unbounded streams made no length promise — their STREAM_END carries
+    /// no chunkCount (L16).
     public func close() throws {
         closedLock.lock()
         let alreadyClosed = _closed
@@ -667,21 +1023,26 @@ public final class OutputStream: @unchecked Sendable {
 
         streamModeLock.lock()
         let mode = _streamMode
+        let unbounded = _unbounded
         streamModeLock.unlock()
 
         if mode == nil {
             return // Never started — no output produced, nothing to close
         }
 
-        chunkStateLock.lock()
-        let finalChunkCount = _chunkCount
-        chunkStateLock.unlock()
-
-        var frame = Frame.streamEnd(
-            reqId: requestId,
-            streamId: streamId,
-            chunkCount: finalChunkCount
-        )
+        var frame: Frame
+        if unbounded {
+            frame = Frame.streamEndUnbounded(reqId: requestId, streamId: streamId)
+        } else {
+            chunkStateLock.lock()
+            let finalChunkCount = _chunkCount
+            chunkStateLock.unlock()
+            frame = Frame.streamEnd(
+                reqId: requestId,
+                streamId: streamId,
+                chunkCount: finalChunkCount
+            )
+        }
         frame.routingId = routingId
         try sender.send(frame)
     }
@@ -729,16 +1090,38 @@ public final class PeerCall: @unchecked Sendable {
     private let maxChunk: Int
     private var responseRx: AnyIterator<Frame>?
     private let lock = NSLock()
+    /// Router delivering inbound CREDIT grants to this cartridge's outgoing
+    /// peer-argument streams (L14 — peer args are credited too). nil =
+    /// uncredited context.
+    private let creditRouter: CreditRouter?
+    private let initialCredit: UInt64
+    /// Consumption grants for the responding peer's output window (L10/L14),
+    /// created by the caller alongside the response iterator so the iterator
+    /// can flush pending grants before blocking (L10 deadlock-freedom rule).
+    /// nil = uncredited context.
+    private let responseGrants: InputGrantEmitter?
 
-    init(sender: any FrameSender, requestId: MessageId, maxChunk: Int, responseRx: AnyIterator<Frame>) {
+    init(
+        sender: any FrameSender,
+        requestId: MessageId,
+        maxChunk: Int,
+        responseRx: AnyIterator<Frame>,
+        creditRouter: CreditRouter? = nil,
+        initialCredit: UInt64 = DEFAULT_INITIAL_CREDIT,
+        responseGrants: InputGrantEmitter? = nil
+    ) {
         self.sender = sender
         self.requestId = requestId
         self.maxChunk = maxChunk
         self.responseRx = responseRx
+        self.creditRouter = creditRouter
+        self.initialCredit = initialCredit
+        self.responseGrants = responseGrants
     }
 
     /// Create a new arg OutputStream for this peer call.
-    /// Each arg is an independent stream (own stream_id, no routing_id).
+    /// Each arg is an independent stream (own stream_id, no routing_id),
+    /// flow-controlled by the callee's consumption (L14).
     public func arg(mediaUrn: String) -> OutputStream {
         let streamId = UUID().uuidString
         return OutputStream(
@@ -747,7 +1130,9 @@ public final class PeerCall: @unchecked Sendable {
             mediaUrn: mediaUrn,
             requestId: requestId,
             routingId: nil, // No routing_id for peer requests
-            maxChunk: maxChunk
+            maxChunk: maxChunk,
+            initialCredit: initialCredit,
+            creditRouter: creditRouter
         )
     }
 
@@ -773,8 +1158,13 @@ public final class PeerCall: @unchecked Sendable {
         lock.unlock()
 
         // Start demux — returns immediately so LOG frames can be consumed
-        // before data arrives (critical for keeping activity timer alive)
-        let peerResponse = demuxSingleStream(responseRx: rx, maxChunk: maxChunk)
+        // before data arrives (critical for keeping activity timer alive).
+        // Consumption grants keep the responding peer's output window
+        // replenished (L10/L14); single-stream response → stream-less grants.
+        // The grants emitter was created alongside the response iterator by
+        // the caller (PeerInvokerImpl.call) so the iterator flushes pending
+        // grants before it blocks on an empty response channel (L10).
+        let peerResponse = demuxSingleStream(responseRx: rx, maxChunk: maxChunk, grants: responseGrants)
         fputs("[PeerCall] finish: demux started for peer_rid=\(requestId)\n", stderr)
         return peerResponse
     }
@@ -863,7 +1253,7 @@ public final class BlockingQueue<T>: @unchecked Sendable {
 /// one at a time as they arrive. Returns immediately — LOG frames are delivered
 /// in real-time, not buffered until data starts. This is critical for keeping
 /// the engine's activity timer alive during long peer calls (e.g., model downloads).
-internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) -> PeerResponse {
+internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, grants: InputGrantEmitter? = nil) -> PeerResponse {
     let iterator = AnyIterator<PeerResponseItem> {
         while let frame = responseRx.next() {
             switch frame.frameType {
@@ -913,119 +1303,162 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int) -
         return nil
     }
 
-    return PeerResponse(items: iterator)
+    return PeerResponse(items: iterator, grants: grants)
 }
 
-/// Demux multiple input streams from frame iterator into InputPackage.
-/// Groups frames by stream_id, yields InputStream for each stream.
+/// Demux multiple input streams from a frame iterator into an InputPackage.
+/// Groups frames by stream_id, yields an InputStream for each stream.
 /// Used for incoming requests (cartridge receiving from host).
-internal func demuxMultiStream(frameIterator: AnyIterator<Frame>) -> InputPackage {
-    // Track per-stream state
-    class StreamState {
-        var mediaUrn: String = "media:"
-        var chunks: [Result<CBOR, StreamError>] = []
-        var ended = false
-    }
+///
+/// Protocol v3 regime (L16): the demux runs on its own thread and feeds each
+/// stream's queue LIVE as frames arrive from the iterator — the handler
+/// observes items incrementally while the producer is still emitting; input
+/// is never buffered to completion. When `credit` is supplied, the demux
+/// keeps per-stream credit windows (initialCredit + grants) and surfaces an
+/// over-window chunk as a fatal CREDIT_VIOLATION stream error (L12); handler
+/// consumption emits batched grants (window/2) via each stream's
+/// `InputGrantEmitter` (L10).
+internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputCreditContext? = nil) -> InputPackage {
+    let streamsQueue = BlockingQueue<Result<InputStream, StreamError>>()
 
-    var streams: [String: StreamState] = [:]
-    var streamOrder: [String] = [] // Track order of STREAM_START arrivals
+    Thread.detachNewThread {
+        // Per-stream live channels: streamId → chunk queue.
+        var streamChannels: [String: BlockingQueue<Result<CBOR, StreamError>>] = [:]
+        // Per-stream remaining credit windows (L10/L12). The window starts at
+        // the negotiated initialCredit; handler consumption (grants) extends
+        // it; a chunk arriving with the window at zero is a fatal
+        // CREDIT_VIOLATION. The demux itself never blocks — accounting keeps
+        // control frames flowing regardless of data pressure.
+        var streamWindows: [String: WindowCounter] = [:]
 
-    // Drain all frames and organize by stream_id
-    for frame in frameIterator {
-        switch frame.frameType {
-        case .streamStart:
-            guard let streamId = frame.streamId else {
-                continue
+        func finishAll() {
+            for (_, queue) in streamChannels {
+                queue.finish()
             }
-            let state = StreamState()
-            if let urn = frame.mediaUrn {
-                state.mediaUrn = urn
-            }
-            streams[streamId] = state
-            streamOrder.append(streamId)
+            streamChannels.removeAll()
+            streamsQueue.finish()
+        }
 
-        case .chunk:
-            guard let streamId = frame.streamId,
-                  let state = streams[streamId],
-                  let payload = frame.payload else {
-                continue
-            }
+        loop: while let frame = frameIterator.next() {
+            switch frame.frameType {
+            case .streamStart:
+                guard let streamId = frame.streamId else {
+                    streamsQueue.push(.failure(.protocolError("STREAM_START missing stream_id")))
+                    break loop
+                }
+                let chunkQueue = BlockingQueue<Result<CBOR, StreamError>>()
+                streamChannels[streamId] = chunkQueue
 
-            // Verify checksum (MANDATORY in protocol v2)
-            guard let expectedChecksum = frame.checksum else {
-                state.chunks.append(.failure(.protocolError("CHUNK frame missing required checksum field")))
-                continue
-            }
-            let actualChecksum = Frame.computeChecksum(payload)
-            if actualChecksum != expectedChecksum {
-                state.chunks.append(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum)")))
-                continue
-            }
+                var grants: InputGrantEmitter? = nil
+                if let ctx = credit {
+                    let window = WindowCounter(Int64(ctx.initialCredit))
+                    streamWindows[streamId] = window
+                    grants = InputGrantEmitter(
+                        sender: ctx.sender,
+                        rid: ctx.rid,
+                        xid: ctx.xid,
+                        streamId: streamId,
+                        direction: .request,
+                        batch: max(ctx.initialCredit / 2, 1),
+                        window: window
+                    )
+                }
 
-            do {
-                guard let value = try CBOR.decode([UInt8](payload)) else {
-                    state.chunks.append(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
+                // Try-then-flush-then-block (L10 deadlock-freedom rule): a
+                // consumer about to block on an empty queue flushes its
+                // pending sub-batch grants first — the producer may be
+                // stalled waiting for exactly this credit.
+                let streamGrants = grants
+                let iterator = AnyIterator<Result<CBOR, StreamError>> {
+                    if let item = chunkQueue.tryPop(timeout: 0) {
+                        return item
+                    }
+                    streamGrants?.flush()
+                    return chunkQueue.dequeue()
+                }
+                let inputStream = InputStream(
+                    mediaUrn: frame.mediaUrn ?? "media:",
+                    rx: iterator,
+                    unbounded: frame.isUnbounded,
+                    grants: grants
+                )
+                streamsQueue.push(.success(inputStream))
+
+            case .chunk:
+                guard let streamId = frame.streamId,
+                      let queue = streamChannels[streamId],
+                      let payload = frame.payload else {
                     continue
                 }
-                state.chunks.append(.success(value))
-            } catch {
-                state.chunks.append(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+
+                // Credit-violation check (L12): a chunk beyond the granted
+                // window is a fatal protocol error for this request.
+                if let window = streamWindows[streamId] {
+                    let before = window.fetchSub()
+                    if before <= 0 {
+                        queue.push(.failure(.protocolError(
+                            "CREDIT_VIOLATION: chunk received beyond the granted window on stream \(streamId) (L12)"
+                        )))
+                        continue
+                    }
+                }
+
+                // Verify checksum (MANDATORY)
+                guard let expectedChecksum = frame.checksum else {
+                    queue.push(.failure(.protocolError("CHUNK frame missing required checksum field")))
+                    continue
+                }
+                let actualChecksum = Frame.computeChecksum(payload)
+                if actualChecksum != expectedChecksum {
+                    queue.push(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum)")))
+                    continue
+                }
+
+                do {
+                    guard let value = try CBOR.decode([UInt8](payload)) else {
+                        queue.push(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
+                        continue
+                    }
+                    queue.push(.success(value))
+                } catch {
+                    queue.push(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+                }
+
+            case .streamEnd:
+                guard let streamId = frame.streamId else {
+                    continue
+                }
+                // Regular stream ended — close its live channel so the
+                // handler's iteration completes.
+                if let queue = streamChannels.removeValue(forKey: streamId) {
+                    queue.finish()
+                }
+
+            case .end:
+                // All streams done
+                break loop
+
+            case .err:
+                // Error frame — propagate to all open streams AND the package.
+                let code = frame.errorCode ?? "UNKNOWN"
+                let message = frame.errorMessage ?? "Unknown error"
+                for (_, queue) in streamChannels {
+                    queue.push(.failure(.remoteError(code: code, message: message)))
+                }
+                streamsQueue.push(.failure(.remoteError(code: code, message: message)))
+                break loop
+
+            default:
+                break // Ignore LOG, HEARTBEAT, etc.
             }
-
-        case .streamEnd:
-            guard let streamId = frame.streamId,
-                  let state = streams[streamId] else {
-                continue
-            }
-            state.ended = true
-
-        case .end:
-            break
-
-        case .err:
-            // Error frame - propagate to all streams
-            let code = frame.errorCode ?? "UNKNOWN"
-            let message = frame.errorMessage ?? "Unknown error"
-            let error = StreamError.remoteError(code: code, message: message)
-            for state in streams.values {
-                state.chunks.append(.failure(error))
-            }
-            break
-
-        default:
-            break
         }
+
+        finishAll()
     }
 
-    // Build InputStream for each stream in arrival order
-    var inputStreams: [Result<InputStream, StreamError>] = []
-    for streamId in streamOrder {
-        guard let state = streams[streamId] else {
-            continue
-        }
-
-        var chunkIndex = 0
-        let chunksCopy = state.chunks
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
-            guard chunkIndex < chunksCopy.count else { return nil }
-            let item = chunksCopy[chunkIndex]
-            chunkIndex += 1
-            return item
-        }
-
-        let inputStream = InputStream(mediaUrn: state.mediaUrn, rx: iterator)
-        inputStreams.append(.success(inputStream))
-    }
-
-    // Create InputPackage iterator
-    var streamIndex = 0
     let streamsIterator = AnyIterator<Result<InputStream, StreamError>> {
-        guard streamIndex < inputStreams.count else { return nil }
-        let item = inputStreams[streamIndex]
-        streamIndex += 1
-        return item
+        streamsQueue.dequeue()
     }
-
     return InputPackage(rx: streamsIterator)
 }
 
@@ -1092,7 +1525,9 @@ extension PeerInvoker {
         for (mediaUrn, data) in args {
             let arg = call.arg(mediaUrn: mediaUrn)
             try arg.start(isSequence: false)
-            try arg.write(data)
+            // Blocking credit acquisition — this convenience is a sync API
+            // used from handler threads (L9).
+            try arg.blockingWrite(data)
             try arg.close()
         }
         return try call.finish()
@@ -1638,7 +2073,7 @@ public struct IdentityOp: Op, Sendable {
             let stream = try streamResult.get()
             for chunkResult in stream {
                 let chunk = try chunkResult.get()
-                try req.output().emitCbor(chunk)
+                try await req.output().emitCbor(chunk)
             }
         }
     }
@@ -1741,50 +2176,94 @@ private struct PendingPeerRequest {
 /// Spawns a background task that forwards response frames via FrameQueue.
 @available(macOS 10.15.4, iOS 13.4, *)
 /// ChannelFrameSender implementation for sending frames from PeerInvokerImpl and OutputStream.
-/// Applies SeqAssigner to every outbound frame, matching Rust's writer-thread seq assignment.
-/// Cleans up flow tracking on terminal frames (END/ERR).
+/// This is the runtime's single output serialization point — the Swift
+/// counterpart of the Rust writer thread. It applies SeqAssigner to every
+/// outbound frame and, per protocol v3 (L4), enforces the WRITER TERMINAL
+/// GATE: once a flow's END/ERR has been written, any later flow frame for the
+/// same FlowKey is post-terminal — dropped and counted, never written. Gating
+/// at the single point where wire order is decided deterministically closes
+/// every detached-sender race (ProgressSender, keepalive tickers).
+///
+/// A send on a closed/dead writer is a counted channel_closed drop (L8),
+/// never a silent loss.
 @available(macOS 10.15.4, iOS 13.4, *)
-private final class ChannelFrameSender: FrameSender, @unchecked Sendable {
+final class ChannelFrameSender: FrameSender, @unchecked Sendable {
     private let writer: FrameWriter
     private let writerLock: NSLock
     private let seqAssigner: SeqAssigner
+    /// Flows whose terminal has been written (L4). Guarded by writerLock.
+    private let terminated: TerminatedFlows
+    /// Process-wide dropped-frame accounting (L8).
+    private let drops: DropCounters
 
-    init(writer: FrameWriter, writerLock: NSLock, seqAssigner: SeqAssigner) {
+    init(writer: FrameWriter, writerLock: NSLock, seqAssigner: SeqAssigner, drops: DropCounters) {
         self.writer = writer
         self.writerLock = writerLock
         self.seqAssigner = seqAssigner
+        self.terminated = TerminatedFlows(cap: 1024)
+        self.drops = drops
     }
 
     func send(_ frame: Frame) throws {
         writerLock.lock()
         defer { writerLock.unlock() }
         var mutableFrame = frame
+
+        // WRITER TERMINAL GATE (L4): flow frames for a flow whose END/ERR is
+        // already on the wire are dropped and counted — they never reach the
+        // wire. Non-flow frames (heartbeat, credit) always pass.
+        let key = FlowKey.fromFrame(mutableFrame)
+        if mutableFrame.isFlowFrame() && terminated.contains(key) {
+            let total = drops.record(.postTerminal)
+            fputs("[CartridgeRuntime] writer: dropped post-terminal flow frame — END/ERR already written for this flow (L4) type=\(mutableFrame.frameType) rid=\(mutableFrame.id) post_terminal_total=\(total)\n", stderr)
+            return
+        }
+
         seqAssigner.assign(&mutableFrame)
-        try writer.write(mutableFrame)
+        do {
+            try writer.write(mutableFrame)
+        } catch {
+            // The writer is gone (relay/host side closed). Counted drop —
+            // never silent (L8) — surfaced to callers that check.
+            let total = drops.record(.channelClosed)
+            fputs("[CartridgeRuntime] frame dropped: output channel closed (channel_closed_total=\(total)) type=\(mutableFrame.frameType) rid=\(mutableFrame.id)\n", stderr)
+            throw CartridgeRuntimeError.handlerError("Output channel closed")
+        }
         if mutableFrame.frameType == .end || mutableFrame.frameType == .err {
-            seqAssigner.remove(FlowKey.fromFrame(mutableFrame))
+            seqAssigner.remove(key)
+            terminated.insert(key)
         }
     }
 }
 
 @available(macOS 10.15.4, iOS 13.4, *)
 final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
-    private let writer: FrameWriter
-    private let writerLock: NSLock
-    private let seqAssigner: SeqAssigner
+    private let sender: ChannelFrameSender
     private let pendingRequests: NSMutableDictionary // [MessageId: PendingPeerRequest]
     private let pendingRequestsLock: NSLock
     private let originRequestId: MessageId
     private let maxChunk: Int
+    /// Router that delivers inbound CREDIT grants to this cartridge's
+    /// outgoing peer-argument streams (L14 — peer args are credited too).
+    private let creditRouter: CreditRouter
+    private let initialCredit: UInt64
 
-    init(writer: FrameWriter, writerLock: NSLock, seqAssigner: SeqAssigner, pendingRequests: NSMutableDictionary, pendingRequestsLock: NSLock, originRequestId: MessageId, maxChunk: Int) {
-        self.writer = writer
-        self.writerLock = writerLock
-        self.seqAssigner = seqAssigner
+    init(
+        sender: ChannelFrameSender,
+        pendingRequests: NSMutableDictionary,
+        pendingRequestsLock: NSLock,
+        originRequestId: MessageId,
+        maxChunk: Int,
+        creditRouter: CreditRouter,
+        initialCredit: UInt64
+    ) {
+        self.sender = sender
         self.pendingRequests = pendingRequests
         self.pendingRequestsLock = pendingRequestsLock
         self.originRequestId = originRequestId
         self.maxChunk = maxChunk
+        self.creditRouter = creditRouter
+        self.initialCredit = initialCredit
     }
 
     func call(capUrn: String) throws -> PeerCall {
@@ -1808,7 +2287,6 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
         pendingRequestsLock.unlock()
 
         // Send REQ with empty payload, stamped with parent_rid for cancel cascade
-        writerLock.lock()
         do {
             var reqFrame = Frame.req(id: requestId, capUrn: capUrn, payload: Data(), contentType: "application/cbor")
             var meta = reqFrame.meta ?? [:]
@@ -1819,17 +2297,14 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
                 meta["parent_rid"] = .unsignedInt(n)
             }
             reqFrame.meta = meta
-            seqAssigner.assign(&reqFrame)
-            try writer.write(reqFrame)
+            try sender.send(reqFrame)
         } catch {
-            writerLock.unlock()
             pendingRequestsLock.lock()
             pendingRequests.removeObject(forKey: requestId)
             pendingRequestsLock.unlock()
             continuation.finish()
             throw CartridgeRuntimeError.peerRequestError("Failed to send peer REQ: \(error)")
         }
-        writerLock.unlock()
 
         // Convert AsyncStream to AnyIterator for PeerCall
         // Use thread-safe queue with @unchecked Sendable wrappers to bridge async→sync
@@ -1866,6 +2341,26 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
                     return nil // Should not happen
                 }
             }
+
+            /// Non-blocking probe: returns the next frame if one is queued,
+            /// nil when the queue is momentarily empty (or completed). Used
+            /// by the try-then-flush-then-block consumption pattern (L10).
+            func tryNext() -> Frame? {
+                if semaphore.wait(timeout: .now()) == .timedOut {
+                    return nil
+                }
+                lock.lock()
+                defer { lock.unlock() }
+                if !frames.isEmpty {
+                    return frames.removeFirst()
+                }
+                // We consumed the completion signal — re-post it so a later
+                // blocking next() still returns promptly.
+                if completed {
+                    semaphore.signal()
+                }
+                return nil
+            }
         }
 
         let queue = FrameQueue()
@@ -1878,19 +2373,41 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
             queue.complete()
         }
 
+        // Consumption grants for the responding peer's output window
+        // (L10/L14). Single-stream response → stream-less grants; direction
+        // `.response` (we are crediting the handler's output stream, L11).
+        let responseGrants = InputGrantEmitter(
+            sender: sender,
+            rid: requestId,
+            xid: nil,
+            streamId: nil,
+            direction: .response,
+            batch: max(initialCredit / 2, 1),
+            window: WindowCounter(0)
+        )
+
+        // Try-then-flush-then-block (L10 deadlock-freedom rule): before
+        // blocking on an empty response channel, flush pending sub-batch
+        // grants — the responding peer may be stalled on exactly this credit.
         let frameIterator = AnyIterator<Frame> {
-            queue.next()
+            if let frame = queue.tryNext() {
+                return frame
+            }
+            responseGrants.flush()
+            return queue.next()
         }
 
-        // Create ChannelFrameSender for arg streams (shares seqAssigner)
-        let sender = ChannelFrameSender(writer: writer, writerLock: writerLock, seqAssigner: seqAssigner)
-
-        // Return PeerCall with response iterator
+        // Return PeerCall with response iterator. Arg streams share the
+        // runtime's single serialization point (sender) and are credited by
+        // the callee's consumption (L14).
         return PeerCall(
             sender: sender,
             requestId: requestId,
             maxChunk: maxChunk,
-            responseRx: frameIterator
+            responseRx: frameIterator,
+            creditRouter: creditRouter,
+            initialCredit: initialCredit,
+            responseGrants: responseGrants
         )
     }
 }
@@ -2284,6 +2801,21 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
     /// Concurrency capacity: 0 = unlimited, N = max N concurrent handlers.
     private let capacity = CapacityHandle(0)
+
+    /// Routes inbound CREDIT frames to the gates of streams local senders are
+    /// writing (protocol v3 flow control). Senders register a `CreditGate` per
+    /// (rid, streamId); unmatched grants are correct no-ops.
+    public let creditRouter = CreditRouter()
+
+    /// Process-wide dropped-frame accounting (L8). Shared with the writer's
+    /// terminal gate (post_terminal), every closed-channel send
+    /// (channel_closed), and the stats surface.
+    let dropCounters = DropCounters()
+
+    /// Snapshot of this runtime's dropped-frame counters (L8).
+    public func protocolDrops() -> DropSnapshot {
+        return dropCounters.snapshot()
+    }
 
     // MARK: - Initialization
 
@@ -2981,8 +3513,15 @@ public final class CartridgeRuntime: @unchecked Sendable {
         try performHandshake(reader: frameReader, writer: frameWriter)
 
         // Shared output sender — all outbound frames go through this.
-        // Applies SeqAssigner and cleans up flow tracking on terminal frames.
-        let outputSender = ChannelFrameSender(writer: frameWriter, writerLock: writerLock, seqAssigner: seqAssigner)
+        // The runtime's single output serialization point: applies SeqAssigner,
+        // enforces the writer terminal gate (L4: post-terminal flow frames are
+        // dropped and counted, never written), and counts closed-channel sends.
+        let outputSender = ChannelFrameSender(
+            writer: frameWriter,
+            writerLock: writerLock,
+            seqAssigner: seqAssigner,
+            drops: dropCounters
+        )
 
         // Track pending peer requests (cartridge invoking host caps)
         // Maps request ID to AsyncStream.Continuation for forwarding response frames
@@ -2995,12 +3534,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
         let pendingHeartbeatsLock = NSLock()
 
         // Track pending incoming requests (host invoking cartridge caps)
-        // Maps request ID to (capUrn, continuation) - forwards request frames to handler.
-        // Created on REQ even for queued requests, so frames accumulate until
-        // the handler thread is spawned and the demux drains them.
+        // Maps request ID to (capUrn, frame queue) — forwards request frames
+        // to the handler LIVE (protocol v3 dispatch regime: the handler starts
+        // at REQ and its InputStreams yield items as they arrive). Created on
+        // REQ even for queued requests, so frames accumulate in the queue
+        // until the handler thread is spawned and the demux drains them.
         struct PendingIncomingRequest {
             let capUrn: String
-            let continuation: AsyncStream<Frame>.Continuation
+            let frames: BlockingQueue<Frame>
         }
         var pendingIncoming: [MessageId: PendingIncomingRequest] = [:]
         let pendingIncomingLock = NSLock()
@@ -3012,7 +3553,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
             let routingId: MessageId?
             let requestId: MessageId
             let outputMediaUrn: String
-            let stream: AsyncStream<Frame>
+            let frames: BlockingQueue<Frame>
         }
         var requestQueue: [QueuedRequest] = []
         var runningHandlerCount = 0
@@ -3048,18 +3589,20 @@ public final class CartridgeRuntime: @unchecked Sendable {
             }
         }
 
-        // Helper: spawn a handler thread for a request.
+        // Helper: spawn a handler thread for a request. The handler receives
+        // input INCREMENTALLY (protocol v3): dispatch begins at REQ and its
+        // InputStreams yield items as they arrive on the live frame queue —
+        // never buffered to completion (L16).
+        let initialCredit = self.limits.initialCredit
+        let creditRouter = self.creditRouter
         func spawnHandler(
             requestId: MessageId,
             capUrn: String,
             routingId: MessageId?,
             outputMediaUrn: String,
             factory: @escaping OpFactory,
-            stream: AsyncStream<Frame>,
-            outputSender: any FrameSender,
-            frameWriter: FrameWriter,
-            writerLock: NSLock,
-            seqAssigner: SeqAssigner,
+            frames: BlockingQueue<Frame>,
+            outputSender: ChannelFrameSender,
             pendingPeerRequests: NSMutableDictionary,
             pendingPeerRequestsLock: NSLock,
             maxChunk: Int,
@@ -3067,20 +3610,22 @@ public final class CartridgeRuntime: @unchecked Sendable {
         ) {
             Thread.detachNewThread {
                 fputs("[CartridgeRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
-                let framesQueue = BlockingQueue<Frame>()
-
-                Task {
-                    for await frame in stream {
-                        framesQueue.enqueue(frame)
-                    }
-                    framesQueue.finish()
-                }
-
                 let frameIterator = AnyIterator<Frame> {
-                    return framesQueue.dequeue()
+                    return frames.dequeue()
                 }
 
-                let inputPackage = demuxMultiStream(frameIterator: frameIterator)
+                // Input streams are credited (L14): the handler's consumption
+                // grants the engine's sender window; over-window chunks are
+                // CREDIT_VIOLATION (L12).
+                let inputPackage = demuxMultiStream(
+                    frameIterator: frameIterator,
+                    credit: InputCreditContext(
+                        sender: outputSender,
+                        rid: requestId,
+                        xid: routingId,
+                        initialCredit: initialCredit
+                    )
+                )
 
                 let responseStreamId = UUID().uuidString
                 let outputStream = OutputStream(
@@ -3089,17 +3634,20 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     mediaUrn: outputMediaUrn,
                     requestId: requestId,
                     routingId: routingId,
-                    maxChunk: maxChunk
+                    maxChunk: maxChunk,
+                    initialCredit: initialCredit,
+                    creditRouter: creditRouter
                 )
+                let finalStatus = outputStream.finalStatusHolder
 
                 let peer = PeerInvokerImpl(
-                    writer: frameWriter,
-                    writerLock: writerLock,
-                    seqAssigner: seqAssigner,
+                    sender: outputSender,
                     pendingRequests: pendingPeerRequests,
                     pendingRequestsLock: pendingPeerRequestsLock,
                     originRequestId: requestId,
-                    maxChunk: maxChunk
+                    maxChunk: maxChunk,
+                    creditRouter: creditRouter,
+                    initialCredit: initialCredit
                 )
 
                 do {
@@ -3107,7 +3655,17 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
 
                     fputs("[CartridgeRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
-                    var endFrame = Frame.endOk(id: requestId, finalPayload: nil)
+                    // The END frame carries the terminal metadata (L3/L5): the
+                    // handler's declared final status, or the 1.0 default.
+                    // Final progress rides IN the terminal frame — it cannot
+                    // race it.
+                    let declared = finalStatus.take()
+                    var endFrame = Frame.endOkWith(
+                        id: requestId,
+                        finalPayload: nil,
+                        progress: declared?.progress ?? 1.0,
+                        message: declared?.message
+                    )
                     endFrame.routingId = routingId
                     try? outputSender.send(endFrame)
                 } catch {
@@ -3116,7 +3674,6 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     errFrame.routingId = routingId
                     try? outputSender.send(errFrame)
                 }
-
                 // Notify the main loop that a handler slot is free.
                 eventQueue.push(.handlerDone(requestId))
             }
@@ -3152,11 +3709,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     routingId: queued.routingId,
                     outputMediaUrn: queued.outputMediaUrn,
                     factory: queued.factory,
-                    stream: queued.stream,
+                    frames: queued.frames,
                     outputSender: outputSender,
-                    frameWriter: frameWriter,
-                    writerLock: writerLock,
-                    seqAssigner: seqAssigner,
                     pendingPeerRequests: pendingPeerRequests,
                     pendingPeerRequestsLock: pendingPeerRequestsLock,
                     maxChunk: self.limits.maxChunk,
@@ -3174,6 +3728,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
             switch event {
             case .handlerDone(let rid):
                 runningHandlerCount -= 1
+                // Release credit waiters for this request's output streams
+                // promptly (L13) — a sender blocked on credit must not hang.
+                creditRouter.closeRequest(rid: rid, reason: "END")
                 if cancelledRequests.remove(rid) != nil {
                     let routingId = handlerRoutingIds.removeValue(forKey: rid) ?? nil
                     var err = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
@@ -3237,16 +3794,17 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // Create AsyncStream for forwarding frames to handler.
-                // Always created immediately so subsequent frames are routed here
-                // even if the handler isn't spawned yet (queued).
-                let (stream, continuation) = AsyncStream<Frame>.makeStream()
+                // Create a live frame queue for forwarding frames to the
+                // handler. Always created immediately so subsequent frames
+                // are routed here even if the handler isn't spawned yet
+                // (queued) — they accumulate until the demux drains them.
+                let framesQueue = BlockingQueue<Frame>()
 
                 // Register pending request
                 pendingIncomingLock.lock()
                 pendingIncoming[frame.id] = PendingIncomingRequest(
                     capUrn: capUrn,
-                    continuation: continuation
+                    frames: framesQueue
                 )
                 pendingIncomingLock.unlock()
 
@@ -3274,7 +3832,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         routingId: routingId,
                         requestId: requestId,
                         outputMediaUrn: outputMediaUrn,
-                        stream: stream
+                        frames: framesQueue
                     ))
                 } else {
                     // Under capacity — spawn handler immediately.
@@ -3284,11 +3842,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         routingId: routingId,
                         outputMediaUrn: outputMediaUrn,
                         factory: factory,
-                        stream: stream,
+                        frames: framesQueue,
                         outputSender: outputSender,
-                        frameWriter: frameWriter,
-                        writerLock: writerLock,
-                        seqAssigner: seqAssigner,
                         pendingPeerRequests: pendingPeerRequests,
                         pendingPeerRequestsLock: pendingPeerRequestsLock,
                         maxChunk: self.limits.maxChunk,
@@ -3320,16 +3875,20 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     // proc_pidinfo measurement and pushes the result
                     // to the Mac app via reverse-XPC.
                     var response = Frame.heartbeat(id: frame.id)
+                    var meta: [String: CBOR] = [:]
                     if let mem = getOwnMemoryMb() {
-                        response.meta = [
-                            "footprint_mb": .unsignedInt(mem.footprintMb),
-                            "rss_mb": .unsignedInt(mem.rssMb)
-                        ]
+                        meta["footprint_mb"] = .unsignedInt(mem.footprintMb)
+                        meta["rss_mb"] = .unsignedInt(mem.rssMb)
                     } else {
                         os_log(.error, log: cartridgeRuntimeLog,
                                "Cartridge pid %{public}d failed to self-sample memory (proc_pid_rusage returned non-zero) — heartbeat response will omit memory meta",
                                getpid())
                     }
+                    // Protocol observability (L8): the cartridge's dropped-
+                    // frame total rides every heartbeat so the host can
+                    // surface it without a dedicated stats round-trip.
+                    meta["drops_total"] = .unsignedInt(dropCounters.total)
+                    response.meta = meta
                     try outputSender.send(response)
                 }
 
@@ -3345,7 +3904,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // Check if this is a chunk for an incoming request
                 pendingIncomingLock.lock()
                 if let pendingReq = pendingIncoming[frame.id] {
-                    pendingReq.continuation.yield(frame)
+                    pendingReq.frames.push(frame)
                     pendingIncomingLock.unlock()
                     continue
                 }
@@ -3365,8 +3924,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 pendingIncomingLock.lock()
                 if let pendingReq = pendingIncoming.removeValue(forKey: frame.id) {
                     fputs("[CartridgeRuntime] END routed to active_request rid=\(frame.id)\n", stderr)
-                    pendingReq.continuation.yield(frame)
-                    pendingReq.continuation.finish()
+                    pendingReq.frames.push(frame)
+                    pendingReq.frames.finish()
                     pendingIncomingLock.unlock()
                     continue
                 }
@@ -3385,8 +3944,19 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 pendingPeerRequestsLock.unlock()
 
             case .err:
-                // Error frame from host - forward to pending peer request and finish stream
+                // Error frame from host — forward to the active request's
+                // demux (which errors all its open streams) or to the pending
+                // peer request, then finish the stream.
                 fputs("[CartridgeRuntime] ERR received: rid=\(frame.id) code=\(frame.errorCode ?? "?") msg=\(frame.errorMessage ?? "?")\n", stderr)
+                pendingIncomingLock.lock()
+                if let pendingReq = pendingIncoming.removeValue(forKey: frame.id) {
+                    pendingReq.frames.push(frame)
+                    pendingReq.frames.finish()
+                    pendingIncomingLock.unlock()
+                    continue
+                }
+                pendingIncomingLock.unlock()
+
                 pendingPeerRequestsLock.lock()
                 if let pending = pendingPeerRequests[frame.id] as? PendingPeerRequest {
                     pending.continuation.yield(frame)
@@ -3410,7 +3980,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // Check if this is for an incoming request
                 pendingIncomingLock.lock()
                 if let pendingReq = pendingIncoming[frame.id] {
-                    pendingReq.continuation.yield(frame)
+                    pendingReq.frames.push(frame)
                     pendingIncomingLock.unlock()
                     continue
                 }
@@ -3429,7 +3999,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // Check if this is for an incoming request
                 pendingIncomingLock.lock()
                 if let pendingReq = pendingIncoming[frame.id] {
-                    pendingReq.continuation.yield(frame)
+                    pendingReq.frames.push(frame)
                     pendingIncomingLock.unlock()
                     continue
                 }
@@ -3456,7 +4026,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     let queued = requestQueue.remove(at: idx)
                     pendingIncomingLock.lock()
                     if let pending = pendingIncoming.removeValue(forKey: targetRid) {
-                        pending.continuation.finish()
+                        pending.frames.finish()
                     }
                     pendingIncomingLock.unlock()
                     var err = Frame.err(id: targetRid, code: "CANCELLED", message: "Request cancelled while queued")
@@ -3466,13 +4036,16 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // Case 2: In-flight handler — finish continuation (cooperative cancel)
+                // Case 2: In-flight handler — finish the frame queue (cooperative cancel)
                 pendingIncomingLock.lock()
                 if let pending = pendingIncoming.removeValue(forKey: targetRid) {
                     pendingIncomingLock.unlock()
-                    // Finishing the continuation ends the handler's frame iterator → handler exits
-                    pending.continuation.finish()
+                    // Finishing the queue ends the handler's frame iterator → handler exits
+                    pending.frames.finish()
                     cancelledRequests.insert(targetRid)
+                    // Release any credit-blocked writers immediately (L13,
+                    // L17) — a cancelled producer must not hang on credit.
+                    creditRouter.closeRequest(rid: targetRid, reason: "CANCELLED")
 
                     // Cancel peer calls originating from this request
                     pendingPeerRequestsLock.lock()
@@ -3500,6 +4073,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     fputs("[CartridgeRuntime] Cancel for unknown rid=\(targetRid) — ignoring\n", stderr)
                 }
 
+            case .credit:
+                // Flow-control grant for a stream a local sender is writing.
+                // Route to the matching CreditGate; an unmatched grant (request
+                // already finished, or the sender is not credit-registered) is
+                // a correct no-op, since grants only unblock.
+                creditRouter.grant(frame)
+
             case .relayNotify, .relayState:
                 // Relay frame types should NEVER reach the cartridge runtime — they are
                 // intercepted by the relay layer. If one arrives here, it's a
@@ -3514,54 +4094,21 @@ public final class CartridgeRuntime: @unchecked Sendable {
     // MARK: - Handshake
 
     private func performHandshake(reader: FrameReader, writer: FrameWriter) throws {
-        // Read host's HELLO first (host initiates)
-        let theirFrame: Frame
+        // Delegate to the wire layer's cartridge-side handshake: it enforces
+        // the protocol-version match (L1), requires all limit fields, and
+        // negotiates the element-wise minimum of every limit including
+        // initial_credit (protocol v3). It also sends our HELLO with the
+        // manifest — the ONLY way to communicate cartridge capabilities.
         do {
-            guard let f = try reader.read() else {
-                throw CartridgeRuntimeError.handshakeFailed("Connection closed before HELLO")
-            }
-            theirFrame = f
+            let negotiated = try acceptHandshakeWithManifest(
+                reader: reader,
+                writer: writer,
+                manifest: manifestData
+            )
+            self.limits = negotiated
         } catch let error as FrameError {
             throw CartridgeRuntimeError.handshakeFailed("\(error)")
         }
-
-        guard theirFrame.frameType == .hello else {
-            throw CartridgeRuntimeError.handshakeFailed("Expected HELLO, got \(theirFrame.frameType)")
-        }
-
-        // Protocol v2: All three limit fields are REQUIRED
-        guard let theirMaxFrame = theirFrame.helloMaxFrame else {
-            throw CartridgeRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_frame")
-        }
-        guard let theirMaxChunk = theirFrame.helloMaxChunk else {
-            throw CartridgeRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
-        }
-        guard let theirMaxReorderBuffer = theirFrame.helloMaxReorderBuffer else {
-            throw CartridgeRuntimeError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
-        }
-
-        // Negotiate minimum of both sides
-        let ourLimits = Limits()
-        let negotiatedLimits = Limits(
-            maxFrame: min(ourLimits.maxFrame, theirMaxFrame),
-            maxChunk: min(ourLimits.maxChunk, theirMaxChunk),
-            maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer)
-        )
-
-        self.limits = negotiatedLimits
-
-        // Send our HELLO with negotiated limits AND manifest
-        // The manifest is REQUIRED - this is the ONLY way to communicate cartridge capabilities
-        let ourHello = Frame.helloWithManifest(limits: negotiatedLimits, manifest: manifestData)
-        do {
-            try writer.write(ourHello)
-        } catch {
-            throw CartridgeRuntimeError.handshakeFailed("Failed to send HELLO: \(error)")
-        }
-
-        // Update reader/writer limits
-        reader.setLimits(negotiatedLimits)
-        writer.setLimits(negotiatedLimits)
     }
 
     // MARK: - Accessors

@@ -119,6 +119,14 @@ public func encodeFrame(_ frame: Frame) throws -> Data {
         map[.unsignedInt(FrameKey.forceKill.rawValue)] = .boolean(forceKill)
     }
 
+    if let credit = frame.credit {
+        map[.unsignedInt(FrameKey.credit.rawValue)] = .unsignedInt(credit)
+    }
+
+    if let unbounded = frame.unbounded {
+        map[.unsignedInt(FrameKey.unbounded.rawValue)] = .boolean(unbounded)
+    }
+
     let cbor = CBOR.map(map)
     return Data(cbor.encode())
 }
@@ -262,7 +270,15 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         frame.forceKill = b
     }
 
-    // Protocol v2 validation: CHUNK frames MUST have chunkIndex and checksum
+    if let credit = getUInt(.credit) {
+        frame.credit = credit
+    }
+
+    if case .boolean(let b) = map[.unsignedInt(FrameKey.unbounded.rawValue)] {
+        frame.unbounded = b
+    }
+
+    // Protocol validation: CHUNK frames MUST have chunkIndex and checksum
     if frame.frameType == .chunk {
         guard frame.chunkIndex != nil else {
             throw FrameError.protocolError("CHUNK frame missing required chunkIndex field")
@@ -272,10 +288,14 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         }
     }
 
-    // Protocol v2 validation: STREAM_END frames MUST have chunkCount
-    if frame.frameType == .streamEnd {
-        guard frame.chunkCount != nil else {
-            throw FrameError.protocolError("STREAM_END frame missing required chunkCount field")
+    // STREAM_END: chunkCount is optional on the wire — unbounded streams make
+    // no length promise (L16). Bounded-stream receivers that want to verify
+    // completeness check chunkCount when present.
+
+    // Protocol validation: CREDIT frames MUST carry their credit count
+    if frame.frameType == .credit {
+        guard frame.credit != nil else {
+            throw FrameError.protocolError("CREDIT frame missing required credit field")
         }
     }
 
@@ -646,12 +666,18 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
         throw FrameError.handshakeFailed("Expected HELLO, got \(theirFrame.frameType)")
     }
 
+    // Protocol version must match exactly (L1). No cross-version operation.
+    let theirVersion = theirFrame.helloVersion ?? theirFrame.version
+    guard theirVersion == CBOR_PROTOCOL_VERSION else {
+        throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
+    }
+
     // Extract manifest - REQUIRED for cartridges
     guard let manifest = theirFrame.helloManifest else {
         throw FrameError.handshakeFailed("Cartridge HELLO missing required manifest")
     }
 
-    // Protocol v2: All three limit fields are REQUIRED
+    // Protocol v3: All three limit fields are REQUIRED
     guard let theirMaxFrame = theirFrame.helloMaxFrame else {
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_frame")
     }
@@ -659,14 +685,16 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
     }
     guard let theirMaxReorderBuffer = theirFrame.helloMaxReorderBuffer else {
-        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
+        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v3)")
     }
+    let theirInitialCredit = theirFrame.helloInitialCredit ?? DEFAULT_INITIAL_CREDIT
 
     // Negotiate minimum of both sides
     let limits = Limits(
         maxFrame: min(ourLimits.maxFrame, theirMaxFrame),
         maxChunk: min(ourLimits.maxChunk, theirMaxChunk),
-        maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer)
+        maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer),
+        initialCredit: min(ourLimits.initialCredit, theirInitialCredit)
     )
 
     // Update both reader and writer with negotiated limits
@@ -693,7 +721,13 @@ public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter
         throw FrameError.handshakeFailed("Expected HELLO, got \(theirFrame.frameType)")
     }
 
-    // Protocol v2: All three limit fields are REQUIRED
+    // Protocol version must match exactly (L1). No cross-version operation.
+    let theirVersion = theirFrame.helloVersion ?? theirFrame.version
+    guard theirVersion == CBOR_PROTOCOL_VERSION else {
+        throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
+    }
+
+    // Protocol v3: All three limit fields are REQUIRED
     guard let theirMaxFrame = theirFrame.helloMaxFrame else {
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_frame")
     }
@@ -701,15 +735,17 @@ public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
     }
     guard let theirMaxReorderBuffer = theirFrame.helloMaxReorderBuffer else {
-        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
+        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v3)")
     }
+    let theirInitialCredit = theirFrame.helloInitialCredit ?? DEFAULT_INITIAL_CREDIT
 
     // Negotiate minimum of both sides
     let ourLimits = writer.getLimits()
     let limits = Limits(
         maxFrame: min(ourLimits.maxFrame, theirMaxFrame),
         maxChunk: min(ourLimits.maxChunk, theirMaxChunk),
-        maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer)
+        maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer),
+        initialCredit: min(ourLimits.initialCredit, theirInitialCredit)
     )
 
     // Send our HELLO with manifest and negotiated limits

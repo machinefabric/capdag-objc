@@ -61,7 +61,7 @@ final class ExtractValueOp: Op, @unchecked Sendable {
                 if case .map(let m) = arg {
                     if case .byteString(let b) = m[.utf8String("value")] ?? .null {
                         received.set(Data(b))
-                        try req.output().emitCbor(CBOR.byteString(b))
+                        try await req.output().emitCbor(CBOR.byteString(b))
                         return
                     }
                 }
@@ -89,7 +89,7 @@ final class EchoAllBytesOp: Op, @unchecked Sendable {
         let input = try req.takeInput()
         let data = try input.collectAllBytes()
         try req.output().start(isSequence: false)
-        try req.output().write(data)
+        try req.output().blockingWrite(data)
     }
     func metadata() -> OpMetadata { OpMetadata.builder("EchoAllBytesOp").build() }
 }
@@ -104,7 +104,7 @@ final class WriteFixedOp: Op, @unchecked Sendable {
         let input = try req.takeInput()
         _ = try? input.collectAllBytes()
         try req.output().start(isSequence: false)
-        try req.output().write(data)
+        try req.output().blockingWrite(data)
     }
     func metadata() -> OpMetadata { OpMetadata.builder("WriteFixedOp").build() }
 }
@@ -119,7 +119,7 @@ final class EmitCborBytesOp: Op, @unchecked Sendable {
         let input = try req.takeInput()
         _ = try? input.collectAllBytes()
         try req.output().start(isSequence: false)
-        try req.output().emitCbor(CBOR.byteString(bytes))
+        try await req.output().emitCbor(CBOR.byteString(bytes))
     }
     func metadata() -> OpMetadata { OpMetadata.builder("EmitCborBytesOp").build() }
 }
@@ -1868,7 +1868,7 @@ final class CborFilePathConversionTests: XCTestCase {
                     let total = try input.collectAllBytes()
                     holder.data = total
                     try req.output().start(isSequence: false)
-                    try req.output().write(total)
+                    try req.output().blockingWrite(total)
                 }
                 func metadata() -> OpMetadata { OpMetadata.builder("CaptureEchoOp").build() }
             }

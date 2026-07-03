@@ -820,6 +820,50 @@ private class ManagedCartridge {
     }
 }
 
+// MARK: - HostProtocolStats
+
+/// The host runtime's protocol observability snapshot (L8): per-reason drop
+/// counters, routing-table sizes, and GC totals. Serializable; field names
+/// are the mirror contract (mirrors Rust `HostProtocolStats` wire-for-wire
+/// over RelayNotify JSON).
+public struct HostProtocolStats: Codable, Sendable {
+    public let drops: DropSnapshot
+    public let outgoingRids: Int
+    public let incomingRxids: Int
+    public let incomingToPeerRids: Int
+    public let outgoingMaxSeq: Int
+    public let routingGcRunsTotal: UInt64
+    public let routingGcEvictedTotal: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case drops
+        case outgoingRids = "outgoing_rids"
+        case incomingRxids = "incoming_rxids"
+        case incomingToPeerRids = "incoming_to_peer_rids"
+        case outgoingMaxSeq = "outgoing_max_seq"
+        case routingGcRunsTotal = "routing_gc_runs_total"
+        case routingGcEvictedTotal = "routing_gc_evicted_total"
+    }
+
+    public init(
+        drops: DropSnapshot,
+        outgoingRids: Int,
+        incomingRxids: Int,
+        incomingToPeerRids: Int,
+        outgoingMaxSeq: Int,
+        routingGcRunsTotal: UInt64,
+        routingGcEvictedTotal: UInt64
+    ) {
+        self.drops = drops
+        self.outgoingRids = outgoingRids
+        self.incomingRxids = incomingRxids
+        self.incomingToPeerRids = incomingToPeerRids
+        self.outgoingMaxSeq = outgoingMaxSeq
+        self.routingGcRunsTotal = routingGcRunsTotal
+        self.routingGcEvictedTotal = routingGcEvictedTotal
+    }
+}
+
 // MARK: - CartridgeHost
 
 /// Multi-cartridge host runtime managing N cartridge processes.
@@ -863,14 +907,34 @@ public final class CartridgeHost: @unchecked Sendable {
 
     /// List 2: INCOMING_RXIDS — tracks incoming requests FROM relay ((XID, RID) → cartridge_idx).
     /// Routes continuation frames (STREAM_START/CHUNK/STREAM_END/END/ERR) to the correct cartridge.
-    /// NEVER cleaned up on terminal frames — intentionally leaked until cartridge death.
-    /// This avoids premature cleanup in self-loop peer request scenarios where the same RID
-    /// appears in both outgoing and incoming maps.
+    ///
+    /// Lifecycle (protocol v3): the entry lives from REQ until the request's
+    /// RESPONSE terminal, NOT the request-body END. The body END only sets a
+    /// body-done marker (`incomingBodyDone`) so self-loop peer-response data
+    /// frames fall through to outgoing routing; the handler's response
+    /// terminal passing outbound (plus body done) is what releases the entry.
+    /// A response terminating BEFORE the body END (response-first race) is
+    /// remembered in `incomingResponseDone` so the body END releases the
+    /// entry immediately. Keeping the entry alive through the response phase
+    /// is what routes engine→cartridge CREDIT grants for the handler's output
+    /// streams — without it, any response larger than the initial window
+    /// deadlocks.
     /// Bounded by `routingTableHardCap`; the GC evicts the
     /// least-recently-touched entries when the table exceeds the
     /// soft watermark.
     private var incomingRxids: [RxidKey: Int] = [:]
     private var incomingRxidsTouched: [RxidKey: UInt64] = [:]
+
+    /// Keys in `incomingRxids` whose REQUEST BODY has terminated (END/ERR
+    /// delivered to the handler) while the entry stays alive for the
+    /// response phase. Data/terminal frames for a body-done key are self-loop
+    /// peer responses and route via `outgoingRids`. Cleared with the entry.
+    private var incomingBodyDone: Set<RxidKey> = []
+
+    /// Keys whose handler RESPONSE has terminated before the request body
+    /// END arrived (response-first race). When the body END then arrives,
+    /// the entry is released immediately. Cleared with the entry.
+    private var incomingResponseDone: Set<RxidKey> = []
 
     /// Tracks which incoming request spawned which outgoing peer RIDs.
     /// Maps parent (xid, rid) → list of child peer RIDs. Used for cancel cascade.
@@ -931,6 +995,32 @@ public final class CartridgeHost: @unchecked Sendable {
     /// unified log without needing a custom subscriber.
     private var routingTableGcRunsTotal: UInt64 = 0
     private var routingTableGcEvictedTotal: UInt64 = 0
+
+    /// Dropped-frame accounting (L8): unroutable continuations and frames
+    /// for dead cartridges are counted drops, never silent losses.
+    let drops = DropCounters()
+
+    /// Protocol observability snapshot (L8): drop counters, routing-table
+    /// sizes, and GC totals for this host. Serialized field names are the
+    /// mirror contract (see `HostProtocolStats`).
+    public func protocolStats() -> HostProtocolStats {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return protocolStatsLocked()
+    }
+
+    /// Caller MUST hold `stateLock`.
+    private func protocolStatsLocked() -> HostProtocolStats {
+        return HostProtocolStats(
+            drops: drops.snapshot(),
+            outgoingRids: outgoingRids.count,
+            incomingRxids: incomingRxids.count,
+            incomingToPeerRids: incomingToPeerRids.count,
+            outgoingMaxSeq: outgoingMaxSeq.count,
+            routingGcRunsTotal: routingTableGcRunsTotal,
+            routingGcEvictedTotal: routingTableGcEvictedTotal
+        )
+    }
 
     /// Mark an entry in `incomingRxids` as touched right now.
     /// Caller MUST hold `stateLock`. Called both on insert and on
@@ -1353,39 +1443,20 @@ public final class CartridgeHost: @unchecked Sendable {
         let reader = FrameReader(handle: stdoutHandle)
         let writer = FrameWriter(handle: stdinHandle)
 
-        // Perform HELLO handshake
-        let ourLimits = Limits()
-        let ourHello = Frame.hello(limits: ourLimits)
-        try writer.write(ourHello)
-
-        guard let theirHello = try reader.read() else {
-            throw CartridgeHostError.handshakeFailed("Cartridge closed connection before HELLO")
+        // Perform the v3 HELLO handshake via the wire layer: it enforces the
+        // protocol-version match (L1), requires all limit fields, negotiates
+        // the element-wise minimum of every limit including initial_credit,
+        // and extracts the manifest.
+        let handshake: HandshakeResult
+        do {
+            handshake = try performHandshakeWithManifest(reader: reader, writer: writer)
+        } catch let error as FrameError {
+            throw CartridgeHostError.handshakeFailed("\(error)")
         }
-        guard theirHello.frameType == .hello else {
-            throw CartridgeHostError.handshakeFailed("Expected HELLO, got \(theirHello.frameType)")
-        }
-        guard let manifest = theirHello.helloManifest else {
+        guard let manifest = handshake.manifest else {
             throw CartridgeHostError.handshakeFailed("Cartridge HELLO missing required manifest")
         }
-
-        // Protocol v2: All three limit fields are REQUIRED
-        guard let theirMaxFrame = theirHello.helloMaxFrame else {
-            throw CartridgeHostError.handshakeFailed("Protocol violation: HELLO missing max_frame")
-        }
-        guard let theirMaxChunk = theirHello.helloMaxChunk else {
-            throw CartridgeHostError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
-        }
-        guard let theirMaxReorderBuffer = theirHello.helloMaxReorderBuffer else {
-            throw CartridgeHostError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v2)")
-        }
-
-        let negotiatedLimits = Limits(
-            maxFrame: min(ourLimits.maxFrame, theirMaxFrame),
-            maxChunk: min(ourLimits.maxChunk, theirMaxChunk),
-            maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer)
-        )
-        writer.setLimits(negotiatedLimits)
-        reader.setLimits(negotiatedLimits)
+        let negotiatedLimits = handshake.limits
 
         // Parse cap groups from manifest (validates CAP_IDENTITY presence)
         let capGroups = try Self.extractCapGroups(from: manifest)
@@ -1847,38 +1918,86 @@ public final class CartridgeHost: @unchecked Sendable {
                 stateLock.unlock()
             }
 
-        case .streamStart, .chunk, .streamEnd, .end, .err:
+        case .streamStart, .chunk, .streamEnd, .end, .err, .credit:
+            // PATH C: Continuation frame from relay. Credit rides the same
+            // route as data continuations: it targets whichever cartridge is
+            // sending the credited stream — the handler cartridge for a normal
+            // request (via incomingRxids) or the requester cartridge for a
+            // peer call's argument streams (via outgoingRids). (L11)
             // Continuation from relay MUST have XID
             guard let xid = frame.routingId else {
                 fputs("[CartridgeHost] Protocol error: continuation from relay missing XID\n", stderr)
                 return
             }
 
+            // Route by checking BOTH maps. For self-loop peer requests (where
+            // source and destination are behind the same relay connection), the
+            // same (XID, RID) appears in BOTH incomingRxids and outgoingRids:
+            //   incomingRxids[(XID, RID)] = handler cartridge (receives request body)
+            //   outgoingRids[RID] = requester cartridge (receives peer response)
             let key = RxidKey(xid: xid, rid: frame.id)
 
-            // Route by (XID, RID) to the mapped cartridge
+            // Route selection:
+            // - CREDIT routes by its mandatory direction (L11): a
+            //   `response` grant credits the HANDLER's output → incoming
+            //   side; a `request` grant credits the REQUESTER's argument
+            //   streams → outgoing side. The (xid, rid) key alone cannot
+            //   distinguish these for self-loop peer calls.
+            // - Data/terminal frames prefer the incoming side while the
+            //   request body is still flowing; after body END they are
+            //   self-loop peer responses and fall through to outgoing.
             stateLock.lock()
-            var cartridgeIdx = incomingRxids[key]
-            if cartridgeIdx != nil {
+            let preferIncoming: Bool
+            if frame.frameType == .credit {
+                switch frame.creditDirection {
+                case .response:
+                    preferIncoming = true
+                case .request:
+                    preferIncoming = false
+                case nil:
+                    stateLock.unlock()
+                    let total = drops.record(.noRoute)
+                    fputs("[CartridgeHost] dropped CREDIT without direction — v3 requires credit_dir (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
+                    return
+                }
+            } else {
+                preferIncoming = !incomingBodyDone.contains(key)
+            }
+
+            var routedViaIncoming = false
+            var cartridgeIdx: Int? = nil
+            if preferIncoming, let idx = incomingRxids[key] {
                 // Hit on incoming side — keep this entry "fresh" so
                 // the GC doesn't evict it while continuations are
                 // still arriving.
                 touchIncomingRxidLocked(key)
-            } else {
-                // Not an incoming engine request — check if it's a peer response.
-                // outgoingRids[RID] tracks which cartridge made a peer request with this RID.
-                cartridgeIdx = outgoingRids[frame.id]
-                if cartridgeIdx != nil {
-                    touchOutgoingRidLocked(frame.id)
-                }
+                cartridgeIdx = idx
+                routedViaIncoming = true
+            } else if let idx = outgoingRids[frame.id] {
+                touchOutgoingRidLocked(frame.id)
+                cartridgeIdx = idx
+            } else if let idx = incomingRxids[key] {
+                // Fallback: no outgoing entry, so this cannot be a
+                // self-loop peer response — route to the handler even
+                // post-body-END (defensive; normal requests only ever
+                // see Credit here, handled above).
+                touchIncomingRxidLocked(key)
+                cartridgeIdx = idx
+                routedViaIncoming = true
             }
             guard let resolvedIdx = cartridgeIdx else {
                 stateLock.unlock()
-                // Already cleaned up (e.g., cartridge died, death handler sent ERR)
+                // Already cleaned up (e.g., cartridge died, death handler
+                // sent ERR). A counted no_route drop (L6/L8) — never a
+                // protocol error and never a silent loss.
+                let total = drops.record(.noRoute)
+                fputs("[CartridgeHost] dropped continuation frame — no routing entry (no_route, total=\(total)) type=\(frame.frameType) rid=\(frame.id)\n", stderr)
                 return
             }
             let cartridge = cartridges[resolvedIdx]
             stateLock.unlock()
+
+            let isTerminal = frame.frameType == .end || frame.frameType == .err
 
             // If the cartridge is dead, send ERR to engine with XID and clean up
             if !cartridge.writeFrame(frame) {
@@ -1890,6 +2009,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 outgoingRidsTouched.removeValue(forKey: frame.id)
                 incomingRxids.removeValue(forKey: key)
                 incomingRxidsTouched.removeValue(forKey: key)
+                incomingBodyDone.remove(key)
+                incomingResponseDone.remove(key)
                 stateLock.unlock()
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
                 var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", message: deathMsg)
@@ -1899,10 +2020,31 @@ public final class CartridgeHost: @unchecked Sendable {
                 return
             }
 
-            // NOTE: Do NOT cleanup incomingRxids here!
-            // Frames arrive asynchronously — END can arrive before StreamStart/Chunk.
-            // We can't know when "all frames for (XID, RID) have arrived" without full stream tracking.
-            // Accept the leak: entries cleaned up on cartridge death.
+            // Terminal bookkeeping.
+            // - Via incomingRxids: the REQUEST BODY completed. The entry
+            //   STAYS — the handler's response is still flowing and its
+            //   output CREDIT grants route through it (v3). It is removed
+            //   when the handler's response terminal passes outbound
+            //   (handleCartridgeFrame) or on cartridge death.
+            // - Via outgoingRids: a peer RESPONSE completed — clean up.
+            if isTerminal {
+                stateLock.lock()
+                if routedViaIncoming {
+                    if incomingResponseDone.remove(key) != nil {
+                        // Response already terminated (response-first
+                        // race): the request is fully over — release.
+                        incomingRxids.removeValue(forKey: key)
+                        incomingRxidsTouched.removeValue(forKey: key)
+                    } else {
+                        incomingBodyDone.insert(key)
+                    }
+                } else {
+                    // Peer response completed — clean up outgoingRids
+                    outgoingRids.removeValue(forKey: frame.id)
+                    outgoingRidsTouched.removeValue(forKey: frame.id)
+                }
+                stateLock.unlock()
+            }
 
         case .log:
             // LOG frames from peer responses — route back to the cartridge that
@@ -2078,6 +2220,22 @@ public final class CartridgeHost: @unchecked Sendable {
                 if isTerminal {
                     outgoingMaxSeq.removeValue(forKey: flowKey)
                     outgoingMaxSeqTouched.removeValue(forKey: flowKey)
+
+                    // The handler's RESPONSE terminal is the request's true
+                    // end at this host (v3): once the body has completed
+                    // too, release the incoming routing entry and its
+                    // body-done marker. If the response terminates BEFORE
+                    // the body END arrives (response-first race), remember
+                    // it so the body END releases the entry immediately.
+                    if let xid = frame.routingId {
+                        let key = RxidKey(xid: xid, rid: frame.id)
+                        if incomingBodyDone.remove(key) != nil {
+                            incomingRxids.removeValue(forKey: key)
+                            incomingRxidsTouched.removeValue(forKey: key)
+                        } else if incomingRxids[key] != nil {
+                            incomingResponseDone.insert(key)
+                        }
+                    }
                 } else {
                     outgoingMaxSeq[flowKey] = frame.seq
                     touchOutgoingMaxSeqLocked(flowKey)
@@ -2227,6 +2385,8 @@ public final class CartridgeHost: @unchecked Sendable {
         for entry in failedIncoming {
             incomingRxids.removeValue(forKey: entry.key)
             incomingRxidsTouched.removeValue(forKey: entry.key)
+            incomingBodyDone.remove(entry.key)
+            incomingResponseDone.remove(entry.key)
             incomingToPeerRids.removeValue(forKey: entry.key)
             incomingToPeerRidsTouched.removeValue(forKey: entry.key)
         }
@@ -2493,7 +2653,11 @@ public final class CartridgeHost: @unchecked Sendable {
         // without re-decoding the wire bytes; we compute it the same way
         // the engine would.
         let installedCartridges = buildInstalledCartridgeRecordsLocked()
+        // Attach the host's protocol observability snapshot (L8) — refreshed
+        // with each republish so the engine can surface the state of
+        // communications per host. Mirrors Rust's rebuild_capabilities.
         let payload = RelayNotifyCapabilitiesPayload(installedCartridges: installedCartridges)
+            .withHostProtocolStats(protocolStatsLocked())
         let capsData: Data
         do {
             capsData = try JSONEncoder().encode(payload)
@@ -2502,13 +2666,33 @@ public final class CartridgeHost: @unchecked Sendable {
             fatalError("BUG: failed to serialize RelayNotify capabilities payload: \(error)")
         }
 
-        // Send RelayNotify to relay if in relay mode
+        // Send RelayNotify to relay if in relay mode. Advertise the host's
+        // REAL aggregate limits — the element-wise minimum over every running
+        // cartridge's negotiated handshake limits. The switch overwrites the
+        // master's limits on each RelayNotify, so sending defaults here would
+        // clobber genuine negotiations (and misreport initial_credit
+        // end-to-end). Mirrors Rust host_runtime `aggregate_limits()`.
+        let limits = aggregateLimitsLocked()
         outboundLock.lock()
         if let writer = outboundWriter {
-            let notify = Frame.relayNotify(manifest: capsData, limits: Limits())
+            let notify = Frame.relayNotify(manifest: capsData, limits: limits)
             try? writer.write(notify) // Ignore error if relay closed
         }
         outboundLock.unlock()
+    }
+
+    /// Element-wise minimum over the negotiated limits of every running
+    /// cartridge; defaults when none are running. This is what the host is
+    /// actually able to honor across its fleet. Caller MUST hold `stateLock`.
+    private func aggregateLimitsLocked() -> Limits {
+        var limits = Limits()
+        for cartridge in cartridges where cartridge.running {
+            limits.maxFrame = min(limits.maxFrame, cartridge.limits.maxFrame)
+            limits.maxChunk = min(limits.maxChunk, cartridge.limits.maxChunk)
+            limits.maxReorderBuffer = min(limits.maxReorderBuffer, cartridge.limits.maxReorderBuffer)
+            limits.initialCredit = min(limits.initialCredit, cartridge.limits.initialCredit)
+        }
+        return limits
     }
 
     /// Reason a manifest was rejected by `extractCaps`. Mirrors Rust's

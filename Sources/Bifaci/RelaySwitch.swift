@@ -93,29 +93,49 @@ public struct SocketPair: Sendable {
     }
 }
 
-/// Composite routing key: (XID, RID) — uniquely identifies a request flow
-private struct RoutingKey: Hashable {
-    let xid: MessageId
-    let rid: MessageId
-}
-
-/// Routing entry for request tracking
-private struct RoutingEntry {
-    /// Source master index, or nil if from external caller
-    let sourceMasterIdx: Int?
-    /// Destination master index (where request is being handled)
-    let destinationMasterIdx: Int
-}
+/// Composite routing key: (XID, RID) — uniquely identifies a request flow.
+/// Alias onto the unified request table's key type (protocol v3, L7).
+typealias RoutingKey = RequestKey
 
 public struct RelayNotifyCapabilitiesPayload: Codable {
     public let installedCartridges: [InstalledCartridgeRecord]
+    /// Host-level protocol observability (L8): drop counters, routing-table
+    /// sizes, GC totals. Refreshed with each stats republish so the engine
+    /// can surface the state of communications per host. Absent on initial
+    /// capability advertisements — a per-republish refresh, not a requirement.
+    public let hostProtocolStats: HostProtocolStats?
 
     enum CodingKeys: String, CodingKey {
         case installedCartridges = "installed_cartridges"
+        case hostProtocolStats = "host_protocol_stats"
     }
 
     public init(installedCartridges: [InstalledCartridgeRecord]) {
         self.installedCartridges = installedCartridges
+        self.hostProtocolStats = nil
+    }
+
+    public init(installedCartridges: [InstalledCartridgeRecord], hostProtocolStats: HostProtocolStats?) {
+        self.installedCartridges = installedCartridges
+        self.hostProtocolStats = hostProtocolStats
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.installedCartridges = try c.decode([InstalledCartridgeRecord].self, forKey: .installedCartridges)
+        self.hostProtocolStats = try c.decodeIfPresent(HostProtocolStats.self, forKey: .hostProtocolStats)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(installedCartridges, forKey: .installedCartridges)
+        // Omitted when nil, mirroring Rust's skip_serializing_if.
+        try c.encodeIfPresent(hostProtocolStats, forKey: .hostProtocolStats)
+    }
+
+    /// Attach the host's protocol stats snapshot.
+    public func withHostProtocolStats(_ stats: HostProtocolStats) -> RelayNotifyCapabilitiesPayload {
+        return RelayNotifyCapabilitiesPayload(installedCartridges: installedCartridges, hostProtocolStats: stats)
     }
 
     /// Flat cap-URN union across every cartridge in the payload,
@@ -137,6 +157,19 @@ public struct RelayNotifyCapabilitiesPayload: Codable {
 
 /// Sentinel value for engine-initiated requests (used in origin tracking)
 private let ENGINE_SOURCE = Int.max
+
+/// The switch's protocol observability snapshot (L8): live request state,
+/// recent terminations, and per-reason drop counters. Serializable; field
+/// names are the mirror contract. Mirrors Rust `RelaySwitchProtocolStats`.
+public struct RelaySwitchProtocolStats: Codable, Sendable {
+    public let requests: RequestTableSnapshot
+    public let drops: DropSnapshot
+
+    public init(requests: RequestTableSnapshot, drops: DropSnapshot) {
+        self.requests = requests
+        self.drops = drops
+    }
+}
 
 // MARK: - Identity Nonce
 
@@ -344,14 +377,16 @@ public final class RelaySwitch: @unchecked Sendable {
     private var masters: [MasterConnection] = []
     private var capTable: [(capUrn: String, masterIdx: Int)] = []
 
-    /// Routing: (xid, rid) → source/destination masters
-    private var requestRouting: [RoutingKey: RoutingEntry] = [:]
-    /// Peer-initiated request keys for cleanup tracking
-    private var peerRequests: Set<RoutingKey> = Set()
-    /// Origin tracking: (xid, rid) → upstream master index (nil = external caller)
-    private var originMap: [RoutingKey: Int?] = [:]
-    /// RID → XID mapping for engine-initiated requests (continuation frames need XID lookup)
-    private var ridToXid: [MessageId: MessageId] = [:]
+    /// Unified per-request state (L7): routing, origin, peer markers,
+    /// cancel-cascade children, external response channel, per-stream flow
+    /// stats, and the rid→xid index — one entry, one registration, one
+    /// termination. Replaces the four parallel routing maps. Protected by
+    /// `lock` (the table itself is unsynchronized, mirroring Rust's
+    /// `RwLock<RequestTable>`).
+    let requests = RequestTable()
+    /// Dropped-frame accounting (L8): unroutable/post-terminal frames are
+    /// counted drops, never silent losses and never protocol errors.
+    let drops = DropCounters()
     /// XID counter for assigning unique routing IDs
     private var xidCounter: UInt64 = 0
 
@@ -1103,28 +1138,35 @@ public final class RelaySwitch: @unchecked Sendable {
             let rid = frame.id
             let key = RoutingKey(xid: xid, rid: rid)
 
-            // Record origin (nil = external caller via sendToMaster)
-            originMap[key] = nil as Int?
-
-            // Register routing
-            requestRouting[key] = RoutingEntry(
-                sourceMasterIdx: nil,
-                destinationMasterIdx: destIdx
-            )
-
-            // Record RID → XID mapping for continuation frames from engine
-            ridToXid[rid] = xid
+            // Register the request: origin nil (external caller via
+            // sendToMaster), no response channel — responses return via
+            // readFromMasters (L7). Duplicate registration is a protocol
+            // violation and fails hard.
+            do {
+                try requests.register(key, RequestState(
+                    routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: destIdx),
+                    origin: nil,
+                    externalChannel: nil,
+                    isPeer: false
+                ))
+            } catch {
+                throw RelaySwitchError.protocolError("\(error.localizedDescription)")
+            }
 
             // Forward to destination with XID
             try writeToMasterIdx(destIdx, &mutableFrame)
 
-        case .streamStart, .chunk, .streamEnd, .end, .err:
-            // Continuation frames from engine: look up XID from RID if missing
+        case .streamStart, .chunk, .streamEnd, .end, .err, .credit:
+            // Continuation/control frames from engine: look up XID from RID
+            // if missing, then the destination — one table read. Unknown RID
+            // is a hard error back to the caller: the engine is a direct API
+            // client and must observe that the request no longer exists
+            // (already terminated) so it stops sending.
             let xid: MessageId
             if let existingXid = frame.routingId {
                 xid = existingXid
             } else {
-                guard let lookedUpXid = ridToXid[frame.id] else {
+                guard let lookedUpXid = requests.xidForRid(frame.id) else {
                     throw RelaySwitchError.unknownRequest(frame.id.toString())
                 }
                 xid = lookedUpXid
@@ -1133,11 +1175,11 @@ public final class RelaySwitch: @unchecked Sendable {
 
             let key = RoutingKey(xid: xid, rid: frame.id)
 
-            guard let entry = requestRouting[key] else {
+            guard let entry = requests.get(key) else {
                 throw RelaySwitchError.unknownRequest(frame.id.toString())
             }
 
-            let destIdx = entry.destinationMasterIdx
+            let destIdx = entry.routing.destinationMasterIdx
 
             // Forward to destination
             try writeToMasterIdx(destIdx, &mutableFrame)
@@ -1148,7 +1190,7 @@ public final class RelaySwitch: @unchecked Sendable {
             if let existingXid = frame.routingId {
                 xid = existingXid
             } else {
-                guard let lookedUpXid = ridToXid[frame.id] else {
+                guard let lookedUpXid = requests.xidForRid(frame.id) else {
                     throw RelaySwitchError.unknownRequest(frame.id.toString())
                 }
                 xid = lookedUpXid
@@ -1156,10 +1198,10 @@ public final class RelaySwitch: @unchecked Sendable {
             }
 
             let key = RoutingKey(xid: xid, rid: frame.id)
-            guard let entry = requestRouting[key] else {
+            guard let entry = requests.get(key) else {
                 throw RelaySwitchError.unknownRequest(frame.id.toString())
             }
-            try writeToMasterIdx(entry.destinationMasterIdx, &mutableFrame)
+            try writeToMasterIdx(entry.routing.destinationMasterIdx, &mutableFrame)
 
         default:
             throw RelaySwitchError.protocolError("Unexpected frame type from engine: \(frame.frameType)")
@@ -1318,7 +1360,7 @@ public final class RelaySwitch: @unchecked Sendable {
     ///
     /// Returns Some(frame) if the frame should be forwarded to the engine.
     /// Returns nil if the frame was handled internally (peer request or request continuation).
-    private func handleMasterFrame(sourceIdx: Int, frame: Frame) throws -> Frame? {
+    func handleMasterFrame(sourceIdx: Int, frame: Frame) throws -> Frame? {
         lock.lock()
         defer { lock.unlock() }
 
@@ -1368,21 +1410,35 @@ public final class RelaySwitch: @unchecked Sendable {
             let rid = frame.id
             let key = RoutingKey(xid: xid, rid: rid)
 
-            // Record RID → XID mapping for continuation frames
-            ridToXid[rid] = xid
-
-            // Record origin (where this request came from)
+            // Register the peer request and link it under its parent for
+            // the cancel cascade — one table write (L7).
             fputs("[RelaySwitch] PEER_REQ: master \(sourceIdx) → master \(destIdx) cap='\(cap)' rid=\(rid) xid=\(xid)\n", stderr)
-            originMap[key] = sourceIdx
+            do {
+                try requests.register(key, RequestState(
+                    routing: RoutingEntry(sourceMasterIdx: sourceIdx, destinationMasterIdx: destIdx),
+                    origin: sourceIdx,
+                    externalChannel: nil,
+                    isPeer: true
+                ))
+            } catch {
+                throw RelaySwitchError.protocolError("\(error.localizedDescription)")
+            }
 
-            // Register routing
-            requestRouting[key] = RoutingEntry(
-                sourceMasterIdx: sourceIdx,
-                destinationMasterIdx: destIdx
-            )
-
-            // Mark as peer request (for cleanup tracking)
-            peerRequests.insert(key)
+            // Track parent→child for cancel cascade
+            if let meta = frame.meta, let parentRidCbor = meta["parent_rid"] {
+                let parentRid: MessageId?
+                switch parentRidCbor {
+                case .byteString(let bytes) where bytes.count == 16:
+                    parentRid = .uuid(Data(bytes))
+                case .unsignedInt(let n):
+                    parentRid = .uint(n)
+                default:
+                    parentRid = nil
+                }
+                if let parentRid = parentRid, let parentXid = requests.xidForRid(parentRid) {
+                    requests.linkChild(parent: RoutingKey(xid: parentXid, rid: parentRid), child: key)
+                }
+            }
 
             // Forward to destination with XID
             try writeToMasterIdx(destIdx, &mutableFrame)
@@ -1390,7 +1446,7 @@ public final class RelaySwitch: @unchecked Sendable {
             // Do NOT return to engine (internal routing)
             return nil
 
-        case .streamStart, .chunk, .streamEnd, .end, .err, .log:
+        case .streamStart, .chunk, .streamEnd, .end, .err, .log, .credit:
             // Branch based on XID presence to distinguish request vs response direction
             if frame.routingId != nil {
                 // ========================================
@@ -1401,69 +1457,97 @@ public final class RelaySwitch: @unchecked Sendable {
                 let rid = frame.id
                 let key = RoutingKey(xid: xid, rid: rid)
 
-                guard requestRouting[key] != nil else {
-                    throw RelaySwitchError.unknownRequest(rid.toString())
-                }
-
-                // Get origin (where request came from)
-                guard let originIdx = originMap[key] else {
-                    throw RelaySwitchError.protocolError("No origin recorded for request \(rid.toString())")
-                }
-
                 let isTerminal = frame.frameType == .end || frame.frameType == .err
 
-                // Route back to origin
-                if let masterIdx = originIdx {
-                    // Peer response — route back to source master (keep XID for relay protocol)
+                /// Where a response frame must go next.
+                enum RouteBack {
+                    case external(((Frame) -> Bool)?)
+                    case master(Int)
+                }
+
+                // Record flow stats, resolve the return path, and — on
+                // terminal — remove the whole entry atomically (L7). The
+                // terminal is forwarded using the state `terminate` hands
+                // back, so routing state release and terminal delivery
+                // cannot disagree (L6). A frame for a released key is a
+                // counted no_route drop, never a protocol error and never
+                // silent (L8).
+                requests.recordFrame(key, direction: .inbound, frame: frame)
+                let route: RouteBack
+                if isTerminal {
+                    let kind: TerminalKind = frame.frameType == .end ? .end : .err
+                    guard let state = requests.terminate(key, kind: kind) else {
+                        let total = drops.record(.noRoute)
+                        fputs("[RelaySwitch] dropped terminal for released request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                        return nil
+                    }
+                    switch state.origin {
+                    case nil: route = .external(state.externalChannel)
+                    case .some(let idx): route = .master(idx)
+                    }
+                } else {
+                    guard let state = requests.get(key) else {
+                        let total = drops.record(.noRoute)
+                        fputs("[RelaySwitch] dropped post-terminal response frame (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                        return nil
+                    }
+                    switch state.origin {
+                    case nil: route = .external(state.externalChannel)
+                    case .some(let idx): route = .master(idx)
+                    }
+                }
+
+                switch route {
+                case .external(.some(let channel)):
+                    // Deliver to the external response channel (keep XID).
+                    if !channel(mutableFrame) {
+                        let total = drops.record(.channelClosed)
+                        fputs("[RelaySwitch] response channel receiver gone (channel_closed) rid=\(rid) channel_closed_total=\(total)\n", stderr)
+                    }
+                    return nil
+                case .external(nil):
+                    // No response channel (sent via sendToMaster, not an
+                    // execute-style call). Strip XID and return to engine.
+                    mutableFrame.routingId = nil
+                    return mutableFrame
+                case .master(let masterIdx):
+                    // Route back to source master — KEEP XID.
                     if isTerminal {
                         fputs("[RelaySwitch] PEER_RESP: routing \(frame.frameType) back to master \(masterIdx) xid=\(xid) rid=\(rid)\n", stderr)
                     }
                     try writeToMasterIdx(masterIdx, &mutableFrame)
-                    if isTerminal {
-                        fputs("[RelaySwitch] PEER_RESP: write to master \(masterIdx) completed\n", stderr)
-                        requestRouting.removeValue(forKey: key)
-                        originMap.removeValue(forKey: key)
-                        peerRequests.remove(key)
-                        ridToXid.removeValue(forKey: rid)
-                    }
-
                     return nil
-                } else {
-                    // External caller (via sendToMaster) — strip XID and return to engine
-                    mutableFrame.routingId = nil
-
-                    if isTerminal {
-                        requestRouting.removeValue(forKey: key)
-                        originMap.removeValue(forKey: key)
-                        peerRequests.remove(key)
-                        ridToXid.removeValue(forKey: rid)
-                    }
-
-                    return mutableFrame
                 }
             } else {
                 // ========================================
                 // NO XID = REQUEST CONTINUATION
                 // ========================================
-                // Frame has no XID, so it's a request continuation flowing to destination
+                // Frame has no XID, so it's a request continuation
+                // (peer-call argument streams / grants) flowing to the
+                // destination. An unknown RID means the request already
+                // terminated: counted drop (L6), not an error.
                 let rid = frame.id
 
-                // Look up XID from RID → XID mapping (added by the REQ)
-                guard let xid = ridToXid[rid] else {
-                    throw RelaySwitchError.unknownRequest(rid.toString())
+                guard let xid = requests.xidForRid(rid) else {
+                    let total = drops.record(.noRoute)
+                    fputs("[RelaySwitch] dropped continuation for unknown/terminated request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                    return nil
                 }
 
                 let key = RoutingKey(xid: xid, rid: rid)
+                requests.recordFrame(key, direction: .inbound, frame: frame)
 
-                guard let entry = requestRouting[key] else {
-                    throw RelaySwitchError.unknownRequest(rid.toString())
+                guard let entry = requests.get(key) else {
+                    let total = drops.record(.noRoute)
+                    fputs("[RelaySwitch] dropped continuation for unknown/terminated request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                    return nil
                 }
 
                 // Add XID to frame for forwarding
                 mutableFrame.routingId = xid
 
                 // Forward to destination master (keep XID)
-                try writeToMasterIdx(entry.destinationMasterIdx, &mutableFrame)
+                try writeToMasterIdx(entry.routing.destinationMasterIdx, &mutableFrame)
                 return nil
             }
 
@@ -1486,12 +1570,14 @@ public final class RelaySwitch: @unchecked Sendable {
 
         case .cancel:
             // Cancel from cartridge — route to destination like a continuation frame.
+            // Cartridge is cancelling its own peer call. Unknown RID means
+            // the request already completed: a well-defined no-op.
             let rid = frame.id
             let xid: MessageId
             if let existingXid = frame.routingId {
                 xid = existingXid
             } else {
-                guard let lookedUpXid = ridToXid[rid] else {
+                guard let lookedUpXid = requests.xidForRid(rid) else {
                     // Unknown RID — silently ignore (request may already be completed)
                     return nil
                 }
@@ -1500,13 +1586,13 @@ public final class RelaySwitch: @unchecked Sendable {
             }
 
             let key = RoutingKey(xid: xid, rid: rid)
-            guard let entry = requestRouting[key] else {
+            guard let entry = requests.get(key) else {
                 // Unknown routing — silently ignore
                 return nil
             }
 
-            fputs("[RelaySwitch] Routing Cancel from master \(sourceIdx) to master \(entry.destinationMasterIdx) xid=\(xid) rid=\(rid)\n", stderr)
-            try writeToMasterIdx(entry.destinationMasterIdx, &mutableFrame)
+            fputs("[RelaySwitch] Routing Cancel from master \(sourceIdx) to master \(entry.routing.destinationMasterIdx) xid=\(xid) rid=\(rid)\n", stderr)
+            try writeToMasterIdx(entry.routing.destinationMasterIdx, &mutableFrame)
             return nil
 
         default:
@@ -1525,33 +1611,110 @@ public final class RelaySwitch: @unchecked Sendable {
         fputs("[RelaySwitch] Master \(masterIdx) died\n", stderr)
         masters[masterIdx].healthy = false
 
-        // Find all pending requests to this master and ERR them
-        var deadKeys: [(key: RoutingKey, sourceMasterIdx: Int?)] = []
-        for (key, entry) in requestRouting {
-            if entry.destinationMasterIdx == masterIdx {
-                deadKeys.append((key: key, sourceMasterIdx: entry.sourceMasterIdx))
-            }
-        }
+        // Find all pending requests routed to this master.
+        let deadKeys = requests.keysWhere { $0.routing.destinationMasterIdx == masterIdx }
 
-        for (key, sourceMasterIdx) in deadKeys {
-            // Create ERR frame
-            var errFrame = Frame.err(id: key.rid, code: "MASTER_DIED", message: "Relay master connection closed")
+        // Terminate each pending request (masterDied) and deliver a synthetic
+        // ERR to whoever was waiting on it. terminate() atomically removes
+        // ALL state for the key (L7) and hands back the origin + channel
+        // needed for delivery.
+        for key in deadKeys {
+            guard let state = requests.terminate(key, kind: .masterDied) else {
+                continue // raced another terminal — already fully cleaned
+            }
+
+            var errFrame = Frame.err(
+                id: key.rid,
+                code: "MASTER_DIED",
+                message: "Relay master \(masterIdx) connection closed"
+            )
             errFrame.routingId = key.xid
 
-            if let masterIdx = sourceMasterIdx, masters[masterIdx].healthy {
-                // Send ERR back to source master
-                try? writeToMasterIdx(masterIdx, &errFrame)
+            switch state.origin {
+            case nil:
+                // External caller — deliver on the response channel if any.
+                if let channel = state.externalChannel {
+                    _ = channel(errFrame)
+                }
+            case .some(let srcMasterIdx):
+                if masters[srcMasterIdx].healthy {
+                    try? writeToMasterIdx(srcMasterIdx, &errFrame)
+                }
             }
-
-            // Cleanup routing
-            requestRouting.removeValue(forKey: key)
-            originMap.removeValue(forKey: key)
-            peerRequests.remove(key)
         }
 
         rebuildCapTable()
         rebuildCapabilities()
         rebuildLimits()
+    }
+
+    // MARK: - Protocol Stats + Cancellation (protocol v3)
+
+    /// The switch's protocol observability snapshot (L8): live request state,
+    /// recent terminations, and per-reason drop counters. Field names are the
+    /// mirror contract.
+    public func protocolStats() -> RelaySwitchProtocolStats {
+        lock.lock()
+        defer { lock.unlock() }
+        return RelaySwitchProtocolStats(requests: requests.snapshot(), drops: drops.snapshot())
+    }
+
+    /// Cancel a specific in-flight request by RID.
+    ///
+    /// 1. Looks up RID → XID → routing destination
+    /// 2. Terminates the request (cancelled) FIRST — one atomic removal
+    ///    yields the destination, the children for the cascade, and the
+    ///    external channel for the final ERR (L7). A concurrent terminal for
+    ///    the same key loses the race and becomes a counted no_route drop.
+    /// 3. Sends a Cancel frame to the destination master
+    /// 4. Recursively cancels the child peer calls recorded on the entry
+    /// 5. Sends ERR "CANCELLED" to the external response channel if present
+    public func cancelRequest(rid: MessageId, forceKill: Bool) {
+        lock.lock()
+        guard let xid = requests.xidForRid(rid) else {
+            lock.unlock()
+            return
+        }
+        let key = RoutingKey(xid: xid, rid: rid)
+        guard let state = requests.terminate(key, kind: .cancelled) else {
+            lock.unlock()
+            return
+        }
+
+        // Send Cancel frame to destination
+        var cancelFrame = Frame.cancel(targetRid: rid, forceKill: forceKill)
+        cancelFrame.routingId = xid
+        try? writeToMasterIdx(state.routing.destinationMasterIdx, &cancelFrame)
+
+        let children = state.children
+        let externalChannel = state.externalChannel
+        lock.unlock()
+
+        // Recursively cancel children (outside the lock — each child cancel
+        // re-acquires it).
+        for child in children {
+            cancelRequest(rid: child.rid, forceKill: forceKill)
+        }
+
+        // Send ERR "CANCELLED" to the external response channel if present
+        if let channel = externalChannel {
+            var errFrame = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
+            errFrame.routingId = xid
+            _ = channel(errFrame)
+        }
+    }
+
+    /// Cancel all external-origin (engine-initiated) in-flight requests.
+    /// Returns the list of cancelled RIDs.
+    @discardableResult
+    public func cancelAllRequests(forceKill: Bool) -> [MessageId] {
+        lock.lock()
+        let rids = requests.keysWhere { $0.origin == nil }.map { $0.rid }
+        lock.unlock()
+        for rid in rids {
+            cancelRequest(rid: rid, forceKill: forceKill)
+        }
+        return rids
     }
 
     // MARK: - Deferred Runtime Identity Probe
@@ -1672,9 +1835,12 @@ public final class RelaySwitch: @unchecked Sendable {
         let key = RoutingKey(xid: xid, rid: rid)
 
         externalResponseChannels[key] = channel
-        originMap[key] = nil as Int?
-        requestRouting[key] = RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: masterIdx)
-        ridToXid[rid] = xid
+        try? requests.register(key, RequestState(
+            routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: masterIdx),
+            origin: nil,
+            externalChannel: nil,
+            isPeer: false
+        ))
 
         let nonce = identityNonce()
         let streamId = "identity-verify-runtime"
@@ -1762,7 +1928,7 @@ public final class RelaySwitch: @unchecked Sendable {
             // unhealthy from the moment caps went non-empty until
             // verification completed; this is the natural reverse.
             lock.lock()
-            cleanupProbeRouting(key: key, rid: rid)
+            cleanupProbeRouting(key: key, rid: rid, kind: .end)
             if masterIdx < masters.count {
                 masters[masterIdx].healthy = true
                 masters[masterIdx].lastError = nil
@@ -1780,7 +1946,7 @@ public final class RelaySwitch: @unchecked Sendable {
     private func failProbe(masterIdx: Int, key: RoutingKey, rid: MessageId, detail: String) {
         fputs("[RelaySwitch] runtime identity probe FAILED for master \(masterIdx) — remains unhealthy: \(detail)\n", stderr)
         lock.lock()
-        cleanupProbeRouting(key: key, rid: rid)
+        cleanupProbeRouting(key: key, rid: rid, kind: .err)
         if masterIdx < masters.count {
             masters[masterIdx].healthy = false
             masters[masterIdx].lastError = detail
@@ -1791,12 +1957,12 @@ public final class RelaySwitch: @unchecked Sendable {
     }
 
     /// Purge the routing/response-channel entries a probe registered.
-    /// Caller MUST hold `lock`.
-    private func cleanupProbeRouting(key: RoutingKey, rid: MessageId) {
+    /// Termination is the single L7 cleanup point: whether the probe
+    /// succeeded (kind end) or failed/timed out (kind err), zero state for
+    /// the key remains afterwards. Caller MUST hold `lock`.
+    private func cleanupProbeRouting(key: RoutingKey, rid: MessageId, kind: TerminalKind) {
         externalResponseChannels.removeValue(forKey: key)
-        originMap.removeValue(forKey: key)
-        requestRouting.removeValue(forKey: key)
-        ridToXid.removeValue(forKey: rid)
+        requests.terminate(key, kind: kind)
     }
 
     // MARK: - Capability Management
@@ -1939,7 +2105,7 @@ public final class RelaySwitch: @unchecked Sendable {
         return aggregateInstalledCartridges
     }
 
-    private static func parseRelayNotifyPayload(_ manifest: Data) throws -> RelayNotifyCapabilitiesPayload {
+    static func parseRelayNotifyPayload(_ manifest: Data) throws -> RelayNotifyCapabilitiesPayload {
         let payload: RelayNotifyCapabilitiesPayload
         do {
             payload = try JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)

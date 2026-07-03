@@ -1,8 +1,10 @@
 import Foundation
 @preconcurrency import SwiftCBOR
 
-/// Protocol version. Version 2: Result-based emitters, negotiated chunk limits, per-request errors.
-public let CBOR_PROTOCOL_VERSION: UInt8 = 2
+/// Protocol version. Version 3: credit-based per-stream flow control, unbounded
+/// streams, terminal metadata on END (final progress rides in the terminal frame),
+/// counted drops, handshake version enforcement. Version 2 handshakes are rejected.
+public let CBOR_PROTOCOL_VERSION: UInt8 = 3
 
 /// Default maximum frame size (3.5 MB) - safe margin below 3.75MB limit
 /// Larger payloads automatically use CHUNK frames
@@ -13,6 +15,11 @@ public let DEFAULT_MAX_CHUNK: Int = 262_144
 
 /// Default maximum reorder buffer size (per-flow frame count)
 public let DEFAULT_MAX_REORDER_BUFFER: Int = 64
+
+/// Default initial credit window per stream, in CHUNK frames.
+/// A sender may emit this many CHUNKs per stream before it must wait for a
+/// CREDIT grant. 32 chunks ≈ 8 MiB at the default max_chunk (256 KiB).
+public let DEFAULT_INITIAL_CREDIT: UInt64 = 32
 
 /// Hard limit for frame size (16 MB) - prevents memory exhaustion
 public let MAX_FRAME_HARD_LIMIT: Int = 16 * 1024 * 1024
@@ -44,6 +51,10 @@ public enum FrameType: UInt8, Sendable {
     case relayState = 11
     /// Cancel a specific in-flight request by RID. Carries optional force_kill flag.
     case cancel = 12
+    /// Grant per-stream flow-control credit (in CHUNK units) to the sender of a
+    /// stream. Non-flow: bypasses seq assignment and reorder buffers, and is
+    /// forwarded end-to-end by intermediaries (never originated or absorbed).
+    case credit = 13
 }
 
 /// Message ID - either a 16-byte UUID or a simple integer
@@ -126,11 +137,14 @@ public struct Limits: Sendable {
     public var maxChunk: Int
     /// Maximum reorder buffer size per flow (frame count)
     public var maxReorderBuffer: Int
+    /// Initial per-stream credit window in CHUNK frames
+    public var initialCredit: UInt64
 
-    public init(maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK, maxReorderBuffer: Int = DEFAULT_MAX_REORDER_BUFFER) {
+    public init(maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK, maxReorderBuffer: Int = DEFAULT_MAX_REORDER_BUFFER, initialCredit: UInt64 = DEFAULT_INITIAL_CREDIT) {
         self.maxFrame = maxFrame
         self.maxChunk = maxChunk
         self.maxReorderBuffer = maxReorderBuffer
+        self.initialCredit = initialCredit
     }
 
     /// Negotiate minimum of both limits
@@ -138,14 +152,15 @@ public struct Limits: Sendable {
         return Limits(
             maxFrame: min(self.maxFrame, other.maxFrame),
             maxChunk: min(self.maxChunk, other.maxChunk),
-            maxReorderBuffer: min(self.maxReorderBuffer, other.maxReorderBuffer)
+            maxReorderBuffer: min(self.maxReorderBuffer, other.maxReorderBuffer),
+            initialCredit: min(self.initialCredit, other.initialCredit)
         )
     }
 }
 
 /// A CBOR protocol frame
 public struct Frame: @unchecked Sendable {
-    /// Protocol version (always 2)
+    /// Protocol version (always CBOR_PROTOCOL_VERSION)
     public var version: UInt8 = CBOR_PROTOCOL_VERSION
     /// Frame type
     public var frameType: FrameType
@@ -189,6 +204,11 @@ public struct Frame: @unchecked Sendable {
     /// Whether Cancel should force-kill the cartridge process (true) or cooperatively cancel (false).
     /// Present on Cancel frames only.
     public var forceKill: Bool?
+    /// Flow-control credit grant in CHUNK units. Present on Credit frames only.
+    public var credit: UInt64?
+    /// Whether the stream makes no length promise (no chunk_count on STREAM_END,
+    /// receivers must consume incrementally). Present on STREAM_START frames only.
+    public var unbounded: Bool?
 
     public init(frameType: FrameType, id: MessageId) {
         self.frameType = frameType
@@ -204,6 +224,7 @@ public struct Frame: @unchecked Sendable {
             "max_frame": .unsignedInt(UInt64(limits.maxFrame)),
             "max_chunk": .unsignedInt(UInt64(limits.maxChunk)),
             "max_reorder_buffer": .unsignedInt(UInt64(limits.maxReorderBuffer)),
+            "initial_credit": .unsignedInt(limits.initialCredit),
             "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
         ]
         return frame
@@ -218,6 +239,7 @@ public struct Frame: @unchecked Sendable {
             "max_frame": .unsignedInt(UInt64(limits.maxFrame)),
             "max_chunk": .unsignedInt(UInt64(limits.maxChunk)),
             "max_reorder_buffer": .unsignedInt(UInt64(limits.maxReorderBuffer)),
+            "initial_credit": .unsignedInt(limits.initialCredit),
             "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
             "manifest": .byteString([UInt8](manifest))
         ]
@@ -305,6 +327,54 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
+    /// Create an END frame with exit_code=0 (success) carrying terminal metadata.
+    /// `progress` is the authoritative final progress value delivered with the
+    /// terminal frame itself (so it can never race it); `message` is an optional
+    /// final status message. A successful END without an explicit progress reads
+    /// as 1.0 via `finalProgress()`.
+    public static func endOkWith(id: MessageId, finalPayload: Data? = nil, progress: Double? = nil, message: String? = nil) -> Frame {
+        var frame = Frame.endOk(id: id, finalPayload: finalPayload)
+        var meta = frame.meta ?? [:]
+        if let progress = progress {
+            meta["progress"] = .double(progress)
+        }
+        if let message = message {
+            meta["message"] = .utf8String(message)
+        }
+        frame.meta = meta
+        return frame
+    }
+
+    /// Read the final progress from an END frame's terminal metadata.
+    /// Returns the explicit `progress` meta value when present; a successful END
+    /// (exit_code=0) without an explicit value reads as 1.0. Non-END frames and
+    /// unsuccessful ENDs without a value return nil.
+    public func finalProgress() -> Double? {
+        guard frameType == .end else { return nil }
+        if let value = meta?["progress"] {
+            switch value {
+            case .double(let d): return d
+            case .float(let f): return Double(f)
+            case .half(let h): return Double(h)
+            case .unsignedInt(let n): return Double(n)
+            case .negativeInt(let n): return Double(-1 - Int64(n))
+            default: break
+            }
+        }
+        if exitCode == 0 {
+            return 1.0
+        }
+        return nil
+    }
+
+    /// Read the final status message from an END frame's terminal metadata.
+    public func finalMessage() -> String? {
+        guard frameType == .end, let meta = meta, case .utf8String(let s) = meta["message"] else {
+            return nil
+        }
+        return s
+    }
+
     /// Read exit_code from an END frame's meta. Returns nil if absent.
     public var exitCode: Int64? {
         guard let meta = meta, let value = meta["exit_code"] else { return nil }
@@ -370,6 +440,21 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
+    /// Create a STREAM_START frame for an UNBOUNDED stream — one that makes no
+    /// length promise. Its STREAM_END may omit chunk_count, and receivers must
+    /// consume it incrementally (never buffer to completion).
+    public static func streamStartUnbounded(reqId: MessageId, streamId: String, mediaUrn: String, isSequence: Bool? = nil) -> Frame {
+        var frame = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: mediaUrn, isSequence: isSequence)
+        frame.unbounded = true
+        return frame
+    }
+
+    /// Whether this STREAM_START announces an unbounded stream.
+    /// Absent flag means bounded.
+    public var isUnbounded: Bool {
+        return unbounded ?? false
+    }
+
     /// Create a STREAM_END frame to mark completion of a specific stream.
     /// After this, any CHUNK for this stream_id is a fatal protocol error.
     ///
@@ -384,6 +469,14 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
+    /// Create a STREAM_END frame for an unbounded stream — no chunk_count promise.
+    /// Valid only for streams announced with `streamStartUnbounded`.
+    public static func streamEndUnbounded(reqId: MessageId, streamId: String) -> Frame {
+        var frame = Frame(frameType: .streamEnd, id: reqId)
+        frame.streamId = streamId
+        return frame
+    }
+
     /// Create a RELAY_NOTIFY frame for capability advertisement (slave → master).
     /// Carries the aggregate manifest and negotiated limits.
     public static func relayNotify(manifest: Data, limits: Limits) -> Frame {
@@ -393,6 +486,7 @@ public struct Frame: @unchecked Sendable {
             "max_frame": CBOR.unsignedInt(UInt64(limits.maxFrame)),
             "max_chunk": CBOR.unsignedInt(UInt64(limits.maxChunk)),
             "max_reorder_buffer": CBOR.unsignedInt(UInt64(limits.maxReorderBuffer)),
+            "initial_credit": CBOR.unsignedInt(limits.initialCredit),
         ]
         return frame
     }
@@ -414,6 +508,44 @@ public struct Frame: @unchecked Sendable {
         var frame = Frame(frameType: .cancel, id: targetRid)
         frame.forceKill = forceKill
         return frame
+    }
+
+    /// Create a CREDIT frame granting per-stream flow-control credit to the
+    /// sender of a stream.
+    ///
+    /// - Parameters:
+    ///   - targetRid: The request whose stream is being credited
+    ///   - streamId: The stream being credited (nil credits the request's
+    ///     sole/default stream)
+    ///   - credits: Number of additional CHUNK frames the sender may emit
+    ///   - direction: Which side's stream is being credited. Hosts route
+    ///     grants by this: a `request` grant travels toward the requester (the
+    ///     sender of argument streams), a `response` grant toward the handler
+    ///     (the sender of output streams). Required — the (xid, rid) key alone
+    ///     is ambiguous for self-loop peer calls.
+    public static func credit(targetRid: MessageId, streamId: String?, credits: UInt64, direction: CreditDirection) -> Frame {
+        var frame = Frame(frameType: .credit, id: targetRid)
+        frame.streamId = streamId
+        frame.credit = credits
+        frame.meta = ["credit_dir": .utf8String(direction.rawValue)]
+        return frame
+    }
+
+    /// Read the credit grant from a CREDIT frame. nil for other frame types.
+    public var creditCount: UInt64? {
+        guard frameType == .credit else { return nil }
+        return credit
+    }
+
+    /// Read the direction of a CREDIT frame's grant. nil for other frame
+    /// types or a Credit frame without the mandatory direction (a protocol
+    /// violation the receiving router treats as unroutable).
+    public var creditDirection: CreditDirection? {
+        guard frameType == .credit, let meta = meta,
+              case .utf8String(let s) = meta["credit_dir"] else {
+            return nil
+        }
+        return CreditDirection(rawValue: s)
     }
 
     // MARK: - Accessors
@@ -481,7 +613,7 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Extract limits from RELAY_NOTIFY metadata
-    /// Returns nil if any required field is missing (protocol violation in v2)
+    /// Returns nil if any required field is missing (protocol violation in v3)
     public var relayNotifyLimits: Limits? {
         guard frameType == .relayNotify, let meta = meta,
               case .unsignedInt(let maxFrame) = meta["max_frame"],
@@ -489,7 +621,11 @@ public struct Frame: @unchecked Sendable {
               case .unsignedInt(let maxReorderBuffer) = meta["max_reorder_buffer"] else {
             return nil
         }
-        return Limits(maxFrame: Int(maxFrame), maxChunk: Int(maxChunk), maxReorderBuffer: Int(maxReorderBuffer))
+        var initialCredit = DEFAULT_INITIAL_CREDIT
+        if case .unsignedInt(let n) = meta["initial_credit"], n > 0 {
+            initialCredit = n
+        }
+        return Limits(maxFrame: Int(maxFrame), maxChunk: Int(maxChunk), maxReorderBuffer: Int(maxReorderBuffer), initialCredit: initialCredit)
     }
 
     /// Extract max_frame from HELLO metadata
@@ -515,6 +651,22 @@ public struct Frame: @unchecked Sendable {
             return nil
         }
         return Int(n)
+    }
+
+    /// Extract initial_credit from HELLO metadata
+    public var helloInitialCredit: UInt64? {
+        guard frameType == .hello, let meta = meta, case .unsignedInt(let n) = meta["initial_credit"], n > 0 else {
+            return nil
+        }
+        return n
+    }
+
+    /// Extract the protocol version declared in HELLO metadata.
+    public var helloVersion: UInt8? {
+        guard frameType == .hello, let meta = meta, case .unsignedInt(let n) = meta["version"] else {
+            return nil
+        }
+        return UInt8(truncatingIfNeeded: n)
     }
 
     /// Extract manifest from HELLO metadata (cartridge side sends this)
@@ -544,11 +696,12 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Returns true if this frame type participates in flow ordering (seq tracking).
-    /// Non-flow frames (Hello, Heartbeat, RelayNotify, RelayState) bypass seq assignment
-    /// and reorder buffers entirely.
+    /// Non-flow frames (Hello, Heartbeat, RelayNotify, RelayState, Cancel, Credit)
+    /// bypass seq assignment and reorder buffers entirely — Credit in particular must
+    /// never queue behind the data it is flow-controlling.
     public func isFlowFrame() -> Bool {
         switch frameType {
-        case .hello, .heartbeat, .relayNotify, .relayState, .cancel:
+        case .hello, .heartbeat, .relayNotify, .relayState, .cancel, .credit:
             return false
         default:
             return true
@@ -608,4 +761,58 @@ public enum FrameKey: UInt64 {
     case checksum = 16
     case isSequence = 17
     case forceKill = 18
+    case credit = 19       // Flow-control credit grant in CHUNK units (Credit frames)
+    case unbounded = 20    // Stream makes no length promise (STREAM_START frames)
+}
+
+// MARK: - Credit Direction
+
+/// Which side's stream a CREDIT frame credits (L11 routing discriminator).
+/// `request` credits a request-direction stream (arguments flowing toward the
+/// handler): the grant travels toward the REQUESTER. `response` credits a
+/// response-direction stream (handler output): the grant travels toward the
+/// HANDLER. Required on every CREDIT frame — (xid, rid) alone cannot
+/// disambiguate grant direction for self-loop peer calls.
+///
+/// The raw values are the stable snake_case wire names carried in the
+/// `credit_dir` meta entry (mirrors Rust `CreditDirection`).
+public enum CreditDirection: String, CaseIterable, Hashable, Sendable, Codable {
+    case request
+    case response
+}
+
+// MARK: - Drop Reasons
+
+/// Why a frame was dropped instead of delivered. The shared vocabulary for
+/// counted drops across every runtime (cartridge writer, host, relay switch,
+/// executor); every dropped frame increments exactly one of these counters,
+/// observable via the protocol stats snapshots. Frames are never dropped
+/// silently.
+///
+/// The raw values are the stable snake_case names — the wire/snapshot
+/// contract mirrored from the Rust reference.
+public enum DropReason: String, CaseIterable, Hashable, Sendable, Codable {
+    /// Flow frame enqueued/received after the request's terminal (END/ERR) frame.
+    case postTerminal = "post_terminal"
+    /// Flow frame for a request with no routing state (already released or never
+    /// registered).
+    case noRoute = "no_route"
+    /// Send attempted on a closed channel (receiver gone).
+    case channelClosed = "channel_closed"
+    /// CHUNK received beyond the granted credit window.
+    case creditViolation = "credit_violation"
+    /// Frame discarded because its request was cancelled.
+    case cancelled = "cancelled"
+    /// Frame discarded because the owning master/host connection died.
+    case masterDied = "master_died"
+
+    /// All variants, for counter arrays and snapshot serialization.
+    public static let all: [DropReason] = [
+        .postTerminal, .noRoute, .channelClosed, .creditViolation, .cancelled, .masterDied,
+    ]
+
+    /// Stable snake_case name (the wire/snapshot contract for mirrors).
+    public var asString: String {
+        return rawValue
+    }
 }

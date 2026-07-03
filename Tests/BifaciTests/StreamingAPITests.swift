@@ -303,7 +303,7 @@ final class StreamingAPITests: XCTestCase {
 
         // start() must be called before write
         try output.start(isSequence: false)
-        try output.write(Data([1, 2, 3]))
+        try output.blockingWrite(Data([1, 2, 3]))
 
         XCTAssertGreaterThanOrEqual(sentFrames.count, 1, "Should send at least STREAM_START")
 
@@ -333,9 +333,9 @@ final class StreamingAPITests: XCTestCase {
 
         // start() then write 3 chunks
         try output.start(isSequence: false)
-        try output.write(Data([1]))
-        try output.write(Data([2]))
-        try output.write(Data([3]))
+        try output.blockingWrite(Data([1]))
+        try output.blockingWrite(Data([2]))
+        try output.blockingWrite(Data([3]))
         try output.close()
 
         // Last frame before any END should be STREAM_END
@@ -366,7 +366,7 @@ final class StreamingAPITests: XCTestCase {
         // start() then write data larger than maxChunk
         try output.start(isSequence: false)
         let largeData = Data(repeating: 0x42, count: 35)
-        try output.write(largeData)
+        try output.blockingWrite(largeData)
         try output.close()
 
         // Should have STREAM_START + 4 CHUNKs + STREAM_END
@@ -446,7 +446,7 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: 1000
         )
 
-        XCTAssertThrowsError(try output.write(Data([1, 2, 3])), "write() without start() must throw")
+        XCTAssertThrowsError(try output.blockingWrite(Data([1, 2, 3])), "write() without start() must throw")
     }
 
     // TEST542d: OutputStream start() twice throws
@@ -480,7 +480,7 @@ final class StreamingAPITests: XCTestCase {
         )
 
         try output.start(isSequence: false)
-        XCTAssertThrowsError(try output.emitListItem(.byteString([1, 2, 3])),
+        XCTAssertThrowsError(try output.blockingEmitListItem(.byteString([1, 2, 3])),
             "emitListItem on write-mode stream must throw")
     }
 
@@ -507,7 +507,7 @@ final class StreamingAPITests: XCTestCase {
         )
 
         try output.start(isSequence: false)
-        try output.write(Data([1, 2, 3]))
+        try output.blockingWrite(Data([1, 2, 3]))
         try output.close()
 
         // Verify stream ID is used
