@@ -27,6 +27,36 @@ final class RequestStateTests: XCTestCase {
         return try XCTUnwrap(obj as? [String: Any])
     }
 
+    // TEST7092: A request registered with its originating REQ's cap URN carries that identity through the ACTIVE snapshot and into the terminated ring — observability surfaces can always NAME a request (background chatter vs run traffic), never just show a bare rid. A request registered without one snapshots with cap_urn absent — never invented.
+    func test7092_capUrnAttributionSurvivesLifecycle() throws {
+        let table = RequestTable()
+        let named = key(1, 9)
+        let namedState = state(dest: 0, origin: 1, isPeer: false)
+        namedState.capUrn = "cap:effect=none"
+        try table.register(named, namedState)
+        let anonymous = key(2, 10)
+        try table.register(anonymous, state(dest: 0, origin: 1, isPeer: true))
+
+        var snapshot = table.snapshot()
+        let byRid: (String) -> RequestSnapshot? = { rid in
+            snapshot.active.first { $0.rid == rid }
+        }
+        XCTAssertEqual(
+            try XCTUnwrap(byRid("9")).capUrn,
+            "cap:effect=none",
+            "active snapshot names the request's cap"
+        )
+        XCTAssertNil(try XCTUnwrap(byRid("10")).capUrn, "unknown identity stays absent")
+
+        _ = table.terminate(named, kind: .end)
+        snapshot = table.snapshot()
+        XCTAssertEqual(
+            snapshot.recentTerminated[0].capUrn,
+            "cap:effect=none",
+            "the terminated ring keeps the cap identity"
+        )
+    }
+
     // TEST7087: Protocol stats snapshots serialize with stable field names — the snapshot shape is the mirror contract.
     func test7087_snapshotFieldNamesAreStable() throws {
         let table = RequestTable()

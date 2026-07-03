@@ -1175,12 +1175,14 @@ public final class RelaySwitch: @unchecked Sendable {
             // readFromMasters (L7). Duplicate registration is a protocol
             // violation and fails hard.
             do {
-                try requests.register(key, RequestState(
+                let state = RequestState(
                     routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: destIdx),
                     origin: nil,
                     externalChannel: nil,
                     isPeer: false
-                ))
+                )
+                state.capUrn = mutableFrame.cap
+                try requests.register(key, state)
             } catch {
                 throw RelaySwitchError.protocolError("\(error.localizedDescription)")
             }
@@ -1446,12 +1448,14 @@ public final class RelaySwitch: @unchecked Sendable {
             // the cancel cascade — one table write (L7).
             fputs("[RelaySwitch] PEER_REQ: master \(sourceIdx) → master \(destIdx) cap='\(cap)' rid=\(rid) xid=\(xid)\n", stderr)
             do {
-                try requests.register(key, RequestState(
+                let state = RequestState(
                     routing: RoutingEntry(sourceMasterIdx: sourceIdx, destinationMasterIdx: destIdx),
                     origin: sourceIdx,
                     externalChannel: nil,
                     isPeer: true
-                ))
+                )
+                state.capUrn = cap
+                try requests.register(key, state)
             } catch {
                 throw RelaySwitchError.protocolError("\(error.localizedDescription)")
             }
@@ -1506,6 +1510,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 // silent (L8).
                 requests.recordFrame(key, direction: .inbound, frame: frame)
                 let route: RouteBack
+                var capForLog: String? = nil
                 if isTerminal {
                     let kind: TerminalKind = frame.frameType == .end ? .end : .err
                     guard let state = requests.terminate(key, kind: kind) else {
@@ -1513,6 +1518,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         fputs("[RelaySwitch] dropped terminal for released request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
                         return nil
                     }
+                    capForLog = state.capUrn
                     switch state.origin {
                     case nil: route = .external(state.externalChannel)
                     case .some(let idx): route = .master(idx)
@@ -1523,6 +1529,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         fputs("[RelaySwitch] dropped post-terminal response frame (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
                         return nil
                     }
+                    capForLog = state.capUrn
                     switch state.origin {
                     case nil: route = .external(state.externalChannel)
                     case .some(let idx): route = .master(idx)
@@ -1534,7 +1541,19 @@ public final class RelaySwitch: @unchecked Sendable {
                     // Deliver to the external response channel (keep XID).
                     if !channel(mutableFrame) {
                         let total = drops.record(.channelClosed)
-                        fputs("[RelaySwitch] response channel receiver gone (channel_closed) rid=\(rid) channel_closed_total=\(total)\n", stderr)
+                        fputs("[RelaySwitch] response channel receiver gone (channel_closed) rid=\(rid) cap=\(capForLog ?? "?") channel_closed_total=\(total)\n", stderr)
+                        // A dead consumer on a LIVE request means the caller
+                        // abandoned it — cancel upstream so the cartridge
+                        // stops producing for a dead channel (TEST7093).
+                        // Dispatched off-lock: handleMasterFrame holds the
+                        // switch lock for its whole body and cancelRequest
+                        // re-acquires it (non-recursive NSLock).
+                        if !isTerminal {
+                            let cancelRid = rid
+                            DispatchQueue.global(qos: .utility).async { [weak self] in
+                                self?.cancelRequest(rid: cancelRid, forceKill: false)
+                            }
+                        }
                     }
                     return nil
                 case .external(nil):
@@ -1877,12 +1896,14 @@ public final class RelaySwitch: @unchecked Sendable {
         let key = RoutingKey(xid: xid, rid: rid)
 
         externalResponseChannels[key] = channel
-        try? requests.register(key, RequestState(
+        let probeState = RequestState(
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: masterIdx),
             origin: nil,
             externalChannel: nil,
             isPeer: false
-        ))
+        )
+        probeState.capUrn = CSCapIdentity as String
+        try? requests.register(key, probeState)
 
         let nonce = identityNonce()
         let streamId = "identity-verify-runtime"

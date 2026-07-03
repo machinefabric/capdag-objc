@@ -141,6 +141,10 @@ public final class RequestState {
     public let externalChannel: ((Frame) -> Bool)?
     /// Whether this is a cartridge-initiated peer invocation.
     public let isPeer: Bool
+    /// Cap URN of the originating REQ, when known at registration — the
+    /// request's nameable identity on the L8 surface (TEST7092). Set after
+    /// init (mirrors Rust's `with_cap_urn` builder).
+    public var capUrn: String?
     /// Child peer calls spawned under this request (cancel cascade).
     public internal(set) var children: [RequestKey] = []
     public internal(set) var phase: RequestPhase = .created
@@ -209,6 +213,9 @@ public struct TerminatedSummary: Codable, Sendable {
     public let rid: String
     public let kind: TerminalKind
     public let isPeer: Bool
+    /// Cap URN of the originating REQ, when known at registration — the
+    /// request's nameable identity on the L8 surface (TEST7092).
+    public let capUrn: String?
     public let lifetimeMs: UInt64
     public let framesIn: UInt64
     public let framesOut: UInt64
@@ -220,6 +227,7 @@ public struct TerminatedSummary: Codable, Sendable {
         case rid
         case kind
         case isPeer = "is_peer"
+        case capUrn = "cap_urn"
         case lifetimeMs = "lifetime_ms"
         case framesIn = "frames_in"
         case framesOut = "frames_out"
@@ -318,6 +326,7 @@ public final class RequestTable {
             rid: key.rid.description,
             kind: kind,
             isPeer: state.isPeer,
+            capUrn: state.capUrn,
             lifetimeMs: lifetimeMs,
             framesIn: framesIn,
             framesOut: framesOut,
@@ -370,6 +379,7 @@ public final class RequestTable {
                 rid: key.rid.description,
                 phase: state.phase,
                 isPeer: state.isPeer,
+                capUrn: state.capUrn,
                 originMaster: state.origin,
                 destinationMaster: state.routing.destinationMasterIdx,
                 ageMs: (nowNanos &- state.createdAtNanos) / 1_000_000,
@@ -429,6 +439,9 @@ public struct RequestSnapshot: Codable, Sendable {
     public let rid: String
     public let phase: RequestPhase
     public let isPeer: Bool
+    /// Cap URN of the originating REQ — the request's nameable identity
+    /// (TEST7092). Absent when unknown, never invented.
+    public let capUrn: String?
     public let originMaster: Int?
     public let destinationMaster: Int
     public let ageMs: UInt64
@@ -441,6 +454,7 @@ public struct RequestSnapshot: Codable, Sendable {
         case rid
         case phase
         case isPeer = "is_peer"
+        case capUrn = "cap_urn"
         case originMaster = "origin_master"
         case destinationMaster = "destination_master"
         case ageMs = "age_ms"
@@ -455,6 +469,7 @@ public struct RequestSnapshot: Codable, Sendable {
         self.rid = try c.decode(String.self, forKey: .rid)
         self.phase = try c.decode(RequestPhase.self, forKey: .phase)
         self.isPeer = try c.decode(Bool.self, forKey: .isPeer)
+        self.capUrn = try c.decodeIfPresent(String.self, forKey: .capUrn)
         self.originMaster = try c.decodeIfPresent(Int.self, forKey: .originMaster)
         self.destinationMaster = try c.decode(Int.self, forKey: .destinationMaster)
         self.ageMs = try c.decode(UInt64.self, forKey: .ageMs)
@@ -468,6 +483,7 @@ public struct RequestSnapshot: Codable, Sendable {
         rid: String,
         phase: RequestPhase,
         isPeer: Bool,
+        capUrn: String? = nil,
         originMaster: Int?,
         destinationMaster: Int,
         ageMs: UInt64,
