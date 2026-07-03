@@ -495,6 +495,7 @@ public struct RequestSnapshot: Codable, Sendable {
         self.rid = rid
         self.phase = phase
         self.isPeer = isPeer
+        self.capUrn = capUrn
         self.originMaster = originMaster
         self.destinationMaster = destinationMaster
         self.ageMs = ageMs
@@ -509,6 +510,9 @@ public struct RequestSnapshot: Codable, Sendable {
         try c.encode(rid, forKey: .rid)
         try c.encode(phase, forKey: .phase)
         try c.encode(isPeer, forKey: .isPeer)
+        // Rust serializes `Option::None` as an explicit null — keep the key
+        // present so the field-name contract holds for unattributed requests.
+        try c.encode(capUrn, forKey: .capUrn)
         // Explicit null for the external-caller case — the key is part of
         // the field-name contract (mirrors serde's Option serialization).
         try c.encode(originMaster, forKey: .originMaster)
