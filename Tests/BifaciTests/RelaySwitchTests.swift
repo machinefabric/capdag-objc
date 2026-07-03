@@ -1404,6 +1404,96 @@ final class CborRelaySwitchTests: XCTestCase {
 
         switch_.shutdown()
     }
+
+    // TEST7091: Host protocol stats carried by a master's RelayNotify are
+    // RETAINED by the switch (not parsed-and-discarded) and surface in
+    // `protocolStats().hosts` keyed by master id; a master that has not yet
+    // advertised stats is absent from the map — never a zeroed placeholder.
+    func test7091_switchRetainsHostProtocolStatsFromRelayNotify() throws {
+        let pair1 = FileHandle.socketPair()  // engine_read, slave_write
+        let pair2 = FileHandle.socketPair()  // slave_read, engine_write
+
+        let notifySent = DispatchSemaphore(value: 0)
+        let emptyChecked = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read, limits: Limits())
+            let writer = FrameWriter(handle: pair1.write, limits: Limits())
+
+            // Initial advertisement — NO host stats (identity gates first).
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            notifySent.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+
+            // Hold the republish until the test has asserted the empty
+            // pre-state, so the "absent before advertised" check is
+            // deterministic rather than a race against the reader loop.
+            XCTAssertEqual(emptyChecked.wait(timeout: .now() + 5), .success)
+
+            // Republish the SAME inventory (no cap change → no re-verify),
+            // now carrying host protocol stats — the periodic refresh path.
+            let manifestBytes = try! JSONSerialization.data(withJSONObject: [
+                "installed_cartridges": [[
+                    "registry_url": NSNull(),
+                    "channel": "release",
+                    "id": "test-cartridge",
+                    "version": "0.0.0",
+                    "sha256": String(repeating: "0", count: 64),
+                    "cap_groups": [[
+                        "name": "test",
+                        "caps": [[
+                            "urn": CSCapIdentity,
+                            "title": "test",
+                            "command": "test",
+                            "args": [] as [Any],
+                        ]],
+                        "adapter_urns": [] as [String],
+                    ]],
+                ]],
+                "host_protocol_stats": [
+                    "drops": ["total": 3, "by_reason": ["post_terminal": 2, "no_route": 1]],
+                    "outgoing_rids": 4,
+                    "incoming_rxids": 6,
+                    "incoming_to_peer_rids": 0,
+                    "outgoing_max_seq": 2,
+                    "routing_gc_runs_total": 1,
+                    "routing_gc_evicted_total": 9,
+                ],
+            ])
+            try! writer.write(Frame.relayNotify(manifest: manifestBytes, limits: Limits()))
+        }
+
+        XCTAssertEqual(notifySent.wait(timeout: .now() + 2), .success)
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-7091", read: pair1.read, write: pair2.write)])
+
+        // The initial advertisement carried no host stats: absent, not zeroed.
+        XCTAssertTrue(
+            switch_.protocolStats().hosts.isEmpty,
+            "no host stats before a RelayNotify carries them"
+        )
+        emptyChecked.signal()
+
+        // The republish is applied by the reader loop — poll until it lands.
+        let deadline = Date().addingTimeInterval(2)
+        var retained: HostProtocolStats?
+        while Date() < deadline {
+            if let host = switch_.protocolStats().hosts["test-master-7091"] {
+                retained = host
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        let stats = try XCTUnwrap(
+            retained,
+            "host stats must surface in protocolStats().hosts after RelayNotify"
+        )
+        XCTAssertEqual(stats.drops.total, 3)
+        XCTAssertEqual(stats.drops.byReason["post_terminal"], 2)
+        XCTAssertEqual(stats.incomingRxids, 6)
+        XCTAssertEqual(stats.routingGcEvictedTotal, 9)
+
+        switch_.shutdown()
+    }
 }
 
 // Helper extension for creating socket pairs

@@ -164,10 +164,33 @@ private let ENGINE_SOURCE = Int.max
 public struct RelaySwitchProtocolStats: Codable, Sendable {
     public let requests: RequestTableSnapshot
     public let drops: DropSnapshot
+    /// Per-master host protocol stats, keyed by master id, as reported in
+    /// each host's latest RelayNotify. A master that has not yet advertised
+    /// host stats is absent (never a zeroed placeholder). Decodes to empty
+    /// when absent, mirroring Rust's `serde(default)`.
+    public let hosts: [String: HostProtocolStats]
 
-    public init(requests: RequestTableSnapshot, drops: DropSnapshot) {
+    enum CodingKeys: String, CodingKey {
+        case requests
+        case drops
+        case hosts
+    }
+
+    public init(
+        requests: RequestTableSnapshot,
+        drops: DropSnapshot,
+        hosts: [String: HostProtocolStats] = [:]
+    ) {
         self.requests = requests
         self.drops = drops
+        self.hosts = hosts
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.requests = try c.decode(RequestTableSnapshot.self, forKey: .requests)
+        self.drops = try c.decode(DropSnapshot.self, forKey: .drops)
+        self.hosts = try c.decodeIfPresent([String: HostProtocolStats].self, forKey: .hosts) ?? [:]
     }
 }
 
@@ -202,6 +225,11 @@ private final class MasterConnection: @unchecked Sendable {
     var limits: Limits
     var caps: [String]
     var installedCartridges: [InstalledCartridgeRecord]
+    /// Host protocol stats carried by this master's latest RelayNotify
+    /// (L8). `nil` until a RelayNotify advertises them — initial
+    /// capability advertisements typically omit the field. Retained (not
+    /// parsed-and-discarded) so `protocolStats().hosts` can surface them.
+    var hostProtocolStats: HostProtocolStats?
     var healthy: Bool
     /// Last error message (if unhealthy). Mirrors Rust
     /// `MasterConnection.last_error`. Populated when an identity
@@ -210,7 +238,7 @@ private final class MasterConnection: @unchecked Sendable {
     /// deferred probe later passes and the master flips healthy.
     var lastError: String?
 
-    init(id: String, socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], healthy: Bool, lastError: String? = nil) {
+    init(id: String, socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], hostProtocolStats: HostProtocolStats? = nil, healthy: Bool, lastError: String? = nil) {
         self.id = id
         self.socketWriter = socketWriter
         self.seqAssigner = seqAssigner
@@ -218,6 +246,7 @@ private final class MasterConnection: @unchecked Sendable {
         self.limits = limits
         self.caps = caps
         self.installedCartridges = installedCartridges
+        self.hostProtocolStats = hostProtocolStats
         self.healthy = healthy
         self.lastError = lastError
         self.reorderBuffer = ReorderBuffer(maxBufferPerFlow: limits.maxReorderBuffer)
@@ -611,6 +640,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 limits: masterLimits,
                 caps: caps,
                 installedCartridges: notifyPayload.installedCartridges,
+                hostProtocolStats: notifyPayload.hostProtocolStats,
                 healthy: true
             )
             masters.append(masterConn)
@@ -959,6 +989,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 limits: masterLimits,
                 caps: caps,
                 installedCartridges: notifyPayload.installedCartridges,
+                hostProtocolStats: notifyPayload.hostProtocolStats,
                 healthy: healthyAtRegister,
                 lastError: identityFailure
             )
@@ -982,6 +1013,7 @@ public final class RelaySwitch: @unchecked Sendable {
             slot.limits = masterLimits
             slot.caps = caps
             slot.installedCartridges = notifyPayload.installedCartridges
+            slot.hostProtocolStats = notifyPayload.hostProtocolStats
             slot.healthy = healthyAtRegister
             slot.lastError = identityFailure
         }
@@ -1656,7 +1688,16 @@ public final class RelaySwitch: @unchecked Sendable {
     public func protocolStats() -> RelaySwitchProtocolStats {
         lock.lock()
         defer { lock.unlock() }
-        return RelaySwitchProtocolStats(requests: requests.snapshot(), drops: drops.snapshot())
+        // Per-master host protocol stats, keyed by master id, as reported
+        // in each host's latest RelayNotify. A master that has not yet
+        // advertised stats is absent — never a zeroed placeholder.
+        var hosts: [String: HostProtocolStats] = [:]
+        for master in masters {
+            if let stats = master.hostProtocolStats {
+                hosts[master.id] = stats
+            }
+        }
+        return RelaySwitchProtocolStats(requests: requests.snapshot(), drops: drops.snapshot(), hosts: hosts)
     }
 
     /// Cancel a specific in-flight request by RID.
@@ -1748,6 +1789,7 @@ public final class RelaySwitch: @unchecked Sendable {
         // cap_table rebuild excludes it.
         masters[sourceIdx].caps = newCaps
         masters[sourceIdx].installedCartridges = payload.installedCartridges
+        masters[sourceIdx].hostProtocolStats = payload.hostProtocolStats
         masters[sourceIdx].manifest = manifest
         masters[sourceIdx].limits = newLimits
 
@@ -2227,6 +2269,13 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public let memoryRssMb: UInt64
     public let lastHeartbeatUnixSeconds: Int64?
     public let restartCount: UInt64
+    /// Cumulative protocol drop count self-reported by the cartridge as
+    /// `drops_total` in heartbeat response meta (writer-gate post-terminal
+    /// drops, closed-channel sends, …). `nil` until the first heartbeat
+    /// round-trip carries the counter — absent means "no reading yet",
+    /// never a fabricated zero. Omitted from the wire when nil, mirroring
+    /// Rust's `skip_serializing_if`.
+    public let protocolDropsTotal: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case running
@@ -2237,6 +2286,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         case memoryRssMb = "memory_rss_mb"
         case lastHeartbeatUnixSeconds = "last_heartbeat_unix_seconds"
         case restartCount = "restart_count"
+        case protocolDropsTotal = "protocol_drops_total"
     }
 
     public init(
@@ -2247,7 +2297,8 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         memoryFootprintMb: UInt64,
         memoryRssMb: UInt64,
         lastHeartbeatUnixSeconds: Int64? = nil,
-        restartCount: UInt64
+        restartCount: UInt64,
+        protocolDropsTotal: UInt64? = nil
     ) {
         self.running = running
         self.pid = pid
@@ -2257,6 +2308,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         self.memoryRssMb = memoryRssMb
         self.lastHeartbeatUnixSeconds = lastHeartbeatUnixSeconds
         self.restartCount = restartCount
+        self.protocolDropsTotal = protocolDropsTotal
     }
 
     public init(from decoder: Decoder) throws {
@@ -2269,6 +2321,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         self.memoryRssMb = try c.decode(UInt64.self, forKey: .memoryRssMb)
         self.lastHeartbeatUnixSeconds = try c.decodeIfPresent(Int64.self, forKey: .lastHeartbeatUnixSeconds)
         self.restartCount = try c.decode(UInt64.self, forKey: .restartCount)
+        self.protocolDropsTotal = try c.decodeIfPresent(UInt64.self, forKey: .protocolDropsTotal)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -2281,6 +2334,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         try c.encode(memoryRssMb, forKey: .memoryRssMb)
         try c.encodeIfPresent(lastHeartbeatUnixSeconds, forKey: .lastHeartbeatUnixSeconds)
         try c.encode(restartCount, forKey: .restartCount)
+        try c.encodeIfPresent(protocolDropsTotal, forKey: .protocolDropsTotal)
     }
 }
 

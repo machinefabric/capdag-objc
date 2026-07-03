@@ -664,6 +664,12 @@ private class ManagedCartridge {
     var lastHeartbeatUnixSeconds: Int64?
     /// Number of times this cartridge has been respawned after death.
     var restartCount: UInt64
+    /// Cumulative protocol drop count self-reported by the cartridge as
+    /// `drops_total` in heartbeat response meta (writer-gate post-terminal
+    /// drops, closed-channel sends, …). `nil` until the first heartbeat
+    /// round-trip carries the counter. Survives across readings (each
+    /// heartbeat carries the cartridge's running total).
+    var protocolDropsTotal: UInt64?
 
     init(path: String, cartridgeDir: String, capGroups: [CapGroup], lifecycle: CartridgeLifecycle = .discovered) {
         self.path = path
@@ -682,6 +688,7 @@ private class ManagedCartridge {
         self.memoryRssMb = 0
         self.lastHeartbeatUnixSeconds = nil
         self.restartCount = 0
+        self.protocolDropsTotal = nil
         self.attachmentError = nil
     }
 
@@ -2158,6 +2165,12 @@ public final class CartridgeHost: @unchecked Sendable {
                     if case .unsignedInt(let v) = meta["rss_mb"] {
                         cartridge.memoryRssMb = v
                     }
+                    // Cumulative protocol drop counter (L8). The reading
+                    // is the cartridge's running total — stored as-is,
+                    // never merged or maxed.
+                    if case .unsignedInt(let v) = meta["drops_total"] {
+                        cartridge.protocolDropsTotal = v
+                    }
                 }
                 // Stamp the round-trip completion timestamp so runtime-stats
                 // snapshots can surface heartbeat age to the UI.
@@ -2603,7 +2616,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 memoryFootprintMb: cartridge.memoryFootprintMb,
                 memoryRssMb: cartridge.memoryRssMb,
                 lastHeartbeatUnixSeconds: cartridge.lastHeartbeatUnixSeconds,
-                restartCount: cartridge.restartCount
+                restartCount: cartridge.restartCount,
+                protocolDropsTotal: cartridge.protocolDropsTotal
             )
             // A cartridge whose HELLO permanently failed (e.g. a pre-v3
             // binary hard-rejected by the version check) stays IN the
@@ -3076,6 +3090,32 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridges.append(cartridge)
         stateLock.unlock()
         return idx
+    }
+
+    /// Test-only: seed a pending heartbeat probe id on a cartridge so a
+    /// follow-up heartbeat frame delivered via
+    /// `handleCartridgeFrameForTest` is treated as a response to our own
+    /// probe (the branch that ingests self-reported meta). Production
+    /// probes are inserted by the heartbeat timer inside run().
+    internal func seedPendingHeartbeatForTest(cartridgeIdx: Int, id: MessageId) {
+        stateLock.lock()
+        cartridges[cartridgeIdx].pendingHeartbeats[id] = Date()
+        stateLock.unlock()
+    }
+
+    /// Test-only: deliver a frame to the host's frame handler as if it
+    /// had been read from the cartridge's stdout. Lets contract tests
+    /// drive the heartbeat-ingest path without a live process.
+    internal func handleCartridgeFrameForTest(cartridgeIdx: Int, frame: Frame) {
+        handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+    }
+
+    /// Test-only snapshot of the installed-cartridge records exactly as
+    /// they would ride the next RelayNotify (runtime stats injected).
+    internal func installedCartridgeRecordsForTest() -> [InstalledCartridgeRecord] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return buildInstalledCartridgeRecordsLocked()
     }
 
     /// Test-only inspection of the per-session outbound writer.

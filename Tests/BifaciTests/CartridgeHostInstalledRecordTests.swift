@@ -304,4 +304,58 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
             "unparseable manifest must yield nil, not a placeholder identity"
         )
     }
+
+    // TEST7090: The cartridge's cumulative protocol drop counter (`drops_total`
+    // heartbeat meta, L8) is ingested by the host and surfaces on the
+    // cartridge's inventory runtime stats as `protocol_drops_total` — absent
+    // until the first reading, then tracking the running total as-is.
+    func test7090_heartbeatDropsTotalReachesInventoryStats() throws {
+        let dir = try makeManagedCartridgeAnchor(name: "dropcart", version: "1.0.0")
+        let root = slugRoot(of: dir)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let host = CartridgeHost()
+        host.registerCartridge(
+            path: dir.appendingPathComponent("dropcart").path,
+            cartridgeDir: dir.path,
+            capGroups: []
+        )
+
+        // No heartbeat round-trip yet: the reading must be ABSENT, never a
+        // fabricated zero (a zero claims "measured: no drops").
+        var records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(records.count, 1)
+        let initialStats = try XCTUnwrap(
+            records[0].runtimeStats,
+            "inventory records always carry runtime stats"
+        )
+        XCTAssertNil(
+            initialStats.protocolDropsTotal,
+            "no reading before the first heartbeat round-trip"
+        )
+
+        // Heartbeat response to our pending probe, carrying the cartridge's
+        // running drop total exactly as CartridgeRuntime emits it.
+        let hbId = MessageId.newUUID()
+        host.seedPendingHeartbeatForTest(cartridgeIdx: 0, id: hbId)
+        var response = Frame.heartbeat(id: hbId)
+        response.meta = ["drops_total": .unsignedInt(42)]
+        host.handleCartridgeFrameForTest(cartridgeIdx: 0, frame: response)
+
+        records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(
+            records[0].runtimeStats?.protocolDropsTotal, 42,
+            "the heartbeat's drops_total must reach the inventory stats"
+        )
+
+        // A later heartbeat carries a larger running total — stored as-is.
+        let hbId2 = MessageId.newUUID()
+        host.seedPendingHeartbeatForTest(cartridgeIdx: 0, id: hbId2)
+        var response2 = Frame.heartbeat(id: hbId2)
+        response2.meta = ["drops_total": .unsignedInt(45)]
+        host.handleCartridgeFrameForTest(cartridgeIdx: 0, frame: response2)
+
+        records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(records[0].runtimeStats?.protocolDropsTotal, 45)
+    }
 }
