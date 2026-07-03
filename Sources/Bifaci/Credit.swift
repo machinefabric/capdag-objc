@@ -46,9 +46,12 @@ public final class CreditGate: @unchecked Sendable {
     /// Set when the gate is closed; all current and future acquires fail.
     private var closedReason: String?
     /// Async waiters parked until a grant or close arrives. Each is resumed
-    /// exactly once: with success on grant (the waiter then re-checks the
-    /// window) or by throwing `CreditClosed` on close.
-    private var waiters: [CheckedContinuation<Void, Error>] = []
+    /// exactly once: with `false` on grant (the waiter then loops and
+    /// re-checks the window) or by throwing `CreditClosed` on close. The
+    /// `Bool` payload also carries the fast path: a continuation resumed
+    /// synchronously with `true` inside the registration closure acquired
+    /// without waiting.
+    private var waiters: [CheckedContinuation<Bool, Error>] = []
 
     public init(initialCredit: UInt64) {
         self.availableCredit = initialCredit
@@ -56,25 +59,35 @@ public final class CreditGate: @unchecked Sendable {
 
     /// Acquire `n` credits, waiting if the window is exhausted.
     /// Throws `CreditClosed` if the gate closes before (or while) waiting.
+    ///
+    /// Swift concurrency forbids holding an `NSLock` across a suspension
+    /// point, so the locked check-or-park runs entirely inside the
+    /// continuation's synchronous registration closure: the window check and
+    /// the waiter registration happen under one lock hold (a racing
+    /// grant/close cannot be missed), and the fast path resumes the
+    /// continuation synchronously with `true` (acquired). A grant resumes
+    /// parked waiters with `false` — they loop and re-check.
     public func acquire(_ n: UInt64) async throws {
         while true {
-            lock.lock()
-            if let reason = closedReason {
-                lock.unlock()
-                throw CreditClosed(reason: reason)
-            }
-            if availableCredit >= n {
-                availableCredit -= n
-                lock.unlock()
-                return
-            }
-            // Exhausted: park until a grant or close arrives. The lock is
-            // held from the check to the waiter registration so a grant/close
-            // that lands in between cannot be missed; the continuation closure
-            // runs synchronously before suspension and releases it.
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let acquired: Bool = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Bool, Error>) in
+                lock.lock()
+                if let reason = closedReason {
+                    lock.unlock()
+                    continuation.resume(throwing: CreditClosed(reason: reason))
+                    return
+                }
+                if availableCredit >= n {
+                    availableCredit -= n
+                    lock.unlock()
+                    continuation.resume(returning: true)
+                    return
+                }
                 waiters.append(continuation)
                 lock.unlock()
+            }
+            if acquired {
+                return
             }
         }
     }
@@ -120,7 +133,7 @@ public final class CreditGate: @unchecked Sendable {
         waiters.removeAll()
         lock.unlock()
         for continuation in woken {
-            continuation.resume()
+            continuation.resume(returning: false)
         }
     }
 
