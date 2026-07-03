@@ -2590,10 +2590,7 @@ public final class CartridgeHost: @unchecked Sendable {
         var result: [InstalledCartridgeRecord] = []
         result.reserveCapacity(cartridges.count)
         for (idx, cartridge) in cartridges.enumerated() {
-            // Match Rust: cartridges that have permanently failed
-            // HELLO are not advertised, even if they have a resolvable
-            // identity record.
-            if cartridge.isRemoved || cartridge.helloFailed {
+            if cartridge.isRemoved {
                 continue
             }
             guard let base = cartridge.installedCartridgeRecord() else { continue }
@@ -2608,6 +2605,33 @@ public final class CartridgeHost: @unchecked Sendable {
                 lastHeartbeatUnixSeconds: cartridge.lastHeartbeatUnixSeconds,
                 restartCount: cartridge.restartCount
             )
+            // A cartridge whose HELLO permanently failed (e.g. a pre-v3
+            // binary hard-rejected by the version check) stays IN the
+            // inventory with an attachment error — never silently absent.
+            // It carries no capGroups, so it is never routable. Mirrors the
+            // corrected Rust reference (the old "not advertised" behavior on
+            // BOTH sides silently hid handshake failures from the UI).
+            if cartridge.helloFailed {
+                let error = base.attachmentError ?? CartridgeAttachmentError(
+                    kind: .handshakeFailed,
+                    message: "HELLO handshake failed (protocol version mismatch or "
+                        + "malformed manifest) — rebuild the cartridge against the "
+                        + "current protocol",
+                    detectedAtUnixSeconds: Int64(Date().timeIntervalSince1970)
+                )
+                result.append(InstalledCartridgeRecord(
+                    registryURL: base.registryURL,
+                    id: base.id,
+                    channel: base.channel,
+                    version: base.version,
+                    sha256: base.sha256,
+                    capGroups: [],
+                    attachmentError: error,
+                    runtimeStats: stats,
+                    lifecycle: base.lifecycle
+                ))
+                continue
+            }
             result.append(InstalledCartridgeRecord(
                 registryURL: base.registryURL,
                 id: base.id,
