@@ -1,8 +1,8 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 864
+**Total Tests:** 867
 
-**Numbered Tests:** 864
+**Numbered Tests:** 867
 
 **Unnumbered Tests:** 0
 
@@ -861,10 +861,10 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test7026 | `test7026_reorderFlushesPreTerminalBeforeCleanup` | TEST7026: An out-of-order terminal is buffered until the gap fills; buffered pre-terminal frames flush ahead of it in seq order, and only then may the flow be cleaned up | Tests/BifaciTests/ProtocolV3Tests.swift:317 |
 | test7027 | `test7027_channelClosedSendsAreCounted` | TEST7027: A frame sent through a ChannelFrameSender whose receiver is gone is a counted channel_closed drop, never a silent loss. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:145 |
 | test7029 | `test7029_terminatedFlowsCapacityAndEviction` | TEST7029: TerminatedFlows membership is exact up to capacity and evicts strictly oldest-first beyond it. | Tests/BifaciTests/ProtocolV3Tests.swift:488 |
-| test7030 | `test7030_registerOnceTerminateOnce` | TEST7030: A request registers exactly once and terminates exactly once — duplicate registration and double termination are rejected, and after terminate zero state remains for the key. | Tests/BifaciTests/RequestStateTests.swift:122 |
-| test7031 | `test7031_ridIndexConsistency` | TEST7031: The rid index and the entry table never disagree across register/terminate cycles, and a terminated rid is immediately reusable. | Tests/BifaciTests/RequestStateTests.swift:148 |
-| test7032 | `test7032_recordFrameStatsAndPhase` | TEST7032: record_frame accumulates per-stream frame/byte/chunk counters by direction, flips phase Created→Streaming on the first flow frame, and tracks unbounded/ended/credit stream markers. | Tests/BifaciTests/RequestStateTests.swift:169 |
-| test7033 | `test7033_terminatedSummariesRing` | TEST7033: Terminated requests leave a bounded ring of summaries carrying kind, lifetime, and flow totals, and the ring evicts oldest-first at capacity. | Tests/BifaciTests/RequestStateTests.swift:207 |
+| test7030 | `test7030_registerOnceTerminateOnce` | TEST7030: A request registers exactly once and terminates exactly once — duplicate registration and double termination are rejected, and after terminate zero state remains for the key. | Tests/BifaciTests/RequestStateTests.swift:152 |
+| test7031 | `test7031_ridIndexConsistency` | TEST7031: The rid index and the entry table never disagree across register/terminate cycles, and a terminated rid is immediately reusable. | Tests/BifaciTests/RequestStateTests.swift:178 |
+| test7032 | `test7032_recordFrameStatsAndPhase` | TEST7032: record_frame accumulates per-stream frame/byte/chunk counters by direction, flips phase Created→Streaming on the first flow frame, and tracks unbounded/ended/credit stream markers. | Tests/BifaciTests/RequestStateTests.swift:199 |
+| test7033 | `test7033_terminatedSummariesRing` | TEST7033: Terminated requests leave a bounded ring of summaries carrying kind, lifetime, and flow totals, and the ring evicts oldest-first at capacity. | Tests/BifaciTests/RequestStateTests.swift:237 |
 | test7035 | `test7035_endTerminatesAndReleasesAllState` | TEST7035: After END, the switch holds zero state for the request — entry, rid index, and response channel all released atomically, with the terminal delivered and a terminated summary recorded. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:641 |
 | test7036 | `test7036_errTerminatesAndReleasesAllState` | TEST7036: After ERR, the same total-cleanup invariant holds as after END, with kind err. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:678 |
 | test7037 | `test7037_cancelCascadesToChildrenAndCleansAllState` | TEST7037: Cancelling a request terminates it AND its recursively-linked peer children — Cancel frames reach the destination, waiting channels get ERR CANCELLED, and zero state remains for parent or child. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:701 |
@@ -878,8 +878,11 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test7073 | `test7073_collectRefusesUnboundedStreams` | TEST7073: Buffering collectors refuse unbounded streams with a hard error instead of buffering without bound. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:479 |
 | test7085 | `test7085_relayNotifyCarriesHostProtocolStats` | TEST7085: The RelayNotify capabilities payload carries the host's protocol stats snapshot, surviving the wire round-trip. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:580 |
 | test7086 | `test7086_dropSnapshotMatchesInducedDrops` | TEST7086: One runtime's drop counters aggregate every drop source — post-terminal writer drops and closed-channel sends — each counted exactly once, and the snapshot totals match the induced drops. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:164 |
-| test7087 | `test7087_snapshotFieldNamesAreStable` | TEST7087: Protocol stats snapshots serialize with stable field names — the snapshot shape is the mirror contract. | Tests/BifaciTests/RequestStateTests.swift:31 |
-| test7088 | `test7088_lastActivityMonotonic` | TEST7088: last_activity is monotonic non-decreasing across a long-lived streaming request — idle time resets on every recorded frame and never runs backwards. | Tests/BifaciTests/RequestStateTests.swift:80 |
+| test7087 | `test7087_snapshotFieldNamesAreStable` | TEST7087: Protocol stats snapshots serialize with stable field names — the snapshot shape is the mirror contract. | Tests/BifaciTests/RequestStateTests.swift:61 |
+| test7088 | `test7088_lastActivityMonotonic` | TEST7088: last_activity is monotonic non-decreasing across a long-lived streaming request — idle time resets on every recorded frame and never runs backwards. | Tests/BifaciTests/RequestStateTests.swift:110 |
+| test7090 | `test7090_heartbeatDropsTotalReachesInventoryStats` | TEST7090: The cartridge's cumulative protocol drop counter (`drops_total` heartbeat meta, L8) is ingested by the host and surfaces on the cartridge's inventory runtime stats as `protocol_drops_total` — absent until the first reading, then tracking the running total as-is. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:312 |
+| test7091 | `test7091_switchRetainsHostProtocolStatsFromRelayNotify` | TEST7091: Host protocol stats carried by a master's RelayNotify are RETAINED by the switch (not parsed-and-discarded) and surface in `protocolStats().hosts` keyed by master id; a master that has not yet advertised stats is absent from the map — never a zeroed placeholder. | Tests/BifaciTests/RelaySwitchTests.swift:1412 |
+| test7092 | `test7092_capUrnAttributionSurvivesLifecycle` | TEST7092: A request registered with its originating REQ's cap URN carries that identity through the ACTIVE snapshot and into the terminated ring — observability surfaces can always NAME a request (background chatter vs run traffic), never just show a bare rid. A request registered without one snapshots with cap_urn absent — never invented. | Tests/BifaciTests/RequestStateTests.swift:31 |
 ---
 
 ## Numbered Tests Missing Descriptions
@@ -964,8 +967,8 @@ These tests have a numbering disagreement between the function name and the auth
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 864*
-*Total numbered tests: 864*
+*Total tests: 867*
+*Total numbered tests: 867*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 1*
 *Total numbering mismatches: 66*
