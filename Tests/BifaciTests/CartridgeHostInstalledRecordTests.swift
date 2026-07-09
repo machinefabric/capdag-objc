@@ -358,4 +358,93 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         records = host.installedCartridgeRecordsForTest()
         XCTAssertEqual(records[0].runtimeStats?.protocolDropsTotal, 45)
     }
+
+    // TEST7089: A cartridge whose HELLO permanently failed stays IN the
+    // inventory advertisement carrying a handshake_failed attachment error
+    // and no cap groups — failure is named, never silently absent; a
+    // roster-retired cartridge disappears entirely. (The reference drives
+    // hello_failed directly and merges daemon-provided static inventory
+    // records; on this host both flow through `syncDiscoveryOutcomes` —
+    // the macOS discovery authority.)
+    func test7089_helloFailedStaysInInventoryWithError() throws {
+        let staleDir = try makeManagedCartridgeAnchor(name: "stalecart", version: "1.0.0")
+        let staleRoot = slugRoot(of: staleDir)
+        defer { try? FileManager.default.removeItem(at: staleRoot) }
+        let rejectedDir = try makeManagedCartridgeAnchor(name: "rejectedcart", version: "2.0.0")
+        let rejectedRoot = slugRoot(of: rejectedDir)
+        defer { try? FileManager.default.removeItem(at: rejectedRoot) }
+
+        let stalePath = staleDir.appendingPathComponent("stalecart").path
+        let rejectedPath = rejectedDir.appendingPathComponent("rejectedcart").path
+
+        let host = CartridgeHost()
+        host.registerCartridge(path: stalePath, cartridgeDir: staleDir.path, capGroups: [])
+
+        // Healthy (never spawned): advertised without an attachment error.
+        var records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(records.count, 1)
+        XCTAssertNil(records[0].attachmentError)
+
+        // HELLO permanently fails (e.g. a pre-v3 binary rejected by the
+        // version check): the record STAYS, carrying the failure — the UI
+        // must always be able to name why a cartridge is not serving.
+        host.syncDiscoveryOutcomes([
+            .failed(
+                path: stalePath,
+                cartridgeDir: staleDir.path,
+                kind: .handshakeFailed,
+                message: "HELLO handshake failed"
+            ),
+        ])
+        records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(
+            records.count, 1,
+            "a hello-failed cartridge must remain in the inventory (never silent)"
+        )
+        XCTAssertEqual(records[0].id, "stalecart")
+        XCTAssertTrue(records[0].capGroups.isEmpty, "failed ⇒ never routable")
+        let error = try XCTUnwrap(
+            records[0].attachmentError,
+            "failure must be named on the record"
+        )
+        XCTAssertEqual(
+            error.kind, .handshakeFailed,
+            "the failure kind identifies the handshake as the cause"
+        )
+
+        // A discovery-rejected cartridge (registry verdict) rides the
+        // advertisement too — the objc counterpart of the reference's
+        // static inventory records.
+        host.syncDiscoveryOutcomes([
+            .failed(
+                path: stalePath,
+                cartridgeDir: staleDir.path,
+                kind: .handshakeFailed,
+                message: "HELLO handshake failed"
+            ),
+            .failed(
+                path: rejectedPath,
+                cartridgeDir: rejectedDir.path,
+                kind: .incompatible,
+                message: "version not listed in registry"
+            ),
+        ])
+        records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(records.count, 2, "rejected cartridges merge into every advertisement")
+        XCTAssertTrue(records.contains { $0.id == "rejectedcart" })
+
+        // Roster retirement is NOT a failure: a removed cartridge disappears
+        // from the inventory entirely (there is nothing to report).
+        host.syncDiscoveryOutcomes([
+            .failed(
+                path: rejectedPath,
+                cartridgeDir: rejectedDir.path,
+                kind: .incompatible,
+                message: "version not listed in registry"
+            ),
+        ])
+        records = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(records.count, 1, "retired installs vanish from the inventory")
+        XCTAssertEqual(records[0].id, "rejectedcart")
+    }
 }

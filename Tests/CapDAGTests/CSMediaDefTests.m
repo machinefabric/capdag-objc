@@ -233,7 +233,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 #pragma mark - ResolvedMediaDef predicate tests
 
-// TEST99: The identity media (`media:`) carries no encoding, no record marker, and no format. The old is_binary() delegate is gone (binary/text is no longer a distinction); a media is text-representable iff it declares enc=.
+// TEST099: The identity media (`media:`) carries no encoding, no record marker, and no format. The old is_binary() delegate is gone (binary/text is no longer a distinction); a media is text-representable iff it declares enc=.
 - (void)test099_resolved_is_binary {
     NSArray<NSDictionary *> *specs = @[@{
         @"urn": @"media:",

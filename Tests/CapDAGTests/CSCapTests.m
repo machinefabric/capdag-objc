@@ -28,7 +28,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 @implementation CSCapTests
 
-// TEST108: Cap creation
+// TEST0108: Cap creation
 - (void)test0108_CapCreation {
     NSError *error;
     CSCapUrn *key = [CSCapUrn fromString:@"cap:in=media:void;transform;out=\"media:enc=utf-8;record\";format=json;data_processing" error:&error];
@@ -119,7 +119,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertTrue([cap2 acceptsStdin], @"Cap should accept stdin");
 }
 
-// TEST110: Cap matching
+// TEST0110: Cap matching
 - (void)test0110_CapMatching {
     NSError *error;
     // Use type=data_processing key=value for proper matching tests

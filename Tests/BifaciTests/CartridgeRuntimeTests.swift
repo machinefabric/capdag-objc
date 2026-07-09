@@ -525,6 +525,27 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertTrue(sender4.ndjson)
     }
 
+    // TEST1270: Runtime memory inspection returns non-negative resident and virtual memory values.
+    //
+    // `getOwnMemoryMb` calls `proc_pid_rusage(getpid())` which must always
+    // work — even in a sandbox (the sandbox only blocks querying OTHER
+    // processes). If it returns nil on macOS, the self-reporting mechanism
+    // is broken and cartridges will report 0 footprint.
+    func test1270_getOwnMemoryMbReturnsValues() throws {
+        let result = try XCTUnwrap(
+            getOwnMemoryMb(),
+            "proc_pid_rusage(getpid()) must succeed on macOS"
+        )
+        XCTAssertGreaterThan(
+            result.rssMb, 0,
+            "RSS should be non-zero for a running process"
+        )
+        XCTAssertGreaterThan(
+            result.footprintMb, 0,
+            "Footprint should be non-zero for a running process"
+        )
+    }
+
 }
 
 // =============================================================================
@@ -2008,9 +2029,9 @@ private func createInputPackage(fromPayload payload: Data, mediaUrn: String) -> 
     // Try to decode as CBOR - if it fails, treat as raw bytes
     guard let cborValue = try? CBOR.decode([UInt8](payload)) else {
         // Payload is raw bytes, not CBOR - wrap as byteString chunk
-        let chunks: [Result<CBOR, StreamError>] = [.success(.byteString([UInt8](payload)))]
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([UInt8](payload)), nil))]
         var chunkIndex = 0
-        let chunkIterator = AnyIterator<Result<CBOR, StreamError>> {
+        let chunkIterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard chunkIndex < chunks.count else { return nil }
             let chunk = chunks[chunkIndex]
             chunkIndex += 1
@@ -2040,9 +2061,9 @@ private func createInputPackage(fromPayload payload: Data, mediaUrn: String) -> 
     }
 
     // Create a single chunk with the extracted value
-    let chunks: [Result<CBOR, StreamError>] = [.success(extractedValue)]
+    let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((extractedValue, nil))]
     var chunkIndex = 0
-    let chunkIterator = AnyIterator<Result<CBOR, StreamError>> {
+    let chunkIterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
         guard chunkIndex < chunks.count else { return nil }
         let chunk = chunks[chunkIndex]
         chunkIndex += 1

@@ -19,14 +19,14 @@ final class StreamingAPITests: XCTestCase {
     // TEST529: InputStream recv yields chunks in order
     func test529_inputStreamIteratorOrder() throws {
         // Create an InputStream with ordered chunks
-        let chunks: [Result<CBOR, StreamError>] = [
-            .success(.byteString([1, 2, 3])),
-            .success(.byteString([4, 5, 6])),
-            .success(.byteString([7, 8, 9])),
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [
+            .success((.byteString([1, 2, 3]), nil)),
+            .success((.byteString([4, 5, 6]), nil)),
+            .success((.byteString([7, 8, 9]), nil)),
         ]
 
         var index = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard index < chunks.count else { return nil }
             let chunk = chunks[index]
             index += 1
@@ -38,7 +38,7 @@ final class StreamingAPITests: XCTestCase {
         var collectedChunks: [[UInt8]] = []
         for result in stream {
             switch result {
-            case .success(let cbor):
+            case .success((let cbor, _)):
                 if case .byteString(let bytes) = cbor {
                     collectedChunks.append(bytes)
                 }
@@ -55,14 +55,14 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST530: InputStream::collect_bytes concatenates byte chunks
     func test530_inputStreamCollectBytes() throws {
-        let chunks: [Result<CBOR, StreamError>] = [
-            .success(.byteString([1, 2])),
-            .success(.byteString([3, 4])),
-            .success(.byteString([5, 6])),
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [
+            .success((.byteString([1, 2]), nil)),
+            .success((.byteString([3, 4]), nil)),
+            .success((.byteString([5, 6]), nil)),
         ]
 
         var index = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard index < chunks.count else { return nil }
             let chunk = chunks[index]
             index += 1
@@ -77,14 +77,14 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST531: InputStream::collect_bytes handles text chunks
     func test531_inputStreamCollectBytesText() throws {
-        let chunks: [Result<CBOR, StreamError>] = [
-            .success(.utf8String("Hello")),
-            .success(.utf8String(" ")),
-            .success(.utf8String("World")),
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [
+            .success((.utf8String("Hello"), nil)),
+            .success((.utf8String(" "), nil)),
+            .success((.utf8String("World"), nil)),
         ]
 
         var index = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard index < chunks.count else { return nil }
             let chunk = chunks[index]
             index += 1
@@ -99,10 +99,10 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST532: InputStream empty stream produces empty bytes
     func test532_inputStreamEmpty() throws {
-        let chunks: [Result<CBOR, StreamError>] = []
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = []
 
         var index = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard index < chunks.count else { return nil }
             let chunk = chunks[index]
             index += 1
@@ -117,13 +117,13 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST533: InputStream propagates errors
     func test533_inputStreamErrorPropagation() throws {
-        let chunks: [Result<CBOR, StreamError>] = [
-            .success(.byteString([1, 2, 3])),
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [
+            .success((.byteString([1, 2, 3]), nil)),
             .failure(.protocolError("Test error")),
         ]
 
         var index = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard index < chunks.count else { return nil }
             let chunk = chunks[index]
             index += 1
@@ -144,7 +144,7 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST534: InputStream::media_urn returns correct URN
     func test534_inputStreamMediaUrn() throws {
-        let iterator = AnyIterator<Result<CBOR, StreamError>> { nil }
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> { nil }
         let stream = Bifaci.InputStream(mediaUrn: "media:image/png", rx: iterator)
 
         XCTAssertEqual(stream.mediaUrn, "media:image/png")
@@ -155,11 +155,11 @@ final class StreamingAPITests: XCTestCase {
     // TEST535: InputPackage recv yields streams
     func test535_inputPackageIteration() throws {
         // Create InputPackage with multiple streams
-        let stream1Chunks: [Result<CBOR, StreamError>] = [.success(.byteString([1, 2]))]
-        let stream2Chunks: [Result<CBOR, StreamError>] = [.success(.byteString([3, 4]))]
+        let stream1Chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([1, 2]), nil))]
+        let stream2Chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([3, 4]), nil))]
 
         var idx1 = 0
-        let iter1 = AnyIterator<Result<CBOR, StreamError>> {
+        let iter1 = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard idx1 < stream1Chunks.count else { return nil }
             let c = stream1Chunks[idx1]
             idx1 += 1
@@ -167,7 +167,7 @@ final class StreamingAPITests: XCTestCase {
         }
 
         var idx2 = 0
-        let iter2 = AnyIterator<Result<CBOR, StreamError>> {
+        let iter2 = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard idx2 < stream2Chunks.count else { return nil }
             let c = stream2Chunks[idx2]
             idx2 += 1
@@ -201,11 +201,11 @@ final class StreamingAPITests: XCTestCase {
     // TEST536: InputPackage::collect_all_bytes aggregates all streams
     func test536_inputPackageCollectAllBytes() throws {
         // Create two streams
-        let stream1Chunks: [Result<CBOR, StreamError>] = [.success(.byteString([1, 2]))]
-        let stream2Chunks: [Result<CBOR, StreamError>] = [.success(.byteString([3, 4]))]
+        let stream1Chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([1, 2]), nil))]
+        let stream2Chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([3, 4]), nil))]
 
         var idx1 = 0
-        let iter1 = AnyIterator<Result<CBOR, StreamError>> {
+        let iter1 = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard idx1 < stream1Chunks.count else { return nil }
             let c = stream1Chunks[idx1]
             idx1 += 1
@@ -213,7 +213,7 @@ final class StreamingAPITests: XCTestCase {
         }
 
         var idx2 = 0
-        let iter2 = AnyIterator<Result<CBOR, StreamError>> {
+        let iter2 = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard idx2 < stream2Chunks.count else { return nil }
             let c = stream2Chunks[idx2]
             idx2 += 1
@@ -577,8 +577,8 @@ final class StreamingAPITests: XCTestCase {
     // TEST678: find_stream with exact equivalent URN (same tags, different order) succeeds
     func test678_findStreamEquivalentUrnDifferentTagOrder() throws {
         // One stream with tags in one order
-        let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:fmt=json;record;llm-generation-request", Data("data".utf8)),
+        let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
+            ("media:fmt=json;record;llm-generation-request", Data("data".utf8), nil),
         ]
 
         // Look for it with tags in a DIFFERENT order — is_equivalent is order-independent
@@ -589,8 +589,8 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:fmt=json;llm-generation-request;record".
     func test679_findStreamBaseUrnDoesNotMatchFullUrn() throws {
-        let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:llm-generation-request;fmt=json;record", Data("data".utf8)),
+        let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
+            ("media:llm-generation-request;fmt=json;record", Data("data".utf8), nil),
         ]
 
         // Base URN should NOT match full URN (strict equivalence)
@@ -600,8 +600,8 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST680: require_stream with missing URN returns hard StreamError
     func test680_requireStreamMissingUrnReturnsError() throws {
-        let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:text", Data("data".utf8)),
+        let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
+            ("media:text", Data("data".utf8), nil),
         ]
 
         XCTAssertThrowsError(try requireStream(streams, mediaUrn: "media:missing")) { error in
@@ -615,10 +615,10 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST681: find_stream with multiple streams returns the correct one
     func test681_findStreamMultipleStreamsReturnsCorrect() throws {
-        let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:text", Data("text-data".utf8)),
-            ("media:json", Data("json-data".utf8)),
-            ("media:binary", Data("binary-data".utf8)),
+        let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
+            ("media:text", Data("text-data".utf8), nil),
+            ("media:json", Data("json-data".utf8), nil),
+            ("media:binary", Data("binary-data".utf8), nil),
         ]
 
         let textResult = findStream(streams, mediaUrn: "media:text")
@@ -633,8 +633,8 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST682: require_stream_str returns UTF-8 string for text data
     func test682_requireStreamStrReturnsUtf8() throws {
-        let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:text", Data("Hello, World!".utf8)),
+        let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
+            ("media:text", Data("Hello, World!".utf8), nil),
         ]
 
         let result = try requireStreamStr(streams, mediaUrn: "media:text")
@@ -643,8 +643,8 @@ final class StreamingAPITests: XCTestCase {
 
     // TEST683: find_stream returns None for invalid media URN string (not a parse error — just None)
     func test683_findStreamInvalidUrnReturnsNone() throws {
-        let streams: [(mediaUrn: String, bytes: Data)] = [
-            ("media:text", Data("data".utf8)),
+        let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
+            ("media:text", Data("data".utf8), nil),
         ]
 
         // Non-existent URN should return nil, not error
@@ -714,7 +714,7 @@ final class StreamingAPITests: XCTestCase {
 
         // Next item must be data
         let item4 = response.recv()
-        if case .data(let result) = item4 {
+        if case .data(let result, _) = item4 {
             let value = try result.get()
             if case .byteString(let bytes) = value {
                 XCTAssertEqual(Data(bytes), rawData)

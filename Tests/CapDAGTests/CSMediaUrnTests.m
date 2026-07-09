@@ -115,7 +115,7 @@
 
 #pragma mark - Parsing & Prefix
 
-// TEST60: Test wrong prefix fails with InvalidPrefix error showing expected and actual prefix
+// TEST060: Test wrong prefix fails with InvalidPrefix error showing expected and actual prefix
 - (void)test060_wrong_prefix_fails {
     NSError *error;
     CSMediaUrn *result = [CSMediaUrn fromString:@"cap:string" error:&error];
@@ -131,7 +131,7 @@
 // Encoding is now expressed by the orthogonal `enc=` tag, exercised by
 // test067 (get_tag("enc")). No replacement assertion is meaningful here.
 
-// TEST62: Test is_record returns true when record marker tag is present indicating key-value structure
+// TEST062: Test is_record returns true when record marker tag is present indicating key-value structure
 - (void)test062_is_record {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaObject error:&e] isRecord]);
@@ -143,7 +143,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isRecord]);
 }
 
-// TEST63: Test is_scalar returns true when list marker tag is absent (scalar is default)
+// TEST063: Test is_scalar returns true when list marker tag is absent (scalar is default)
 - (void)test063_is_scalar {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaString error:&e] isScalar]);
@@ -157,7 +157,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectList error:&e] isScalar]);
 }
 
-// TEST64: Test is_list returns true when list marker tag is present indicating ordered collection
+// TEST064: Test is_list returns true when list marker tag is present indicating ordered collection
 - (void)test064_is_list {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaStringList error:&e] isList]);
@@ -169,7 +169,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObject error:&e] isList]);
 }
 
-// TEST65: Test is_opaque returns true when record marker is absent (opaque is default)
+// TEST065: Test is_opaque returns true when record marker is absent (opaque is default)
 - (void)test065_is_opaque {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaString error:&e] isOpaque]);
@@ -182,7 +182,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectList error:&e] isOpaque]);
 }
 
-// TEST66: Test is_json returns true only when json marker tag is present for JSON representation
+// TEST066: Test is_json returns true only when json marker tag is present for JSON representation
 - (void)test066_is_json {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaJson error:&e] isJson]);
@@ -192,7 +192,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:@"media:enc=utf-8" error:&e] isJson]);
 }
 
-// TEST67: Text-representability is now carried by the orthogonal `enc=` tag (the old `textable` marker and is_text() are gone). A media is "text" iff it declares an encoding. enc is orthogonal to format/numeric, so only media that actually carry enc= are text.
+// TEST067: Text-representability is now carried by the orthogonal `enc=` tag (the old `textable` marker and is_text() are gone). A media is "text" iff it declares an encoding. enc is orthogonal to format/numeric, so only media that actually carry enc= are text.
 - (void)test067_is_text {
     NSError *e;
     // Has enc= → text-representable
@@ -206,7 +206,7 @@
     XCTAssertNil([[CSMediaUrn fromString:CSMediaObject error:&e] getTag:@"enc"]);      // media:record
 }
 
-// TEST68: Test is_void returns true when void flag or type=void tag is present
+// TEST068: Test is_void returns true when void flag or type=void tag is present
 - (void)test068_is_void {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaVoid error:&e] isVoid]);
@@ -328,7 +328,7 @@
 
 #pragma mark - Roundtrip & Conformance
 
-// TEST71: Test to_string roundtrip ensures serialization and deserialization preserve URN structure
+// TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure
 - (void)test071_to_string_roundtrip {
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:@"media:string" error:&e];
@@ -339,7 +339,7 @@
     XCTAssertTrue([urn isEquivalentTo:urn2]);
 }
 
-// TEST72: Test all media URN constants parse successfully as valid media URNs
+// TEST072: Test all media URN constants parse successfully as valid media URNs
 - (void)test072_constants_parse {
     NSError *e;
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaVoid error:&e]);
@@ -370,7 +370,7 @@
     XCTAssertNotNil([CSMediaUrn fromString:CSMediaYaml error:&e]);
 }
 
-// TEST74: Test media URN conforms_to using tagged URN semantics with specific and generic requirements
+// TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements
 - (void)test074_media_urn_matching {
     NSError *e;
     // CSMediaPdf is now "media:ext=pdf" — the request must also use the ext= form.
@@ -388,7 +388,7 @@
     XCTAssertTrue([strUrn conformsTo:strReq]);
 }
 
-// TEST75: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests
+// TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests
 - (void)test075_matching {
     NSError *e;
     CSMediaUrn *handler = [CSMediaUrn fromString:@"media:string" error:&e];
@@ -399,7 +399,7 @@
     XCTAssertTrue([handler accepts:same error:&e]);
 }
 
-// TEST76: Test specificity increases with more tags for ranking conformance
+// TEST076: Test specificity increases with more tags for ranking conformance
 - (void)test076_specificity {
     NSError *e;
     CSMediaUrn *urn1 = [CSMediaUrn fromString:@"media:string" error:&e];
@@ -414,7 +414,7 @@
     XCTAssertGreaterThanOrEqual(s3, s2);
 }
 
-// TEST78: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING
+// TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING
 - (void)test078_object_does_not_conform_to_string {
     NSError *e;
     CSMediaUrn *strUrn = [CSMediaUrn fromString:CSMediaString error:&e];

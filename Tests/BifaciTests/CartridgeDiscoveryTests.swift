@@ -138,12 +138,12 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1878
 
+    #if !os(macOS)
     // TEST1878: a cartridge marked `installed_from: bundle` with no baked hash
     // is rejected as BadInstallation — the bundled-integrity gate fires before
     // the probe. Non-macOS only: on macOS the baked-hash path is intentionally
     // absent (OS code-signature is the guard), so a bundled provider is accepted
     // there and would instead end at the probe.
-    #if !os(macOS)
     func test1878_bundledProviderWithoutBakedHashIsRejected() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }

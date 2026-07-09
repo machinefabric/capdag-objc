@@ -35,6 +35,46 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertFalse(discardPattern.accepts(nonVoidCap), "CAP_DISCARD must not accept non-void output")
     }
 
+    // MARK: - Adapter selection constants (TEST1271-1273)
+
+    // TEST1271: MEDIA_ADAPTER_SELECTION constant parses and has expected tags
+    func test1271_mediaAdapterSelectionConstant() throws {
+        let urn = try CSMediaUrn.fromString(CSMediaAdapterSelection)
+        XCTAssertNotNil(
+            urn.getTag("adapter-selection"),
+            "Must have adapter-selection tag, got: \(urn.toString())"
+        )
+        XCTAssertEqual(
+            urn.getTag("fmt"), "json",
+            "Must have fmt=json tag, got: \(urn.toString())"
+        )
+        XCTAssertTrue(urn.isRecord(), "Must have record tag, got: \(urn.toString())")
+    }
+
+    // TEST1272: CAP_ADAPTER_SELECTION constant parses as a valid CapUrn
+    func test1272_adapterCapConstantParses() throws {
+        XCTAssertNoThrow(
+            try CSCapUrn.fromString(CSCapAdapterSelection),
+            "CAP_ADAPTER_SELECTION must be a valid cap URN"
+        )
+    }
+
+    // TEST1273: the adapter-selection cap URN has correct in/out specs — in
+    // is the bare wildcard `media:` (accepts any) and out conforms to the
+    // adapter-selection media URN. (The reference exposes this as the
+    // `adapter_selection_urn()` builder; here the parsed constant IS the
+    // canonical form the runtime registers.)
+    func test1273_adapterSelectionUrnBuilder() throws {
+        let urn = try CSCapUrn.fromString(CSCapAdapterSelection)
+        XCTAssertEqual(urn.inSpec, "media:", "in_spec must be bare media: (accepts any)")
+        let outUrn = try CSMediaUrn.fromString(urn.outSpec)
+        let expectedOut = try CSMediaUrn.fromString(CSMediaAdapterSelection)
+        XCTAssertTrue(
+            outUrn.conforms(to: expectedOut),
+            "out_spec '\(urn.outSpec)' should conform to adapter-selection URN"
+        )
+    }
+
     // MARK: - Manifest Validation Tests (TEST475-477)
 
     // TEST6598: CapManifest::validate() passes when CAP_IDENTITY is present
@@ -119,9 +159,9 @@ final class StandardCapsTests: XCTestCase {
 
         // Create test input - pre-collected chunks
         let testData = "test data".data(using: .utf8)!
-        let chunks: [Result<CBOR, StreamError>] = [.success(.byteString([UInt8](testData)))]
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success(.byteString([UInt8](testData)))]
         var chunkIndex = 0
-        let chunkIterator = AnyIterator<Result<CBOR, StreamError>> {
+        let chunkIterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard chunkIndex < chunks.count else { return nil }
             let chunk = chunks[chunkIndex]
             chunkIndex += 1
@@ -188,9 +228,9 @@ final class StandardCapsTests: XCTestCase {
 
         // Create test input - pre-collected chunks
         let testData = "discard me".data(using: .utf8)!
-        let chunks: [Result<CBOR, StreamError>] = [.success(.byteString([UInt8](testData)))]
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success(.byteString([UInt8](testData)))]
         var chunkIndex = 0
-        let chunkIterator = AnyIterator<Result<CBOR, StreamError>> {
+        let chunkIterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard chunkIndex < chunks.count else { return nil }
             let chunk = chunks[chunkIndex]
             chunkIndex += 1

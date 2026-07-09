@@ -2140,8 +2140,14 @@ public final class RelaySwitch: @unchecked Sendable {
     }
 
     private func rebuildLimits() {
+        // Element-wise min across all HEALTHY masters' proposals — including
+        // initialCredit (the first-burst window). Mirrors the reference's
+        // `rebuild_limits`: dropping a field here silently resets it to the
+        // default, so a master proposing a smaller credit window would be
+        // overrun by the switch's senders (credit violations at the master).
         var minFrame = Int.max
         var minChunk = Int.max
+        var minInitialCredit = UInt64.max
 
         for master in masters {
             if master.healthy {
@@ -2151,13 +2157,21 @@ public final class RelaySwitch: @unchecked Sendable {
                 if master.limits.maxChunk < minChunk {
                     minChunk = master.limits.maxChunk
                 }
+                if master.limits.initialCredit < minInitialCredit {
+                    minInitialCredit = master.limits.initialCredit
+                }
             }
         }
 
         if minFrame == Int.max { minFrame = DEFAULT_MAX_FRAME }
         if minChunk == Int.max { minChunk = DEFAULT_MAX_CHUNK }
+        if minInitialCredit == UInt64.max { minInitialCredit = DEFAULT_INITIAL_CREDIT }
 
-        negotiatedLimits = Limits(maxFrame: minFrame, maxChunk: minChunk)
+        negotiatedLimits = Limits(
+            maxFrame: minFrame,
+            maxChunk: minChunk,
+            initialCredit: minInitialCredit
+        )
     }
 
     // MARK: - Helper Functions

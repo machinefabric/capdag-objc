@@ -203,13 +203,13 @@ final class CborSequenceTests: XCTestCase {
         let page1 = CBOR.byteString(Array("page1".utf8))
         let page2 = CBOR.byteString(Array("page2".utf8))
 
-        let chunks: [Result<CBOR, StreamError>] = [
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [
             .success(page1),
             .success(page2),
         ]
 
         var index = 0
-        let iterator = AnyIterator<Result<CBOR, StreamError>> {
+        let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard index < chunks.count else { return nil }
             let chunk = chunks[index]
             index += 1
@@ -591,11 +591,11 @@ final class CborSequenceTests: XCTestCase {
         // collectCborSequence preserves CBOR encoding
 
         let page = CBOR.byteString([0xDE, 0xAD, 0xBE, 0xEF])
-        let chunks: [Result<CBOR, StreamError>] = [.success(page)]
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((page, nil))]
 
         // Test collectBytes (scalar path)
         var idx1 = 0
-        let iter1 = AnyIterator<Result<CBOR, StreamError>> {
+        let iter1 = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard idx1 < chunks.count else { return nil }
             let c = chunks[idx1]; idx1 += 1; return c
         }
@@ -604,7 +604,7 @@ final class CborSequenceTests: XCTestCase {
 
         // Test collectCborSequence (list path)
         var idx2 = 0
-        let iter2 = AnyIterator<Result<CBOR, StreamError>> {
+        let iter2 = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard idx2 < chunks.count else { return nil }
             let c = chunks[idx2]; idx2 += 1; return c
         }

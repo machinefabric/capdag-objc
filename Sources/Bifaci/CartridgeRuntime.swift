@@ -222,8 +222,19 @@ struct InputCreditContext {
     let initialCredit: UInt64
 }
 
-/// A single input stream — yields decoded CBOR values from CHUNK frames.
+/// Stream/item metadata carried on STREAM_START (whole-stream) and CHUNK
+/// (per-item) frames — the wire shape mirrors the reference's
+/// `StreamMeta = BTreeMap<String, Value>`.
+public typealias StreamMeta = [String: CBOR]
+
+/// A single input stream — yields decoded CBOR values with optional per-item
+/// metadata from CHUNK frames.
 /// Handler never sees Frame, STREAM_START, STREAM_END, checksum, seq, or index.
+///
+/// Metadata semantics depend on mode (mirrors the reference `InputStream`):
+/// - Non-sequence: `streamMeta` carries the STREAM_START metadata (whole-stream).
+/// - Sequence: iteration delivers per-item metadata from CHUNK frames (an
+///   item's FIRST fragment carries it).
 ///
 /// Streams are delivered INCREMENTALLY (protocol v3, L16): items arrive from
 /// a live channel as the producer emits them — never buffered to completion.
@@ -231,7 +242,8 @@ struct InputCreditContext {
 /// handler naturally throttles the producer.
 public final class InputStream: Sequence, @unchecked Sendable {
     private let _mediaUrn: String
-    private let rx: UnsafeTransfer<AnyIterator<Result<CBOR, StreamError>>>
+    private let _streamMeta: StreamMeta?
+    private let rx: UnsafeTransfer<AnyIterator<Result<(CBOR, StreamMeta?), StreamError>>>
     /// Whether the sender declared this stream unbounded (no length promise).
     /// Buffering collectors refuse unbounded streams (L16).
     private let _unbounded: Bool
@@ -239,8 +251,15 @@ public final class InputStream: Sequence, @unchecked Sendable {
     /// nil = uncredited context (in-process host, CLI mode, tests).
     private let grants: InputGrantEmitter?
 
-    init(mediaUrn: String, rx: AnyIterator<Result<CBOR, StreamError>>, unbounded: Bool = false, grants: InputGrantEmitter? = nil) {
+    init(
+        mediaUrn: String,
+        streamMeta: StreamMeta? = nil,
+        rx: AnyIterator<Result<(CBOR, StreamMeta?), StreamError>>,
+        unbounded: Bool = false,
+        grants: InputGrantEmitter? = nil
+    ) {
         self._mediaUrn = mediaUrn
+        self._streamMeta = streamMeta
         self.rx = UnsafeTransfer(rx)
         self._unbounded = unbounded
         self.grants = grants
@@ -249,6 +268,11 @@ public final class InputStream: Sequence, @unchecked Sendable {
     /// Media URN of this stream (from STREAM_START).
     public var mediaUrn: String {
         _mediaUrn
+    }
+
+    /// Stream-level metadata from STREAM_START (non-sequence mode).
+    public var streamMeta: StreamMeta? {
+        _streamMeta
     }
 
     /// Whether the sender declared this stream unbounded — no length promise;
@@ -268,24 +292,24 @@ public final class InputStream: Sequence, @unchecked Sendable {
         }
     }
 
-    /// Collect each chunk as a separate item with its raw bytes.
-    /// For sequence streams (is_sequence=true), each chunk is one item.
-    /// Returns an array of raw byte items, CBOR-unwrapped.
+    /// Collect each item separately with its per-item metadata.
+    /// For sequence streams (is_sequence=true), each delivered value is one item.
+    /// Returns an array of (raw_bytes, optional_per_item_meta), CBOR-unwrapped.
     ///
     /// Fails hard on streams declared unbounded (L16).
-    public func collectItems() throws -> [Data] {
+    public func collectItems() throws -> [(bytes: Data, meta: StreamMeta?)] {
         try checkBounded("collectItems")
-        var items: [Data] = []
+        var items: [(bytes: Data, meta: StreamMeta?)] = []
         for itemResult in self {
-            let item = try itemResult.get()
+            let (item, meta) = try itemResult.get()
             switch item {
             case .byteString(let bytes):
-                items.append(Data(bytes))
+                items.append((bytes: Data(bytes), meta: meta))
             case .utf8String(let str):
-                items.append(str.data(using: .utf8) ?? Data())
+                items.append((bytes: str.data(using: .utf8) ?? Data(), meta: meta))
             default:
                 let encoded = Data(item.encode())
-                items.append(encoded)
+                items.append((bytes: encoded, meta: meta))
             }
         }
         return items
@@ -301,7 +325,7 @@ public final class InputStream: Sequence, @unchecked Sendable {
         try checkBounded("collectBytes")
         var result = Data()
         for itemResult in self {
-            let item = try itemResult.get()
+            let (item, _) = try itemResult.get()
             switch item {
             case .byteString(let bytes):
                 result.append(contentsOf: bytes)
@@ -329,7 +353,7 @@ public final class InputStream: Sequence, @unchecked Sendable {
         try checkBounded("collectCborSequence")
         var result = Data()
         for itemResult in self {
-            let item = try itemResult.get()
+            let (item, _) = try itemResult.get()
             // Re-encode the CBOR value — this preserves the self-delimiting structure
             let encoded = Data(item.encode())
             result.append(encoded)
@@ -338,6 +362,7 @@ public final class InputStream: Sequence, @unchecked Sendable {
     }
 
     /// Collect a single CBOR value (expects exactly one chunk).
+    /// Per-item metadata is discarded.
     ///
     /// Fails hard on streams declared unbounded (L16).
     public func collectValue() throws -> CBOR {
@@ -345,10 +370,10 @@ public final class InputStream: Sequence, @unchecked Sendable {
         guard let first = makeIterator().next() else {
             throw StreamError.closed
         }
-        return try first.get()
+        return try first.get().0
     }
 
-    public func makeIterator() -> AnyIterator<Result<CBOR, StreamError>> {
+    public func makeIterator() -> AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
         let base = rx.value
         let grants = self.grants
         return AnyIterator {
@@ -368,8 +393,9 @@ public final class InputStream: Sequence, @unchecked Sendable {
 /// `PeerResponse.recv()` yields these interleaved in arrival order. Handlers
 /// match on each variant to decide how to react (e.g., forward progress, accumulate data).
 public enum PeerResponseItem {
-    /// A decoded CBOR data chunk from the peer response.
-    case data(Result<CBOR, StreamError>)
+    /// A decoded CBOR data chunk from the peer response, with optional
+    /// per-chunk metadata (mirrors the reference's `Data(Result, Option<StreamMeta>)`).
+    case data(Result<CBOR, StreamError>, StreamMeta?)
     /// A LOG frame from the peer (progress, status messages, etc.).
     case log(Frame)
 }
@@ -397,7 +423,7 @@ public final class PeerResponse: @unchecked Sendable {
     /// a slow consumer naturally throttles the producer (L10).
     public func recv() -> PeerResponseItem? {
         let item = items.value.next()
-        if let item = item, case .data(.success) = item {
+        if let item = item, case .data(.success, _) = item {
             grants?.consumed()
         }
         return item
@@ -408,7 +434,7 @@ public final class PeerResponse: @unchecked Sendable {
         var result = Data()
         while let item = recv() {
             switch item {
-            case .data(let dataResult):
+            case .data(let dataResult, _):
                 let value = try dataResult.get()
                 switch value {
                 case .byteString(let bytes):
@@ -430,7 +456,7 @@ public final class PeerResponse: @unchecked Sendable {
     public func collectValue() throws -> CBOR {
         while let item = recv() {
             switch item {
-            case .data(let dataResult):
+            case .data(let dataResult, _):
                 return try dataResult.get()
             case .log:
                 break // Discard LOG frames
@@ -467,13 +493,16 @@ public final class InputPackage: Sequence, @unchecked Sendable {
 
     /// Collect each stream individually into an array of (mediaUrn, bytes) pairs.
     /// Each stream's bytes are accumulated separately — NOT concatenated.
-    public func collectStreams() throws -> [(mediaUrn: String, bytes: Data)] {
-        var result: [(mediaUrn: String, bytes: Data)] = []
+    /// `meta` is the STREAM_START (whole-stream) metadata, mirroring the
+    /// reference's `collect_streams`.
+    public func collectStreams() throws -> [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] {
+        var result: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = []
         for streamResult in self {
             let stream = try streamResult.get()
             let urn = stream.mediaUrn
+            let meta = stream.streamMeta
             let bytes = try stream.collectBytes()
-            result.append((mediaUrn: urn, bytes: bytes))
+            result.append((mediaUrn: urn, bytes: bytes, meta: meta))
         }
         return result
     }
@@ -498,9 +527,9 @@ public final class InputPackage: Sequence, @unchecked Sendable {
 /// any conforming-but-unmatched stream then falls through to a
 /// downstream `media:enc=utf-8` catch-all and overwrites the prompt
 /// body — that's the gibberish-output bug.
-public func findStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) -> Data? {
+public func findStream(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], mediaUrn: String) -> Data? {
     guard let target = try? CSMediaUrn.fromString(mediaUrn) else { return nil }
-    for (urnStr, bytes) in streams {
+    for (urnStr, bytes, _) in streams {
         guard let urn = try? CSMediaUrn.fromString(urnStr) else { continue }
         if target.isEquivalent(to: urn) {
             return bytes
@@ -510,9 +539,22 @@ public func findStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: S
 }
 
 /// Like findStream but returns a UTF-8 string.
-public func findStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) -> String? {
+public func findStreamStr(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], mediaUrn: String) -> String? {
     guard let data = findStream(streams, mediaUrn: mediaUrn) else { return nil }
     return String(data: data, encoding: .utf8)
+}
+
+/// Find the stream-level metadata (from STREAM_START) for a stream by exact
+/// URN equivalence. Mirrors the reference's `find_stream_meta`.
+public func findStreamMeta(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], mediaUrn: String) -> StreamMeta? {
+    guard let target = try? CSMediaUrn.fromString(mediaUrn) else { return nil }
+    for (urnStr, _, meta) in streams {
+        guard let urn = try? CSMediaUrn.fromString(urnStr) else { continue }
+        if target.isEquivalent(to: urn) {
+            return meta
+        }
+    }
+    return nil
 }
 
 /// Find a stream whose URN *conforms to* the given pattern. The
@@ -522,9 +564,9 @@ public func findStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn
 /// the right matcher for cap-args whose TOML URN is a refinement
 /// of the bare handler form — see `findStream` for the equality
 /// case and the rationale.
-public func findStreamConforming(_ streams: [(mediaUrn: String, bytes: Data)], pattern: String) -> Data? {
+public func findStreamConforming(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], pattern: String) -> Data? {
     guard let target = try? CSMediaUrn.fromString(pattern) else { return nil }
-    for (urnStr, bytes) in streams {
+    for (urnStr, bytes, _) in streams {
         guard let urn = try? CSMediaUrn.fromString(urnStr) else { continue }
         if urn.conforms(to: target) {
             return bytes
@@ -534,13 +576,13 @@ public func findStreamConforming(_ streams: [(mediaUrn: String, bytes: Data)], p
 }
 
 /// Like findStreamConforming but returns a UTF-8 string.
-public func findStreamStrConforming(_ streams: [(mediaUrn: String, bytes: Data)], pattern: String) -> String? {
+public func findStreamStrConforming(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], pattern: String) -> String? {
     guard let data = findStreamConforming(streams, pattern: pattern) else { return nil }
     return String(data: data, encoding: .utf8)
 }
 
 /// Like findStream but fails hard if not found.
-public func requireStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) throws -> Data {
+public func requireStream(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], mediaUrn: String) throws -> Data {
     guard let data = findStream(streams, mediaUrn: mediaUrn) else {
         throw StreamError.protocolError("Missing required arg: \(mediaUrn)")
     }
@@ -548,7 +590,7 @@ public func requireStream(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn
 }
 
 /// Like requireStream but returns a UTF-8 string.
-public func requireStreamStr(_ streams: [(mediaUrn: String, bytes: Data)], mediaUrn: String) throws -> String {
+public func requireStreamStr(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], mediaUrn: String) throws -> String {
     let data = try requireStream(streams, mediaUrn: mediaUrn)
     guard let str = String(data: data, encoding: .utf8) else {
         throw StreamError.decode("Arg '\(mediaUrn)' is not valid UTF-8")
@@ -735,7 +777,12 @@ public final class OutputStream: @unchecked Sendable {
     ///
     /// - `isSequence = false` — write mode: each chunk is a complete CBOR value
     /// - `isSequence = true`  — sequence mode: chunks are CBOR fragments (RFC 8742)
-    public func start(isSequence: Bool) throws {
+    ///
+    /// `meta` is whole-stream metadata carried on STREAM_START (provenance,
+    /// titles, …) — mirrors the reference's `start(is_sequence, meta)`.
+    /// Handlers propagate their input's `streamMeta` here so provenance
+    /// survives the hop.
+    public func start(isSequence: Bool, meta: StreamMeta? = nil) throws {
         try markStarted(isSequence: isSequence, unbounded: false)
 
         var startFrame = Frame.streamStart(
@@ -744,6 +791,7 @@ public final class OutputStream: @unchecked Sendable {
             mediaUrn: _mediaUrn,
             isSequence: isSequence
         )
+        startFrame.meta = meta
         startFrame.routingId = routingId
         try sender.send(startFrame)
     }
@@ -846,7 +894,8 @@ public final class OutputStream: @unchecked Sendable {
     }
 
     /// Send one raw sequence-item chunk (payload = raw CBOR fragment bytes).
-    private func sendItemChunk(_ chunkPayload: Data) throws {
+    /// `meta` is per-item metadata, placed on the item's FIRST fragment only.
+    private func sendItemChunk(_ chunkPayload: Data, meta: StreamMeta? = nil) throws {
         chunkStateLock.lock()
         let currentChunkIndex = _chunkIndex
         _chunkIndex += 1
@@ -862,6 +911,7 @@ public final class OutputStream: @unchecked Sendable {
             chunkIndex: currentChunkIndex,
             checksum: checksum
         )
+        frame.meta = meta
         frame.routingId = routingId
         try sender.send(frame)
     }
@@ -880,31 +930,35 @@ public final class OutputStream: @unchecked Sendable {
     ///
     /// Awaits per chunk when the flow-control window is exhausted (L9). Use
     /// `blockingEmitListItem` from non-async contexts.
-    public func emitListItem(_ value: CBOR) async throws {
+    public func emitListItem(_ value: CBOR, meta: StreamMeta? = nil) async throws {
         try checkMode(true)
         let cborBytes = Data(value.encode())
 
         var offset = 0
+        var firstChunk = true
         while offset < cborBytes.count {
             let chunkSize = min(cborBytes.count - offset, maxChunk)
             let chunkPayload = cborBytes.subdata(in: offset..<(offset + chunkSize))
             try await acquireCredit()
-            try sendItemChunk(chunkPayload)
+            try sendItemChunk(chunkPayload, meta: firstChunk ? meta : nil)
+            firstChunk = false
             offset += chunkSize
         }
     }
 
-    /// Blocking-context counterpart of `emitListItem(_:)`.
-    public func blockingEmitListItem(_ value: CBOR) throws {
+    /// Blocking-context counterpart of `emitListItem(_:meta:)`.
+    public func blockingEmitListItem(_ value: CBOR, meta: StreamMeta? = nil) throws {
         try checkMode(true)
         let cborBytes = Data(value.encode())
 
         var offset = 0
+        var firstChunk = true
         while offset < cborBytes.count {
             let chunkSize = min(cborBytes.count - offset, maxChunk)
             let chunkPayload = cborBytes.subdata(in: offset..<(offset + chunkSize))
             try blockingAcquireCredit()
-            try sendItemChunk(chunkPayload)
+            try sendItemChunk(chunkPayload, meta: firstChunk ? meta : nil)
+            firstChunk = false
             offset += chunkSize
         }
     }
@@ -1273,6 +1327,9 @@ public final class BlockingQueue<T>: @unchecked Sendable {
 internal final class SeqReassembly {
     /// Raw fragment bytes of the item currently being received.
     var buf: [UInt8] = []
+    /// Per-item metadata — carried on the item's FIRST fragment frame only
+    /// (the emitListItem contract), held until the item completes.
+    var itemMeta: StreamMeta?
     /// Immediate-flush grant emitter for fragment continuation frames.
     /// Credit is frame-granular on the wire but the handler consumes (and
     /// grants) per ITEM; every fragment after an item's first frame is
@@ -1346,22 +1403,26 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
 
             case .chunk:
                 guard let payload = frame.payload else {
-                    return .data(.failure(.protocolError("CHUNK frame missing payload")))
+                    return .data(.failure(.protocolError("CHUNK frame missing payload")), nil)
                 }
 
                 // Verify checksum (MANDATORY in protocol v2)
                 guard let expectedChecksum = frame.checksum else {
-                    return .data(.failure(.protocolError("CHUNK frame missing required checksum field")))
+                    return .data(.failure(.protocolError("CHUNK frame missing required checksum field")), nil)
                 }
                 let actualChecksum = Frame.computeChecksum(payload)
                 if actualChecksum != expectedChecksum {
-                    return .data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")))
+                    return .data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")), nil)
                 }
 
                 if let seq = seq {
                     // Sequence stream: raw RFC 8742 fragment — buffer and
                     // deliver at ITEM granularity (see `SeqReassembly`).
-                    if !seq.buf.isEmpty {
+                    if seq.buf.isEmpty {
+                        // First fragment of a new item carries the per-item
+                        // metadata (emitListItem contract).
+                        seq.itemMeta = frame.meta
+                    } else {
                         seq.fragmentGrants?.consumed()
                     }
                     seq.buf.append(contentsOf: payload)
@@ -1371,12 +1432,14 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                                 break decodeLoop // prefix — need more frames
                             }
                             seq.buf.removeFirst(consumed)
-                            pendingItems.append(.data(.success(value)))
+                            let meta = seq.itemMeta
+                            seq.itemMeta = nil
+                            pendingItems.append(.data(.success(value), meta))
                             if seq.buf.isEmpty {
                                 break decodeLoop
                             }
                         } catch {
-                            pendingItems.append(.data(.failure(.decode("Failed to decode CBOR sequence item: \(error)"))))
+                            pendingItems.append(.data(.failure(.decode("Failed to decode CBOR sequence item: \(error)")), nil))
                             seq.buf.removeAll()
                             break decodeLoop
                         }
@@ -1388,14 +1451,14 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                 }
 
                 // Scalar stream: every frame payload is a self-contained
-                // CBOR value.
+                // CBOR value with optional per-chunk metadata.
                 do {
                     guard let value = try CBOR.decode([UInt8](payload)) else {
-                        return .data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
+                        return .data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")), nil)
                     }
-                    return .data(.success(value))
+                    return .data(.success(value), frame.meta)
                 } catch {
-                    return .data(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+                    return .data(.failure(.decode("Failed to decode CBOR chunk: \(error)")), nil)
                 }
 
             case .log:
@@ -1408,17 +1471,17 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                     seq = nil
                     return .data(.failure(.decode(
                         "sequence stream ended mid-item: \(s.buf.count) trailing bytes do not form a complete CBOR item"
-                    )))
+                    )), nil)
                 }
                 return nil
 
             case .err:
                 let code = frame.errorCode ?? "UNKNOWN"
                 let message = frame.errorMessage ?? "Unknown error"
-                return .data(.failure(.remoteError(code: code, message: message)))
+                return .data(.failure(.remoteError(code: code, message: message)), nil)
 
             default:
-                return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")))
+                return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")), nil)
             }
         }
         return nil
@@ -1444,7 +1507,7 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
 
     Thread.detachNewThread {
         // Per-stream live channels: streamId → chunk queue.
-        var streamChannels: [String: BlockingQueue<Result<CBOR, StreamError>>] = [:]
+        var streamChannels: [String: BlockingQueue<Result<(CBOR, StreamMeta?), StreamError>>] = [:]
         // Per-stream remaining credit windows (L10/L12). The window starts at
         // the negotiated initialCredit; handler consumption (grants) extends
         // it; a chunk arriving with the window at zero is a fatal
@@ -1471,7 +1534,7 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                     streamsQueue.push(.failure(.protocolError("STREAM_START missing stream_id")))
                     break loop
                 }
-                let chunkQueue = BlockingQueue<Result<CBOR, StreamError>>()
+                let chunkQueue = BlockingQueue<Result<(CBOR, StreamMeta?), StreamError>>()
                 streamChannels[streamId] = chunkQueue
 
                 var grants: InputGrantEmitter? = nil
@@ -1499,7 +1562,7 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 // pending sub-batch grants first — the producer may be
                 // stalled waiting for exactly this credit.
                 let streamGrants = grants
-                let iterator = AnyIterator<Result<CBOR, StreamError>> {
+                let iterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
                     if let item = chunkQueue.tryPop(timeout: 0) {
                         return item
                     }
@@ -1508,6 +1571,7 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 }
                 let inputStream = InputStream(
                     mediaUrn: frame.mediaUrn ?? "media:",
+                    streamMeta: frame.meta,
                     rx: iterator,
                     unbounded: frame.isUnbounded,
                     grants: grants
@@ -1548,7 +1612,11 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                     // Sequence stream: the payload is a raw RFC 8742
                     // fragment. Buffer it and deliver at ITEM granularity
                     // (see `SeqReassembly`).
-                    if !seq.buf.isEmpty {
+                    if seq.buf.isEmpty {
+                        // First fragment of a new item carries the per-item
+                        // metadata (emitListItem contract).
+                        seq.itemMeta = frame.meta
+                    } else {
                         // Continuation fragment: credit it back immediately —
                         // the handler grants one frame per consumed ITEM, so
                         // without this an item spanning more frames than the
@@ -1562,7 +1630,9 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                                 break decodeLoop // prefix — need more frames
                             }
                             seq.buf.removeFirst(consumed)
-                            queue.push(.success(value))
+                            let meta = seq.itemMeta
+                            seq.itemMeta = nil
+                            queue.push(.success((value, meta)))
                             if seq.buf.isEmpty {
                                 break decodeLoop
                             }
@@ -1575,13 +1645,13 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 } else {
                     // Scalar stream: every frame payload is a self-contained
                     // CBOR value (`write` wraps each piece as its own
-                    // byteString).
+                    // byteString) with optional per-chunk metadata.
                     do {
                         guard let value = try CBOR.decode([UInt8](payload)) else {
                             queue.push(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
                             continue
                         }
-                        queue.push(.success(value))
+                        queue.push(.success((value, frame.meta)))
                     } catch {
                         queue.push(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
                     }
@@ -2242,7 +2312,7 @@ public struct IdentityOp: Op, Sendable {
         for streamResult in input {
             let stream = try streamResult.get()
             for chunkResult in stream {
-                let chunk = try chunkResult.get()
+                let (chunk, _) = try chunkResult.get()
                 try await req.output().emitCbor(chunk)
             }
         }
