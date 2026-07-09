@@ -159,7 +159,7 @@ final class StandardCapsTests: XCTestCase {
 
         // Create test input - pre-collected chunks
         let testData = "test data".data(using: .utf8)!
-        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success(.byteString([UInt8](testData)))]
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([UInt8](testData)), nil))]
         var chunkIndex = 0
         let chunkIterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard chunkIndex < chunks.count else { return nil }
@@ -228,7 +228,7 @@ final class StandardCapsTests: XCTestCase {
 
         // Create test input - pre-collected chunks
         let testData = "discard me".data(using: .utf8)!
-        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success(.byteString([UInt8](testData)))]
+        let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [.success((.byteString([UInt8](testData)), nil))]
         var chunkIndex = 0
         let chunkIterator = AnyIterator<Result<(CBOR, StreamMeta?), StreamError>> {
             guard chunkIndex < chunks.count else { return nil }

@@ -204,8 +204,8 @@ final class CborSequenceTests: XCTestCase {
         let page2 = CBOR.byteString(Array("page2".utf8))
 
         let chunks: [Result<(CBOR, StreamMeta?), StreamError>] = [
-            .success(page1),
-            .success(page2),
+            .success((page1, nil)),
+            .success((page2, nil)),
         ]
 
         var index = 0

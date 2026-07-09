@@ -185,225 +185,13 @@ final class ProtocolV3RuntimeTests: XCTestCase {
         XCTAssertEqual(snap.byReason["channel_closed"], 1)
     }
 
-    // TEST7059: Terminal frames release ALL request state and every
-    // registration is accounted exactly once (L7/L13) — across a mixed
-    // workload of END-, ERR-, and cancel-terminated requests the active
-    // table drains to empty and the terminated-by-kind counts sum to the
-    // total registrations. A leaked entry keeps `active` non-empty; a
-    // double- or un-counted termination breaks the conservation equation.
-    // (The reference runs this over a real cartridge execution; the law
-    // under test lives in the switch's request table, which is the layer
-    // this mirror implements.)
-    func test7059_terminalEndReleasesCreditAndLeaksNoState() throws {
-        let switch_ = try RelaySwitch(sockets: [])
-
-        // Three requests, three terminal paths.
-        let endKey = RequestKey(xid: .uint(1), rid: .newUUID())
-        let errKey = RequestKey(xid: .uint(2), rid: .newUUID())
-        let cancelKey = RequestKey(xid: .uint(3), rid: .newUUID())
-        let endChannel = BlockingQueue<Frame>()
-        let errChannel = BlockingQueue<Frame>()
-        let cancelChannel = BlockingQueue<Frame>()
-        try registerExternal(switch_, key: endKey, destination: 0, channel: endChannel)
-        try registerExternal(switch_, key: errKey, destination: 0, channel: errChannel)
-        try registerExternal(switch_, key: cancelKey, destination: 0, channel: cancelChannel)
-        XCTAssertEqual(switch_.protocolStats().requests.active.count, 3)
-
-        var end = Frame.endOkWith(id: endKey.rid, finalPayload: nil, progress: 1.0, message: nil)
-        end.routingId = endKey.xid
-        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: end)
-
-        var err = Frame.err(id: errKey.rid, code: "HANDLER_ERROR", message: "boom")
-        err.routingId = errKey.xid
-        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: err)
-
-        switch_.cancelRequest(rid: cancelKey.rid, forceKill: false)
-
-        // Terminals must have been DELIVERED before release (L6) — a leak
-        // test over a broken run proves nothing.
-        XCTAssertEqual(try XCTUnwrap(endChannel.tryPop(timeout: 2)).frameType, .end)
-        XCTAssertEqual(try XCTUnwrap(errChannel.tryPop(timeout: 2)).frameType, .err)
-
-        let stats = switch_.protocolStats()
-        XCTAssertTrue(
-            stats.requests.active.isEmpty,
-            "terminal frames must release ALL state for every (xid,rid) (L7); still active: \(stats.requests.active.map { $0.rid })"
-        )
-        XCTAssertEqual(stats.requests.totalRegistered, 3)
-        let endCount = stats.requests.terminatedByKind["end"] ?? 0
-        XCTAssertGreaterThanOrEqual(endCount, 1, "the END-terminated request must be counted; got \(stats.requests.terminatedByKind)")
-        let terminatedTotal = stats.requests.terminatedByKind.values.reduce(0, +)
-        XCTAssertEqual(
-            terminatedTotal, stats.requests.totalRegistered,
-            "every registered request must be terminated exactly once (L7): \(stats.requests.terminatedByKind) vs total \(stats.requests.totalRegistered)"
-        )
-        switch_.shutdown()
-    }
-
-    // TEST7061: The negotiated initial_credit is the element-wise min of all
-    // masters' proposals, wire-visible at the switch. A master's RelayNotify
-    // carries its limits; renegotiation must include initialCredit — the
-    // regression this pins is `rebuildLimits()` dropping the credit field and
-    // silently resetting it to the default (which would let switch-side
-    // senders overrun a smaller window with CREDIT_VIOLATIONs at the master).
-    func test7061_negotiatedInitialCreditIsMinOfProposals() throws {
-        let pairA1 = FileHandle.socketPair() // switch reads A, A writes
-        let pairA2 = FileHandle.socketPair() // A reads, switch writes
-        let pairB1 = FileHandle.socketPair()
-        let pairB2 = FileHandle.socketPair()
-
-        let aNotified = DispatchSemaphore(value: 0)
-        let bMayNotify = DispatchSemaphore(value: 0)
-
-        // Master A proposes the DEFAULT limits. Empty caps → no identity
-        // probe → the master stays healthy and its limits count.
-        DispatchQueue.global().async {
-            let writer = FrameWriter(handle: pairA1.write, limits: Limits())
-            try! self.sendNotify(writer: writer, capabilities: [], limits: Limits())
-            aNotified.signal()
-        }
-        // Master B proposes initialCredit=8 — everything else default.
-        DispatchQueue.global().async {
-            let writer = FrameWriter(handle: pairB1.write, limits: Limits())
-            bMayNotify.wait()
-            var low = Limits()
-            low.initialCredit = 8
-            try! self.sendNotify(writer: writer, capabilities: [], limits: low)
-        }
-
-        let switch_ = try RelaySwitch(sockets: [
-            SocketPair(id: "mA", read: pairA1.read, write: pairA2.write),
-            SocketPair(id: "mB", read: pairB1.read, write: pairB2.write),
-        ])
-
-        // Part 1: default-vs-default converges on the default first burst.
-        XCTAssertEqual(aNotified.wait(timeout: .now() + 2), .success)
-        XCTAssertEqual(
-            switch_.limits().initialCredit, DEFAULT_INITIAL_CREDIT,
-            "with every master proposing the default, the negotiated min must be exactly the default"
-        )
-
-        // Part 2: B's low proposal drops the negotiated value to min(32, 8) = 8.
-        bMayNotify.signal()
-        let deadline = Date().addingTimeInterval(5)
-        while switch_.limits().initialCredit != 8 {
-            if Date() > deadline {
-                XCTFail(
-                    "negotiated initial_credit must drop to the element-wise min of all masters' proposals (min(\(DEFAULT_INITIAL_CREDIT), 8) = 8); still \(switch_.limits().initialCredit) after 5s"
-                )
-                switch_.shutdown()
-                return
-            }
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        // The OTHER fields stay at their (default) minima — renegotiation is
-        // element-wise, not a wholesale swap to the lowest proposer's struct.
-        XCTAssertEqual(switch_.limits().maxFrame, DEFAULT_MAX_FRAME)
-        XCTAssertEqual(switch_.limits().maxChunk, DEFAULT_MAX_CHUNK)
-        switch_.shutdown()
-    }
-
-    // TEST7093: A response frame for a LIVE request whose external consumer is
-    // gone (dropped/timed-out caller) is a counted channel_closed drop AND
-    // cancels the request upstream — the destination master receives Cancel,
-    // the entry terminates as cancelled, and zero state remains: the cartridge
-    // stops producing for a dead channel instead of running to completion
-    // against it.
-    func test7093_deadConsumerCancelsUpstream() throws {
-        let pair1 = FileHandle.socketPair() // switch reads, slave writes
-        let pair2 = FileHandle.socketPair() // slave reads, switch writes
-
-        final class RidBox: @unchecked Sendable {
-            private let lock = NSLock()
-            private var value: MessageId?
-            let seen = DispatchSemaphore(value: 0)
-            func set(_ v: MessageId) {
-                lock.lock()
-                value = v
-                lock.unlock()
-                seen.signal()
-            }
-            func get() -> MessageId? {
-                lock.lock()
-                defer { lock.unlock() }
-                return value
-            }
-        }
-        let cancelled = RidBox()
-        let notified = DispatchSemaphore(value: 0)
-
-        // Mock cartridge master: RelayNotify + identity echo, then wait for
-        // the Cancel the dead-consumer path must send us.
-        DispatchQueue.global().async {
-            let reader = FrameReader(handle: pair2.read, limits: Limits())
-            let writer = FrameWriter(handle: pair1.write, limits: Limits())
-            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
-            notified.signal()
-            try! self.handleIdentityVerification(reader: reader, writer: writer)
-            while true {
-                guard let f = try? reader.read() else { return }
-                if f.frameType == .cancel {
-                    cancelled.set(f.id)
-                    return
-                }
-            }
-        }
-
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
-        XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
-
-        // A LIVE engine-origin request whose consumer is GONE: the external
-        // channel refuses delivery.
-        let key = RequestKey(xid: .uint(7), rid: .newUUID())
-        try switch_.requests.register(key, RequestState(
-            routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
-            origin: nil,
-            externalChannel: { _ in false }, // dead consumer
-            isPeer: false
-        ))
-
-        // The cartridge streams a response frame into the dead channel.
-        var log = Frame.log(id: key.rid, level: "info", message: "first result row")
-        log.routingId = key.xid
-        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: log)
-
-        // The switch must cancel upstream — the master observes Cancel for
-        // exactly the abandoned request.
-        XCTAssertEqual(
-            cancelled.seen.wait(timeout: .now() + 5), .success,
-            "the destination must receive Cancel for the abandoned request"
-        )
-        XCTAssertEqual(cancelled.get(), key.rid, "cancel targets the abandoned request")
-
-        // The drop is counted, the request terminates as cancelled, and no
-        // state remains (L7). The cancel dispatches off-lock, so poll briefly
-        // for the terminated accounting before asserting hard.
-        let deadline = Date().addingTimeInterval(5)
-        while (switch_.protocolStats().requests.terminatedByKind["cancelled"] ?? 0) < 1 {
-            if Date() > deadline { break }
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        let stats = switch_.protocolStats()
-        XCTAssertEqual(
-            stats.drops.byReason["channel_closed"], 1,
-            "the abandoned frame is a counted channel_closed drop"
-        )
-        XCTAssertEqual(
-            stats.requests.terminatedByKind["cancelled"], 1,
-            "the abandoned request terminates as cancelled — it never lingers"
-        )
-        XCTAssertTrue(
-            stats.requests.active.isEmpty,
-            "no state remains for the abandoned request (L7)"
-        )
-        switch_.shutdown()
-    }
-
     // MARK: - Sequence item reassembly (RFC 8742 fragments)
 
-    private func makeFragmentChunk(rid: MessageId, streamId: String, index: UInt64, payload: Data) -> Frame {
+    private func makeFragmentChunk(rid: MessageId, streamId: String, index: UInt64, payload: Data, meta: StreamMeta? = nil) -> Frame {
         let checksum = Frame.computeChecksum(payload)
-        return Frame.chunk(reqId: rid, streamId: streamId, seq: index, payload: payload, chunkIndex: index, checksum: checksum)
+        var frame = Frame.chunk(reqId: rid, streamId: streamId, seq: index, payload: payload, chunkIndex: index, checksum: checksum)
+        frame.meta = meta
+        return frame
     }
 
     // TEST1300: A sequence item CBOR-encoded once and split across multiple CHUNK frames (the emitListItem framing) reassembles into exactly one delivered item.
@@ -420,12 +208,22 @@ final class ProtocolV3RuntimeTests: XCTestCase {
         let fragmentSize = 16 * 1024
         XCTAssertGreaterThan(encoded.count, fragmentSize, "item must span multiple fragments")
 
+        // Per-item metadata rides the item's FIRST fragment only (the
+        // emitListItem contract) and must survive reassembly.
+        let itemMeta: StreamMeta = ["title": .utf8String("page 1")]
+
         frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:ext=png;image", isSequence: true))
         var index: UInt64 = 0
         var offset = 0
         while offset < encoded.count {
             let end = min(offset + fragmentSize, encoded.count)
-            frames.push(makeFragmentChunk(rid: rid, streamId: "s1", index: index, payload: encoded.subdata(in: offset..<end)))
+            frames.push(makeFragmentChunk(
+                rid: rid,
+                streamId: "s1",
+                index: index,
+                payload: encoded.subdata(in: offset..<end),
+                meta: index == 0 ? itemMeta : nil
+            ))
             index += 1
             offset = end
         }
@@ -915,6 +713,221 @@ final class ProtocolV3SwitchTests: XCTestCase {
             isPeer: false
         ))
     }
+
+    // TEST7059: Terminal frames release ALL request state and every
+    // registration is accounted exactly once (L7/L13) — across a mixed
+    // workload of END-, ERR-, and cancel-terminated requests the active
+    // table drains to empty and the terminated-by-kind counts sum to the
+    // total registrations. A leaked entry keeps `active` non-empty; a
+    // double- or un-counted termination breaks the conservation equation.
+    // (The reference runs this over a real cartridge execution; the law
+    // under test lives in the switch's request table, which is the layer
+    // this mirror implements.)
+    func test7059_terminalEndReleasesCreditAndLeaksNoState() throws {
+        let switch_ = try RelaySwitch(sockets: [])
+
+        // Three requests, three terminal paths.
+        let endKey = RequestKey(xid: .uint(1), rid: .newUUID())
+        let errKey = RequestKey(xid: .uint(2), rid: .newUUID())
+        let cancelKey = RequestKey(xid: .uint(3), rid: .newUUID())
+        let endChannel = BlockingQueue<Frame>()
+        let errChannel = BlockingQueue<Frame>()
+        let cancelChannel = BlockingQueue<Frame>()
+        try registerExternal(switch_, key: endKey, destination: 0, channel: endChannel)
+        try registerExternal(switch_, key: errKey, destination: 0, channel: errChannel)
+        try registerExternal(switch_, key: cancelKey, destination: 0, channel: cancelChannel)
+        XCTAssertEqual(switch_.protocolStats().requests.active.count, 3)
+
+        var end = Frame.endOkWith(id: endKey.rid, finalPayload: nil, progress: 1.0, message: nil)
+        end.routingId = endKey.xid
+        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: end)
+
+        var err = Frame.err(id: errKey.rid, code: "HANDLER_ERROR", message: "boom")
+        err.routingId = errKey.xid
+        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: err)
+
+        switch_.cancelRequest(rid: cancelKey.rid, forceKill: false)
+
+        // Terminals must have been DELIVERED before release (L6) — a leak
+        // test over a broken run proves nothing.
+        XCTAssertEqual(try XCTUnwrap(endChannel.tryPop(timeout: 2)).frameType, .end)
+        XCTAssertEqual(try XCTUnwrap(errChannel.tryPop(timeout: 2)).frameType, .err)
+
+        let stats = switch_.protocolStats()
+        XCTAssertTrue(
+            stats.requests.active.isEmpty,
+            "terminal frames must release ALL state for every (xid,rid) (L7); still active: \(stats.requests.active.map { $0.rid })"
+        )
+        XCTAssertEqual(stats.requests.totalRegistered, 3)
+        let endCount = stats.requests.terminatedByKind["end"] ?? 0
+        XCTAssertGreaterThanOrEqual(endCount, 1, "the END-terminated request must be counted; got \(stats.requests.terminatedByKind)")
+        let terminatedTotal = stats.requests.terminatedByKind.values.reduce(0, +)
+        XCTAssertEqual(
+            terminatedTotal, stats.requests.totalRegistered,
+            "every registered request must be terminated exactly once (L7): \(stats.requests.terminatedByKind) vs total \(stats.requests.totalRegistered)"
+        )
+        switch_.shutdown()
+    }
+
+    // TEST7061: The negotiated initial_credit is the element-wise min of all
+    // masters' proposals, wire-visible at the switch. A master's RelayNotify
+    // carries its limits; renegotiation must include initialCredit — the
+    // regression this pins is `rebuildLimits()` dropping the credit field and
+    // silently resetting it to the default (which would let switch-side
+    // senders overrun a smaller window with CREDIT_VIOLATIONs at the master).
+    func test7061_negotiatedInitialCreditIsMinOfProposals() throws {
+        let pairA1 = FileHandle.socketPair() // switch reads A, A writes
+        let pairA2 = FileHandle.socketPair() // A reads, switch writes
+        let pairB1 = FileHandle.socketPair()
+        let pairB2 = FileHandle.socketPair()
+
+        let aNotified = DispatchSemaphore(value: 0)
+        let bMayNotify = DispatchSemaphore(value: 0)
+
+        // Master A proposes the DEFAULT limits. Empty caps → no identity
+        // probe → the master stays healthy and its limits count.
+        DispatchQueue.global().async {
+            let writer = FrameWriter(handle: pairA1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [], limits: Limits())
+            aNotified.signal()
+        }
+        // Master B proposes initialCredit=8 — everything else default.
+        DispatchQueue.global().async {
+            let writer = FrameWriter(handle: pairB1.write, limits: Limits())
+            bMayNotify.wait()
+            var low = Limits()
+            low.initialCredit = 8
+            try! self.sendNotify(writer: writer, capabilities: [], limits: low)
+        }
+
+        let switch_ = try RelaySwitch(sockets: [
+            SocketPair(id: "mA", read: pairA1.read, write: pairA2.write),
+            SocketPair(id: "mB", read: pairB1.read, write: pairB2.write),
+        ])
+
+        // Part 1: default-vs-default converges on the default first burst.
+        XCTAssertEqual(aNotified.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(
+            switch_.limits().initialCredit, DEFAULT_INITIAL_CREDIT,
+            "with every master proposing the default, the negotiated min must be exactly the default"
+        )
+
+        // Part 2: B's low proposal drops the negotiated value to min(32, 8) = 8.
+        bMayNotify.signal()
+        let deadline = Date().addingTimeInterval(5)
+        while switch_.limits().initialCredit != 8 {
+            if Date() > deadline {
+                XCTFail(
+                    "negotiated initial_credit must drop to the element-wise min of all masters' proposals (min(\(DEFAULT_INITIAL_CREDIT), 8) = 8); still \(switch_.limits().initialCredit) after 5s"
+                )
+                switch_.shutdown()
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        // The OTHER fields stay at their (default) minima — renegotiation is
+        // element-wise, not a wholesale swap to the lowest proposer's struct.
+        XCTAssertEqual(switch_.limits().maxFrame, DEFAULT_MAX_FRAME)
+        XCTAssertEqual(switch_.limits().maxChunk, DEFAULT_MAX_CHUNK)
+        switch_.shutdown()
+    }
+
+    // TEST7093: A response frame for a LIVE request whose external consumer is
+    // gone (dropped/timed-out caller) is a counted channel_closed drop AND
+    // cancels the request upstream — the destination master receives Cancel,
+    // the entry terminates as cancelled, and zero state remains: the cartridge
+    // stops producing for a dead channel instead of running to completion
+    // against it.
+    func test7093_deadConsumerCancelsUpstream() throws {
+        let pair1 = FileHandle.socketPair() // switch reads, slave writes
+        let pair2 = FileHandle.socketPair() // slave reads, switch writes
+
+        final class RidBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value: MessageId?
+            let seen = DispatchSemaphore(value: 0)
+            func set(_ v: MessageId) {
+                lock.lock()
+                value = v
+                lock.unlock()
+                seen.signal()
+            }
+            func get() -> MessageId? {
+                lock.lock()
+                defer { lock.unlock() }
+                return value
+            }
+        }
+        let cancelled = RidBox()
+        let notified = DispatchSemaphore(value: 0)
+
+        // Mock cartridge master: RelayNotify + identity echo, then wait for
+        // the Cancel the dead-consumer path must send us.
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read, limits: Limits())
+            let writer = FrameWriter(handle: pair1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            notified.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            while true {
+                guard let f = try? reader.read() else { return }
+                if f.frameType == .cancel {
+                    cancelled.set(f.id)
+                    return
+                }
+            }
+        }
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
+
+        // A LIVE engine-origin request whose consumer is GONE: the external
+        // channel refuses delivery.
+        let key = RequestKey(xid: .uint(7), rid: .newUUID())
+        try switch_.requests.register(key, RequestState(
+            routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
+            origin: nil,
+            externalChannel: { _ in false }, // dead consumer
+            isPeer: false
+        ))
+
+        // The cartridge streams a response frame into the dead channel.
+        var log = Frame.log(id: key.rid, level: "info", message: "first result row")
+        log.routingId = key.xid
+        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: log)
+
+        // The switch must cancel upstream — the master observes Cancel for
+        // exactly the abandoned request.
+        XCTAssertEqual(
+            cancelled.seen.wait(timeout: .now() + 5), .success,
+            "the destination must receive Cancel for the abandoned request"
+        )
+        XCTAssertEqual(cancelled.get(), key.rid, "cancel targets the abandoned request")
+
+        // The drop is counted, the request terminates as cancelled, and no
+        // state remains (L7). The cancel dispatches off-lock, so poll briefly
+        // for the terminated accounting before asserting hard.
+        let deadline = Date().addingTimeInterval(5)
+        while (switch_.protocolStats().requests.terminatedByKind["cancelled"] ?? 0) < 1 {
+            if Date() > deadline { break }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        let stats = switch_.protocolStats()
+        XCTAssertEqual(
+            stats.drops.byReason["channel_closed"], 1,
+            "the abandoned frame is a counted channel_closed drop"
+        )
+        XCTAssertEqual(
+            stats.requests.terminatedByKind["cancelled"], 1,
+            "the abandoned request terminates as cancelled — it never lingers"
+        )
+        XCTAssertTrue(
+            stats.requests.active.isEmpty,
+            "no state remains for the abandoned request (L7)"
+        )
+        switch_.shutdown()
+    }
+
 
     // TEST7085: The RelayNotify capabilities payload carries the host's protocol stats snapshot, surviving the wire round-trip.
     func test7085_relayNotifyCarriesHostProtocolStats() throws {
