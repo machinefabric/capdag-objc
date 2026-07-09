@@ -730,7 +730,7 @@ final class ProtocolV3SwitchTests: XCTestCase {
             notified.signal()
             try! self.handleIdentityVerification(reader: reader, writer: writer)
             while cancels.get().count < 2 {
-                guard let frame = try? reader.read(), let f = frame else { return }
+                guard let f = try? reader.read() else { return }
                 if f.frameType == .cancel {
                     cancels.add(f.id)
                 }
