@@ -724,7 +724,19 @@ final class ProtocolV3SwitchTests: XCTestCase {
     // under test lives in the switch's request table, which is the layer
     // this mirror implements.)
     func test7059_terminalEndReleasesCreditAndLeaksNoState() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        // A real master slot must exist: the requests are registered with
+        // destination 0, and the cancel path WRITES a Cancel frame to that
+        // destination (the reference test likewise runs against an attached
+        // cartridge host). The far ends stay alive until shutdown so the
+        // write lands instead of failing.
+        let pair1 = FileHandle.socketPair() // switch reads, master writes
+        let pair2 = FileHandle.socketPair() // master reads, switch writes
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        defer {
+            switch_.shutdown()
+            try? pair1.write.close()
+            try? pair2.read.close()
+        }
 
         // Three requests, three terminal paths.
         let endKey = RequestKey(xid: .uint(1), rid: .newUUID())
@@ -766,7 +778,6 @@ final class ProtocolV3SwitchTests: XCTestCase {
             terminatedTotal, stats.requests.totalRegistered,
             "every registered request must be terminated exactly once (L7): \(stats.requests.terminatedByKind) vs total \(stats.requests.totalRegistered)"
         )
-        switch_.shutdown()
     }
 
     // TEST7061: The negotiated initial_credit is the element-wise min of all
