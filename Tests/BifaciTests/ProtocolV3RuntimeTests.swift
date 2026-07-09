@@ -171,14 +171,138 @@ final class ProtocolV3RuntimeTests: XCTestCase {
             try sender.send(Frame.progress(id: rid, progress: 1.0, message: "straggler"))
         }
 
-        // Source 2: closed-channel send (one drop).
+        // Source 2: closed-channel send (one drop). Must use a FRESH rid:
+        // `rid`'s END is already on the wire, so a frame for it would be
+        // claimed by the terminal gate (post_terminal) before ever reaching
+        // the closed writer — the Rust reference induces this drop through a
+        // gate-free sender for the same reason.
         writer.close()
-        _ = try? sender.send(Frame.log(id: rid, level: "info", message: "dead channel"))
+        _ = try? sender.send(Frame.log(id: MessageId.newUUID(), level: "info", message: "dead channel"))
 
         let snap = drops.snapshot()
         XCTAssertEqual(snap.total, 3, "each induced drop counted exactly once (L8)")
         XCTAssertEqual(snap.byReason["post_terminal"], 2)
         XCTAssertEqual(snap.byReason["channel_closed"], 1)
+    }
+
+    // MARK: - Sequence item reassembly (RFC 8742 fragments)
+
+    private func makeFragmentChunk(rid: MessageId, streamId: String, index: UInt64, payload: Data) -> Frame {
+        let checksum = Frame.computeChecksum(payload)
+        return Frame.chunk(reqId: rid, streamId: streamId, seq: index, payload: payload, chunkIndex: index, checksum: checksum)
+    }
+
+    // TEST1300: A sequence item CBOR-encoded once and split across multiple CHUNK frames (the emitListItem framing) reassembles into exactly one delivered item.
+    func test1300_sequenceItemFragmentsReassembleIntoOneItem() throws {
+        let rid = MessageId.newUUID()
+        let frames = BlockingQueue<Frame>()
+
+        // One large item, encoded once, then fragmented — exactly what
+        // emitListItem does for an item bigger than maxChunk. Per-frame
+        // decoding of any fragment fails, which is how cap→cap forwarding
+        // of rendered page images broke in the reference.
+        let itemBytes = (0..<60_000).map { UInt8($0 % 251) }
+        let encoded = Data(CBOR.byteString(itemBytes).encode())
+        let fragmentSize = 16 * 1024
+        XCTAssertGreaterThan(encoded.count, fragmentSize, "item must span multiple fragments")
+
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:ext=png;image", isSequence: true))
+        var index: UInt64 = 0
+        var offset = 0
+        while offset < encoded.count {
+            let end = min(offset + fragmentSize, encoded.count)
+            frames.push(makeFragmentChunk(rid: rid, streamId: "s1", index: index, payload: encoded.subdata(in: offset..<end)))
+            index += 1
+            offset = end
+        }
+        // A second, single-fragment item follows — reassembly must realign
+        // on the item boundary, not swallow it into the first.
+        let second = Data(CBOR.byteString([7, 7, 7]).encode())
+        frames.push(makeFragmentChunk(rid: rid, streamId: "s1", index: index, payload: second))
+        frames.push(Frame.streamEnd(reqId: rid, streamId: "s1", chunkCount: index + 1))
+        frames.push(Frame.end(id: rid))
+        frames.finish()
+
+        let package = demuxMultiStream(frameIterator: AnyIterator { frames.dequeue() })
+        let inputStream = try XCTUnwrap(package.nextStream()).get()
+        var items: [CBOR] = []
+        var iterator = inputStream.makeIterator()
+        while let item = iterator.next() {
+            items.append(try item.get())
+        }
+        XCTAssertEqual(items.count, 2, "exactly two items")
+        XCTAssertEqual(items[0], CBOR.byteString(itemBytes), "fragments must reassemble into the original item")
+        XCTAssertEqual(items[1], CBOR.byteString([7, 7, 7]))
+    }
+
+    // TEST1301: A sequence stream that ENDs mid-item (trailing fragment bytes that never complete a CBOR item) surfaces a hard decode error instead of silently dropping the partial item.
+    func test1301_sequenceStreamTruncatedMidItemFailsHard() throws {
+        let rid = MessageId.newUUID()
+        let frames = BlockingQueue<Frame>()
+
+        let encoded = Data(CBOR.byteString([UInt8](repeating: 42, count: 4096)).encode())
+        // Send only a strict prefix of the item, then STREAM_END.
+        let prefix = encoded.subdata(in: 0..<(encoded.count / 2))
+
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:ext=png;image", isSequence: true))
+        frames.push(makeFragmentChunk(rid: rid, streamId: "s1", index: 0, payload: prefix))
+        frames.push(Frame.streamEnd(reqId: rid, streamId: "s1", chunkCount: 1))
+        frames.push(Frame.end(id: rid))
+        frames.finish()
+
+        let package = demuxMultiStream(frameIterator: AnyIterator { frames.dequeue() })
+        let inputStream = try XCTUnwrap(package.nextStream()).get()
+        var iterator = inputStream.makeIterator()
+        let item = try XCTUnwrap(iterator.next(), "truncation must surface, not close silently")
+        XCTAssertThrowsError(try item.get()) { error in
+            XCTAssertTrue("\(error)".contains("mid-item"), "\(error)")
+        }
+    }
+
+    // TEST1302: Continuation fragments of a multi-frame sequence item are credited back by the demux on arrival — the handler grants one frame per consumed item, so without fragment grants an item spanning more frames than the credit window could never finish arriving.
+    func test1302_sequenceFragmentFramesAreCreditedOnArrival() throws {
+        let grantSink = RecordingFrameSender()
+        let rid = MessageId.newUUID()
+        let frames = BlockingQueue<Frame>()
+
+        // One item spanning 4 fragments against a credit window of 2: only
+        // demux-side fragment grants keep the producer's window open.
+        let itemBytes = [UInt8](repeating: 9, count: 4096)
+        let encoded = Data(CBOR.byteString(itemBytes).encode())
+        let fragmentSize = (encoded.count + 3) / 4
+
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:ext=png;image", isSequence: true))
+        var index: UInt64 = 0
+        var offset = 0
+        while offset < encoded.count {
+            let end = min(offset + fragmentSize, encoded.count)
+            frames.push(makeFragmentChunk(rid: rid, streamId: "s1", index: index, payload: encoded.subdata(in: offset..<end)))
+            index += 1
+            offset = end
+        }
+        XCTAssertEqual(index, 4)
+        frames.push(Frame.streamEnd(reqId: rid, streamId: "s1", chunkCount: index))
+        frames.push(Frame.end(id: rid))
+        frames.finish()
+
+        let package = demuxMultiStream(
+            frameIterator: AnyIterator { frames.dequeue() },
+            credit: InputCreditContext(sender: grantSink, rid: rid, xid: nil, initialCredit: 2)
+        )
+        let inputStream = try XCTUnwrap(package.nextStream()).get()
+        var iterator = inputStream.makeIterator()
+        let first = try XCTUnwrap(iterator.next())
+        XCTAssertEqual(try first.get(), CBOR.byteString(itemBytes))
+        XCTAssertNil(iterator.next())
+
+        // Continuation fragments (all but the item's first frame) must have
+        // been credited by the demux as they arrived: 3 immediate one-frame
+        // grants. The item's own frame is granted by handler consumption.
+        var demuxGranted: UInt64 = 0
+        for frame in grantSink.snapshot() where frame.frameType == .credit {
+            demuxGranted += frame.creditCount ?? 0
+        }
+        XCTAssertGreaterThanOrEqual(demuxGranted, index - 1, "expected at least \(index - 1) fragment credits, saw \(demuxGranted)")
     }
 
     // MARK: - Credit flow control (L9/L10/L12/L14)

@@ -193,6 +193,24 @@ final class InputGrantEmitter: @unchecked Sendable {
         // at the ChannelFrameSender).
         try? sender.send(frame)
     }
+
+    /// Build a second emitter over the SAME window/sender for the demux's
+    /// fragment crediting on sequence streams, with `batch = 1` so every
+    /// grant flushes immediately. Immediate flushing is load-bearing: the
+    /// demux only runs when frames arrive, so a batched (held) grant while
+    /// the producer is stalled on exactly that credit would deadlock the
+    /// stream mid-item (L10 has no other flush point inside the demux).
+    func fragmentSibling() -> InputGrantEmitter {
+        return InputGrantEmitter(
+            sender: sender,
+            rid: rid,
+            xid: xid,
+            streamId: streamId,
+            direction: direction,
+            batch: 1,
+            window: window
+        )
+    }
 }
 
 /// Everything the demux needs to credit a request's input streams:
@@ -1245,6 +1263,54 @@ public final class BlockingQueue<T>: @unchecked Sendable {
     }
 }
 
+/// Reassembly state for one sequence-mode input stream (`isSequence = true`
+/// on STREAM_START). Sequence producers (`emitListItem`) CBOR-encode each
+/// item once and split the encoded bytes across CHUNK frames at `maxChunk`
+/// boundaries — a frame payload is a raw RFC 8742 fragment, NOT a
+/// self-contained CBOR value. The demux must therefore buffer fragments and
+/// decode at item granularity; decoding per frame fails on any item larger
+/// than `maxChunk` (mirrors the Rust reference's `SeqReassembly`).
+internal final class SeqReassembly {
+    /// Raw fragment bytes of the item currently being received.
+    var buf: [UInt8] = []
+    /// Immediate-flush grant emitter for fragment continuation frames.
+    /// Credit is frame-granular on the wire but the handler consumes (and
+    /// grants) per ITEM; every fragment after an item's first frame is
+    /// credited back here on arrival, so an item spanning more frames than
+    /// the credit window can still finish arriving. `nil` in uncredited
+    /// contexts.
+    let fragmentGrants: InputGrantEmitter?
+
+    init(fragmentGrants: InputGrantEmitter?) {
+        self.fragmentGrants = fragmentGrants
+    }
+}
+
+/// Try to decode one self-delimiting CBOR item from the front of `buf`.
+///
+/// - Returns `(value, consumed)` for one complete item (`consumed` bytes used —
+///   measured by re-encoding, the same canonical-round-trip assumption
+///   `splitCborSequence` relies on).
+/// - Returns `nil` when `buf` holds only a prefix of an item; wait for more
+///   frames. (CBOR definite-length encoding is prefix-free, so a truncated
+///   item can never mis-decode as a complete one.)
+/// - Throws when the bytes are not valid CBOR at all.
+internal func tryDecodeSequenceItem(_ buf: [UInt8]) throws -> (CBOR, Int)? {
+    if buf.isEmpty {
+        return nil
+    }
+    let decoder = CBORDecoder(input: buf)
+    do {
+        guard let value = try decoder.decodeItem() else {
+            return nil
+        }
+        let consumed = value.encode().count
+        return (value, consumed)
+    } catch CBORError.unfinishedSequence {
+        return nil
+    }
+}
+
 /// Demux a single response stream from frame channel.
 /// Used by PeerCall.finish() to convert response frames into PeerResponse.
 ///
@@ -1254,11 +1320,28 @@ public final class BlockingQueue<T>: @unchecked Sendable {
 /// in real-time, not buffered until data starts. This is critical for keeping
 /// the engine's activity timer alive during long peer calls (e.g., model downloads).
 internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, grants: InputGrantEmitter? = nil) -> PeerResponse {
+    // Fragment crediting for sequence-mode responses (same scheme as
+    // `demuxMultiStream`): the caller grants one frame per consumed ITEM,
+    // so continuation fragments are credited back on arrival here.
+    let fragmentGrants = grants?.fragmentSibling()
+    // Sequence reassembly for the single response stream (nil until a
+    // STREAM_START with isSequence=true arrives). Sequence frame payloads
+    // are RFC 8742 fragments — decode at item granularity.
+    var seq: SeqReassembly? = nil
+    // Items already decoded but not yet yielded (one fragment frame can
+    // complete zero or several items).
+    var pendingItems: [PeerResponseItem] = []
+
     let iterator = AnyIterator<PeerResponseItem> {
+        if !pendingItems.isEmpty {
+            return pendingItems.removeFirst()
+        }
         while let frame = responseRx.next() {
             switch frame.frameType {
             case .streamStart:
-                // Structural frame — skip, yield next item
+                if frame.isSequence == true {
+                    seq = SeqReassembly(fragmentGrants: fragmentGrants)
+                }
                 continue
 
             case .chunk:
@@ -1275,6 +1358,37 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                     return .data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")))
                 }
 
+                if let seq = seq {
+                    // Sequence stream: raw RFC 8742 fragment — buffer and
+                    // deliver at ITEM granularity (see `SeqReassembly`).
+                    if !seq.buf.isEmpty {
+                        seq.fragmentGrants?.consumed()
+                    }
+                    seq.buf.append(contentsOf: payload)
+                    decodeLoop: while true {
+                        do {
+                            guard let (value, consumed) = try tryDecodeSequenceItem(seq.buf) else {
+                                break decodeLoop // prefix — need more frames
+                            }
+                            seq.buf.removeFirst(consumed)
+                            pendingItems.append(.data(.success(value)))
+                            if seq.buf.isEmpty {
+                                break decodeLoop
+                            }
+                        } catch {
+                            pendingItems.append(.data(.failure(.decode("Failed to decode CBOR sequence item: \(error)"))))
+                            seq.buf.removeAll()
+                            break decodeLoop
+                        }
+                    }
+                    if pendingItems.isEmpty {
+                        continue // fragment only — no complete item yet
+                    }
+                    return pendingItems.removeFirst()
+                }
+
+                // Scalar stream: every frame payload is a self-contained
+                // CBOR value.
                 do {
                     guard let value = try CBOR.decode([UInt8](payload)) else {
                         return .data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
@@ -1288,7 +1402,14 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                 return .log(frame)
 
             case .streamEnd, .end:
-                // Terminal — stream is done
+                // Sequence stream ending mid-item is a truncation — surface
+                // it, never silently drop the partial item.
+                if let s = seq, !s.buf.isEmpty {
+                    seq = nil
+                    return .data(.failure(.decode(
+                        "sequence stream ended mid-item: \(s.buf.count) trailing bytes do not form a complete CBOR item"
+                    )))
+                }
                 return nil
 
             case .err:
@@ -1330,6 +1451,10 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
         // CREDIT_VIOLATION. The demux itself never blocks — accounting keeps
         // control frames flowing regardless of data pressure.
         var streamWindows: [String: WindowCounter] = [:]
+        // Sequence-mode streams: streamId → item reassembly state (see
+        // `SeqReassembly` — frame payloads are RFC 8742 fragments, decoded
+        // at item granularity).
+        var seqReassembly: [String: SeqReassembly] = [:]
 
         func finishAll() {
             for (_, queue) in streamChannels {
@@ -1361,6 +1486,11 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                         direction: .request,
                         batch: max(ctx.initialCredit / 2, 1),
                         window: window
+                    )
+                }
+                if frame.isSequence == true {
+                    seqReassembly[streamId] = SeqReassembly(
+                        fragmentGrants: grants?.fragmentSibling()
                     )
                 }
 
@@ -1414,19 +1544,59 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                     continue
                 }
 
-                do {
-                    guard let value = try CBOR.decode([UInt8](payload)) else {
-                        queue.push(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
-                        continue
+                if let seq = seqReassembly[streamId] {
+                    // Sequence stream: the payload is a raw RFC 8742
+                    // fragment. Buffer it and deliver at ITEM granularity
+                    // (see `SeqReassembly`).
+                    if !seq.buf.isEmpty {
+                        // Continuation fragment: credit it back immediately —
+                        // the handler grants one frame per consumed ITEM, so
+                        // without this an item spanning more frames than the
+                        // credit window could never finish arriving.
+                        seq.fragmentGrants?.consumed()
                     }
-                    queue.push(.success(value))
-                } catch {
-                    queue.push(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+                    seq.buf.append(contentsOf: payload)
+                    decodeLoop: while true {
+                        do {
+                            guard let (value, consumed) = try tryDecodeSequenceItem(seq.buf) else {
+                                break decodeLoop // prefix — need more frames
+                            }
+                            seq.buf.removeFirst(consumed)
+                            queue.push(.success(value))
+                            if seq.buf.isEmpty {
+                                break decodeLoop
+                            }
+                        } catch {
+                            queue.push(.failure(.decode("Failed to decode CBOR sequence item: \(error)")))
+                            seq.buf.removeAll()
+                            break decodeLoop
+                        }
+                    }
+                } else {
+                    // Scalar stream: every frame payload is a self-contained
+                    // CBOR value (`write` wraps each piece as its own
+                    // byteString).
+                    do {
+                        guard let value = try CBOR.decode([UInt8](payload)) else {
+                            queue.push(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")))
+                            continue
+                        }
+                        queue.push(.success(value))
+                    } catch {
+                        queue.push(.failure(.decode("Failed to decode CBOR chunk: \(error)")))
+                    }
                 }
 
             case .streamEnd:
                 guard let streamId = frame.streamId else {
                     continue
+                }
+                // Sequence stream ending mid-item is a truncation — surface
+                // it, never silently drop the partial item.
+                if let seq = seqReassembly.removeValue(forKey: streamId), !seq.buf.isEmpty {
+                    streamChannels[streamId]?.push(.failure(.decode(
+                        "sequence stream ended mid-item: \(seq.buf.count) trailing bytes do not form a complete CBOR item"
+                    )))
                 }
                 // Regular stream ended — close its live channel so the
                 // handler's iteration completes.
