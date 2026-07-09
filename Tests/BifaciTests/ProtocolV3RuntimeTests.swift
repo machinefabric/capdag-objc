@@ -727,10 +727,16 @@ final class ProtocolV3SwitchTests: XCTestCase {
         // A real master slot must exist: the requests are registered with
         // destination 0, and the cancel path WRITES a Cancel frame to that
         // destination (the reference test likewise runs against an attached
-        // cartridge host). The far ends stay alive until shutdown so the
-        // write lands instead of failing.
+        // cartridge host). Init BLOCKS reading each master's initial
+        // RelayNotify, so the mock master must send it up front (empty caps
+        // → no identity probe). The far ends stay alive until shutdown so
+        // the Cancel write lands instead of failing.
         let pair1 = FileHandle.socketPair() // switch reads, master writes
         let pair2 = FileHandle.socketPair() // master reads, switch writes
+        DispatchQueue.global().async {
+            let writer = FrameWriter(handle: pair1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [], limits: Limits())
+        }
         let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
         defer {
             switch_.shutdown()
@@ -793,19 +799,24 @@ final class ProtocolV3SwitchTests: XCTestCase {
         let pairB2 = FileHandle.socketPair()
 
         let aNotified = DispatchSemaphore(value: 0)
-        let bMayNotify = DispatchSemaphore(value: 0)
+        let bMayRenotify = DispatchSemaphore(value: 0)
 
-        // Master A proposes the DEFAULT limits. Empty caps → no identity
-        // probe → the master stays healthy and its limits count.
+        // Init BLOCKS reading each master's initial RelayNotify, so BOTH
+        // masters must notify up front. Empty caps → no identity probe →
+        // the masters stay healthy and their limits count.
+        // Master A proposes the DEFAULT limits.
         DispatchQueue.global().async {
             let writer = FrameWriter(handle: pairA1.write, limits: Limits())
             try! self.sendNotify(writer: writer, capabilities: [], limits: Limits())
             aNotified.signal()
         }
-        // Master B proposes initialCredit=8 — everything else default.
+        // Master B first proposes the default too, then — once released —
+        // RENEGOTIATES down to initialCredit=8 via a RelayNotify update
+        // (the same wire path a live host uses to republish its limits).
         DispatchQueue.global().async {
             let writer = FrameWriter(handle: pairB1.write, limits: Limits())
-            bMayNotify.wait()
+            try! self.sendNotify(writer: writer, capabilities: [], limits: Limits())
+            bMayRenotify.wait()
             var low = Limits()
             low.initialCredit = 8
             try! self.sendNotify(writer: writer, capabilities: [], limits: low)
@@ -824,7 +835,7 @@ final class ProtocolV3SwitchTests: XCTestCase {
         )
 
         // Part 2: B's low proposal drops the negotiated value to min(32, 8) = 8.
-        bMayNotify.signal()
+        bMayRenotify.signal()
         let deadline = Date().addingTimeInterval(5)
         while switch_.limits().initialCredit != 8 {
             if Date() > deadline {
