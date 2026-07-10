@@ -168,12 +168,14 @@ public func decodeFrame(_ data: Data) throws -> Frame {
             if bytes.count == 16 {
                 id = .uuid(Data(bytes))
             } else {
-                id = .uint(0)
+                // A present-but-malformed id is corruption — fail hard rather than
+                // fabricate .uint(0), which would forge a routing key and misroute.
+                throw FrameError.invalidFrame("id: byte string must be exactly 16 bytes for a UUID, got \(bytes.count)")
             }
         case .unsignedInt(let n):
             id = .uint(n)
         default:
-            id = .uint(0)
+            throw FrameError.invalidFrame("id: must be a 16-byte UUID or a uint")
         }
     } else {
         throw FrameError.invalidFrame("Missing id")
@@ -226,17 +228,20 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         frame.mediaUrn = s
     }
 
-    // Extract routingId
+    // Extract routingId — optional (absent ⇒ nil), but a present-but-malformed
+    // routing_id is corruption: fail hard rather than silently drop the relay hint.
     if let routingIdValue = map[.unsignedInt(FrameKey.routingId.rawValue)] {
         switch routingIdValue {
         case .byteString(let bytes):
             if bytes.count == 16 {
                 frame.routingId = .uuid(Data(bytes))
+            } else {
+                throw FrameError.invalidFrame("routing_id: byte string must be exactly 16 bytes, got \(bytes.count)")
             }
         case .unsignedInt(let n):
             frame.routingId = .uint(n)
         default:
-            break
+            throw FrameError.invalidFrame("routing_id: must be a 16-byte UUID or a uint")
         }
     }
 

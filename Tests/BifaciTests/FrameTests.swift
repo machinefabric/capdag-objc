@@ -53,6 +53,58 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(FrameType.credit.rawValue, 13)
     }
 
+    // MARK: - Strict id decode (TEST7003-7005)
+
+    // TEST7003: decodeFrame rejects a present-but-malformed id (wrong byte length) as a
+    // hard error instead of fabricating .uint(0), which would forge a routing key from
+    // corruption and misroute the frame.
+    func test7003_decodeRejectsMalformedIdWrongLength() {
+        let map: CBOR = .map([
+            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(3),
+            .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(UInt64(FrameType.req.rawValue)),
+            // 5 bytes: present but not a valid 16-byte UUID.
+            .unsignedInt(FrameKey.id.rawValue): .byteString([1, 2, 3, 4, 5]),
+        ])
+        XCTAssertThrowsError(try decodeFrame(Data(map.encode())))
+    }
+
+    // TEST7004: decodeFrame rejects an id of the wrong CBOR type as a hard error.
+    func test7004_decodeRejectsMalformedIdWrongType() {
+        let map: CBOR = .map([
+            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(3),
+            .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(UInt64(FrameType.req.rawValue)),
+            .unsignedInt(FrameKey.id.rawValue): .utf8String("not-an-id"),
+        ])
+        XCTAssertThrowsError(try decodeFrame(Data(map.encode())))
+    }
+
+    // TEST7005: decodeFrame rejects a present-but-malformed routing_id (wrong length or
+    // wrong type) rather than silently dropping it — a dropped relay hint would let the
+    // switch treat a routed response as a fresh top-level request. A well-formed
+    // routing_id still decodes.
+    func test7005_decodeRejectsMalformedRoutingId() {
+        func base() -> [CBOR: CBOR] {
+            [
+                .unsignedInt(FrameKey.version.rawValue): .unsignedInt(3),
+                .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(UInt64(FrameType.req.rawValue)),
+                .unsignedInt(FrameKey.id.rawValue): .unsignedInt(1),
+            ]
+        }
+        // Wrong byte length.
+        var m = base()
+        m[.unsignedInt(FrameKey.routingId.rawValue)] = .byteString([9, 9, 9])
+        XCTAssertThrowsError(try decodeFrame(Data(CBOR.map(m).encode())))
+        // Wrong CBOR type.
+        m = base()
+        m[.unsignedInt(FrameKey.routingId.rawValue)] = .utf8String("not-a-routing-id")
+        XCTAssertThrowsError(try decodeFrame(Data(CBOR.map(m).encode())))
+        // Well-formed routing_id still decodes.
+        m = base()
+        m[.unsignedInt(FrameKey.routingId.rawValue)] = .unsignedInt(7)
+        let decoded = try? decodeFrame(Data(CBOR.map(m).encode()))
+        XCTAssertEqual(decoded?.routingId, .uint(7))
+    }
+
     // MARK: - Message ID Tests (TEST174-177, TEST202-203)
 
     // TEST174: Test MessageId::new_uuid generates valid UUID that roundtrips through string conversion
