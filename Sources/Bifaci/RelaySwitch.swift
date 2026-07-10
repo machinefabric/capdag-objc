@@ -620,6 +620,14 @@ public final class RelaySwitch: @unchecked Sendable {
                         let code = frame.errorCode ?? "UNKNOWN"
                         let msg = frame.errorMessage ?? "no message"
                         throw RelaySwitchError.protocolError("master \(masterIdx): identity verification failed: [\(code)] \(msg)")
+                    case .log, .credit, .heartbeat:
+                        // Control/side-channel frames are legal ANYWHERE during the
+                        // probe (spec 12.4: LOG interleaves without affecting data
+                        // flow; CREDIT/HEARTBEAT are the control plane the writer
+                        // gate itself exempts, L4). A v3 cartridge crediting its
+                        // probe input as it consumes (L10) must not fail identity
+                        // verification.
+                        break
                     default:
                         throw RelaySwitchError.protocolError("master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)")
                     }
@@ -953,6 +961,14 @@ public final class RelaySwitch: @unchecked Sendable {
                         let msg = frame.errorMessage ?? "no message"
                         identityFailure = "new master \(masterIdx): identity verification failed: [\(code)] \(msg)"
                         break probeLoop
+                    case .log, .credit, .heartbeat:
+                        // Control/side-channel frames are legal ANYWHERE during the
+                        // probe (spec 12.4: LOG interleaves without affecting data
+                        // flow; CREDIT/HEARTBEAT are the control plane the writer
+                        // gate itself exempts, L4). A v3 cartridge crediting its
+                        // probe input as it consumes (L10) must not fail identity
+                        // verification.
+                        break
                     default:
                         identityFailure = "new master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)"
                         break probeLoop
@@ -1977,6 +1993,14 @@ public final class RelaySwitch: @unchecked Sendable {
                 let msg = frame.errorMessage ?? "no message"
                 failureDetail = "identity probe failed: [\(code)] \(msg)"
                 break recvLoop
+            case .log, .credit, .heartbeat:
+                // Control/side-channel frames are legal ANYWHERE during the
+                // probe (spec 12.4: LOG interleaves without affecting data
+                // flow; CREDIT/HEARTBEAT are the control plane the writer
+                // gate itself exempts, L4). A v3 cartridge crediting its
+                // probe input as it consumes (L10) must not fail identity
+                // verification.
+                break
             default:
                 failureDetail = "identity probe: unexpected frame type \(frame.frameType)"
                 break recvLoop
