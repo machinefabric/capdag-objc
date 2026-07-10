@@ -2858,6 +2858,14 @@ public final class CartridgeHost: @unchecked Sendable {
                 let code = frame.errorCode ?? "UNKNOWN"
                 let msg = frame.errorMessage ?? "no message"
                 throw CartridgeHostError.handshakeFailed("Identity verification failed: [\(code)] \(msg)")
+            case .log, .credit, .heartbeat:
+                // Control/side-channel frames are legal ANYWHERE during the
+                // probe (spec 12.3/12.4: LOG interleaves without affecting
+                // data flow; CREDIT/HEARTBEAT are the control plane the
+                // writer gate itself exempts, L4). A v3 cartridge crediting
+                // its probe input as it consumes (L10) must not fail
+                // identity verification.
+                break
             default:
                 throw CartridgeHostError.handshakeFailed("Identity verification: unexpected frame type \(frame.frameType)")
             }
