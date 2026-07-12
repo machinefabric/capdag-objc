@@ -1,4 +1,4 @@
-# Swift/ObjC Test Catalog
+# CapDag-ObjC/Swift Test Catalog
 
 **Total Tests:** 881
 
@@ -12,7 +12,7 @@
 
 All numbered test numbers are unique.
 
-This catalog lists all tests in the Swift/ObjC codebase.
+This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
@@ -706,10 +706,10 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1872 | `test1872_registryUrlFromBuildEnvPassesThroughNonempty` | TEST1872: `registry_url_from_build_env` passes a non-empty registry URL through unchanged. This is the function that decides the engine's baked PRIMARY registry (surfaced over SystemService.HealthStatus); a published build must report exactly the URL it was compiled with. | Tests/BifaciTests/ManifestTests.swift:308 |
 | test1873 | `test1873_registryUrlFromBuildEnvNoneForDev` | TEST1873: an unset env (None) yields None — a dev build has no baked registry, so the engine reports an empty primary-registry URL and loads only `dev/` cartridges. This is the dev-engine contract the registry sheets rely on to omit the read-only "Primary · built-in" row. | Tests/BifaciTests/ManifestTests.swift:314 |
 | test1874 | `test1874_registryUrlFromBuildEnvRejectsEmptyString` | TEST1874: an exported-but-empty env (the empty string) is neither a dev build nor a valid identity and MUST fail hard, so the build can never silently hash the empty string into a fake registry slug. We assert the failure AND its exact message — the catchable Swift analog of Rust's compile-time panic — so a regression that dropped the check (or replaced it with a silent fallback) is caught rather than passing on a bogus empty primary registry. | Tests/BifaciTests/ManifestTests.swift:325 |
-| test1875 | `test1875_scanAllReachesBothDevAndRegistrySlugs` | TEST1875: scan-all — a registry slug folder AND the dev slot present on disk are BOTH scanned, regardless of the host's own baked registry. The dev cartridge (null registry under dev/) and the registry cartridge (its url hashing to its slug folder) each reach their probe. Both fixtures lack a real bifaci binary, so both end at HandshakeFailed — proving discovery REACHED them (was not filtered out by a registry pin), which is the behavior under test. A registry-pin rejection would instead surface BadInstallation and never probe. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:86 |
-| test1876 | `test1876_otherChannelSubtreeIsSkipped` | TEST1876: only the host's channel subtree is scanned. A cartridge under a slug's `release/` folder is invisible to a nightly host even though the slug folder is present (its `nightly/` subtree is absent). | Tests/BifaciTests/CartridgeDiscoveryTests.swift:113 |
-| test1877 | `test1877_registryCartridgeUnderWrongSlugIsBadInstall` | TEST1877: a registry cartridge hand-copied under the WRONG registry slug folder fails the three-place rule (BadInstallation) — scan-all does not mean "accept anywhere", placement must still be self-consistent. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:127 |
-| test1878 | `test1878_bundledProviderWithoutBakedHashIsRejected` | TEST1878: a cartridge marked `installed_from: bundle` with no baked hash is rejected as BadInstallation — the bundled-integrity gate fires before the probe. Non-macOS only: on macOS the baked-hash path is intentionally absent (OS code-signature is the guard), so a bundled provider is accepted there and would instead end at the probe. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:147 |
+| test1875 | `test1875_scanAllReachesBothDevAndRegistrySlugs` | TEST1875: scan-all — a registry slug folder AND the dev slot present on disk are BOTH scanned, regardless of the host's own baked registry. The dev cartridge (null registry under dev/) and the registry cartridge (its url hashing to its slug folder) each reach their probe. Both fixtures lack a real bifaci binary, so both end at HandshakeFailed — proving discovery REACHED them (was not filtered out by a registry pin), which is the behavior under test. A registry-pin rejection would instead surface BadInstallation and never probe. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:89 |
+| test1876 | `test1876_otherChannelSubtreeIsSkipped` | TEST1876: only the host's channel subtree is scanned. A cartridge under a slug's `release/` folder is invisible to a nightly host even though the slug folder is present (its `nightly/` subtree is absent). | Tests/BifaciTests/CartridgeDiscoveryTests.swift:117 |
+| test1877 | `test1877_registryCartridgeUnderWrongSlugIsBadInstall` | TEST1877: a registry cartridge hand-copied under the WRONG registry slug folder fails the three-place rule (BadInstallation) — scan-all does not mean "accept anywhere", placement must still be self-consistent. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:131 |
+| test1878 | `test1878_bundledProviderWithoutBakedHashIsRejected` | TEST1878: a cartridge marked `installed_from: bundle` with no baked hash is rejected as BadInstallation — the bundled-integrity gate fires before the probe. Non-macOS only: on macOS the baked-hash path is intentionally absent (OS code-signature is the guard), so a bundled provider is accepted there and would instead end at the probe. | Tests/BifaciTests/CartridgeDiscoveryTests.swift:151 |
 | test1879 | `test1879_syncRosterAddsAndRemovesRegisteredDirLive` | TEST1879: SyncRoster updates the LIVE host inventory in place — the engine sees an added registered-dir cartridge via a fresh RelayNotify without reconnecting, and a subsequent empty sync removes it. This is the macOS-XPC `syncDiscoveryOutcomes` parity path the daemon uses after a registry verdict flips a held cartridge to Listed. | Tests/BifaciTests/SyncRosterTests.swift:36 |
 | test1880 | `test1880_AliasNameNormalizationRules` | TEST1880: alias name normalization lowercases and accepts the allowed character class; rejects colon, whitespace, and out-of-class chars with the right error. A broken validator would let a URN-shaped or whitespace name through, or mangle a valid name. | Tests/CapDAGTests/CSFabricAliasTests.m:37 |
 | test1881 | `test1881_TokenURNvsAliasDetection` | TEST1881: URN-vs-alias detection keys purely on the presence of ':'. The whole design rests on this discriminator being exact. | Tests/CapDAGTests/CSFabricAliasTests.m:49 |
@@ -899,7 +899,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test7093 | `test7093_deadConsumerCancelsUpstream` | TEST7093: A response frame for a LIVE request whose external consumer is gone (dropped/timed-out caller) is a counted channel_closed drop AND cancels the request upstream — the destination master receives Cancel, the entry terminates as cancelled, and zero state remains: the cartridge stops producing for a dead channel instead of running to completion against it. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:863 |
 ---
 
-*Generated from Swift/ObjC source tree*
+*Generated from CapDag-ObjC/Swift source tree*
 *Total tests: 881*
 *Total numbered tests: 881*
 *Total unnumbered tests: 0*
