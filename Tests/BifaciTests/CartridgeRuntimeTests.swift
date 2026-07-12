@@ -654,7 +654,7 @@ final class CborFilePathConversionTests: XCTestCase {
         return CapDefinition(
             urn: urn,
             title: title,
-            command: command,
+            aliases: [command],
             capDescription: nil,
             args: args
         )
