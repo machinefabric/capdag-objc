@@ -1,4 +1,5 @@
 import XCTest
+import CapDAG
 @testable import Bifaci
 
 // =============================================================================
@@ -17,13 +18,15 @@ final class CartridgeDiscoveryTests: XCTestCase {
     // MARK: - Helpers
 
     private func nightlyDevIdentity() -> DiscoveryIdentity {
-        DiscoveryIdentity(channel: .nightly, registryURL: nil, fabricManifestVersion: 1)
+        DiscoveryIdentity(channel: .nightly, registryURL: nil, fabricManifestVersion: 1,
+                          cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion)
     }
 
-    /// Lay down `{root}/{slug}/{channelFolder}/{name}/{version}/`. When
-    /// `cartridgeJSON` is non-nil, also write it plus an executable `entry`
-    /// binary so `readFromDir` accepts the directory and discovery reaches its
-    /// own identity checks.
+    /// Lay down `{root}/{slug}/v{CSBakedCartridgeRegistryVersion}/{channelFolder}/{name}/{version}/`
+    /// — the version level pins to the build's baked registry version, exactly
+    /// where discovery scans. When `cartridgeJSON` is non-nil, also write it plus
+    /// an executable `entry` binary so `readFromDir` accepts the directory and
+    /// discovery reaches its own identity checks.
     private func installFixture(
         root: String,
         slug: String,
@@ -35,7 +38,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
     ) throws {
         let fm = FileManager.default
         var dir = root
-        for component in [slug, channelFolder, name, version] {
+        for component in [slug, "v\(CSBakedCartridgeRegistryVersion)", channelFolder, name, version] {
             dir = (dir as NSString).appendingPathComponent(component)
         }
         try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -92,7 +95,8 @@ final class CartridgeDiscoveryTests: XCTestCase {
         let host = DiscoveryIdentity(
             channel: .nightly,
             registryURL: "https://other.example.com/manifest",
-            fabricManifestVersion: 1
+            fabricManifestVersion: 1,
+            cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion
         )
         try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "devcart", version: "1.0.0", cartridgeJSON: devCartridgeJSON("nightly", 1), entry: "cart")
         try installFixture(root: root, slug: rslug, channelFolder: "nightly", name: "regcart", version: "1.0.0", cartridgeJSON: registryCartridgeJSON(url, "nightly", 1), entry: "cart")

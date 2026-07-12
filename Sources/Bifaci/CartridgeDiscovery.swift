@@ -25,11 +25,16 @@ public struct DiscoveryIdentity {
     /// then live under the reserved dev slug).
     public let registryURL: String?
     public let fabricManifestVersion: UInt32
+    /// Cartridge registry regime version this host speaks — an on-disk PATH
+    /// level: cartridges live under `{slug}/v{cartridgeRegistryVersion}/
+    /// {channel}/…`, pinned like the channel so a v1 host never scans a v2 tree.
+    public let cartridgeRegistryVersion: UInt32
 
-    public init(channel: CartridgeChannel, registryURL: String?, fabricManifestVersion: UInt32) {
+    public init(channel: CartridgeChannel, registryURL: String?, fabricManifestVersion: UInt32, cartridgeRegistryVersion: UInt32) {
         self.channel = channel
         self.registryURL = registryURL
         self.fabricManifestVersion = fabricManifestVersion
+        self.cartridgeRegistryVersion = cartridgeRegistryVersion
     }
 
     /// On-disk top-level slug for THIS host's own baked registry (`dev` when
@@ -208,10 +213,13 @@ public func discoverCartridges(_ cartridgesRoot: String, identity: DiscoveryIden
         guard fm.fileExists(atPath: slugDir, isDirectory: &slugIsDir), slugIsDir.boolValue else {
             continue
         }
-        let scanRoot = (slugDir as NSString).appendingPathComponent(identity.channel.asString)
+        // {slug}/v{cartridgeRegistryVersion}/{channel}/… — the registry regime
+        // version is a path level pinned to the host's version (like channel).
+        let versionDir = (slugDir as NSString).appendingPathComponent("v\(identity.cartridgeRegistryVersion)")
+        let scanRoot = (versionDir as NSString).appendingPathComponent(identity.channel.asString)
         var scanIsDir: ObjCBool = false
         guard fm.fileExists(atPath: scanRoot, isDirectory: &scanIsDir), scanIsDir.boolValue else {
-            // This slug has no subtree for the host's channel — nothing to do.
+            // This slug has no subtree for the host's (version, channel) — skip.
             continue
         }
         try scanChannelRoot(scanRoot: scanRoot, expectedSlug: slugName, identity: identity, discovered: &discovered)

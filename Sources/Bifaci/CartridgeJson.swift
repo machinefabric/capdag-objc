@@ -8,44 +8,63 @@
 //
 
 import Foundation
-import CommonCrypto
 
 // MARK: - Registry slug
 
 /// Reserved folder name for cartridges with no registry (developer-built
-/// cartridges installed without `--registry`). The literal can never
-/// collide with a 16-character hex slug.
+/// cartridges installed without `--registry`). A real registry authority is
+/// never the literal "dev".
 public let cartridgeDevSlug = "dev"
 
-/// Number of hex characters in a registry slug.
-public let cartridgeSlugHexLen = 16
+/// The authority (host[:port]) of a registry URL: after `://` up to the next
+/// `/`, `?`, or `#` (path/query/fragment discarded).
+private func cartridgeAuthorityOf(_ url: String) -> Substring {
+    let afterScheme: Substring
+    if let r = url.range(of: "://") {
+        afterScheme = url[r.upperBound...]
+    } else {
+        afterScheme = url[...]
+    }
+    if let idx = afterScheme.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
+        return afterScheme[..<idx]
+    }
+    return afterScheme
+}
 
-/// Compute the on-disk slug for a registry URL.
+private func cartridgeIsAuthorityScalar(_ v: UInt32) -> Bool {
+    (v >= 97 && v <= 122) || (v >= 48 && v <= 57) || v == 46 || v == 45
+}
+
+/// Compute the on-disk slug for a registry URL. Mirrors
+/// capdag::cartridge_slug::slug_for byte-for-byte:
 ///
 /// `nil` (a dev cartridge) → the literal `dev` slug.
-/// non-nil URL → the first 16 lowercase hex chars of `sha256(url)`.
-///
-/// The URL is hashed verbatim. Two URLs that differ in any byte hash to
-/// different slugs — intentional, because the URL is the registry's
-/// identity and the installer treats it as opaque.
+/// non-nil URL → a path-safe transform of the URL's authority (host[:port]):
+/// ASCII-lowercased, every character outside `[a-z0-9.-]` replaced by `-`.
+/// Depends ONLY on the authority — path (incl. the version segment), query,
+/// trailing slash, and host case do not change it.
 public func slugFor(_ registryURL: String?) -> String {
     guard let url = registryURL else {
         return cartridgeDevSlug
     }
-    let data = Data(url.utf8)
-    var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-    data.withUnsafeBytes { bytes in
-        _ = CC_SHA256(bytes.baseAddress, CC_LONG(data.count), &digest)
+    var out = String.UnicodeScalarView()
+    for scalar in cartridgeAuthorityOf(url).unicodeScalars {
+        var v = scalar.value
+        if v >= 65 && v <= 90 { v += 32 }  // ASCII A-Z -> a-z only
+        if cartridgeIsAuthorityScalar(v) {
+            out.append(Unicode.Scalar(v)!)
+        } else {
+            out.append("-")
+        }
     }
-    let hex = digest.map { String(format: "%02x", $0) }.joined()
-    return String(hex.prefix(cartridgeSlugHexLen))
+    return String(out)
 }
 
-/// True if `s` could be a valid slug for a non-dev registry (16 lowercase
-/// hex chars).
+/// True if `s` could be a valid slug for a non-dev registry: a non-empty
+/// path-safe authority string (`[a-z0-9.-]+`) that is not the dev sentinel.
 public func isRegistrySlug(_ s: String) -> Bool {
-    s.count == cartridgeSlugHexLen
-        && s.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+    !s.isEmpty && s != cartridgeDevSlug
+        && s.unicodeScalars.allSatisfy { cartridgeIsAuthorityScalar($0.value) }
 }
 
 // MARK: - Registry-URL scheme validation
