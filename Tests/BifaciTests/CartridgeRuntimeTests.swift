@@ -648,13 +648,13 @@ final class CborFilePathConversionTests: XCTestCase {
     private func createCap(
         urn: String,
         title: String,
-        command: String,
+        aliases: [String],
         args: [CapArg] = []
     ) -> CapDefinition {
         return CapDefinition(
             urn: urn,
             title: title,
-            aliases: [command],
+            aliases: aliases,
             capDescription: nil,
             args: args
         )
