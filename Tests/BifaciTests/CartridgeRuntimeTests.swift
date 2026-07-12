@@ -132,7 +132,7 @@ fileprivate func makeTestCap(urn: String, args: [CapArg]) -> CapDefinition {
     return CapDefinition(
         urn: urn,
         title: "Test",
-        command: "test",
+        aliases: ["test"],
         capDescription: nil,
         args: args
     )
@@ -144,7 +144,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // MARK: - Test Constants
 
     static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"]}]}]}
     """
     static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -629,7 +629,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let identityCap = CapDefinition(
             urn: CSCapIdentity,
             title: "Identity",
-            command: "identity"
+            aliases: ["identity"]
         )
         allCaps.append(identityCap)
 
@@ -721,7 +721,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process PDF",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -760,7 +760,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:void\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -789,7 +789,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -826,7 +826,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Batch",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -852,7 +852,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -887,7 +887,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -915,7 +915,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -936,7 +936,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:void\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;model-spec",  // NOT file-path
                 required: true,
@@ -960,7 +960,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -992,7 +992,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1028,7 +1028,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1073,7 +1073,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1100,7 +1100,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1125,7 +1125,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1159,7 +1159,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:enc=utf-8;result\"",
             title: "Process PDF",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1195,7 +1195,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: false,
@@ -1234,7 +1234,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1266,7 +1266,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:enc=utf-8;text\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;text",
                 required: true,
@@ -1330,7 +1330,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1366,7 +1366,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1405,7 +1405,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1463,7 +1463,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1497,7 +1497,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
-            command: "test",
+            aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1523,7 +1523,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:\";batch;out=\"media:void\"",
             title: "Test",
-            command: "batch",
+            aliases: ["batch"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1556,7 +1556,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1603,7 +1603,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = CapDefinition(
             urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: []
         )
 
@@ -1641,7 +1641,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = CapDefinition(
             urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: []
         )
 
@@ -1671,7 +1671,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = CapDefinition(
             urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: []
         )
 
@@ -1729,7 +1729,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = CapDefinition(
             urn: "cap:in=\"media:\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: []
         )
 
@@ -1756,7 +1756,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
@@ -1792,7 +1792,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:ext=pdf",
                 required: true,
@@ -1863,7 +1863,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:ext=pdf",
                 required: true,
@@ -1933,7 +1933,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let cap = createCap(
             urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,

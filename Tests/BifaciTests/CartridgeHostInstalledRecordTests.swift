@@ -282,7 +282,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let manifest = """
         {"name":"TestCart","version":"1.2.3","channel":"nightly","registry_url":null,\
         "description":"d","cap_groups":[{"name":"g","caps":[{"urn":"cap:effect=none",\
-        "title":"Identity","command":"identity"}]}]}
+        "title":"Identity","aliases":["identity"]}]}]}
         """.data(using: .utf8)!
 
         guard let rec = installedCartridgeRecordFromManifest(manifest) else {

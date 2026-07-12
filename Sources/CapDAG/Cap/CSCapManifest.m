@@ -278,7 +278,7 @@
     // Add identity cap to the first cap group (or create one)
     CSCap *identityCap = [CSCap capWithUrn:identityUrn
                                      title:@"Identity"
-                                   command:@"identity"];
+                                   aliases:@[@"identity"]];
 
     NSMutableArray<CSCapGroup *> *newGroups = [self.capGroups mutableCopy];
     if (newGroups.count > 0) {

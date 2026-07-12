@@ -92,7 +92,7 @@
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Create User"
-                           command:@"create-user"
+                           aliases:@[@"create-user"]
                        description:@"Create a new user with validation"
                      documentation:nil
                           metadata:@{}

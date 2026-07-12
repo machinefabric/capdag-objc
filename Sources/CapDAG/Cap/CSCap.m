@@ -774,7 +774,7 @@
 + (instancetype)capWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
     // Required fields
     id urnField = dictionary[@"urn"];
-    NSString *command = dictionary[@"command"];
+    NSArray<NSString *> *aliases = dictionary[@"aliases"];
     NSString *title = dictionary[@"title"];
 
     // FAIL HARD on missing required fields
@@ -787,14 +787,18 @@
         return nil;
     }
 
-    if (!command) {
+    // A cap must declare at least one alias — it is how the cap is selected in
+    // both CLIs. Absent or empty is a hard error, never silently defaulted.
+    if (![aliases isKindOfClass:[NSArray class]] || aliases.count == 0) {
         if (error) {
             *error = [NSError errorWithDomain:@"CSCapError"
                                          code:1002
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Missing required field: command"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: @"cap must declare at least one alias (the 'aliases' field is required and non-empty)"}];
         }
         return nil;
     }
+
+    BOOL isAbstract = [dictionary[@"abstract"] boolValue];
 
     if (!title) {
         if (error) {
@@ -890,13 +894,14 @@
 
     CSCap *cap = [self capWithUrn:capUrn
                             title:title
-                          command:command
+                          aliases:aliases
                       description:capDescription
                     documentation:documentation
                          metadata:metadata
                              args:args
                            output:output
                      metadataJSON:metadataJSON];
+    cap->_isAbstract = isAbstract;
     cap->_registeredBy = registeredBy;
     cap->_supportedModelTypes = [supportedModelTypes copy];
     cap->_defaultModelSpec = [defaultModelSpec copy];
@@ -912,7 +917,11 @@
         dict[@"version"] = @(self.version);
     }
     dict[@"title"] = self.title;
-    dict[@"command"] = self.command;
+    dict[@"aliases"] = self.aliases;
+    // Omit `abstract` when NO (absent ⇒ false in the wire form).
+    if (self.isAbstract) {
+        dict[@"abstract"] = @YES;
+    }
 
     if (self.capDescription) {
         dict[@"cap_description"] = self.capDescription;
@@ -987,8 +996,8 @@
 }
 
 - (NSString *)description {
-    NSMutableString *desc = [NSMutableString stringWithFormat:@"CSCap(urn: %@, title: %@, command: %@",
-                            [self.capUrn toString], self.title, self.command];
+    NSMutableString *desc = [NSMutableString stringWithFormat:@"CSCap(urn: %@, title: %@, aliases: %@",
+                            [self.capUrn toString], self.title, self.aliases];
 
     if (self.capDescription) {
         [desc appendFormat:@", description: %@", self.capDescription];
@@ -1019,7 +1028,8 @@
     // Required fields
     if (![self.capUrn isEqual:other.capUrn]) return NO;
     if (![self.title isEqualToString:other.title]) return NO;
-    if (![self.command isEqualToString:other.command]) return NO;
+    if (![[self.aliases sortedArrayUsingSelector:@selector(compare:)] isEqualToArray:[other.aliases sortedArrayUsingSelector:@selector(compare:)]]) return NO;
+    if (self.isAbstract != other.isAbstract) return NO;
 
     // Optional string field
     if ((self.capDescription == nil) != (other.capDescription == nil)) return NO;
@@ -1062,7 +1072,8 @@
 - (NSUInteger)hash {
     NSUInteger hash = [self.capUrn hash];
     hash ^= [self.title hash];
-    hash ^= [self.command hash];
+    hash ^= [self.aliases hash];
+    hash ^= (NSUInteger)self.isAbstract;
     hash ^= [self.documentation hash];
     hash ^= [self.metadata hash];
     hash ^= [self.args hash];
@@ -1076,18 +1087,19 @@
 
 - (id)copyWithZone:(NSZone *)zone {
     // FAIL HARD if required fields are nil
-    if (!self.command || !self.title) {
+    if (self.aliases.count == 0 || !self.title) {
         return nil;
     }
     CSCap *copy = [CSCap capWithUrn:self.capUrn
                              title:self.title
-                           command:self.command
+                           aliases:self.aliases
                        description:self.capDescription
                      documentation:self.documentation
                           metadata:self.metadata
                               args:self.args
                             output:self.output
                       metadataJSON:self.metadataJSON];
+    copy->_isAbstract = self.isAbstract;
     copy->_registeredBy = [self.registeredBy copy];
     copy->_supportedModelTypes = [self.supportedModelTypes copy];
     copy->_defaultModelSpec = [self.defaultModelSpec copy];
@@ -1098,7 +1110,8 @@
 - (void)encodeWithCoder:(NSCoder *)coder {
     [coder encodeObject:self.capUrn forKey:@"capUrn"];
     [coder encodeObject:self.title forKey:@"title"];
-    [coder encodeObject:self.command forKey:@"command"];
+    [coder encodeObject:self.aliases forKey:@"aliases"];
+    [coder encodeBool:self.isAbstract forKey:@"abstract"];
     [coder encodeObject:self.capDescription forKey:@"capDescription"];
     [coder encodeObject:self.documentation forKey:@"documentation"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
@@ -1114,7 +1127,8 @@
 - (nullable instancetype)initWithCoder:(NSCoder *)coder {
     CSCapUrn *capUrn = [coder decodeObjectOfClass:[CSCapUrn class] forKey:@"capUrn"];
     NSString *title = [coder decodeObjectOfClass:[NSString class] forKey:@"title"];
-    NSString *command = [coder decodeObjectOfClass:[NSString class] forKey:@"command"];
+    NSArray<NSString *> *aliases = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [NSString class], nil] forKey:@"aliases"];
+    BOOL isAbstract = [coder decodeBoolForKey:@"abstract"];
     NSString *description = [coder decodeObjectOfClass:[NSString class] forKey:@"capDescription"];
     NSString *documentation = [coder decodeObjectOfClass:[NSString class] forKey:@"documentation"];
     NSDictionary *metadata = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadata"];
@@ -1124,7 +1138,7 @@
     CSRegisteredBy *registeredBy = [coder decodeObjectOfClass:[CSRegisteredBy class] forKey:@"registeredBy"];
 
     // FAIL HARD if required fields are missing
-    if (!capUrn || !title || !command || !metadata) {
+    if (!capUrn || !title || aliases.count == 0 || !metadata) {
         return nil;
     }
 
@@ -1133,13 +1147,14 @@
 
     CSCap *cap = [CSCap capWithUrn:capUrn
                             title:title
-                          command:command
+                          aliases:aliases
                       description:description
                     documentation:documentation
                          metadata:metadata
                              args:args ?: @[]
                            output:output
                      metadataJSON:metadataJSON];
+    cap->_isAbstract = isAbstract;
     cap->_registeredBy = registeredBy;
     cap->_supportedModelTypes = supportedModelTypes ?: @[];
     cap->_defaultModelSpec = defaultModelSpec;
@@ -1149,10 +1164,10 @@
 
 + (instancetype)capWithUrn:(CSCapUrn *)capUrn
                      title:(NSString *)title
-                   command:(NSString *)command {
+                   aliases:(NSArray<NSString *> *)aliases {
     return [self capWithUrn:capUrn
                       title:title
-                    command:command
+                    aliases:aliases
                 description:nil
               documentation:nil
                    metadata:@{}
@@ -1163,7 +1178,7 @@
 
 + (instancetype)capWithUrn:(CSCapUrn *)capUrn
                      title:(NSString *)title
-                   command:(NSString *)command
+                   aliases:(NSArray<NSString *> *)aliases
                description:(nullable NSString *)description
              documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> *)metadata
@@ -1171,14 +1186,15 @@
                     output:(nullable CSCapOutput *)output
               metadataJSON:(nullable NSDictionary *)metadataJSON {
     // FAIL HARD if required fields are nil
-    if (!capUrn || !title || !command || !metadata || !args) {
+    if (!capUrn || !title || aliases.count == 0 || !metadata || !args) {
         return nil;
     }
 
     CSCap *cap = [[CSCap alloc] init];
     cap->_capUrn = [capUrn copy];
     cap->_title = [title copy];
-    cap->_command = [command copy];
+    cap->_aliases = [aliases copy];
+    cap->_isAbstract = NO;
     cap->_capDescription = [description copy];
     cap->_documentation = [documentation copy];
     cap->_metadata = [metadata copy];
@@ -1191,8 +1207,16 @@
     return cap;
 }
 
-- (nullable NSString *)getCommand {
-    return self.command;
+- (NSArray<NSString *> *)getAliases {
+    return self.aliases;
+}
+
+- (NSString *)primaryAlias {
+    return self.aliases.count > 0 ? self.aliases[0] : @"";
+}
+
+- (BOOL)hasAlias:(NSString *)name {
+    return [self.aliases containsObject:name];
 }
 
 - (nullable CSCapOutput *)getOutput {

@@ -383,8 +383,15 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Optional metadata as key-value pairs
 @property (nonatomic, readonly) NSDictionary<NSString *, NSString *> *metadata;
 
-/// Command string for CLI execution
-@property (nonatomic, readonly) NSString *command;
+/// Globally-unique names that select this cap in both the capdag CLI and the
+/// direct cartridge CLI. Replaces the former non-unique `command`. At least
+/// one; uniqueness is enforced at publish.
+@property (nonatomic, readonly) NSArray<NSString *> *aliases;
+
+/// YES when this cap is a generic-input dispatch umbrella: a valid alias target
+/// never backed by a cartridge and never a runnable graph edge. Absent in the
+/// wire form means NO.
+@property (nonatomic, readonly) BOOL isAbstract;
 
 /// Cap arguments (new unified args array)
 @property (nonatomic, readonly) NSArray<CSCapArg *> *args;
@@ -415,7 +422,7 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  */
 + (instancetype)capWithUrn:(CSCapUrn * _Nonnull)capUrn
                      title:(NSString * _Nonnull)title
-                   command:(NSString * _Nonnull)command
+                   aliases:(NSArray<NSString *> * _Nonnull)aliases
                description:(nullable NSString *)description
              documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> * _Nonnull)metadata
@@ -424,15 +431,15 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
               metadataJSON:(nullable NSDictionary *)metadataJSON;
 
 /**
- * Create a cap with URN, title and command (minimal constructor)
+ * Create a cap with URN, title and aliases (minimal constructor)
  * @param capUrn The cap URN
  * @param title The human-readable title (required)
- * @param command The command string
+ * @param aliases The globally-unique alias names (at least one)
  * @return A new CSCap instance
  */
 + (instancetype)capWithUrn:(CSCapUrn * _Nonnull)capUrn
                      title:(NSString * _Nonnull)title
-                   command:(NSString * _Nonnull)command;
+                   aliases:(NSArray<NSString *> * _Nonnull)aliases;
 
 /**
  * Create a cap from a dictionary representation
@@ -492,10 +499,23 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 - (NSString *)urnString;
 
 /**
- * Get the command if defined
- * @return The command string or nil
+ * Get the cap's aliases (globally-unique selection names).
+ * @return The alias array (never empty)
  */
-- (nullable NSString *)getCommand;
+- (NSArray<NSString *> *)getAliases;
+
+/**
+ * The primary (first) alias, for single-name display.
+ * @return The first alias, or an empty string if somehow none.
+ */
+- (NSString *)primaryAlias;
+
+/**
+ * Whether name is one of this cap's aliases (exact match).
+ * @param name The alias to test
+ * @return YES if present
+ */
+- (BOOL)hasAlias:(NSString * _Nonnull)name;
 
 /**
  * Get the output definition if defined

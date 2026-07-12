@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"]}]}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -47,11 +47,11 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func makeManifest(name: String, caps: [String]) -> Data {
         // Always include CAP_IDENTITY as first cap (mandatory)
-        var allCaps = ["{\"urn\":\"cap:effect=none\",\"title\":\"Identity\",\"command\":\"identity\"}"]
+        var allCaps = ["{\"urn\":\"cap:effect=none\",\"title\":\"Identity\",\"aliases\":[\"identity\"]}"]
         // Add user caps as proper cap objects with full direction specs
         for cap in caps {
             let capWithDirs = cap.contains("in=") ? cap : "cap:in=media:;\(cap.dropFirst(4));out=media:"
-            allCaps.append("{\"urn\":\"\(capWithDirs)\",\"title\":\"\(name)\",\"command\":\"\(name.lowercased())\"}")
+            allCaps.append("{\"urn\":\"\(capWithDirs)\",\"title\":\"\(name)\",\"aliases\":[\"\(name.lowercased())\"]}")
         }
         let capsJson = allCaps.joined(separator: ",")
         // Manifest uses cap_groups format — all caps in a single default group.
@@ -276,7 +276,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     /// time.
     private func capGroupsFromUrns(_ urns: [String]) -> [CapGroup] {
         let caps = urns.map {
-            CapDefinition(urn: $0, title: "test", command: "test")
+            CapDefinition(urn: $0, title: "test", aliases: ["test"])
         }
         return [CapGroup(name: "test", caps: caps)]
     }

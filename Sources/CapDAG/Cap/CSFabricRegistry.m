@@ -695,12 +695,25 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     [self getCapWithUrn:urn completion:^(CSCap *canonicalCap, NSError *error) {
         if (error) { completion(error); return; }
 
-        if (![cap.command isEqualToString:canonicalCap.command]) {
+        // A cartridge responds to a SUBSET of the fabric cap's aliases (never
+        // an alias the fabric does not define).
+        NSSet<NSString *> *canonicalAliasSet = [NSSet setWithArray:canonicalCap.aliases];
+        for (NSString *a in cap.aliases) {
+            if (![canonicalAliasSet containsObject:a]) {
+                completion([NSError errorWithDomain:@"CSFabricRegistryError"
+                                               code:1003
+                                           userInfo:@{NSLocalizedDescriptionKey:
+                                                          [NSString stringWithFormat:@"Alias mismatch: '%@' not among the fabric cap's aliases %@",
+                                                           a, canonicalCap.aliases]}]);
+                return;
+            }
+        }
+        if (cap.isAbstract != canonicalCap.isAbstract) {
             completion([NSError errorWithDomain:@"CSFabricRegistryError"
                                            code:1003
                                        userInfo:@{NSLocalizedDescriptionKey:
-                                                      [NSString stringWithFormat:@"Command mismatch. Local: %@, Canonical: %@",
-                                                       cap.command, canonicalCap.command]}]);
+                                                      [NSString stringWithFormat:@"Abstract-flag mismatch. Local: %d, Canonical: %d",
+                                                       cap.isAbstract, canonicalCap.isAbstract]}]);
             return;
         }
 

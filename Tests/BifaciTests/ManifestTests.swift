@@ -26,7 +26,7 @@ final class ManifestTests: XCTestCase {
     // TEST148: Cap manifest construction stores name, version, channel,
     // description, and the cap_groups verbatim.
     func test148_capManifestCreation() throws {
-        let cap = CapDefinition(urn: "cap:test", title: "Test Cap", command: "test")
+        let cap = CapDefinition(urn: "cap:test", title: "Test Cap", aliases: ["test"])
         let manifest = Manifest(
             name: "test-cartridge",
             version: "1.0.0",
@@ -65,7 +65,7 @@ final class ManifestTests: XCTestCase {
         let cap = CapDefinition(
             urn: capUrn,
             title: "Process",
-            command: "process",
+            aliases: ["process"],
             capDescription: "Roundtrip process cap",
             args: [
                 CapArg(
@@ -174,9 +174,9 @@ final class ManifestTests: XCTestCase {
     // TEST152: Multiple caps across multiple cap_groups serialize and
     // deserialize correctly, preserving group structure.
     func test152_capManifestWithMultipleCaps() throws {
-        let processCap = CapDefinition(urn: "cap:process", title: "Process", command: "process")
-        let transformCap = CapDefinition(urn: "cap:in=text:;out=text:", title: "Transform", command: "transform")
-        let convertCap = CapDefinition(urn: "cap:in=image:;out=image:", title: "Convert", command: "convert")
+        let processCap = CapDefinition(urn: "cap:process", title: "Process", aliases: ["process"])
+        let transformCap = CapDefinition(urn: "cap:in=text:;out=text:", title: "Transform", aliases: ["transform"])
+        let convertCap = CapDefinition(urn: "cap:in=image:;out=image:", title: "Convert", aliases: ["convert"])
 
         let manifest = Manifest(
             name: "multi-cap-cartridge",
@@ -253,7 +253,7 @@ final class ManifestTests: XCTestCase {
     // schema-equivalent to the Swift `Manifest` struct.
     func test6422_componentMetadataAccessors() throws {
         let capUrn = try CSCapUrn.fromString("cap:process")
-        let cap = CSCap(urn: capUrn, title: "Test", command: "test")
+        let cap = CSCap(urn: capUrn, title: "Test", aliases: ["test"])
         let group = CSCapGroup(name: "default", caps: [cap], adapterUrns: [])
         let manifest = CSCapManifest(
             name: "test-component",

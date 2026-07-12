@@ -37,7 +37,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Test Cap"
-                           command:@"test-command"
+                           aliases:@[@"test-command"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -50,7 +50,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // with keyed tags by key name. Order: data_processing, format,
     // in, out, transform.
     XCTAssertEqualObjects([cap urnString], @"cap:data_processing;format=json;in=media:void;out=\"media:enc=utf-8;record\";transform");
-    XCTAssertEqualObjects(cap.command, @"test-command");
+    XCTAssertEqualObjects(cap.primaryAlias, @"test-command");
     XCTAssertNil([cap getStdinMediaUrn], @"stdinType should be nil when not specified");
 }
 
@@ -63,7 +63,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Parse JSON"
-                           command:@"parse-cmd"
+                           aliases:@[@"parse-cmd"]
                        description:@"Parse JSON data"
                      documentation:nil
                           metadata:@{}
@@ -85,7 +85,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test with stdin = nil (does not accept stdin)
     CSCap *cap1 = [CSCap capWithUrn:key
                               title:@"Generate"
-                            command:@"generate"
+                            aliases:@[@"generate"]
                         description:@"Generate embeddings"
                       documentation:nil
                            metadata:@{}
@@ -105,7 +105,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                                            sources:@[stdinSource]];
     CSCap *cap2 = [CSCap capWithUrn:key
                               title:@"Generate"
-                            command:@"generate"
+                            aliases:@[@"generate"]
                         description:@"Generate embeddings"
                       documentation:nil
                            metadata:@{}
@@ -129,7 +129,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Transform"
-                           command:@"test-command"
+                           aliases:@[@"test-command"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -159,7 +159,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                                            sources:@[stdinSource]];
     CSCap *original = [CSCap capWithUrn:key
                                   title:@"Generate"
-                                command:@"generate"
+                                aliases:@[@"generate"]
                             description:@"Generate embeddings"
                           documentation:nil
                                metadata:@{@"model": @"sentence-transformer"}
@@ -181,7 +181,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSDictionary *capDict = @{
         @"urn": @"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata",
         @"title": @"Extract Metadata",
-        @"command": @"extract-metadata",
+        @"aliases": @[@"extract-metadata"],
         @"cap_description": @"Extract metadata from documents",
         @"metadata": @{@"ext": @"json"},
         @"args": @[
@@ -203,14 +203,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(error, @"Dictionary deserialization should not fail: %@", error.localizedDescription);
     XCTAssertNotNil(cap, @"Cap should be created from dictionary");
     XCTAssertEqualObjects([cap urnString], @"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata");
-    XCTAssertEqualObjects(cap.command, @"extract-metadata");
+    XCTAssertEqualObjects(cap.primaryAlias, @"extract-metadata");
     XCTAssertEqualObjects(cap.capDescription, @"Extract metadata from documents");
     XCTAssertNotNil([cap getStdinMediaUrn], @"stdinType should be set when arg has stdin source");
     XCTAssertEqualObjects([cap getStdinMediaUrn], stdinMediaType, @"stdinType should match stdin source value");
 
     // Test with missing required fields - should fail hard
     NSDictionary *invalidDict = @{
-        @"command": @"extract-metadata"
+        @"aliases": @[@"extract-metadata"]
         // Missing "urn" field
     };
 
@@ -292,7 +292,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSDictionary *completeCapDict = @{
         @"urn": @"cap:in=media:void;transform;out=\"media:enc=utf-8;record\";format=json;data",
         @"title": @"Transform Data",
-        @"command": @"transform-data",
+        @"aliases": @[@"transform-data"],
         @"cap_description": @"Transform JSON data with validation",
         @"metadata": @{@"engine": @"jq", @"performance": @"high"},
         @"media_defs": @[
@@ -344,7 +344,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Verify basic properties - URN tags are sorted alphabetically
     // Flags sort with key=value pairs by key name: data (flag) < format
     XCTAssertEqualObjects([cap urnString], @"cap:data;format=json;in=media:void;out=\"media:enc=utf-8;record\";transform");
-    XCTAssertEqualObjects(cap.command, @"transform-data");
+    XCTAssertEqualObjects(cap.primaryAlias, @"transform-data");
     XCTAssertNotNil([cap getStdinMediaUrn], @"stdinType should be set");
     XCTAssertEqualObjects([cap getStdinMediaUrn], stdinMediaType);
 
@@ -433,7 +433,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Extract Metadata"
-                           command:@"extract-metadata"
+                           aliases:@[@"extract-metadata"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -466,7 +466,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Extract Metadata"
-                           command:@"extract-metadata"
+                           aliases:@[@"extract-metadata"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -496,7 +496,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Extract Metadata"
-                           command:@"extract-metadata"
+                           aliases:@[@"extract-metadata"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -537,7 +537,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                     @{
                         @"urn": @"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata",
                         @"title": @"Extract Metadata",
-                        @"command": @"extract-metadata",
+                        @"aliases": @[@"extract-metadata"],
                         @"args": @[
                             @{
                                 @"media_urn": @"media:enc=utf-8;file-path",
@@ -600,7 +600,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap1 = [CSCap capWithUrn:key1
                              title:@"Extract Metadata"
-                           command:@"extract-metadata"
+                           aliases:@[@"extract-metadata"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -610,7 +610,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap2 = [CSCap capWithUrn:key2
                              title:@"Extract Outline"
-                           command:@"extract-outline"
+                           aliases:@[@"extract-outline"]
                        description:nil
                      documentation:nil
                           metadata:@{@"supports_outline": @"true"}
@@ -671,7 +671,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Validate"
-                           command:@"validate"
+                           aliases:@[@"validate"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -702,7 +702,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                     @{
                         @"urn": @"cap:in=media:void;validate;out=\"media:enc=utf-8;record\";file",
                         @"title": @"Validate",
-                        @"command": @"validate",
+                        @"aliases": @[@"validate"],
                         @"arguments": @{
                             @"required": @[],
                             @"optional": @[]
@@ -730,7 +730,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSArray<CSCapArg *> *args = @[];
     CSCap *cap = [CSCap capWithUrn:key
                              title:@"Process"
-                           command:@"process"
+                           aliases:@[@"process"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -928,7 +928,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Documented Cap"
-                           command:@"documented"
+                           aliases:@[@"documented"]
                        description:@"short"
                      documentation:body
                           metadata:@{}
@@ -964,7 +964,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Undocumented Cap"
-                           command:@"undocumented"
+                           aliases:@[@"undocumented"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -1040,7 +1040,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Version Zero"
-                           command:@"version-zero"
+                           aliases:@[@"version-zero"]
                        description:nil
                      documentation:nil
                           metadata:@{}
@@ -1056,7 +1056,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSDictionary *dictWithoutVersion = @{
         @"urn": @"cap:test-version-zero;in=media:void;out=media:void",
         @"title": @"Version Zero",
-        @"command": @"version-zero",
+        @"aliases": @[@"version-zero"],
         @"metadata": @{}
     };
     CSCap *roundTripped = [CSCap capWithDictionary:dictWithoutVersion error:&error];
@@ -1071,7 +1071,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSDictionary *dictWithVersion = @{
         @"urn": @"cap:test-version-three;in=media:void;out=media:void",
         @"title": @"Version Three",
-        @"command": @"version-three",
+        @"aliases": @[@"version-three"],
         @"metadata": @{},
         @"version": @3
     };

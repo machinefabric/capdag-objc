@@ -80,7 +80,7 @@ final class StandardCapsTests: XCTestCase {
     // TEST6598: CapManifest::validate() passes when CAP_IDENTITY is present
     func test6598_manifestValidatePassesWithIdentity() throws {
         let identityUrn = try CSCapUrn.fromString(CSCapIdentity)
-        let identityCap = CSCap(urn: identityUrn, title: "Identity", command: "identity")
+        let identityCap = CSCap(urn: identityUrn, title: "Identity", aliases: ["identity"])
         let group = CSCapGroup(name: "default", caps: [identityCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
@@ -95,7 +95,7 @@ final class StandardCapsTests: XCTestCase {
     // TEST6599: CapManifest::validate() fails when CAP_IDENTITY is missing
     func test6599_manifestValidateFailsWithoutIdentity() throws {
         let otherUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
-        let otherCap = CSCap(urn: otherUrn, title: "Test", command: "test")
+        let otherCap = CSCap(urn: otherUrn, title: "Test", aliases: ["test"])
         let group = CSCapGroup(name: "default", caps: [otherCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
@@ -111,7 +111,7 @@ final class StandardCapsTests: XCTestCase {
     func test6244_manifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
         let testUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
-        let cap1 = CSCap(urn: testUrn, title: "Test", command: "test")
+        let cap1 = CSCap(urn: testUrn, title: "Test", aliases: ["test"])
         let group = CSCapGroup(name: "default", caps: [cap1], adapterUrns: [])
         let manifestWithout = CSCapManifest(name: "TestCartridge",
                                             version: "1.0.0",
@@ -135,7 +135,7 @@ final class StandardCapsTests: XCTestCase {
     func test478_cartridgeRuntimeAutoRegistersIdentity() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
-            {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"}
+            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"]}
         ]}]}
         """.data(using: .utf8)!
 
@@ -150,7 +150,7 @@ final class StandardCapsTests: XCTestCase {
     func test479_identityHandlerEchoesInput() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
-            {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"}
+            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"]}
         ]}]}
         """.data(using: .utf8)!
 
@@ -218,8 +218,8 @@ final class StandardCapsTests: XCTestCase {
     func test480_discardHandlerConsumesInput() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
-            {"urn":"\(CSCapIdentity)","title":"Identity","command":"identity"},
-            {"urn":"\(CSCapDiscard)","title":"Discard","command":"discard"}
+            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"]},
+            {"urn":"\(CSCapDiscard)","title":"Discard","aliases":["discard"]}
         ]}]}
         """.data(using: .utf8)!
 

@@ -32,7 +32,7 @@ final class TestcartridgeRegistry: FabricRegistryProtocol, @unchecked Sendable {
             let cap = CSCap(
                 urn: capUrn,
                 title: "Test \(urnStr)",
-                command: "testcartridge"
+                aliases: ["testcartridge"]
             )
             caps[capUrn.toString()] = cap
         }

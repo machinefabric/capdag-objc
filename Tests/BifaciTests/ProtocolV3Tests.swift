@@ -19,7 +19,7 @@ import Foundation
 
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
 private let v3TestManifest = """
-{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"}]}]}
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]}]}]}
 """.data(using: .utf8)!
 
 /// Thread-safe boolean flag for observing completion of concurrent waiters.

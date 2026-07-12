@@ -2817,22 +2817,35 @@ public struct CapArg: Codable, Sendable {
 public struct CapDefinition: Codable, Sendable {
     public let urn: String
     public let title: String
-    public let command: String
+    /// Globally-unique names selecting this cap in both CLIs (replaces the
+    /// former non-unique `command`). At least one; uniqueness enforced at publish.
+    public let aliases: [String]
+    /// Generic-input dispatch umbrella flag (never backed by a cartridge, never
+    /// a runnable graph edge). Absent in the wire form ⇒ false.
+    public let isAbstract: Bool
     public let capDescription: String?
     public let args: [CapArg]
 
     enum CodingKeys: String, CodingKey {
         case urn
         case title
-        case command
+        case aliases
+        case isAbstract = "abstract"
         case capDescription = "cap_description"
         case args
     }
 
-    public init(urn: String, title: String, command: String, capDescription: String? = nil, args: [CapArg] = []) {
+    /// The primary (first) alias — single-name display. A cap always has one.
+    public var primaryAlias: String { aliases.first ?? "" }
+
+    /// Whether `name` is one of this cap's aliases (exact match).
+    public func hasAlias(_ name: String) -> Bool { aliases.contains(name) }
+
+    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = []) {
         self.urn = urn
         self.title = title
-        self.command = command
+        self.aliases = aliases
+        self.isAbstract = isAbstract
         self.capDescription = capDescription
         self.args = args
     }
@@ -2841,9 +2854,31 @@ public struct CapDefinition: Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         urn = try container.decode(String.self, forKey: .urn)
         title = try container.decode(String.self, forKey: .title)
-        command = try container.decode(String.self, forKey: .command)
+        aliases = try container.decode([String].self, forKey: .aliases)
+        // A cap must declare at least one alias — how it is selected in both CLIs.
+        if aliases.isEmpty {
+            throw DecodingError.dataCorruptedError(
+                forKey: .aliases, in: container,
+                debugDescription: "cap '\(urn)' must declare at least one alias (the 'aliases' field is required and non-empty)")
+        }
+        isAbstract = try container.decodeIfPresent(Bool.self, forKey: .isAbstract) ?? false
         capDescription = try container.decodeIfPresent(String.self, forKey: .capDescription)
         args = try container.decodeIfPresent([CapArg].self, forKey: .args) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(urn, forKey: .urn)
+        try container.encode(title, forKey: .title)
+        try container.encode(aliases, forKey: .aliases)
+        // Omit `abstract` when false (absent ⇒ false in the wire form).
+        if isAbstract {
+            try container.encode(true, forKey: .isAbstract)
+        }
+        try container.encodeIfPresent(capDescription, forKey: .capDescription)
+        if !args.isEmpty {
+            try container.encode(args, forKey: .args)
+        }
     }
 
     /// Check if this cap accepts stdin input.
@@ -3323,7 +3358,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
 
         // Find cap by command name
-        guard let cap = findCapByCommand(manifest: manifest, commandName: subcommand) else {
+        guard let cap = findCapByAlias(manifest: manifest, alias: subcommand) else {
             throw CartridgeRuntimeError.unknownSubcommand("Unknown command '\(subcommand)'. Run with --help to see available commands.")
         }
 
@@ -3441,9 +3476,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
         try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
     }
 
-    /// Find a cap by its command name (the CLI subcommand).
-    private func findCapByCommand(manifest: Manifest, commandName: String) -> CapDefinition? {
-        return manifest.allCaps().first { $0.command == commandName }
+    /// Find a cap by one of its aliases (the CLI subcommand). Aliases are
+    /// globally unique, so at most one cap matches.
+    private func findCapByAlias(manifest: Manifest, alias: String) -> CapDefinition? {
+        return manifest.allCaps().first { $0.hasAlias(alias) }
     }
 
     /// Build the raw CBOR arguments payload from CLI args.
@@ -3681,7 +3717,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
         for cap in manifest.allCaps() {
             let desc = cap.capDescription ?? cap.title
-            let paddedCommand = cap.command.padding(toLength: 12, withPad: " ", startingAt: 0)
+            let paddedCommand = cap.primaryAlias.padding(toLength: 12, withPad: " ", startingAt: 0)
             let line = "    \(paddedCommand)\(desc)\n"
             stderr.write(Data(line.utf8))
         }
@@ -3697,7 +3733,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
             stderr.write(Data("\(desc)\n".utf8))
         }
         stderr.write(Data("\nUSAGE:\n".utf8))
-        stderr.write(Data("    cartridge \(cap.command) [OPTIONS]\n\n".utf8))
+        stderr.write(Data("    cartridge \(cap.primaryAlias) [OPTIONS]\n\n".utf8))
 
         if !cap.args.isEmpty {
             stderr.write(Data("OPTIONS:\n".utf8))

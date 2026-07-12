@@ -531,7 +531,7 @@ let host = CartridgeHost()
 let testCapGroups = [
     CapGroup(
         name: "test",
-        caps: [CapDefinition(urn: memoryHogCapUrn, title: "test", command: "test")]
+        caps: [CapDefinition(urn: memoryHogCapUrn, title: "test", aliases: ["test"])]
     )
 ]
 host.registerCartridge(path: cartridgePath, cartridgeDir: "", capGroups: testCapGroups)

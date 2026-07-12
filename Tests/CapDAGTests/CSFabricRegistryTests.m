@@ -278,7 +278,7 @@ static NSString *buildRegistryURL(NSString *urn) {
             XCTAssertNotNil(definition);
             XCTAssertEqualObjects(definition.urn, @"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata");
             XCTAssertNotNil(definition.version);
-            XCTAssertNotNil(definition.command);
+            XCTAssertNotNil(definition.primaryAlias);
         }
         [expectation fulfill];
     }];
@@ -296,7 +296,7 @@ static NSString *buildRegistryURL(NSString *urn) {
     
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Extract Metadata"
-                           command:@"extract-metadata"
+                           aliases:@[@"extract-metadata"]
                        description:nil
                      documentation:nil
                           metadata:@{}

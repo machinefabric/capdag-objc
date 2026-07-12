@@ -24,7 +24,7 @@ import Foundation
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
 // `channel` is part of every cartridge's identity (release/nightly).
 private let testManifest = """
-{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=media:;test;out=media:","title":"Test","command":"test"}]}]}
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"]}]}]}
 """.data(using: .utf8)!
 
 final class CborIntegrationTests: XCTestCase {

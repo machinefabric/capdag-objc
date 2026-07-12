@@ -649,7 +649,7 @@ final class ProtocolV3SwitchTests: XCTestCase {
     // installed cartridge (the wire schema embeds caps in cap_groups).
     private func sendNotify(writer: FrameWriter, capabilities: [String], limits: Limits) throws {
         let groupCaps: [[String: Any]] = capabilities.map { urn in
-            return ["urn": urn, "title": "test", "command": "test", "args": [] as [Any]]
+            return ["urn": urn, "title": "test", "aliases": ["test"], "args": [] as [Any]]
         }
         let manifestBytes = try JSONSerialization.data(withJSONObject: [
             "installed_cartridges": [[

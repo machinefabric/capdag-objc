@@ -176,7 +176,7 @@ final class CborFrameTests: XCTestCase {
     // TEST181: Test Frame::hello_with_manifest produces HELLO with manifest bytes for cartridge side
     func test181_helloFrameWithManifest() {
         let manifestJSON = """
-        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"}]}]}
+        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]}]}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
@@ -485,7 +485,7 @@ final class CborFrameTests: XCTestCase {
     // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes and limits
     func test211_helloWithManifestRoundtrip() throws {
         let manifestJSON = """
-        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test description","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:test","title":"Test","command":"test"}]}]}
+        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test description","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:test","title":"Test","aliases":["test"]}]}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 500_000, maxChunk: 50_000, maxReorderBuffer: 64)

@@ -304,7 +304,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Process User"
-                           command:@"process-user"
+                           aliases:@[@"process-user"]
                        description:@"Process user data"
                      documentation:nil
                           metadata:@{}
@@ -375,7 +375,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Query Data"
-                           command:@"query-data"
+                           aliases:@[@"query-data"]
                        description:@"Query data"
                      documentation:nil
                           metadata:@{}
@@ -750,7 +750,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSCap *cap = [CSCap capWithUrn:urn
                              title:@"Transform JSON"
-                           command:@"transform-json"
+                           aliases:@[@"transform-json"]
                        description:@"Transform JSON data"
                      documentation:nil
                           metadata:@{}

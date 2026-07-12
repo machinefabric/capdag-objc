@@ -22,7 +22,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSCapUrn *built = [builder build:&error];
     NSCAssert(built != nil, @"Failed to build test cap URN: %@", error);
 
-    return [CSCap capWithUrn:built title:title command:@"test"];
+    return [CSCap capWithUrn:built title:title aliases:@[@"test"]];
 }
 
 @implementation CSLiveCapFabTests

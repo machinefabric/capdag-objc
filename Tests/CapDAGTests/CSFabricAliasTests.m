@@ -24,7 +24,7 @@ static CSCap *buildExtractCap(void) {
     CSCapUrn *urn = [CSCapUrn fromString:@"cap:extract;in=\"media:ext=pdf\";out=\"media:enc=utf-8\"" error:&e];
     return [CSCap capWithUrn:urn
                        title:@"extract"
-                     command:@"extract"
+                     aliases:@[@"extract"]
                  description:nil
                documentation:nil
                     metadata:@{}

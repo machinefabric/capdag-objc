@@ -18,7 +18,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
     /// Make a test cap from a URN string
     private func makeTestCap(_ urnStr: String) -> CSCap {
         let urn = try! CSCapUrn.fromString(urnStr)
-        return CSCap(urn: urn, title: "test", command: "")
+        return CSCap(urn: urn, title: "test", aliases: ["test"])
     }
 
     /// Build a CBOR-encoded chunk payload from raw bytes (matching build_request_frames).

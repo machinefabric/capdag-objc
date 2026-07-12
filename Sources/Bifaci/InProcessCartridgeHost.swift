@@ -340,13 +340,13 @@ public final class InProcessCartridgeHost {
     /// `installed_cartridges` and derives the flat cap list.
     internal func buildManifest() -> Data {
         var caps: [CapDefinition] = [
-            CapDefinition(urn: CSCapIdentity, title: "Identity", command: "identity"),
+            CapDefinition(urn: CSCapIdentity, title: "Identity", aliases: ["identity"]),
         ]
         for entry in handlers {
             for cap in entry.caps {
                 let urn = cap.capUrn.toString()
                 if urn != CSCapIdentity {
-                    caps.append(CapDefinition(urn: urn, title: cap.title, command: cap.command))
+                    caps.append(CapDefinition(urn: urn, title: cap.title, aliases: cap.aliases))
                 }
             }
         }

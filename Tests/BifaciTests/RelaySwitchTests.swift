@@ -18,7 +18,7 @@ final class CborRelaySwitchTests: XCTestCase {
             return [
                 "urn": urn,
                 "title": "test",
-                "command": "test",
+                "aliases": ["test"],
                 "args": [] as [Any],
             ]
         }
@@ -1444,7 +1444,7 @@ final class CborRelaySwitchTests: XCTestCase {
                         "caps": [[
                             "urn": CSCapIdentity,
                             "title": "test",
-                            "command": "test",
+                            "aliases": ["test"],
                             "args": [] as [Any],
                         ]],
                         "adapter_urns": [] as [String],
