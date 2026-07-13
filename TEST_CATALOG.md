@@ -1,4 +1,4 @@
-# CapDag-ObjC/Swift Test Catalog
+# Swift/ObjC Test Catalog
 
 **Total Tests:** 881
 
@@ -12,7 +12,7 @@
 
 All numbered test numbers are unique.
 
-This catalog lists all tests in the CapDag-ObjC/Swift codebase.
+This catalog lists all tests in the Swift/ObjC codebase.
 
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
@@ -899,7 +899,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test7093 | `test7093_deadConsumerCancelsUpstream` | TEST7093: A response frame for a LIVE request whose external consumer is gone (dropped/timed-out caller) is a counted channel_closed drop AND cancels the request upstream — the destination master receives Cancel, the entry terminates as cancelled, and zero state remains: the cartridge stops producing for a dead channel instead of running to completion against it. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:863 |
 ---
 
-*Generated from CapDag-ObjC/Swift source tree*
+*Generated from Swift/ObjC source tree*
 *Total tests: 881*
 *Total numbered tests: 881*
 *Total unnumbered tests: 0*
