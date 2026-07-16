@@ -264,7 +264,7 @@ typealias CapTable = [(String, Int)]
 /// so the embedding application must supply the same four-tuple
 /// identity (`registryURL`, `channel`, `id`, `version`) it would
 /// have read from a cartridge.json — plus a content-derived `sha256`
-/// so the engine treats the in-process provider indistinguishably
+/// so the engine treats the in-process cartridge indistinguishably
 /// from any other installed cartridge.
 ///
 /// Engine-side consumers (`CapService.get_installed_cartridges`)
@@ -380,13 +380,13 @@ public final class InProcessCartridgeHost {
 
     /// Find the best handler for a cap URN.
     ///
-    /// Uses `isDispatchable(provider, request)` to find handlers that can
+    /// Uses `isDispatchable(candidate, request)` to find handlers that can
     /// legally handle the request, then ranks by specificity.
     ///
     /// Ranking prefers:
     /// 1. Equivalent matches (distance 0)
-    /// 2. More specific providers (positive distance) - refinements
-    /// 3. More generic providers (negative distance) - fallbacks
+    /// 2. More specific candidates (positive distance) - refinements
+    /// 3. More generic candidates (negative distance) - fallbacks
     private static func findHandlerForCap(capTable: CapTable, capUrn: String) -> Int? {
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
             return nil

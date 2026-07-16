@@ -581,10 +581,10 @@ final class CborRelaySwitchTests: XCTestCase {
     }
 
     // TEST435: URN matching (exact vs accepts())
-    // Dispatch is contravariant on input (request input must conform to provider input — i.e. request
-    // can be more specific) and covariant on output (provider output must conform to request output —
-    // i.e. provider can be more specific). A request whose input is in a different type family than
-    // any registered provider has no handler.
+    // Dispatch is contravariant on input (request input must conform to candidate input — i.e. request
+    // can be more specific) and covariant on output (candidate output must conform to request output —
+    // i.e. candidate can be more specific). A request whose input is in a different type family than
+    // any registered candidate has no handler.
     func test435_urn_matching_exact_and_accepts() throws {
         let pair1 = FileHandle.socketPair()  // engine_read, slave_write
         let pair2 = FileHandle.socketPair()  // slave_read, engine_write
@@ -626,8 +626,8 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(resp1?.payload, Data([42]))
 
         // Request with more specific input and less specific output SHOULD match.
-        // Input (contravariant): request's "media:text;utf8;normalized" conforms to provider's "media:text;utf8".
-        // Output (covariant): provider's "media:text;utf8" conforms to request's "media:text".
+        // Input (contravariant): request's "media:text;utf8;normalized" conforms to candidate's "media:text;utf8".
+        // Output (covariant): candidate's "media:text;utf8" conforms to request's "media:text".
         let req2 = Frame.req(
             id: MessageId.uint(2),
             capUrn: "cap:in=\"media:text;utf8;normalized\";process;out=\"media:text\"",
@@ -658,7 +658,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
     // MARK: - Preferred Cap Routing Tests (TEST437-439)
 
-    // TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:ext=pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates
+    // TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic candidate (in=media:) CAN dispatch specific request (in="media:ext=pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates
     func test437_preferredCapRoutesToExactMatch() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
@@ -738,7 +738,7 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists) With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:ext=pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists.
+    // TEST439: Generic candidate CAN dispatch specific request (but only matches if no more specific candidate exists) With is_dispatchable: generic candidate (in=media:) CAN handle specific request (in="media:ext=pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists.
     func test439_specificRequestNoMatchingHandler() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()

@@ -947,7 +947,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap accepts:request], @"Test 10: Direction mismatch should prevent match");
 }
 
-// TEST890: Semantic direction matching - generic provider matches specific request
+// TEST890: Semantic direction matching - generic candidate matches specific request
 - (void)test890_directionSemanticMatching {
     NSError *error = nil;
 
@@ -957,13 +957,13 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *pdfRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(pdfRequest, @"Failed to parse pdf request: %@", error);
     XCTAssertTrue([genericCap accepts:pdfRequest],
-        @"Generic provider must match specific pdf request");
+        @"Generic candidate must match specific pdf request");
 
     // Generic cap also matches epub (any subtype)
     CSCapUrn *epubRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=epub\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(epubRequest, @"Failed to parse epub request: %@", error);
     XCTAssertTrue([genericCap accepts:epubRequest],
-        @"Generic provider must match epub request");
+        @"Generic candidate must match epub request");
 
     // Reverse: specific cap does NOT match generic request
     CSCapUrn *pdfCap = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
@@ -1128,94 +1128,94 @@ static NSString* testUrn(NSString *tags) {
 
 #pragma mark - Dispatch Predicate Tests
 
-// TEST823: is_dispatchable — exact match provider dispatches request
+// TEST823: is_dispatchable — exact match candidate dispatches request
 - (void)test823_isDispatchable_exactMatch {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Exact match should dispatch");
+    XCTAssertTrue([candidate isDispatchable:request], @"Exact match should dispatch");
 }
 
-// TEST824: is_dispatchable — provider with broader input handles specific request (contravariance)
+// TEST824: is_dispatchable — candidate with broader input handles specific request (contravariance)
 - (void)test824_isDispatchable_broaderInputHandlesSpecific {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Provider accepting any input should dispatch request with specific pdf input");
+    XCTAssertTrue([candidate isDispatchable:request], @"Candidate accepting any input should dispatch request with specific pdf input");
 }
 
-// TEST825: is_dispatchable — request with unconstrained input dispatches to specific provider media: on the request input axis means "unconstrained" — vacuously true
+// TEST825: is_dispatchable — request with unconstrained input dispatches to specific candidate media: on the request input axis means "unconstrained" — vacuously true
 - (void)test825_isDispatchable_unconstrainedInput {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Request in=media: is unconstrained — axis is vacuously true");
+    XCTAssertTrue([candidate isDispatchable:request], @"Request in=media: is unconstrained — axis is vacuously true");
 }
 
-// TEST826: is_dispatchable — provider output must satisfy request output (covariance)
-- (void)test826_isDispatchable_providerOutputSatisfiesRequest {
+// TEST826: is_dispatchable — candidate output must satisfy request output (covariance)
+- (void)test826_isDispatchable_candidateOutputSatisfiesRequest {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Provider output enc=utf-8;record should satisfy request needing enc=utf-8");
+    XCTAssertTrue([candidate isDispatchable:request], @"Candidate output enc=utf-8;record should satisfy request needing enc=utf-8");
 }
 
-// TEST827: is_dispatchable — provider with generic output cannot satisfy specific request
+// TEST827: is_dispatchable — candidate with generic output cannot satisfy specific request
 - (void)test827_isDispatchable_genericOutputCannotSatisfySpecific {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertFalse([provider isDispatchable:request], @"Provider with generic output cannot guarantee specific output");
+    XCTAssertFalse([candidate isDispatchable:request], @"Candidate with generic output cannot guarantee specific output");
 }
 
-// TEST828: is_dispatchable — wildcard * tag in request, provider missing tag → reject
-- (void)test828_isDispatchable_wildcardRequestProviderMissingTag {
+// TEST828: is_dispatchable — wildcard * tag in request, candidate missing tag → reject
+- (void)test828_isDispatchable_wildcardRequestCandidateMissingTag {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:\";infer;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:\";infer;out=\"media:enc=utf-8\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:\";candle=*;infer;out=\"media:enc=utf-8\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertFalse([provider isDispatchable:request], @"Provider missing candle tag should NOT dispatch request requiring candle=*");
+    XCTAssertFalse([candidate isDispatchable:request], @"Candidate missing candle tag should NOT dispatch request requiring candle=*");
 }
 
-// TEST829: is_dispatchable — wildcard * tag in request, provider has tag → accept
-- (void)test829_isDispatchable_wildcardRequestProviderHasTag {
+// TEST829: is_dispatchable — wildcard * tag in request, candidate has tag → accept
+- (void)test829_isDispatchable_wildcardRequestCandidateHasTag {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:candle=v2;in=\"media:\";infer;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:candle=v2;in=\"media:\";infer;out=\"media:enc=utf-8\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:\";candle=*;infer;out=\"media:enc=utf-8\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Provider with candle=v2 should dispatch request requiring candle=*");
+    XCTAssertTrue([candidate isDispatchable:request], @"Candidate with candle=v2 should dispatch request requiring candle=*");
 }
 
-// TEST830: is_dispatchable — provider extra tags are refinement, always OK
-- (void)test830_isDispatchable_providerExtraTags {
+// TEST830: is_dispatchable — candidate extra tags are refinement, always OK
+- (void)test830_isDispatchable_candidateExtraTags {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:backend=mlx;in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:backend=mlx;in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Provider with extra backend tag should still dispatch");
+    XCTAssertTrue([candidate isDispatchable:request], @"Candidate with extra backend tag should still dispatch");
 }
 
 // TEST831: is_dispatchable — cross-backend mismatch prevented
 - (void)test831_isDispatchable_crossBackendMismatch {
     NSError *error;
-    CSCapUrn *ggufProvider = [CSCapUrn fromString:@"cap:gguf=*;in=\"media:enc=utf-8;model-spec;gguf\";infer;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *ggufCandidate = [CSCapUrn fromString:@"cap:gguf=*;in=\"media:enc=utf-8;model-spec;gguf\";infer;out=\"media:enc=utf-8\"" error:&error];
     CSCapUrn *candleRequest = [CSCapUrn fromString:@"cap:candle=*;in=\"media:enc=utf-8;model-spec;candle\";infer;out=\"media:enc=utf-8\"" error:&error];
-    XCTAssertNotNil(ggufProvider);
+    XCTAssertNotNil(ggufCandidate);
     XCTAssertNotNil(candleRequest);
-    XCTAssertFalse([ggufProvider isDispatchable:candleRequest], @"GGUF provider must not dispatch candle request");
+    XCTAssertFalse([ggufCandidate isDispatchable:candleRequest], @"GGUF candidate must not dispatch candle request");
 }
 
 // TEST832: is_dispatchable is NOT symmetric
@@ -1225,8 +1225,8 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *narrow = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";process;out=\"media:enc=utf-8\"" error:&error];
     XCTAssertNotNil(broad);
     XCTAssertNotNil(narrow);
-    XCTAssertTrue([broad isDispatchable:narrow], @"Broad provider should dispatch narrow request");
-    XCTAssertFalse([narrow isDispatchable:broad], @"Narrow provider should NOT dispatch broad request");
+    XCTAssertTrue([broad isDispatchable:narrow], @"Broad candidate should dispatch narrow request");
+    XCTAssertFalse([narrow isDispatchable:broad], @"Narrow candidate should NOT dispatch broad request");
 }
 
 // TEST833: is_comparable — both directions checked
@@ -1275,21 +1275,21 @@ static NSString* testUrn(NSString *tags) {
 // TEST837: is_dispatchable — op tag mismatch rejects
 - (void)test837_isDispatchable_opTagMismatch {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";transform;out=\"media:enc=utf-8\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertFalse([provider isDispatchable:request], @"Different op tags should prevent dispatch");
+    XCTAssertFalse([candidate isDispatchable:request], @"Different op tags should prevent dispatch");
 }
 
-// TEST838: is_dispatchable — request with wildcard output accepts any provider output
+// TEST838: is_dispatchable — request with wildcard output accepts any candidate output
 - (void)test838_isDispatchable_requestWildcardOutput {
     NSError *error;
-    CSCapUrn *provider = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
+    CSCapUrn *candidate = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8;record\"" error:&error];
     CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";extract;out=\"media:\"" error:&error];
-    XCTAssertNotNil(provider);
+    XCTAssertNotNil(candidate);
     XCTAssertNotNil(request);
-    XCTAssertTrue([provider isDispatchable:request], @"Request with wildcard output should accept any provider output");
+    XCTAssertTrue([candidate isDispatchable:request], @"Request with wildcard output should accept any candidate output");
 }
 
 // TEST014: Test that escape sequences round-trip correctly
@@ -1629,19 +1629,19 @@ static NSString* testUrn(NSString *tags) {
 // TEST128: omitted effect means declared; unconstrained effect must be explicit
 - (void)test128_effectDispatchRequiresExplicitWildcard {
     NSError *error = nil;
-    CSCapUrn *declaredProvider = [CSCapUrn fromString:@"cap:thumbnail" error:&error];
-    XCTAssertNotNil(declaredProvider, @"%@", error.localizedDescription);
-    XCTAssertEqual([declaredProvider effect], CSCapEffectDeclared);
+    CSCapUrn *declaredCandidate = [CSCapUrn fromString:@"cap:thumbnail" error:&error];
+    XCTAssertNotNil(declaredCandidate, @"%@", error.localizedDescription);
+    XCTAssertEqual([declaredCandidate effect], CSCapEffectDeclared);
 
-    CSCapUrn *noneProvider = [CSCapUrn fromString:@"cap:effect=none" error:&error];
-    XCTAssertNotNil(noneProvider, @"%@", error.localizedDescription);
+    CSCapUrn *noneCandidate = [CSCapUrn fromString:@"cap:effect=none" error:&error];
+    XCTAssertNotNil(noneCandidate, @"%@", error.localizedDescription);
 
     CSCapUrn *explicitAnyRequest = [CSCapUrn fromString:@"cap:?effect" error:&error];
     XCTAssertNotNil(explicitAnyRequest, @"%@", error.localizedDescription);
 
-    XCTAssertTrue([declaredProvider isDispatchable:explicitAnyRequest]);
-    XCTAssertTrue([noneProvider isDispatchable:explicitAnyRequest]);
-    XCTAssertFalse([noneProvider isDispatchable:declaredProvider]);
+    XCTAssertTrue([declaredCandidate isDispatchable:explicitAnyRequest]);
+    XCTAssertTrue([noneCandidate isDispatchable:explicitAnyRequest]);
+    XCTAssertFalse([noneCandidate isDispatchable:declaredCandidate]);
 }
 
 #pragma mark - Truth-table specificity tests (test1820–test1824)

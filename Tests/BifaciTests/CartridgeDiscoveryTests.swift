@@ -146,9 +146,9 @@ final class CartridgeDiscoveryTests: XCTestCase {
     // TEST1878: a cartridge marked `installed_from: bundle` with no baked hash
     // is rejected as BadInstallation — the bundled-integrity gate fires before
     // the probe. Non-macOS only: on macOS the baked-hash path is intentionally
-    // absent (OS code-signature is the guard), so a bundled provider is accepted
+    // absent (OS code-signature is the guard), so a bundled cartridge is accepted
     // there and would instead end at the probe.
-    func test1878_bundledProviderWithoutBakedHashIsRejected() throws {
+    func test1878_bundledCartridgeWithoutBakedHashIsRejected() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
         // Dev slug (null registry) but installed_from=bundle — placement is
@@ -164,7 +164,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
         guard case let .incompatible(_, _, _, _, _, error) = out.first else {
             return XCTFail("expected Incompatible, got \(String(describing: out.first))")
         }
-        XCTAssertTrue(error.message.contains("bundled provider integrity"),
+        XCTAssertTrue(error.message.contains("bundled cartridge integrity"),
                       "message should name the bundled-integrity failure: \(error.message)")
     }
     #endif

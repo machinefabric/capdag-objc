@@ -147,36 +147,36 @@ public func probeCartridgeCapGroups(path: String) throws -> [CapGroup] {
     }
 }
 
-// MARK: - Bundled-provider integrity (non-macOS)
+// MARK: - Bundled-cartridge integrity (non-macOS)
 
 #if !os(macOS)
-/// Baked content hashes for bundled providers. Empty in the plain test build
-/// (no providers bundled); a real bundle build codegens entries. Mirrors the
-/// Rust `BUNDLED_PROVIDER_HASHES` const.
-let bundledProviderHashes: [(name: String, version: String, hash: String)] = []
+/// Baked content hashes for bundled cartridges. Empty in the plain test build
+/// (no cartridges bundled); a real bundle build codegens entries. Mirrors the
+/// Rust `BUNDLED_CARTRIDGE_HASHES` const.
+let bundledCartridgeHashes: [(name: String, version: String, hash: String)] = []
 
-/// Look up the baked expected directory hash for a bundled provider, or nil
+/// Look up the baked expected directory hash for a bundled cartridge, or nil
 /// if `(name, version)` was not recorded at build time.
-func bundledProviderExpectedHash(name: String, version: String) -> String? {
-    bundledProviderHashes.first(where: { $0.name == name && $0.version == version })?.hash
+func bundledCartridgeExpectedHash(name: String, version: String) -> String? {
+    bundledCartridgeHashes.first(where: { $0.name == name && $0.version == version })?.hash
 }
 
-/// Verify a bundled provider's on-disk content against the baked hash.
+/// Verify a bundled cartridge's on-disk content against the baked hash.
 /// `nil` return ⇔ ok; a non-nil string is the failure reason.
-func verifyBundledProviderHash(name: String, version: String, versionDir: String) -> String? {
-    guard let expected = bundledProviderExpectedHash(name: name, version: version) else {
-        return "no baked hash for bundled provider \(name) \(version) — this build did not record it (MFR_BUNDLED_PROVIDER_HASHES)"
+func verifyBundledCartridgeHash(name: String, version: String, versionDir: String) -> String? {
+    guard let expected = bundledCartridgeExpectedHash(name: name, version: version) else {
+        return "no baked hash for bundled cartridge \(name) \(version) — this build did not record it (MFR_BUNDLED_CARTRIDGE_HASHES)"
     }
     let actual: String
     do {
         actual = try hashCartridgeDirectory(versionDir)
     } catch {
-        return "failed to hash bundled provider directory: \(error)"
+        return "failed to hash bundled cartridge directory: \(error)"
     }
     if actual == expected {
         return nil
     }
-    return "content hash mismatch — baked \(expected), on-disk \(actual); the shipped provider differs from what this build was compiled to ship"
+    return "content hash mismatch — baked \(expected), on-disk \(actual); the shipped cartridge differs from what this build was compiled to ship"
 }
 #endif
 
@@ -374,7 +374,7 @@ private func scanChannelRoot(
             continue
         }
 
-        // Bundled-provider integrity. A cartridge marked `installed_from:
+        // Bundled-cartridge integrity. A cartridge marked `installed_from:
         // bundle` is shipped INSIDE this build and has no upstream registry to
         // verify against — so it needs its own integrity proof.
         // - macOS: the OS code-signature IS the guard (notarized .app); no
@@ -383,7 +383,7 @@ private func scanChannelRoot(
         // - Linux/Windows: integrity is a content hash baked at build time.
         if cj.installedFrom == .bundle {
             #if !os(macOS)
-            if let reason = verifyBundledProviderHash(name: cj.name, version: cj.version, versionDir: versionDir) {
+            if let reason = verifyBundledCartridgeHash(name: cj.name, version: cj.version, versionDir: versionDir) {
                 discovered.append(.incompatible(
                     versionDir: versionDir,
                     id: cj.name,
@@ -392,7 +392,7 @@ private func scanChannelRoot(
                     version: cj.version,
                     error: CartridgeAttachmentError(
                         kind: .badInstallation,
-                        message: "bundled provider integrity check failed: \(reason)",
+                        message: "bundled cartridge integrity check failed: \(reason)",
                         detectedAtUnixSeconds: detectedAt
                     )
                 ))

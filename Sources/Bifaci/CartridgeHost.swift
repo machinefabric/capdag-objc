@@ -1528,13 +1528,13 @@ public final class CartridgeHost: @unchecked Sendable {
 
     /// Internal: find cartridge for cap (must hold stateLock).
     ///
-    /// Uses `isDispatchable(provider, request)` to find cartridges that can
+    /// Uses `isDispatchable(candidate, request)` to find cartridges that can
     /// legally handle the request, then ranks by specificity.
     ///
     /// Ranking prefers:
     /// 1. Equivalent matches (distance 0)
-    /// 2. More specific providers (positive distance) - refinements
-    /// 3. More generic providers (negative distance) - fallbacks
+    /// 2. More specific candidates (positive distance) - refinements
+    /// 3. More generic candidates (negative distance) - fallbacks
     private func findCartridgeForCapLocked(_ capUrn: String) -> Int? {
         guard let requestUrn = try? CSCapUrn.fromString(capUrn) else { return nil }
 
@@ -2443,7 +2443,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // cartridge handling this request was disabled out
             // from under me." The XPC service triggers a fresh
             // discovery scan after the disable, so the next
-            // dispatch will see no provider for the affected
+            // dispatch will see no candidate for the affected
             // caps and refuse new requests at the cap-table
             // layer rather than spawning the cartridge again.
             let msg = "Cartridge \(cartridgePath) killed because the operator disabled it."

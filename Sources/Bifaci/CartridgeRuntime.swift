@@ -3210,13 +3210,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
     /// Find an Op factory for a cap URN.
     ///
-    /// Uses `isDispatchable(provider, request)` to find handlers that can
+    /// Uses `isDispatchable(candidate, request)` to find handlers that can
     /// legally handle the request, then ranks by specificity.
     ///
     /// Ranking prefers:
     /// 1. Equivalent matches (distance 0)
-    /// 2. More specific providers (positive distance) - refinements
-    /// 3. More generic providers (negative distance) - fallbacks
+    /// 2. More specific candidates (positive distance) - refinements
+    /// 3. More generic candidates (negative distance) - fallbacks
     func findHandler(capUrn: String) -> OpFactory? {
         handlersLock.lock()
         defer { handlersLock.unlock() }

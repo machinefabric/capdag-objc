@@ -1344,13 +1344,13 @@ public final class RelaySwitch: @unchecked Sendable {
     /// This ensures generic requests (e.g., identity) route to generic handlers,
     /// and specific requests route to specific handlers.
     ///
-    /// Uses `isDispatchable(provider, request)` to find all masters that can
+    /// Uses `isDispatchable(candidate, request)` to find all masters that can
     /// legally handle the request.
     ///
     /// Among dispatchable matches, ranking prefers:
     /// 1. Equivalent matches (distance 0)
-    /// 2. More specific providers (positive distance) - refinements
-    /// 3. More generic providers (negative distance) - fallbacks
+    /// 2. More specific candidates (positive distance) - refinements
+    /// 3. More generic candidates (negative distance) - fallbacks
     ///
     /// With preference (`preferredCap`): among dispatchable matches, the master
     /// whose registered cap is equivalent to the preferred cap wins. If no

@@ -810,12 +810,12 @@ NSString *CSCapKindToString(CSCapKind kind) {
 #pragma mark - Dispatch predicates
 
 - (BOOL)isDispatchable:(CSCapUrn *)request {
-    // Axis 1: Input - provider must handle at least what request specifies (contravariant)
+    // Axis 1: Input - candidate must handle at least what request specifies (contravariant)
     if (![self inputDispatchable:request]) {
         return NO;
     }
 
-    // Axis 2: Output - provider must produce at least what request needs (covariant)
+    // Axis 2: Output - candidate must produce at least what request needs (covariant)
     if (![self outputDispatchable:request]) {
         return NO;
     }
@@ -824,7 +824,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
         return NO;
     }
 
-    // Axis 3: Cap-tags - provider must satisfy explicit request constraints
+    // Axis 3: Cap-tags - candidate must satisfy explicit request constraints
     if (![self capTagsDispatchable:request]) {
         return NO;
     }
@@ -836,56 +836,56 @@ NSString *CSCapKindToString(CSCapKind kind) {
     return CSCapEffectIsUnconstrained([request effect]) || [self.effectSpec isEqualToString:request.effectSpec];
 }
 
-/// Input is CONTRAVARIANT: provider with looser input constraint can handle
+/// Input is CONTRAVARIANT: candidate with looser input constraint can handle
 /// request with stricter input. media: is the identity (top) and means
 /// "unconstrained" — vacuously true on either side.
 - (BOOL)inputDispatchable:(CSCapUrn *)request {
-    // Request unconstrained: no input constraint, any provider is fine
+    // Request unconstrained: no input constraint, any candidate is fine
     if ([request.inSpec isEqualToString:@"media:"]) {
         return YES;
     }
 
-    // Provider wildcard: provider accepts any input, including request's specific input
+    // Candidate wildcard: candidate accepts any input, including request's specific input
     if ([self.inSpec isEqualToString:@"media:"]) {
         return YES;
     }
 
-    // Both specific: request input must conform to provider's input requirement
+    // Both specific: request input must conform to candidate's input requirement
     NSError *error = nil;
     CSMediaUrn *reqIn = [CSMediaUrn fromString:request.inSpec error:&error];
     if (!reqIn) return NO;
-    CSMediaUrn *provIn = [CSMediaUrn fromString:self.inSpec error:&error];
-    if (!provIn) return NO;
+    CSMediaUrn *candIn = [CSMediaUrn fromString:self.inSpec error:&error];
+    if (!candIn) return NO;
 
-    return [reqIn conformsTo:provIn error:&error];
+    return [reqIn conformsTo:candIn error:&error];
 }
 
-/// Output is COVARIANT: provider output must conform to request output requirement.
-/// ASYMMETRIC with input: generic provider output does NOT satisfy specific request.
+/// Output is COVARIANT: candidate output must conform to request output requirement.
+/// ASYMMETRIC with input: generic candidate output does NOT satisfy specific request.
 - (BOOL)outputDispatchable:(CSCapUrn *)request {
-    // Request wildcard: any provider output is fine
+    // Request wildcard: any candidate output is fine
     if ([request.outSpec isEqualToString:@"media:"]) {
         return YES;
     }
 
-    // Provider wildcard: cannot guarantee specific output request needs
+    // Candidate wildcard: cannot guarantee specific output request needs
     if ([self.outSpec isEqualToString:@"media:"]) {
         return NO;
     }
 
-    // Both specific: provider output must conform to request output
+    // Both specific: candidate output must conform to request output
     NSError *error = nil;
     CSMediaUrn *reqOut = [CSMediaUrn fromString:request.outSpec error:&error];
     if (!reqOut) return NO;
-    CSMediaUrn *provOut = [CSMediaUrn fromString:self.outSpec error:&error];
-    if (!provOut) return NO;
+    CSMediaUrn *candOut = [CSMediaUrn fromString:self.outSpec error:&error];
+    if (!candOut) return NO;
 
-    return [provOut conformsTo:reqOut error:&error];
+    return [candOut conformsTo:reqOut error:&error];
 }
 
-/// Every explicit request tag must be satisfied by provider.
-/// Provider may have extra tags (refinement is OK).
-/// Wildcard (*) in request means any value acceptable, but tag must still be present in provider.
+/// Every explicit request tag must be satisfied by candidate.
+/// Candidate may have extra tags (refinement is OK).
+/// Wildcard (*) in request means any value acceptable, but tag must still be present in candidate.
 - (BOOL)capTagsDispatchable:(CSCapUrn *)request {
     NSMutableSet<NSString *> *allKeys = [NSMutableSet set];
     [allKeys addObjectsFromArray:self.mutableTags.allKeys];
@@ -941,7 +941,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
         if (error) {
             *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                          code:CSCapUrnErrorInvalidEffectApplication
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Cannot infer runtime output media from unconstrained effect '?'. Requests may use ?effect; providers may not."}];
+                                     userInfo:@{NSLocalizedDescriptionKey: @"Cannot infer runtime output media from unconstrained effect '?'. Requests may use ?effect; candidates may not."}];
         }
         return nil;
     }

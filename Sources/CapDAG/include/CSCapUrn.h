@@ -275,24 +275,24 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)conformsTo:(CSCapUrn * _Nonnull)pattern;
 
 /**
- * Check if this provider can dispatch (handle) the given request.
+ * Check if this candidate can dispatch (handle) the given request.
  *
  * This is the PRIMARY predicate for routing/dispatch decisions.
- * NOT symmetric: provider.isDispatchable(request) may differ from request.isDispatchable(provider).
+ * NOT symmetric: candidate.isDispatchable(request) may differ from request.isDispatchable(candidate).
  *
- * A provider is dispatchable for a request iff:
- * 1. Input axis (contravariant): provider can handle request's input
- *    - Provider with looser input handles stricter request input
- *    - request.inSpec conforms to provider.inSpec
- * 2. Output axis (covariant): provider meets request's output needs
- *    - Provider output must satisfy request's output requirement
- *    - provider.outSpec conforms to request.outSpec
+ * A candidate is dispatchable for a request iff:
+ * 1. Input axis (contravariant): candidate can handle request's input
+ *    - Candidate with looser input handles stricter request input
+ *    - request.inSpec conforms to candidate.inSpec
+ * 2. Output axis (covariant): candidate meets request's output needs
+ *    - Candidate output must satisfy request's output requirement
+ *    - candidate.outSpec conforms to request.outSpec
  * 3. Effect axis: exact match unless the request explicitly uses `?effect`
- * 4. Cap-tags: provider satisfies all explicit request tag constraints
- *    - Provider missing a tag that request specifies → reject (even if request tag is wildcard)
+ * 4. Cap-tags: candidate satisfies all explicit request tag constraints
+ *    - Candidate missing a tag that request specifies → reject (even if request tag is wildcard)
  *
  * @param request The request cap to check dispatchability against
- * @return YES if this provider can handle the request
+ * @return YES if this candidate can handle the request
  */
 - (BOOL)isDispatchable:(CSCapUrn * _Nonnull)request;
 

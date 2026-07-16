@@ -30,7 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
             preferredCap:(nullable NSString *)preferredCap
               completion:(void (^)(NSData * _Nullable output, NSError * _Nullable error))completion;
 
-/// Check if a cap is available (has a provider)
+/// Check if a cap is available (has a candidate)
 - (void)hasCap:(NSString *)capUrn completion:(void (^)(BOOL has))completion;
 
 /// Get the cap definition from the registry

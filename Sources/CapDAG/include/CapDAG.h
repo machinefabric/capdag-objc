@@ -3,7 +3,7 @@
 //  Cap SDK - Core cap URN and definition system
 //
 //  This library provides the fundamental cap URN system used across
-//  all MachineFabric cartridges and providers. It defines the formal structure for cap
+//  all MachineFabric cartridges and candidates. It defines the formal structure for cap
 //  identifiers with flat tag-based naming, wildcard support, and specificity comparison.
 //
 //  ## Cartridge Communication

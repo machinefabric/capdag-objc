@@ -748,12 +748,12 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                                                                  caps:@[cap]
                                                           adapterUrns:@[]]]];
 
-    // Create manifest similar to what a provider would have
-    CSCapManifest *providerStyleManifest = [CSCapManifest manifestWithName:@"ProviderComponent"
+    // Create manifest similar to what a candidate would have
+    CSCapManifest *candidateStyleManifest = [CSCapManifest manifestWithName:@"CandidateComponent"
                                                        version:@"0.1.0"
                                                        channel:CSCartridgeChannelRelease
                                                    registryURL:nil
-                                                   description:@"Provider-style component"
+                                                   description:@"Candidate-style component"
                                                      capGroups:@[[[CSCapGroup alloc] initWithName:@"default"
                                                                  caps:@[cap]
                                                           adapterUrns:@[]]]];
@@ -764,15 +764,15 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNotNil(cartridgeStyleManifest.manifestDescription);
     XCTAssertNotNil(cartridgeStyleManifest.capGroups);
 
-    XCTAssertNotNil(providerStyleManifest.name);
-    XCTAssertNotNil(providerStyleManifest.version);
-    XCTAssertNotNil(providerStyleManifest.manifestDescription);
-    XCTAssertNotNil(providerStyleManifest.capGroups);
+    XCTAssertNotNil(candidateStyleManifest.name);
+    XCTAssertNotNil(candidateStyleManifest.version);
+    XCTAssertNotNil(candidateStyleManifest.manifestDescription);
+    XCTAssertNotNil(candidateStyleManifest.capGroups);
 
     // Same cap structure
-    XCTAssertEqual([cartridgeStyleManifest allCaps].count, [providerStyleManifest allCaps].count);
+    XCTAssertEqual([cartridgeStyleManifest allCaps].count, [candidateStyleManifest allCaps].count);
     XCTAssertEqualObjects([[cartridgeStyleManifest allCaps].firstObject urnString],
-                         [[providerStyleManifest allCaps].firstObject urnString]);
+                         [[candidateStyleManifest allCaps].firstObject urnString]);
 }
 
 // TEST6578: Argument creation with new a p i

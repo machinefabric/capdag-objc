@@ -74,7 +74,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
                         break
                     }
                 }
-                output.emitError(code: "PROVIDER_ERROR", message: "provider crashed")
+                output.emitError(code: "CARTRIDGE_ERROR", message: "cartridge crashed")
             }
         }
     }
@@ -382,8 +382,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let errFrame = try! reader.read()!
         XCTAssertEqual(errFrame.frameType, .err)
         XCTAssertEqual(errFrame.id, rid)
-        XCTAssertEqual(errFrame.errorCode, "PROVIDER_ERROR")
-        XCTAssertTrue(errFrame.errorMessage!.contains("provider crashed"))
+        XCTAssertEqual(errFrame.errorCode, "CARTRIDGE_ERROR")
+        XCTAssertTrue(errFrame.errorMessage!.contains("cartridge crashed"))
 
         testWrite.closeFile()
         testRead.closeFile()
