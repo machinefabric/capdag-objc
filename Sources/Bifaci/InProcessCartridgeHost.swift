@@ -482,7 +482,9 @@ public final class InProcessCartridgeHost {
                     if let idx = Self.findHandlerForCap(capTable: capTable, capUrn: capUrn) {
                         return handlers[idx].handler
                     } else {
-                        var err = Frame.err(id: rid, code: "NO_HANDLER", message: "no handler for cap: \(capUrn)")
+                        // No registered handler for a dispatched cap is a
+                        // deployment mismatch — Environment.
+                        var err = Frame.errClassified(id: rid, code: "NO_HANDLER", failureClass: .environment, message: "no handler for cap: \(capUrn)")
                         err.routingId = xid
                         writeContinuation.yield(err)
                         return identityHandler // dummy, never used

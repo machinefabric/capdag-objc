@@ -1862,7 +1862,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 }) {
                     if cartridges[foundIdx].helloFailed {
                         stateLock.unlock()
-                        var err = Frame.err(id: frame.id, code: "CARTRIDGE_UNAVAILABLE",
+                        var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_UNAVAILABLE", failureClass: .environment,
                                            message: "Cartridge '\(targetId)' failed handshake and cannot be spawned")
                         err.routingId = xid
                         sendToRelay(err)
@@ -1871,7 +1871,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     cartridgeIdx = foundIdx
                 } else {
                     stateLock.unlock()
-                    var err = Frame.err(id: frame.id, code: "CARTRIDGE_NOT_FOUND",
+                    var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_NOT_FOUND", failureClass: .environment,
                                        message: "Cartridge '\(targetId)' not found on this host")
                     err.routingId = xid
                     sendToRelay(err)
@@ -1881,7 +1881,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 // Standard cap-based dispatch
                 guard let foundIdx = findCartridgeForCapLocked(capUrn) else {
                     stateLock.unlock()
-                    var err = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No cartridge handles cap: \(capUrn)")
+                    var err = Frame.errClassified(id: frame.id, code: "NO_HANDLER", failureClass: .environment, message: "No cartridge handles cap: \(capUrn)")
                     err.routingId = xid
                     sendToRelay(err)
                     return
@@ -1896,7 +1896,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 do {
                     try spawnCartridge(at: cartridgeIdx)
                 } catch {
-                    var err = Frame.err(id: frame.id, code: "SPAWN_FAILED", message: "Failed to spawn cartridge: \(error.localizedDescription)")
+                    var err = Frame.errClassified(id: frame.id, code: "SPAWN_FAILED", failureClass: .environment, message: "Failed to spawn cartridge: \(error.localizedDescription)")
                     err.routingId = xid
                     sendToRelay(err)
                     return
@@ -1916,7 +1916,7 @@ public final class CartridgeHost: @unchecked Sendable {
             if !cartridge.writeFrame(frame) {
                 // Cartridge is dead — send ERR with XID and clean up
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
-                var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", message: deathMsg)
+                var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_DIED", failureClass: .environment, message: deathMsg)
                 err.routingId = xid
                 sendToRelay(err)
                 stateLock.lock()
@@ -2020,7 +2020,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 incomingResponseDone.remove(key)
                 stateLock.unlock()
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
-                var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", message: deathMsg)
+                var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_DIED", failureClass: .environment, message: deathMsg)
                 err.routingId = xid
                 err.seq = nextSeq
                 sendToRelay(err)
@@ -2409,7 +2409,11 @@ public final class CartridgeHost: @unchecked Sendable {
         // Only appExit suppresses ERR frames (relay is closing, no callers left).
         let cartridgePath = cartridge.path
 
-        let errInfo: (code: String, message: String)?
+        // The class is DECLARED here at the emit source
+        // (docs/failure-taxonomy.md): a crash is an Environment problem, an
+        // OOM kill is a Resource problem, cancel/disable stay Internal
+        // (statuses, not failure classes).
+        let errInfo: (code: String, failureClass: FailureClass, message: String)?
         switch reason {
         case nil:
             // Unexpected death — genuine crash mid-flight
@@ -2417,7 +2421,7 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = stderrContent.isEmpty
                 ? "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix)."
                 : "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix). stderr:\n\(stderrContent)"
-            errInfo = (code: "CARTRIDGE_DIED", message: msg)
+            errInfo = (code: "CARTRIDGE_DIED", failureClass: .environment, message: msg)
             cartridge.lastDeathMessage = msg
         case .oomKill:
             // OOM watchdog killed the cartridge — callers must be notified
@@ -2425,12 +2429,12 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = stderrContent.isEmpty
                 ? "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix)."
                 : "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix). stderr:\n\(stderrContent)"
-            errInfo = (code: "OOM_KILLED", message: msg)
+            errInfo = (code: "OOM_KILLED", failureClass: .resource, message: msg)
             cartridge.lastDeathMessage = msg
         case .cancelled:
             // Cancel-triggered kill — ERR "CANCELLED" for all pending work
             let msg = "Cartridge \(cartridgePath) killed by cancel request."
-            errInfo = (code: "CANCELLED", message: msg)
+            errInfo = (code: "CANCELLED", failureClass: .internal, message: msg)
             cartridge.lastDeathMessage = msg
         case .disabled:
             // Operator-disabled kill — ERR "DISABLED" for all
@@ -2443,7 +2447,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // caps and refuse new requests at the cap-table
             // layer rather than spawning the cartridge again.
             let msg = "Cartridge \(cartridgePath) killed because the operator disabled it."
-            errInfo = (code: "DISABLED", message: msg)
+            errInfo = (code: "DISABLED", failureClass: .internal, message: msg)
             cartridge.lastDeathMessage = msg
         case .appExit:
             // Clean shutdown — no ERR frames, relay is closing
@@ -2474,12 +2478,12 @@ public final class CartridgeHost: @unchecked Sendable {
         // Send ERR frames for all pending work (unexpected death and OOM kill).
         if let info = errInfo {
             for entry in failedOutgoing {
-                var err = Frame.err(id: entry.rid, code: info.code, message: info.message)
+                var err = Frame.errClassified(id: entry.rid, code: info.code, failureClass: info.failureClass, message: info.message)
                 err.seq = entry.nextSeq
                 sendToRelay(err)
             }
             for entry in failedIncoming {
-                var err = Frame.err(id: entry.rid, code: info.code, message: info.message)
+                var err = Frame.errClassified(id: entry.rid, code: info.code, failureClass: info.failureClass, message: info.message)
                 err.routingId = entry.xid
                 err.seq = entry.nextSeq
                 sendToRelay(err)

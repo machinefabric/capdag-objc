@@ -87,7 +87,10 @@ public enum CartridgeRuntimeError: Error, LocalizedError, @unchecked Sendable {
 
 /// Errors that can occur during stream operations.
 public enum StreamError: Error {
-    case remoteError(code: String, message: String)
+    /// The peer's ERR frame, kept STRUCTURAL: its machine-readable code, the
+    /// failure class the peer's frame declared (docs/failure-taxonomy.md),
+    /// and its message — never folded into prose.
+    case remoteError(code: String, failureClass: FailureClass, message: String)
     case closed
     case decode(String)
     case io(String)
@@ -1477,8 +1480,9 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
 
             case .err:
                 let code = frame.errorCode ?? "UNKNOWN"
+                let failureClass = frame.errorClass ?? .internal
                 let message = frame.errorMessage ?? "Unknown error"
-                return .data(.failure(.remoteError(code: code, message: message)), nil)
+                return .data(.failure(.remoteError(code: code, failureClass: failureClass, message: message)), nil)
 
             default:
                 return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")), nil)
@@ -1680,12 +1684,15 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
 
             case .err:
                 // Error frame — propagate to all open streams AND the package.
+                // Keep the peer's declared code/class/message structural
+                // (docs/failure-taxonomy.md).
                 let code = frame.errorCode ?? "UNKNOWN"
+                let failureClass = frame.errorClass ?? .internal
                 let message = frame.errorMessage ?? "Unknown error"
                 for (_, queue) in streamChannels {
-                    queue.push(.failure(.remoteError(code: code, message: message)))
+                    queue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message)))
                 }
-                streamsQueue.push(.failure(.remoteError(code: code, message: message)))
+                streamsQueue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message)))
                 break loop
 
             default:
@@ -3946,7 +3953,18 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     try? outputSender.send(endFrame)
                 } catch {
                     fputs("[CartridgeRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
-                    var errFrame = Frame.err(id: requestId, code: "HANDLER_ERROR", message: "\(error)")
+                    // The ERR frame carries the failure's DECLARED identity
+                    // (docs/failure-taxonomy.md): the code and class from
+                    // the emit source when the thrown error is classified,
+                    // HANDLER_ERROR/internal when the handler never
+                    // declared one.
+                    let identity = classifyHandlerError(error)
+                    var errFrame = Frame.errClassified(
+                        id: requestId,
+                        code: identity.code,
+                        failureClass: identity.failureClass,
+                        message: identity.message
+                    )
                     errFrame.routingId = routingId
                     try? outputSender.send(errFrame)
                 }
@@ -4053,7 +4071,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
                 // Find Op factory (using pattern matching to support wildcards)
                 guard let factory = findHandler(capUrn: capUrn) else {
-                    var err = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No handler registered for cap: \(capUrn)")
+                    // A dispatched cap this binary doesn't handle is a
+                    // deployment/manifest mismatch — Environment.
+                    var err = Frame.errClassified(id: frame.id, code: "NO_HANDLER", failureClass: .environment, message: "No handler registered for cap: \(capUrn)")
                     err.routingId = routingIdForErrors
                     try? outputSender.send(err)
                     continue

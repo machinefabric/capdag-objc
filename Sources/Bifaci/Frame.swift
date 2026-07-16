@@ -406,12 +406,24 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
-    /// Create an ERR frame
+    /// Create an ERR frame. The class defaults to `.internal` — an error
+    /// that reaches the wire without a declared class is the emitter's
+    /// problem by definition; emitters with a classified error use
+    /// `errClassified`.
     public static func err(id: MessageId, code: String, message: String) -> Frame {
+        return errClassified(id: id, code: code, failureClass: .internal, message: message)
+    }
 
+    /// Create an ERR frame carrying the full failure identity: the emitter's
+    /// machine-readable `code` (e.g. `CONTEXT_OVERFLOW`), the failure CLASS
+    /// (whose problem it is — declared at the error's definition site, see
+    /// `FailureClass`), and the human message. ERR meta contract
+    /// (docs/12.2): `code` + `class` + `message`, all text.
+    public static func errClassified(id: MessageId, code: String, failureClass: FailureClass, message: String) -> Frame {
         var frame = Frame(frameType: .err, id: id)
         frame.meta = [
             "code": .utf8String(code),
+            "class": .utf8String(failureClass.rawValue),
             "message": .utf8String(message)
         ]
         return frame
@@ -561,6 +573,19 @@ public struct Frame: @unchecked Sendable {
             return nil
         }
         return s
+    }
+
+    /// Get the failure class if this is an ERR frame. A frame without a
+    /// `class` entry (or with an unknown token) classifies as `.internal`:
+    /// unclassified means "the emitter's problem", never a guess about the
+    /// user's input. Returns nil for non-ERR frames.
+    public var errorClass: FailureClass? {
+        guard frameType == .err else { return nil }
+        guard let meta = meta, case .utf8String(let token) = meta["class"],
+              let parsed = FailureClass(rawValue: token) else {
+            return .internal
+        }
+        return parsed
     }
 
     /// Get error message if this is an ERR frame

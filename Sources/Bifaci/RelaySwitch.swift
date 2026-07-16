@@ -1451,7 +1451,9 @@ public final class RelaySwitch: @unchecked Sendable {
                 // (path-C invariant). Mirrors Rust's handle_master_frame
                 // NO_HANDLER branch (Ok(None) + ERR to caller).
                 fputs("[RelaySwitch] NO_HANDLER for peer REQ cap='\(cap)' rid=\(frame.id) from_master=\(sourceIdx) — sending ERR to caller\n", stderr)
-                var errFrame = Frame.err(id: frame.id, code: "NO_HANDLER", message: "No handler found for cap: \(cap)")
+                // No master serving this cap is a deployment/manifest
+                // mismatch — Environment (docs/failure-taxonomy.md).
+                var errFrame = Frame.errClassified(id: frame.id, code: "NO_HANDLER", failureClass: .environment, message: "No handler found for cap: \(cap)")
                 errFrame.routingId = xid
                 try? writeToMasterIdx(sourceIdx, &errFrame)
                 return nil
@@ -1690,9 +1692,12 @@ public final class RelaySwitch: @unchecked Sendable {
                 continue // raced another terminal — already fully cleaned
             }
 
-            var errFrame = Frame.err(
+            // A dead relay master is a runtime-environment failure —
+            // Environment (docs/failure-taxonomy.md).
+            var errFrame = Frame.errClassified(
                 id: key.rid,
                 code: "MASTER_DIED",
+                failureClass: .environment,
                 message: "Relay master \(masterIdx) connection closed"
             )
             errFrame.routingId = key.xid

@@ -1996,4 +1996,41 @@ final class CborFrameTests: XCTestCase {
         // the test runner, the deinit performed no I/O on the handle.
         XCTAssertTrue(true)
     }
+
+    // TEST1734: the ERR frame failure-class wire contract
+    // (docs/failure-taxonomy.md): errClassified writes meta code+class+message;
+    // plain err defaults class to internal; a missing or unknown class token
+    // reads as .internal (unclassified means "ours", never a guess); a known
+    // token round-trips exactly.
+    func test1734_errFrameFailureClassWireContract() {
+        let id = MessageId.newUUID()
+
+        let classified = Frame.errClassified(id: id, code: "CONTEXT_OVERFLOW", failureClass: .input, message: "prompt too large")
+        XCTAssertEqual(classified.errorCode, "CONTEXT_OVERFLOW")
+        XCTAssertEqual(classified.errorClass, .input)
+        XCTAssertEqual(classified.errorMessage, "prompt too large")
+
+        let plain = Frame.err(id: id, code: "BOOM", message: "unclassified failure")
+        XCTAssertEqual(plain.errorClass, FailureClass.internal,
+                       "an unclassified ERR emit must declare itself internal on the wire")
+
+        // A frame from an older/foreign emitter: no class entry at all.
+        var legacy = Frame.err(id: id, code: "BOOM", message: "x")
+        legacy.meta?.removeValue(forKey: "class")
+        XCTAssertEqual(legacy.errorClass, FailureClass.internal)
+
+        // An unknown token is a protocol anomaly, read as unclassified — never a guess.
+        var weird = Frame.err(id: id, code: "BOOM", message: "x")
+        weird.meta?["class"] = .utf8String("user-error")
+        XCTAssertEqual(weird.errorClass, FailureClass.internal)
+
+        XCTAssertNil(FailureClass(rawValue: "user-error"))
+        for c in FailureClass.allCases {
+            XCTAssertEqual(FailureClass(rawValue: c.rawValue), c)
+        }
+        XCTAssertTrue(FailureClass.input.isPermanent)
+        XCTAssertFalse(FailureClass.resource.isPermanent)
+        XCTAssertFalse(FailureClass.environment.isPermanent)
+        XCTAssertFalse(FailureClass.internal.isPermanent)
+    }
 }
