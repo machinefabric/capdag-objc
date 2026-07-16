@@ -1,38 +1,18 @@
+import Ops
+
 // The failure taxonomy — WHOSE problem a failure is
-// (docs/failure-taxonomy.md, mirrors Rust ops::FailureClass).
-//
-// Declared at the error's DEFINITION site and carried structurally through
-// every hop: the bifaci ERR frame carries the class over the wire (meta key
+// (docs/failure-taxonomy.md) — is defined ONCE in `Ops.FailureClass` (the
+// leaf package of the error path — Bifaci depends on Ops, exactly like Rust
+// capdag depends on ops) and re-exported here as the cartridge-contract
+// surface. The bifaci ERR frame carries the class over the wire (meta key
 // "class"); all four language runtimes share the same token vocabulary. No
 // layer ever infers another layer's class from message text — an error that
 // reaches a boundary without a declared class is `.internal` (unclassified
 // means "ours", never a guess).
 
-/// Whose problem a failure is. The raw value is the stable lowercase wire
-/// token — used in the ERR frame meta, the machine_runs columns, the gRPC
-/// proto, and the loom. One vocabulary everywhere.
-public enum FailureClass: String, Sendable, CaseIterable {
-    /// Deterministic on the INPUT (context overflow, invalid request,
-    /// unsupported format). The user's to fix; retrying can never succeed —
-    /// tasks failing with this class are marked permanently failed.
-    case input
-    /// A compute resource was exhausted (GPU VRAM, host memory). Often
-    /// transient (another process holding memory) — retryable.
-    case resource
-    /// The environment failed (network, registry, model download/integrity,
-    /// cartridge process death). Transient by nature — retryable.
-    case environment
-    /// Everything else: a defect in the engine or a cartridge. Ours, said
-    /// plainly. Retryable (races un-race), but never blamed on the user.
-    case `internal`
-
-    /// Whether retrying can NEVER succeed: the failure is a deterministic
-    /// function of the input. Resource/environment/internal stay retryable
-    /// (memory frees up, networks recover, races un-race).
-    public var isPermanent: Bool {
-        return self == .input
-    }
-}
+/// Re-export: `Bifaci.FailureClass` IS `Ops.FailureClass` — one type, one
+/// vocabulary, matching Rust's `pub use ops::failure::FailureClass`.
+public typealias FailureClass = Ops.FailureClass
 
 /// The declaration convention every cartridge's typed error follows (the
 /// Swift analog of the Rust `error_code()` + `failure_class()` pair): the
@@ -81,6 +61,11 @@ public struct ClassifiedError: ClassifiedFailure, CustomStringConvertible, Senda
 public func classifyHandlerError(_ error: Error) -> (code: String, failureClass: FailureClass, message: String) {
     if let classified = error as? ClassifiedFailure {
         return (classified.failureCode, classified.failureClass, classified.failureMessage)
+    }
+    // A classified op-layer failure keeps the identity it declared
+    // (matches Rust dispatch_op's OpError → RuntimeError mapping).
+    if let opError = error as? OpError, let code = opError.failureCode {
+        return (code, opError.failureClass, opError.failureReason)
     }
     // A peer's error propagated as-is keeps the class the PEER's frame
     // declared.
