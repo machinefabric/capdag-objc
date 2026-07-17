@@ -54,7 +54,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 
 @implementation CSFabricRegistryTests
 
-// TEST0144: a media def published under a manifest (v >= 1) resolves to the
+// TEST1899: a media def published under a manifest (v >= 1) resolves to the
 // VERSIONED object path `/media/<sha>/<defver>.json`, never the legacy flat path
 // `/media/<sha>`. The flat path is the pre-manifest (v0) layout; a registry that
 // silently runs in v0 mode fetches it and 404s every lookup against a versioned
@@ -63,7 +63,7 @@ static NSString *buildRegistryURL(NSString *urn) {
 // (HTTP 404)". This pins BOTH the URL rule and the manifest-driven defver
 // resolution. Mirrors the Rust reference's
 // test0144_media_def_resolves_to_versioned_object_path_under_manifest.
-- (void)test0144_mediaDefResolvesToVersionedObjectPathUnderManifest {
+- (void)test1899_mediaDefResolvesToVersionedObjectPathUnderManifest {
     // The pin is baked, never read from the process environment: reproduce the
     // exact failure environment (NO MFR_FABRIC_MANIFEST_VERSION) and confirm the
     // registry still pins at v >= 1 rather than silently degrading to v0.

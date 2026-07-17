@@ -246,8 +246,8 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
-    // TEST955: split_cbor_array with nested maps
-    func test955_splitMapArray() throws {
+    // TEST951: split_cbor_array with nested maps
+    func test951_splitMapArray() throws {
         let map1 = CBOR.map([.utf8String("name"): .utf8String("Alice")])
         let map2 = CBOR.map([.utf8String("name"): .utf8String("Bob")])
         let array = CBOR.array([map1, map2])

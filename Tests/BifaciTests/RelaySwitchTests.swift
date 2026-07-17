@@ -1191,11 +1191,11 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST0138: the installed-cartridge INVENTORY is NOT health-filtered.
+    // TEST1897: the installed-cartridge INVENTORY is NOT health-filtered.
     // A master held unhealthy by a failed runtime identity probe still has
     // its cartridges visible in the aggregate inventory, even though its
     // caps are excluded from ROUTING. Pins the deliberate asymmetry.
-    func test0138_unhealthyMasterInventoryRetainedButNotRoutable() throws {
+    func test1897_unhealthyMasterInventoryRetainedButNotRoutable() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
 
@@ -1240,13 +1240,13 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
-    // TEST0141: the routable-capability watch (subscribeCapabilities). A
+    // TEST1898: the routable-capability watch (subscribeCapabilities). A
     // subscriber must receive the CURRENT routable cap set on subscribe
     // even though it was rebuilt during construction — BEFORE any receiver
     // existed (the watch must persist the value, i.e. send_replace
     // semantics). The delivered set must be the health-filtered routable
     // cap URNs.
-    func test0141_subscribeCapabilitiesDeliversRoutableSet() throws {
+    func test1898_subscribeCapabilitiesDeliversRoutableSet() throws {
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
 
@@ -1299,7 +1299,7 @@ final class CborRelaySwitchTests: XCTestCase {
     // ERR("NO_HANDLER") frame straight back to the calling master (stamped
     // with the synthetic XID) so the caller fails fast, and
     // handleMasterFrame returns nil — it must NOT throw.
-    func test0142_peerReqNoHandlerSendsErrToCaller() throws {
+    func test1905_peerReqNoHandlerSendsErrToCaller() throws {
         let pair1 = FileHandle.socketPair()  // engine_read, slave_write
         let pair2 = FileHandle.socketPair()  // slave_read, engine_write
 

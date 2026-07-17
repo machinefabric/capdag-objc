@@ -1997,12 +1997,12 @@ final class CborFrameTests: XCTestCase {
         XCTAssertTrue(true)
     }
 
-    // TEST1734: the ERR frame failure-class wire contract
+    // TEST1900: the ERR frame failure-class wire contract
     // (docs/failure-taxonomy.md): errClassified writes meta code+class+message;
     // plain err defaults class to internal; a missing or unknown class token
     // reads as .internal (unclassified means "ours", never a guess); a known
     // token round-trips exactly.
-    func test1734_errFrameFailureClassWireContract() {
+    func test1900_errFrameFailureClassWireContract() {
         let id = MessageId.newUUID()
 
         let classified = Frame.errClassified(id: id, code: "CONTEXT_OVERFLOW", failureClass: .input, message: "prompt too large")
