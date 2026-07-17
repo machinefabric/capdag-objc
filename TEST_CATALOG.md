@@ -1,8 +1,8 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 881
+**Total Tests:** 882
 
-**Numbered Tests:** 881
+**Numbered Tests:** 882
 
 **Unnumbered Tests:** 0
 
@@ -677,6 +677,7 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test1711 | `test1711_attachmentErrorJSONRoundTripsForEveryKind` | / TEST1711: A `CartridgeAttachmentError` round-trips through / `JSONEncoder` → bytes → `JSONDecoder` unchanged for every / kind. RelayNotify's wire payload is JSON; if any variant / fails to deserialize, the engine's aggregate parse fails / and ALL cartridges from that host disappear from the / inventory — including the healthy ones. This test / covers each variant individually so a single-variant / regression doesn't hide behind a passing healthy-case. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:60 |
 | test1712 | `test1712_decodesWireFormatJSONIntoExpectedVariants` | / TEST1712: An on-the-wire JSON payload using the snake_case / raw values decodes into the right Swift variant. This is / the engine → Swift path: the engine emits / `{"kind":"bad_installation",...}` and the Swift side must / resolve it to `.badInstallation`. Asserts the lookup table / the decoder synthesises for `String`-backed enums actually / covers the new variants. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:92 |
 | test1713 | `test1713_unknownWireKindFailsToDecode` | / TEST1713: An unknown wire kind FAILS to decode. The two / new variants are wire-additive — older Swift binaries that / don't know `bad_installation` or `disabled` will see those / strings and reject them, which is correct: silently / coercing an unknown variant to a fallback would hide the / version-skew bug. The fatalError sites in / CartridgeGRPCAdapter and InstalledCartridgesStore rely on / this — they expect decode to throw / produce a known / variant, never silently pick a default. | Tests/BifaciTests/CartridgeAttachmentErrorKindWireTests.swift:130 |
+| test1734 | `test1734_errFrameFailureClassWireContract` | TEST1734: the ERR frame failure-class wire contract (docs/failure-taxonomy.md): errClassified writes meta code+class+message; plain err defaults class to internal; a missing or unknown class token reads as .internal (unclassified means "ours", never a guess); a known token round-trips exactly. | Tests/BifaciTests/FrameTests.swift:2005 |
 | test1800 | `test1800_kind_identity_only_for_bare_cap` | TEST1800: Identity classifier — only explicit effect=none qualifies. Adding any tag (even one that doesn't constrain in/out) demotes the cap to Transform because the operation/metadata axis is no longer fully generic. | Tests/CapDAGTests/CSCapUrnTests.m:1460 |
 | test1801 | `test1801_kind_source_when_input_is_void` | TEST1801: Source classifier — in=media:void, out non-void. | Tests/CapDAGTests/CSCapUrnTests.m:1492 |
 | test1802 | `test1802_kind_sink_when_output_is_void` | TEST1802: Sink classifier — out=media:void, in non-void. | Tests/CapDAGTests/CSCapUrnTests.m:1505 |
@@ -900,8 +901,8 @@ This catalog lists all tests in the Swift/ObjC codebase.
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 881*
-*Total numbered tests: 881*
+*Total tests: 882*
+*Total numbered tests: 882*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*
