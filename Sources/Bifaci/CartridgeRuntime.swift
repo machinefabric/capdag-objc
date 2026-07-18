@@ -89,8 +89,10 @@ public enum CartridgeRuntimeError: Error, LocalizedError, @unchecked Sendable {
 public enum StreamError: Error {
     /// The peer's ERR frame, kept STRUCTURAL: its machine-readable code, the
     /// failure class the peer's frame declared (docs/failure-taxonomy.md),
-    /// and its message — never folded into prose.
-    case remoteError(code: String, failureClass: FailureClass, message: String)
+    /// its message — never folded into prose — and the media URN of the
+    /// argument the peer's frame attributed the failure to (nil when the
+    /// frame carried no attribution).
+    case remoteError(code: String, failureClass: FailureClass, message: String, argUrn: String?)
     case closed
     case decode(String)
     case io(String)
@@ -1482,7 +1484,7 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                 let code = frame.errorCode ?? "UNKNOWN"
                 let failureClass = frame.errorClass ?? .internal
                 let message = frame.errorMessage ?? "Unknown error"
-                return .data(.failure(.remoteError(code: code, failureClass: failureClass, message: message)), nil)
+                return .data(.failure(.remoteError(code: code, failureClass: failureClass, message: message, argUrn: frame.errorArgUrn)), nil)
 
             default:
                 return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")), nil)
@@ -1689,10 +1691,11 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 let code = frame.errorCode ?? "UNKNOWN"
                 let failureClass = frame.errorClass ?? .internal
                 let message = frame.errorMessage ?? "Unknown error"
+                let argUrn = frame.errorArgUrn
                 for (_, queue) in streamChannels {
-                    queue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message)))
+                    queue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message, argUrn: argUrn)))
                 }
-                streamsQueue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message)))
+                streamsQueue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message, argUrn: argUrn)))
                 break loop
 
             default:
@@ -3963,7 +3966,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         id: requestId,
                         code: identity.code,
                         failureClass: identity.failureClass,
-                        message: identity.message
+                        message: identity.message,
+                        argUrn: identity.argUrn
                     )
                     errFrame.routingId = routingId
                     try? outputSender.send(errFrame)

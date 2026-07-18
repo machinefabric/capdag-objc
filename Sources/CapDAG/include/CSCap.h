@@ -14,6 +14,8 @@
 #import <Foundation/Foundation.h>
 #import "CSCapUrn.h"
 
+@class CSMediaUrn;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /**
@@ -214,6 +216,33 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  * @return The stdin media URN or nil
  */
 - (nullable NSString *)getStdinMediaUrn;
+
+/**
+ * The media URN the runtime demuxes this argument's input stream by: its
+ * stdin source URN if it declares one, otherwise its declared slot media
+ * URN. A cap need not declare any stdin source at all — a producer-fed
+ * argument may be delivered by its declared URN — so this never assumes a
+ * stdin source exists.
+ * Mirrors Rust: CapArg::stream_urn()
+ * @return The stream media URN
+ */
+- (NSString *)streamUrn;
+
+/**
+ * Whether this argument is the cap's MAIN input relative to inSpec (the cap
+ * URN's in= value): it declares a stdin source whose URN is in=. The main
+ * input is always the value piped in on stdin (like a Unix command's stdin),
+ * so the main argument always declares a stdin source carrying in=. Its
+ * DECLARED slot URN may differ from that stdin URN (e.g. a file-path slot
+ * whose piped content is a pdf-stream) — the stdin URN, not the slot URN,
+ * is in=. The main input may ALSO be delivered by position/cli-flag, but
+ * stdin is the defining route. Compared by tagged-URN equivalence, never as
+ * strings.
+ * Mirrors Rust: CapArg::is_main_input(&in_spec)
+ * @param inSpec The cap URN's in= spec as a parsed media URN
+ * @return YES if this argument is the cap's main input
+ */
+- (BOOL)isMainInputForInSpec:(CSMediaUrn *)inSpec;
 
 /**
  * Check if this argument has a position source

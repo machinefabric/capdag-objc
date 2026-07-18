@@ -12,6 +12,7 @@
 #import "CSCapUrn.h"
 #import "CSCapManifest.h"
 #import "CSMediaDef.h"
+#import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 
 @interface CSCapTests : XCTestCase
@@ -1087,6 +1088,133 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     CSCap *roundTripped = [CSCap capWithDictionary:serialized error:&error];
     XCTAssertNotNil(roundTripped, @"Second deserialization failed: %@", error);
     XCTAssertEqual(roundTripped.version, (uint32_t)3, @"version must survive full round-trip");
+}
+
+// ===========================================================================
+// Shared parity tests 7100-7104: CSCapArg streamUrn / isMainInputForInSpec:.
+// Same substantive assertions in every capdag mirror (rust, go, js, objc, py).
+// ===========================================================================
+
+// TEST7100: streamUrn returns the stdin source's URN when it differs from the declared slot media URN — the stdin URN, not the slot URN, is what the runtime demuxes the argument's input stream by.
+- (void)test7100_StreamUrnReturnsStdinSourceUrnWhenItDiffersFromSlotUrn {
+    CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
+                                     required:YES
+                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:ext=pdf;pdf-stream"]]];
+    XCTAssertEqualObjects([arg streamUrn], @"media:ext=pdf;pdf-stream",
+                          @"streamUrn must return the stdin source URN");
+    XCTAssertNotEqualObjects([arg streamUrn], arg.mediaUrn,
+                             @"stream URN must differ from the declared slot media URN here");
+}
+
+// TEST7101: streamUrn falls back to the declared slot media URN when the argument declares no stdin source — a producer-fed argument may be delivered by its declared URN without ever appearing on stdin.
+- (void)test7101_StreamUrnFallsBackToDeclaredMediaUrnWithoutStdinSource {
+    CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;system-prompt"
+                                     required:YES
+                                      sources:@[[CSArgSource cliFlagSource:@"--system-prompt"]]];
+    XCTAssertEqualObjects([arg streamUrn], @"media:enc=utf-8;system-prompt",
+                          @"streamUrn must fall back to the declared media URN");
+}
+
+// TEST7102: isMainInputForInSpec: is YES when the stdin URN is order-theoretically EQUIVALENT to the cap's in= spec even when the two strings list their tags in a different order — the comparison is the media-URN equivalence predicate, never a string comparison.
+- (void)test7102_IsMainInputTrueOnTagOrderInsensitiveEquivalenceToInSpec {
+    NSError *error;
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:ext=pdf;pdf-stream" error:&error];
+    XCTAssertNotNil(inSpec, @"Failed to parse in= spec: %@", error);
+
+    // Same tags, different order.
+    CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
+                                     required:YES
+                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;ext=pdf"]]];
+    XCTAssertTrue([arg isMainInputForInSpec:inSpec],
+                  @"tag-order-insensitive equivalent stdin URN must be the main input");
+    // The raw strings genuinely differ — proves the match is equivalence,
+    // not string equality.
+    XCTAssertNotEqualObjects([inSpec toString], @"media:pdf-stream;ext=pdf",
+                             @"raw spec strings must differ for this test to be meaningful");
+}
+
+// TEST7103: isMainInputForInSpec: is NO for cli_flag-only and position-only arguments (no stdin source means never the main input, whatever the declared slot URN says), and NO when the stdin URN is not equivalent to in=.
+- (void)test7103_IsMainInputFalseWithoutEquivalentStdinSource {
+    NSError *error;
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:ext=pdf;pdf-stream" error:&error];
+    XCTAssertNotNil(inSpec, @"Failed to parse in= spec: %@", error);
+
+    // Slot URN even matches in= — irrelevant without a stdin source.
+    CSCapArg *cliFlagOnly = [CSCapArg argWithMediaUrn:@"media:ext=pdf;pdf-stream"
+                                             required:YES
+                                              sources:@[[CSArgSource cliFlagSource:@"--input"]]];
+    XCTAssertFalse([cliFlagOnly isMainInputForInSpec:inSpec],
+                   @"cli_flag-only argument is never the main input");
+
+    CSCapArg *positionOnly = [CSCapArg argWithMediaUrn:@"media:ext=pdf;pdf-stream"
+                                              required:YES
+                                               sources:@[[CSArgSource positionSource:0]]];
+    XCTAssertFalse([positionOnly isMainInputForInSpec:inSpec],
+                   @"position-only argument is never the main input");
+
+    CSCapArg *nonEquivalentStdin = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;system-prompt"
+                                                    required:NO
+                                                     sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:enc=utf-8;system-prompt"]]];
+    XCTAssertFalse([nonEquivalentStdin isMainInputForInSpec:inSpec],
+                   @"stdin URN not equivalent to in= must not be the main input");
+}
+
+// TEST7104: A realistic multi-arg cap (one stdin main input; one required, defaultless cli_flag arg; several defaulted cli_flag args): exactly one argument is the main input, and partitioning the remaining arguments by required-without-default vs has-default yields the expected sets.
+- (void)test7104_MultiArgCapExactlyOneMainInputAndPartitionOfRest {
+    NSError *error;
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:ext=pdf;pdf-stream" error:&error];
+    XCTAssertNotNil(inSpec, @"Failed to parse in= spec: %@", error);
+
+    // Main input may ALSO be delivered by cli-flag; stdin is the defining route.
+    CSCapArg *mainArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
+                                         required:YES
+                                          sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;ext=pdf"],
+                                                    [CSArgSource cliFlagSource:@"--input"]]];
+    CSCapArg *questionArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;question"
+                                             required:YES
+                                              sources:@[[CSArgSource cliFlagSource:@"--question"]]];
+    CSCapArg *maxTokensArg = [CSCapArg argWithMediaUrn:@"media:max-tokens;numeric"
+                                              required:NO
+                                               sources:@[[CSArgSource cliFlagSource:@"--max-tokens"]]
+                                        argDescription:nil
+                                          defaultValue:@1024];
+    CSCapArg *temperatureArg = [CSCapArg argWithMediaUrn:@"media:numeric;temperature"
+                                                required:NO
+                                                 sources:@[[CSArgSource cliFlagSource:@"--temperature"]]
+                                          argDescription:nil
+                                            defaultValue:@0.7];
+    CSCapArg *systemPromptArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;system-prompt"
+                                                 required:NO
+                                                  sources:@[[CSArgSource cliFlagSource:@"--system-prompt"]]
+                                           argDescription:nil
+                                             defaultValue:@"You are a helpful assistant."];
+    NSArray<CSCapArg *> *args = @[mainArg, questionArg, maxTokensArg, temperatureArg, systemPromptArg];
+
+    NSMutableArray<NSString *> *mainInputs = [NSMutableArray array];
+    NSMutableArray<NSString *> *requiredWithoutDefault = [NSMutableArray array];
+    NSMutableArray<NSString *> *withDefault = [NSMutableArray array];
+    for (CSCapArg *arg in args) {
+        if ([arg isMainInputForInSpec:inSpec]) {
+            [mainInputs addObject:arg.mediaUrn];
+            continue;
+        }
+        if (arg.required && arg.defaultValue == nil) {
+            [requiredWithoutDefault addObject:arg.mediaUrn];
+        } else if (arg.defaultValue != nil) {
+            [withDefault addObject:arg.mediaUrn];
+        }
+    }
+
+    XCTAssertEqualObjects(mainInputs, @[@"media:enc=utf-8;file-path"],
+                          @"exactly one argument must be the main input");
+    XCTAssertEqualObjects(requiredWithoutDefault, @[@"media:enc=utf-8;question"],
+                          @"required-without-default partition");
+    NSArray<NSString *> *expectedWithDefault = @[
+        @"media:max-tokens;numeric",
+        @"media:numeric;temperature",
+        @"media:enc=utf-8;system-prompt"
+    ];
+    XCTAssertEqualObjects(withDefault, expectedWithDefault, @"has-default partition");
 }
 
 @end

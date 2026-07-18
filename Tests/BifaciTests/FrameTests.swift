@@ -2033,4 +2033,54 @@ final class CborFrameTests: XCTestCase {
         XCTAssertFalse(FailureClass.environment.isPermanent)
         XCTAssertFalse(FailureClass.internal.isPermanent)
     }
+
+    // TEST7105: an ERR frame built WITH an argument attribution round-trips
+    // its full declared identity through encode/decode — the meta map carries
+    // the "arg_urn" key, errorArgUrn returns the URN, and code/class/message
+    // stay intact (docs/failure-taxonomy.md).
+    func test7105_errFrameArgUrnRoundtrip() throws {
+        let rid = MessageId.newUUID()
+        let argUrn = "media:prompt;str;utf8"
+
+        let frame = Frame.errClassified(
+            id: rid,
+            code: "CONTEXT_OVERFLOW",
+            failureClass: .input,
+            message: "prompt exceeds context window",
+            argUrn: argUrn
+        )
+        let decoded = try decodeFrame(try encodeFrame(frame))
+
+        guard case .utf8String(let wireUrn)? = decoded.meta?["arg_urn"] else {
+            XCTFail("the encoded ERR meta must carry the arg_urn key")
+            return
+        }
+        XCTAssertEqual(wireUrn, argUrn, "the arg_urn meta entry must survive the wire verbatim")
+        XCTAssertEqual(decoded.errorArgUrn, argUrn)
+        XCTAssertEqual(decoded.errorCode, "CONTEXT_OVERFLOW")
+        XCTAssertEqual(decoded.errorClass, .input)
+        XCTAssertEqual(decoded.errorMessage, "prompt exceeds context window")
+    }
+
+    // TEST7106: an ERR frame built WITHOUT attribution has NO "arg_urn" key
+    // in the encoded meta — absent, never an empty string — and errorArgUrn
+    // returns nil (docs/failure-taxonomy.md).
+    func test7106_errFrameWithoutAttributionHasNoArgUrn() throws {
+        let rid = MessageId.newUUID()
+
+        let frame = Frame.errClassified(
+            id: rid,
+            code: "OOM_KILLED",
+            failureClass: .resource,
+            message: "out of memory"
+        )
+        let decoded = try decodeFrame(try encodeFrame(frame))
+
+        XCTAssertNil(decoded.meta?["arg_urn"],
+                     "an ERR frame without attribution must not carry an arg_urn key at all")
+        XCTAssertNil(decoded.errorArgUrn)
+        XCTAssertEqual(decoded.errorCode, "OOM_KILLED")
+        XCTAssertEqual(decoded.errorClass, .resource)
+        XCTAssertEqual(decoded.errorMessage, "out of memory")
+    }
 }

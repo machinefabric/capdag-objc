@@ -1,5 +1,6 @@
 import XCTest
 @testable import Bifaci
+import Ops
 @preconcurrency import SwiftCBOR
 
 // =============================================================================
@@ -884,6 +885,22 @@ final class StreamingAPITests: XCTestCase {
         // Verify log frame
         XCTAssertEqual(captured.frames[1].logLevel, "info")
         XCTAssertEqual(captured.frames[1].logMessage, "loading complete")
+    }
+
+    func test846_classifyHandlerErrorPreservesOpArgumentAttribution() {
+        let error = OpError.classified(
+            code: "INVALID_INPUT",
+            failureClass: .input,
+            message: "prompt is invalid",
+            argUrn: "media:enc=utf-8;prompt"
+        )
+
+        let identity = classifyHandlerError(error)
+
+        XCTAssertEqual(identity.code, "INVALID_INPUT")
+        XCTAssertEqual(identity.failureClass, .input)
+        XCTAssertEqual(identity.message, "prompt is invalid")
+        XCTAssertEqual(identity.argUrn, "media:enc=utf-8;prompt")
     }
 }
 

@@ -7,6 +7,7 @@
 
 #import "CSCap.h"
 #import "CSMediaDef.h"
+#import "CSMediaUrn.h"
 
 #pragma mark - CSMediaValidation Implementation
 
@@ -428,6 +429,37 @@
         }
     }
     return nil;
+}
+
+- (NSString *)streamUrn {
+    for (CSArgSource *source in self.sources) {
+        if ([source isStdin]) {
+            return source.stdinMediaUrn;
+        }
+    }
+    return self.mediaUrn;
+}
+
+- (BOOL)isMainInputForInSpec:(CSMediaUrn *)inSpec {
+    if (inSpec == nil) {
+        return NO;
+    }
+    for (CSArgSource *source in self.sources) {
+        if (![source isStdin]) {
+            continue;
+        }
+        NSError *error = nil;
+        CSMediaUrn *stdinUrn = [CSMediaUrn fromString:source.stdinMediaUrn error:&error];
+        if (stdinUrn == nil) {
+            // Mirrors the Rust reference's unwrap_or(false): a malformed
+            // stdin URN never matches; keep scanning the other sources.
+            continue;
+        }
+        if ([stdinUrn isEquivalentTo:inSpec]) {
+            return YES;
+        }
+    }
+    return NO;
 }
 
 - (BOOL)hasPositionSource {

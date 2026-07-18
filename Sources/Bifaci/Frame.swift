@@ -417,15 +417,23 @@ public struct Frame: @unchecked Sendable {
     /// Create an ERR frame carrying the full failure identity: the emitter's
     /// machine-readable `code` (e.g. `CONTEXT_OVERFLOW`), the failure CLASS
     /// (whose problem it is — declared at the error's definition site, see
-    /// `FailureClass`), and the human message. ERR meta contract
-    /// (docs/12.2): `code` + `class` + `message`, all text.
-    public static func errClassified(id: MessageId, code: String, failureClass: FailureClass, message: String) -> Frame {
+    /// `FailureClass`), the human message, and — when the failure is
+    /// attributed to a specific argument at the emit source — the media URN
+    /// of that argument. ERR meta contract (docs/12.2 +
+    /// docs/failure-taxonomy.md): `code` + `class` + `message`, all text,
+    /// plus an OPTIONAL `arg_urn` entry that is ABSENT when there is no
+    /// attribution (never an empty string).
+    public static func errClassified(id: MessageId, code: String, failureClass: FailureClass, message: String, argUrn: String? = nil) -> Frame {
         var frame = Frame(frameType: .err, id: id)
-        frame.meta = [
+        var meta: [String: CBOR] = [
             "code": .utf8String(code),
             "class": .utf8String(failureClass.rawValue),
             "message": .utf8String(message)
         ]
+        if let argUrn = argUrn {
+            meta["arg_urn"] = .utf8String(argUrn)
+        }
+        frame.meta = meta
         return frame
     }
 
@@ -586,6 +594,17 @@ public struct Frame: @unchecked Sendable {
             return .internal
         }
         return parsed
+    }
+
+    /// Get the media URN of the argument the failure is attributed to, when
+    /// the emit source declared one (ERR meta key `arg_urn`,
+    /// docs/failure-taxonomy.md). Returns nil when the frame carries no
+    /// attribution, and for non-ERR frames.
+    public var errorArgUrn: String? {
+        guard frameType == .err, let meta = meta, case .utf8String(let s) = meta["arg_urn"] else {
+            return nil
+        }
+        return s
     }
 
     /// Get error message if this is an ERR frame

@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.364.3638
+// version: 1.365.3649
 import PackageDescription
 
 let package = Package(
@@ -53,6 +53,7 @@ let package = Package(
             dependencies: [
                 "Bifaci",
                 "CapDAG",
+                .product(name: "Ops", package: "ops-objc"),
                 .product(name: "SwiftCBOR", package: "SwiftCBOR"),
             ]),
     ]
