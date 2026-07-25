@@ -171,7 +171,7 @@ final class ProtocolV4Tests: XCTestCase {
         XCTAssertThrowsError(try performHandshakeWithManifest(reader: reader, writer: writer), "v2 HELLO must be rejected") { error in
             let msg = (error as? FrameError)?.errorDescription ?? "\(error)"
             XCTAssertTrue(msg.contains("version"), "error must name the version mismatch: \(msg)")
-            XCTAssertTrue(msg.contains("2") && msg.contains("3"), "error must state both versions: \(msg)")
+            XCTAssertTrue(msg.contains("2") && msg.contains("4"), "error must state both versions: \(msg)")
         }
         XCTAssertEqual(semaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
