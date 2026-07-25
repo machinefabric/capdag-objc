@@ -75,7 +75,7 @@ final class CborIntegrationTests: XCTestCase {
         let writer = FrameWriter(handle: hostWrite)
 
         let result = try performHandshakeWithManifest(reader: reader, writer: writer)
-        let receivedManifest = result.manifest!
+        let receivedManifest = result.manifest
         let hostLimits = result.limits
 
         XCTAssertEqual(receivedManifest, testManifest)

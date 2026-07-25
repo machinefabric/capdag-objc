@@ -137,7 +137,7 @@ final class ProtocolV4Tests: XCTestCase {
         XCTAssertEqual(host.limits.maxChunk, 128_000, "min(256KB, 128KB)")
         XCTAssertEqual(host.limits.maxReorderBuffer, 32, "min(64, 32)")
         XCTAssertEqual(host.limits.initialCredit, 16, "min(32, 16)")
-        XCTAssertFalse(host.manifest?.isEmpty ?? true, "manifest must be extracted")
+        XCTAssertFalse(host.manifest.isEmpty, "manifest must be extracted")
 
         XCTAssertEqual(cart.initialCredit, 16)
         XCTAssertEqual(cart.maxReorderBuffer, 32)
