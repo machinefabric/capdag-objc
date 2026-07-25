@@ -94,7 +94,7 @@ public struct SocketPair: Sendable {
 }
 
 /// Composite routing key: (XID, RID) — uniquely identifies a request flow.
-/// Alias onto the unified request table's key type (protocol v3, L7).
+/// Alias onto the unified request table's key type (protocol v4, L7).
 typealias RoutingKey = RequestKey
 
 public struct RelayNotifyCapabilitiesPayload: Codable {
@@ -624,7 +624,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         // Control/side-channel frames are legal ANYWHERE during the
                         // probe (spec 12.4: LOG interleaves without affecting data
                         // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A v3 cartridge crediting its
+                        // gate itself exempts, L4). A v4 cartridge crediting its
                         // probe input as it consumes (L10) must not fail identity
                         // verification.
                         break
@@ -965,7 +965,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         // Control/side-channel frames are legal ANYWHERE during the
                         // probe (spec 12.4: LOG interleaves without affecting data
                         // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A v3 cartridge crediting its
+                        // gate itself exempts, L4). A v4 cartridge crediting its
                         // probe input as it consumes (L10) must not fail identity
                         // verification.
                         break
@@ -1453,7 +1453,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 fputs("[RelaySwitch] NO_HANDLER for peer REQ cap='\(cap)' rid=\(frame.id) from_master=\(sourceIdx) — sending ERR to caller\n", stderr)
                 // No master serving this cap is a deployment/manifest
                 // mismatch — Environment (docs/failure-taxonomy.md).
-                var errFrame = Frame.errClassified(id: frame.id, code: "NO_HANDLER", failureClass: .environment, message: "No handler found for cap: \(cap)")
+                var errFrame = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: "No handler found for cap: \(cap)")
                 errFrame.routingId = xid
                 try? writeToMasterIdx(sourceIdx, &errFrame)
                 return nil
@@ -1694,10 +1694,10 @@ public final class RelaySwitch: @unchecked Sendable {
 
             // A dead relay master is a runtime-environment failure —
             // Environment (docs/failure-taxonomy.md).
-            var errFrame = Frame.errClassified(
+            var errFrame = Frame.err(
                 id: key.rid,
                 code: "MASTER_DIED",
-                failureClass: .environment,
+                attributionClass: .environment,
                 message: "Relay master \(masterIdx) connection closed"
             )
             errFrame.routingId = key.xid
@@ -1720,7 +1720,7 @@ public final class RelaySwitch: @unchecked Sendable {
         rebuildLimits()
     }
 
-    // MARK: - Protocol Stats + Cancellation (protocol v3)
+    // MARK: - Protocol Stats + Cancellation (protocol v4)
 
     /// The switch's protocol observability snapshot (L8): live request state,
     /// recent terminations, and per-reason drop counters. Field names are the
@@ -1779,7 +1779,7 @@ public final class RelaySwitch: @unchecked Sendable {
 
         // Send ERR "CANCELLED" to the external response channel if present
         if let channel = externalChannel {
-            var errFrame = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
+            var errFrame = Frame.err(id: rid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
             errFrame.routingId = xid
             _ = channel(errFrame)
         }
@@ -2002,7 +2002,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 // Control/side-channel frames are legal ANYWHERE during the
                 // probe (spec 12.4: LOG interleaves without affecting data
                 // flow; CREDIT/HEARTBEAT are the control plane the writer
-                // gate itself exempts, L4). A v3 cartridge crediting its
+                // gate itself exempts, L4). A v4 cartridge crediting its
                 // probe input as it consumes (L10) must not fail identity
                 // verification.
                 break
@@ -2326,6 +2326,8 @@ public struct CartridgeAttachmentError: Codable, Hashable, Sendable {
 /// `capdag::CartridgeRuntimeStats` wire-for-wire over RelayNotify JSON.
 public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public let running: Bool
+    /// Maximum concurrent handlers. Zero means unlimited.
+    public let handlerCapacity: UInt64
     public let pid: UInt32?
     public let activeRequestCount: UInt64
     public let peerRequestCount: UInt64
@@ -2343,6 +2345,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case running
+        case handlerCapacity = "handler_capacity"
         case pid
         case activeRequestCount = "active_request_count"
         case peerRequestCount = "peer_request_count"
@@ -2355,6 +2358,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 
     public init(
         running: Bool,
+        handlerCapacity: UInt64,
         pid: UInt32? = nil,
         activeRequestCount: UInt64,
         peerRequestCount: UInt64,
@@ -2365,6 +2369,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         protocolDropsTotal: UInt64? = nil
     ) {
         self.running = running
+        self.handlerCapacity = handlerCapacity
         self.pid = pid
         self.activeRequestCount = activeRequestCount
         self.peerRequestCount = peerRequestCount
@@ -2378,6 +2383,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.running = try c.decode(Bool.self, forKey: .running)
+        self.handlerCapacity = try c.decode(UInt64.self, forKey: .handlerCapacity)
         self.pid = try c.decodeIfPresent(UInt32.self, forKey: .pid)
         self.activeRequestCount = try c.decode(UInt64.self, forKey: .activeRequestCount)
         self.peerRequestCount = try c.decode(UInt64.self, forKey: .peerRequestCount)
@@ -2391,6 +2397,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(running, forKey: .running)
+        try c.encode(handlerCapacity, forKey: .handlerCapacity)
         try c.encodeIfPresent(pid, forKey: .pid)
         try c.encode(activeRequestCount, forKey: .activeRequestCount)
         try c.encode(peerRequestCount, forKey: .peerRequestCount)
@@ -2474,8 +2481,8 @@ public struct InstalledCartridgeRecord: Codable, Sendable {
     /// Present when the cartridge failed to attach; absent when healthy.
     public let attachmentError: CartridgeAttachmentError?
     /// Live runtime statistics from the host that owns this cartridge.
-    /// `nil` for cartridges that aren't host-tracked (e.g. identities
-    /// emitted by an in-process host with no routing tables).
+    /// `nil` only when attachment failed before a runtime could be established.
+    /// Operational in-process hosts publish unlimited capacity explicitly.
     public let runtimeStats: CartridgeRuntimeStats?
     /// Positive lifecycle phase. Mutually exclusive with
     /// `attachmentError`: when the cartridge has a failed terminal

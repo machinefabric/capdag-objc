@@ -134,9 +134,7 @@ public func probeCartridgeCapGroups(path: String) throws -> [CapGroup] {
         throw CartridgeDiscoveryError.readDirFailed(path: path, underlying: "cartridge \(path) HELLO failed: \(error)")
     }
 
-    guard let manifestData = result.manifest else {
-        throw CartridgeDiscoveryError.readDirFailed(path: path, underlying: "cartridge \(path) HELLO missing manifest")
-    }
+    let manifestData = result.manifest
 
     do {
         let manifest = try JSONDecoder().decode(Manifest.self, from: manifestData)

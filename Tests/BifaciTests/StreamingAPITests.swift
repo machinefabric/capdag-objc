@@ -667,7 +667,7 @@ final class StreamingAPITests: XCTestCase {
         var responseFrames: [Frame] = []
         responseFrames.append(Frame.progress(id: reqId, progress: 0.1, message: "downloading file 1/10"))
         responseFrames.append(Frame.progress(id: reqId, progress: 0.5, message: "downloading file 5/10"))
-        responseFrames.append(Frame.log(id: reqId, level: "status", message: "large file in progress"))
+        responseFrames.append(Frame.log(id: reqId, level: "status", attributionClass: .internal, message: "large file in progress"))
 
         // Then the actual data
         responseFrames.append(Frame.streamStart(reqId: reqId, streamId: "s1", mediaUrn: "media:binary"))
@@ -730,8 +730,8 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertNil(response.recv(), "stream must end after STREAM_END")
     }
 
-    // TEST840: PeerResponse::collect_bytes discards LOG frames
-    func test840_peerResponseCollectBytesDiscardsLogs() throws {
+    // TEST840: PeerResponse::collect_bytes rejects unhandled LOG frames.
+    func test840_peerResponseCollectBytesRejectsUnhandledLogs() throws {
         let reqId = MessageId.newUUID()
 
         var responseFrames: [Frame] = []
@@ -744,7 +744,7 @@ final class StreamingAPITests: XCTestCase {
         let checksum = Frame.computeChecksum(cborPayload)
         responseFrames.append(Frame.chunk(reqId: reqId, streamId: "s1", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
 
-        responseFrames.append(Frame.log(id: reqId, level: "info", message: "done"))
+        responseFrames.append(Frame.log(id: reqId, level: "info", attributionClass: .internal, message: "done"))
         responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "s1", chunkCount: 1))
 
         var idx = 0
@@ -756,19 +756,23 @@ final class StreamingAPITests: XCTestCase {
         }
 
         let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
-        let bytes = try response.collectBytes()
-        XCTAssertEqual(bytes, Data("hello".utf8), "collectBytes must return only data, discarding all LOG frames")
+        XCTAssertThrowsError(try response.collectBytes()) { error in
+            guard case StreamError.protocolError(let message) = error else {
+                return XCTFail("expected protocolError, got \(error)")
+            }
+            XCTAssertTrue(message.contains("explicit diagnostic forwarding"))
+        }
     }
 
-    // TEST841: PeerResponse::collect_value discards LOG frames
-    func test841_peerResponseCollectValueDiscardsLogs() throws {
+    // TEST841: PeerResponse::collect_value rejects unhandled LOG frames.
+    func test841_peerResponseCollectValueRejectsUnhandledLogs() throws {
         let reqId = MessageId.newUUID()
 
         var responseFrames: [Frame] = []
         responseFrames.append(Frame.streamStart(reqId: reqId, streamId: "s1", mediaUrn: "media:binary"))
         // LOG frames before data
         responseFrames.append(Frame.progress(id: reqId, progress: 0.5, message: "half"))
-        responseFrames.append(Frame.log(id: reqId, level: "debug", message: "processing"))
+        responseFrames.append(Frame.log(id: reqId, level: "debug", attributionClass: .internal, message: "processing"))
 
         // Single CHUNK with a CBOR unsigned int 42
         let cborPayload = Data(CBOR.unsignedInt(42).encode())
@@ -785,8 +789,12 @@ final class StreamingAPITests: XCTestCase {
         }
 
         let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
-        let value = try response.collectValue()
-        XCTAssertEqual(value, CBOR.unsignedInt(42), "collectValue must skip LOG frames and return first data value")
+        XCTAssertThrowsError(try response.collectValue()) { error in
+            guard case StreamError.protocolError(let message) = error else {
+                return XCTFail("expected protocolError, got \(error)")
+            }
+            XCTAssertTrue(message.contains("explicit diagnostic forwarding"))
+        }
     }
 
     // MARK: - Keepalive Tests (TEST842-844)
@@ -874,7 +882,7 @@ final class StreamingAPITests: XCTestCase {
 
         let ps = stream.progressSender()
         ps.progress(0.5, message: "halfway there")
-        ps.log(level: "info", message: "loading complete")
+        ps.log(level: "info", attributionClass: .internal, message: "loading complete")
 
         XCTAssertEqual(captured.frames.count, 2, "ProgressSender should emit 2 frames")
         XCTAssertEqual(captured.frames[0].frameType, .log)
@@ -887,10 +895,12 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(captured.frames[1].logMessage, "loading complete")
     }
 
-    func test846_classifyHandlerErrorPreservesOpArgumentAttribution() {
+    // TEST8100: Swift handler-error classification preserves a source-declared
+    // argument URN together with its code, attribution class, and message.
+    func test8100_classifyHandlerErrorPreservesOpArgumentAttribution() {
         let error = OpError.classified(
             code: "INVALID_INPUT",
-            failureClass: .input,
+            attributionClass: .input,
             message: "prompt is invalid",
             argUrn: "media:enc=utf-8;prompt"
         )
@@ -898,7 +908,7 @@ final class StreamingAPITests: XCTestCase {
         let identity = classifyHandlerError(error)
 
         XCTAssertEqual(identity.code, "INVALID_INPUT")
-        XCTAssertEqual(identity.failureClass, .input)
+        XCTAssertEqual(identity.attributionClass, .input)
         XCTAssertEqual(identity.message, "prompt is invalid")
         XCTAssertEqual(identity.argUrn, "media:enc=utf-8;prompt")
     }

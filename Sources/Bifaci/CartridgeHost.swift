@@ -670,6 +670,9 @@ private class ManagedCartridge {
     /// round-trip carries the counter. Survives across readings (each
     /// heartbeat carries the cartridge's running total).
     var protocolDropsTotal: UInt64?
+    /// Maximum concurrent handlers reported by HELLO and every heartbeat.
+    /// Zero means unlimited.
+    var handlerCapacity: UInt64
 
     init(path: String, cartridgeDir: String, capGroups: [CapGroup], lifecycle: CartridgeLifecycle = .discovered) {
         self.path = path
@@ -689,6 +692,7 @@ private class ManagedCartridge {
         self.lastHeartbeatUnixSeconds = nil
         self.restartCount = 0
         self.protocolDropsTotal = nil
+        self.handlerCapacity = 0
         self.attachmentError = nil
     }
 
@@ -778,11 +782,18 @@ private class ManagedCartridge {
         attachmentError = CartridgeAttachmentError.now(kind: kind, message: message)
     }
 
-    static func attached(manifest: Data, limits: Limits, capGroups: [CapGroup]) -> ManagedCartridge {
+    static func attached(
+        manifest: Data,
+        limits: Limits,
+        capGroups: [CapGroup],
+        handlerCapacity: Int
+    ) -> ManagedCartridge {
+        precondition(handlerCapacity >= 0, "handler capacity must be non-negative")
         let cartridge = ManagedCartridge(path: "", cartridgeDir: "", capGroups: capGroups)
         cartridge.manifest = manifest
         cartridge.limits = limits
         cartridge.running = true
+        cartridge.handlerCapacity = UInt64(handlerCapacity)
         // Attached ⇒ HELLO + identity verification already succeeded ⇒
         // operational (and therefore dispatchable). Without this the
         // default `.discovered` lifecycle would hold the cartridge out of
@@ -915,7 +926,7 @@ public final class CartridgeHost: @unchecked Sendable {
     /// List 2: INCOMING_RXIDS — tracks incoming requests FROM relay ((XID, RID) → cartridge_idx).
     /// Routes continuation frames (STREAM_START/CHUNK/STREAM_END/END/ERR) to the correct cartridge.
     ///
-    /// Lifecycle (protocol v3): the entry lives from REQ until the request's
+    /// Lifecycle (protocol v4): the entry lives from REQ until the request's
     /// RESPONSE terminal, NOT the request-body END. The body END only sets a
     /// body-done marker (`incomingBodyDone`) so self-loop peer-response data
     /// frames fall through to outgoing routing; the handler's response
@@ -1450,7 +1461,7 @@ public final class CartridgeHost: @unchecked Sendable {
         let reader = FrameReader(handle: stdoutHandle)
         let writer = FrameWriter(handle: stdinHandle)
 
-        // Perform the v3 HELLO handshake via the wire layer: it enforces the
+        // Perform the v4 HELLO handshake via the wire layer: it enforces the
         // protocol-version match (L1), requires all limit fields, negotiates
         // the element-wise minimum of every limit including initial_credit,
         // and extracts the manifest.
@@ -1460,9 +1471,7 @@ public final class CartridgeHost: @unchecked Sendable {
         } catch let error as FrameError {
             throw CartridgeHostError.handshakeFailed("\(error)")
         }
-        guard let manifest = handshake.manifest else {
-            throw CartridgeHostError.handshakeFailed("Cartridge HELLO missing required manifest")
-        }
+        let manifest = handshake.manifest
         let negotiatedLimits = handshake.limits
 
         // Parse cap groups from manifest (validates CAP_IDENTITY presence)
@@ -1475,7 +1484,12 @@ public final class CartridgeHost: @unchecked Sendable {
         // Create managed cartridge. The writer is the sole owner of
         // the stdin handle from this point — nothing else holds a
         // reference to it.
-        let cartridge = ManagedCartridge.attached(manifest: manifest, limits: negotiatedLimits, capGroups: capGroups)
+        let cartridge = ManagedCartridge.attached(
+            manifest: manifest,
+            limits: negotiatedLimits,
+            capGroups: capGroups,
+            handlerCapacity: handshake.handlerCapacity
+        )
         cartridge.stdoutHandle = stdoutHandle
         cartridge.writerLock.lock()
         cartridge.writer = writer
@@ -1834,12 +1848,12 @@ public final class CartridgeHost: @unchecked Sendable {
         case .req:
             // REQ from relay MUST have XID
             guard let xid = frame.routingId else {
-                sendToRelay(Frame.err(id: frame.id, code: "PROTOCOL_ERROR", message: "REQ from relay missing XID"))
+                sendToRelay(Frame.err(id: frame.id, code: "PROTOCOL_ERROR", attributionClass: .internal, message: "REQ from relay missing XID"))
                 return
             }
 
             guard let capUrn = frame.cap else {
-                var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", message: "REQ missing cap URN")
+                var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", attributionClass: .internal, message: "REQ missing cap URN")
                 err.routingId = xid
                 sendToRelay(err)
                 return
@@ -1862,7 +1876,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 }) {
                     if cartridges[foundIdx].helloFailed {
                         stateLock.unlock()
-                        var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_UNAVAILABLE", failureClass: .environment,
+                        var err = Frame.err(id: frame.id, code: "CARTRIDGE_UNAVAILABLE", attributionClass: .environment,
                                            message: "Cartridge '\(targetId)' failed handshake and cannot be spawned")
                         err.routingId = xid
                         sendToRelay(err)
@@ -1871,7 +1885,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     cartridgeIdx = foundIdx
                 } else {
                     stateLock.unlock()
-                    var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_NOT_FOUND", failureClass: .environment,
+                    var err = Frame.err(id: frame.id, code: "CARTRIDGE_NOT_FOUND", attributionClass: .environment,
                                        message: "Cartridge '\(targetId)' not found on this host")
                     err.routingId = xid
                     sendToRelay(err)
@@ -1881,7 +1895,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 // Standard cap-based dispatch
                 guard let foundIdx = findCartridgeForCapLocked(capUrn) else {
                     stateLock.unlock()
-                    var err = Frame.errClassified(id: frame.id, code: "NO_HANDLER", failureClass: .environment, message: "No cartridge handles cap: \(capUrn)")
+                    var err = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: "No cartridge handles cap: \(capUrn)")
                     err.routingId = xid
                     sendToRelay(err)
                     return
@@ -1896,7 +1910,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 do {
                     try spawnCartridge(at: cartridgeIdx)
                 } catch {
-                    var err = Frame.errClassified(id: frame.id, code: "SPAWN_FAILED", failureClass: .environment, message: "Failed to spawn cartridge: \(error.localizedDescription)")
+                    var err = Frame.err(id: frame.id, code: "SPAWN_FAILED", attributionClass: .environment, message: "Failed to spawn cartridge: \(error.localizedDescription)")
                     err.routingId = xid
                     sendToRelay(err)
                     return
@@ -1916,7 +1930,7 @@ public final class CartridgeHost: @unchecked Sendable {
             if !cartridge.writeFrame(frame) {
                 // Cartridge is dead — send ERR with XID and clean up
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
-                var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_DIED", failureClass: .environment, message: deathMsg)
+                var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", attributionClass: .environment, message: deathMsg)
                 err.routingId = xid
                 sendToRelay(err)
                 stateLock.lock()
@@ -1964,7 +1978,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 case nil:
                     stateLock.unlock()
                     let total = drops.record(.noRoute)
-                    fputs("[CartridgeHost] dropped CREDIT without direction — v3 requires credit_dir (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
+                    fputs("[CartridgeHost] dropped CREDIT without direction — v4 requires credit_dir (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
                     return
                 }
             } else {
@@ -2020,7 +2034,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 incomingResponseDone.remove(key)
                 stateLock.unlock()
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
-                var err = Frame.errClassified(id: frame.id, code: "CARTRIDGE_DIED", failureClass: .environment, message: deathMsg)
+                var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", attributionClass: .environment, message: deathMsg)
                 err.routingId = xid
                 err.seq = nextSeq
                 sendToRelay(err)
@@ -2030,7 +2044,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // Terminal bookkeeping.
             // - Via incomingRxids: the REQUEST BODY completed. The entry
             //   STAYS — the handler's response is still flowing and its
-            //   output CREDIT grants route through it (v3). It is removed
+            //   output CREDIT grants route through it (v4). It is removed
             //   when the handler's response terminal passes outbound
             //   (handleCartridgeFrame) or on cartridge death.
             // - Via outgoingRids: a peer RESPONSE completed — clean up.
@@ -2158,20 +2172,27 @@ public final class CartridgeHost: @unchecked Sendable {
             if wasOurs {
                 // Response to our health probe — cartridge is alive.
                 // Extract self-reported memory from heartbeat response meta.
-                if let meta = frame.meta {
-                    if case .unsignedInt(let v) = meta["footprint_mb"] {
-                        cartridge.memoryFootprintMb = v
-                    }
-                    if case .unsignedInt(let v) = meta["rss_mb"] {
-                        cartridge.memoryRssMb = v
-                    }
-                    // Cumulative protocol drop counter (L8). The reading
-                    // is the cartridge's running total — stored as-is,
-                    // never merged or maxed.
-                    if case .unsignedInt(let v) = meta["drops_total"] {
-                        cartridge.protocolDropsTotal = v
-                    }
+                guard let meta = frame.meta,
+                      case .unsignedInt(let capacity) = meta["handler_capacity"] else {
+                    cartridge.lastDeathMessage = "Protocol violation: heartbeat missing handler_capacity"
+                    stateLock.unlock()
+                    cartridge.killProcess()
+                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
+                    return
                 }
+                if case .unsignedInt(let v) = meta["footprint_mb"] {
+                    cartridge.memoryFootprintMb = v
+                }
+                if case .unsignedInt(let v) = meta["rss_mb"] {
+                    cartridge.memoryRssMb = v
+                }
+                // Cumulative protocol drop counter (L8). The reading
+                // is the cartridge's running total — stored as-is,
+                // never merged or maxed.
+                if case .unsignedInt(let v) = meta["drops_total"] {
+                    cartridge.protocolDropsTotal = v
+                }
+                cartridge.handlerCapacity = capacity
                 // Stamp the round-trip completion timestamp so runtime-stats
                 // snapshots can surface heartbeat age to the UI.
                 cartridge.lastHeartbeatUnixSeconds = Int64(Date().timeIntervalSince1970)
@@ -2235,7 +2256,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     outgoingMaxSeqTouched.removeValue(forKey: flowKey)
 
                     // The handler's RESPONSE terminal is the request's true
-                    // end at this host (v3): once the body has completed
+                    // end at this host (v4): once the body has completed
                     // too, release the incoming routing entry and its
                     // body-done marker. If the response terminates BEFORE
                     // the body END arrives (response-first race), remember
@@ -2413,7 +2434,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // (docs/failure-taxonomy.md): a crash is an Environment problem, an
         // OOM kill is a Resource problem, cancel/disable stay Internal
         // (statuses, not failure classes).
-        let errInfo: (code: String, failureClass: FailureClass, message: String)?
+        let errInfo: (code: String, attributionClass: AttributionClass, message: String)?
         switch reason {
         case nil:
             // Unexpected death — genuine crash mid-flight
@@ -2421,7 +2442,7 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = stderrContent.isEmpty
                 ? "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix)."
                 : "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix). stderr:\n\(stderrContent)"
-            errInfo = (code: "CARTRIDGE_DIED", failureClass: .environment, message: msg)
+            errInfo = (code: "CARTRIDGE_DIED", attributionClass: .environment, message: msg)
             cartridge.lastDeathMessage = msg
         case .oomKill:
             // OOM watchdog killed the cartridge — callers must be notified
@@ -2429,12 +2450,12 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = stderrContent.isEmpty
                 ? "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix)."
                 : "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix). stderr:\n\(stderrContent)"
-            errInfo = (code: "OOM_KILLED", failureClass: .resource, message: msg)
+            errInfo = (code: "OOM_KILLED", attributionClass: .resource, message: msg)
             cartridge.lastDeathMessage = msg
         case .cancelled:
             // Cancel-triggered kill — ERR "CANCELLED" for all pending work
             let msg = "Cartridge \(cartridgePath) killed by cancel request."
-            errInfo = (code: "CANCELLED", failureClass: .internal, message: msg)
+            errInfo = (code: "CANCELLED", attributionClass: .internal, message: msg)
             cartridge.lastDeathMessage = msg
         case .disabled:
             // Operator-disabled kill — ERR "DISABLED" for all
@@ -2447,7 +2468,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // caps and refuse new requests at the cap-table
             // layer rather than spawning the cartridge again.
             let msg = "Cartridge \(cartridgePath) killed because the operator disabled it."
-            errInfo = (code: "DISABLED", failureClass: .internal, message: msg)
+            errInfo = (code: "DISABLED", attributionClass: .internal, message: msg)
             cartridge.lastDeathMessage = msg
         case .appExit:
             // Clean shutdown — no ERR frames, relay is closing
@@ -2478,12 +2499,12 @@ public final class CartridgeHost: @unchecked Sendable {
         // Send ERR frames for all pending work (unexpected death and OOM kill).
         if let info = errInfo {
             for entry in failedOutgoing {
-                var err = Frame.errClassified(id: entry.rid, code: info.code, failureClass: info.failureClass, message: info.message)
+                var err = Frame.err(id: entry.rid, code: info.code, attributionClass: info.attributionClass, message: info.message)
                 err.seq = entry.nextSeq
                 sendToRelay(err)
             }
             for entry in failedIncoming {
-                var err = Frame.errClassified(id: entry.rid, code: info.code, failureClass: info.failureClass, message: info.message)
+                var err = Frame.err(id: entry.rid, code: info.code, attributionClass: info.attributionClass, message: info.message)
                 err.routingId = entry.xid
                 err.seq = entry.nextSeq
                 sendToRelay(err)
@@ -2614,6 +2635,7 @@ public final class CartridgeHost: @unchecked Sendable {
             let pid = cartridge.pid.map { UInt32($0) }
             let stats = CartridgeRuntimeStats(
                 running: cartridge.running,
+                handlerCapacity: cartridge.handlerCapacity,
                 pid: pid,
                 activeRequestCount: activeCounts[idx, default: 0],
                 peerRequestCount: peerCounts[idx, default: 0],
@@ -2623,7 +2645,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 restartCount: cartridge.restartCount,
                 protocolDropsTotal: cartridge.protocolDropsTotal
             )
-            // A cartridge whose HELLO permanently failed (e.g. a pre-v3
+            // A cartridge whose HELLO permanently failed (e.g. a pre-v4
             // binary hard-rejected by the version check) stays IN the
             // inventory with an attachment error — never silently absent.
             // It carries no capGroups, so it is never routable. Mirrors the
@@ -2866,7 +2888,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 // Control/side-channel frames are legal ANYWHERE during the
                 // probe (spec 12.3/12.4: LOG interleaves without affecting
                 // data flow; CREDIT/HEARTBEAT are the control plane the
-                // writer gate itself exempts, L4). A v3 cartridge crediting
+                // writer gate itself exempts, L4). A v4 cartridge crediting
                 // its probe input as it consumes (L10) must not fail
                 // identity verification.
                 break
@@ -2985,7 +3007,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // as JSON but doesn't declare CAP_IDENTITY or uses an old schema.
         let capGroups: [CapGroup]
         do {
-            capGroups = try Self.extractCapGroups(from: handshakeResult.manifest ?? Data())
+            capGroups = try Self.extractCapGroups(from: handshakeResult.manifest)
         } catch let extractErr as ManifestExtractError {
             kill(pid, SIGKILL)
             _ = waitpid(pid, nil, 0)
@@ -3043,8 +3065,9 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridge.writerLock.lock()
         cartridge.writer = writer
         cartridge.writerLock.unlock()
-        cartridge.manifest = handshakeResult.manifest ?? Data()
+        cartridge.manifest = handshakeResult.manifest
         cartridge.limits = handshakeResult.limits
+        cartridge.handlerCapacity = UInt64(handshakeResult.handlerCapacity)
         cartridge.capGroups = capGroups
         cartridge.running = true
         // Successful attach — clear any lingering attachment error from a
@@ -3095,7 +3118,8 @@ public final class CartridgeHost: @unchecked Sendable {
         let cartridge = ManagedCartridge.attached(
             manifest: Data(),
             limits: Limits(),
-            capGroups: []
+            capGroups: [],
+            handlerCapacity: 0
         )
         stateLock.lock()
         let idx = cartridges.count

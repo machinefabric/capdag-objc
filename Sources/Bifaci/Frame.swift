@@ -1,10 +1,9 @@
 import Foundation
 @preconcurrency import SwiftCBOR
 
-/// Protocol version. Version 3: credit-based per-stream flow control, unbounded
-/// streams, terminal metadata on END (final progress rides in the terminal frame),
-/// counted drops, handshake version enforcement. Version 2 handshakes are rejected.
-public let CBOR_PROTOCOL_VERSION: UInt8 = 3
+/// Protocol version 4 requires explicit diagnostic attribution and cartridge
+/// handler capacity. Older handshakes are rejected.
+public let CBOR_PROTOCOL_VERSION: UInt8 = 4
 
 /// Default maximum frame size (3.5 MB) - safe margin below 3.75MB limit
 /// Larger payloads automatically use CHUNK frames
@@ -225,7 +224,8 @@ public struct Frame: @unchecked Sendable {
             "max_chunk": .unsignedInt(UInt64(limits.maxChunk)),
             "max_reorder_buffer": .unsignedInt(UInt64(limits.maxReorderBuffer)),
             "initial_credit": .unsignedInt(limits.initialCredit),
-            "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
+            "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
+            "handler_capacity": .unsignedInt(0)
         ]
         return frame
     }
@@ -233,7 +233,8 @@ public struct Frame: @unchecked Sendable {
     /// Create a HELLO frame for handshake with manifest (cartridge side)
     /// The manifest is JSON-encoded cartridge metadata including name, version, and caps.
     /// This is the ONLY way for cartridges to communicate their capabilities.
-    public static func helloWithManifest(limits: Limits, manifest: Data) -> Frame {
+    public static func helloWithManifest(limits: Limits, manifest: Data, handlerCapacity: Int) -> Frame {
+        precondition(handlerCapacity >= 0, "handler capacity must be non-negative")
         var frame = Frame(frameType: .hello, id: .uint(0))
         frame.meta = [
             "max_frame": .unsignedInt(UInt64(limits.maxFrame)),
@@ -241,7 +242,8 @@ public struct Frame: @unchecked Sendable {
             "max_reorder_buffer": .unsignedInt(UInt64(limits.maxReorderBuffer)),
             "initial_credit": .unsignedInt(limits.initialCredit),
             "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
-            "manifest": .byteString([UInt8](manifest))
+            "manifest": .byteString([UInt8](manifest)),
+            "handler_capacity": .unsignedInt(UInt64(handlerCapacity))
         ]
         return frame
     }
@@ -385,13 +387,26 @@ public struct Frame: @unchecked Sendable {
         }
     }
 
-    /// Create a LOG frame for progress/status
-    public static func log(id: MessageId, level: String, message: String) -> Frame {
+    /// Create an attributed non-progress LOG frame.
+    public static func log(
+        id: MessageId,
+        level: String,
+        attributionClass: AttributionClass,
+        message: String,
+        argUrn: String? = nil
+    ) -> Frame {
+        precondition(!level.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "LOG level must be nonempty")
+        precondition(level != "progress", "progress logs must use Frame.progress")
+        precondition(!message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "LOG message must be nonempty")
+        precondition(argUrn?.isEmpty != true, "LOG arg_urn must be nonempty when present")
         var frame = Frame(frameType: .log, id: id)
-        frame.meta = [
+        var meta: [String: CBOR] = [
             "level": .utf8String(level),
-            "message": .utf8String(message)
+            "message": .utf8String(message),
+            "attribution_class": .utf8String(attributionClass.rawValue)
         ]
+        if let argUrn { meta["arg_urn"] = .utf8String(argUrn) }
+        frame.meta = meta
         return frame
     }
 
@@ -406,28 +421,23 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
-    /// Create an ERR frame. The class defaults to `.internal` — an error
-    /// that reaches the wire without a declared class is the emitter's
-    /// problem by definition; emitters with a classified error use
-    /// `errClassified`.
-    public static func err(id: MessageId, code: String, message: String) -> Frame {
-        return errClassified(id: id, code: code, failureClass: .internal, message: message)
-    }
-
     /// Create an ERR frame carrying the full failure identity: the emitter's
     /// machine-readable `code` (e.g. `CONTEXT_OVERFLOW`), the failure CLASS
     /// (whose problem it is — declared at the error's definition site, see
-    /// `FailureClass`), the human message, and — when the failure is
+    /// `AttributionClass`), the human message, and — when the failure is
     /// attributed to a specific argument at the emit source — the media URN
     /// of that argument. ERR meta contract (docs/12.2 +
-    /// docs/failure-taxonomy.md): `code` + `class` + `message`, all text,
+    /// docs/failure-taxonomy.md): `code` + `attribution_class` + `message`, all text,
     /// plus an OPTIONAL `arg_urn` entry that is ABSENT when there is no
     /// attribution (never an empty string).
-    public static func errClassified(id: MessageId, code: String, failureClass: FailureClass, message: String, argUrn: String? = nil) -> Frame {
+    public static func err(id: MessageId, code: String, attributionClass: AttributionClass, message: String, argUrn: String? = nil) -> Frame {
+        precondition(!code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "ERR code must be nonempty")
+        precondition(!message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "ERR message must be nonempty")
+        precondition(argUrn?.isEmpty != true, "ERR arg_urn must be nonempty when present")
         var frame = Frame(frameType: .err, id: id)
         var meta: [String: CBOR] = [
             "code": .utf8String(code),
-            "class": .utf8String(failureClass.rawValue),
+            "attribution_class": .utf8String(attributionClass.rawValue),
             "message": .utf8String(message)
         ]
         if let argUrn = argUrn {
@@ -583,28 +593,37 @@ public struct Frame: @unchecked Sendable {
         return s
     }
 
-    /// Get the failure class if this is an ERR frame. A frame without a
-    /// `class` entry (or with an unknown token) classifies as `.internal`:
-    /// unclassified means "the emitter's problem", never a guess about the
-    /// user's input. Returns nil for non-ERR frames.
-    public var errorClass: FailureClass? {
-        guard frameType == .err else { return nil }
-        guard let meta = meta, case .utf8String(let token) = meta["class"],
-              let parsed = FailureClass(rawValue: token) else {
-            return .internal
+    /// Parse the mandatory attribution on ERR and non-progress LOG frames.
+    public func attributionClass() throws -> AttributionClass {
+        let attributedLog = frameType == .log && logLevel != "progress"
+        guard frameType == .err || attributedLog else {
+            throw FrameError.protocolError("\(frameType) frames do not carry attribution")
+        }
+        guard let meta, case .utf8String(let token) = meta["attribution_class"] else {
+            throw FrameError.protocolError("frame missing required text attribution_class")
+        }
+        guard let parsed = AttributionClass(rawValue: token) else {
+            throw FrameError.protocolError("unknown attribution_class '\(token)'")
         }
         return parsed
     }
 
-    /// Get the media URN of the argument the failure is attributed to, when
-    /// the emit source declared one (ERR meta key `arg_urn`,
-    /// docs/failure-taxonomy.md). Returns nil when the frame carries no
-    /// attribution, and for non-ERR frames.
-    public var errorArgUrn: String? {
-        guard frameType == .err, let meta = meta, case .utf8String(let s) = meta["arg_urn"] else {
+    /// Source-declared argument attribution on ERR and non-progress LOG frames.
+    public func attributionArgUrn() throws -> String? {
+        let attributedLog = frameType == .log && logLevel != "progress"
+        guard frameType == .err || attributedLog else {
+            throw FrameError.protocolError("\(frameType) frames do not carry diagnostic argument attribution")
+        }
+        guard let meta, let value = meta["arg_urn"] else {
             return nil
         }
-        return s
+        guard case .utf8String(let argUrn) = value else {
+            throw FrameError.protocolError("diagnostic arg_urn must be text when present")
+        }
+        guard !argUrn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FrameError.protocolError("diagnostic arg_urn must not be empty")
+        }
+        return argUrn
     }
 
     /// Get error message if this is an ERR frame
@@ -657,17 +676,15 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Extract limits from RELAY_NOTIFY metadata
-    /// Returns nil if any required field is missing (protocol violation in v3)
+    /// Returns nil if any required field is missing (protocol violation in v4)
     public var relayNotifyLimits: Limits? {
         guard frameType == .relayNotify, let meta = meta,
               case .unsignedInt(let maxFrame) = meta["max_frame"],
               case .unsignedInt(let maxChunk) = meta["max_chunk"],
-              case .unsignedInt(let maxReorderBuffer) = meta["max_reorder_buffer"] else {
+              case .unsignedInt(let maxReorderBuffer) = meta["max_reorder_buffer"],
+              case .unsignedInt(let initialCredit) = meta["initial_credit"],
+              initialCredit > 0 else {
             return nil
-        }
-        var initialCredit = DEFAULT_INITIAL_CREDIT
-        if case .unsignedInt(let n) = meta["initial_credit"], n > 0 {
-            initialCredit = n
         }
         return Limits(maxFrame: Int(maxFrame), maxChunk: Int(maxChunk), maxReorderBuffer: Int(maxReorderBuffer), initialCredit: initialCredit)
     }
@@ -689,7 +706,7 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Extract max_reorder_buffer from HELLO metadata
-    /// Returns nil if missing (protocol violation in v2)
+    /// Returns nil if missing (protocol violation in v4)
     public var helloMaxReorderBuffer: Int? {
         guard frameType == .hello, let meta = meta, case .unsignedInt(let n) = meta["max_reorder_buffer"] else {
             return nil
@@ -703,6 +720,14 @@ public struct Frame: @unchecked Sendable {
             return nil
         }
         return n
+    }
+
+    /// Maximum concurrent handlers advertised by a cartridge. Zero is unlimited.
+    public var helloHandlerCapacity: Int? {
+        guard frameType == .hello, let meta,
+              case .unsignedInt(let n) = meta["handler_capacity"],
+              n <= UInt64(Int.max) else { return nil }
+        return Int(n)
     }
 
     /// Extract the protocol version declared in HELLO metadata.

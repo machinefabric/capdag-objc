@@ -92,7 +92,7 @@ public enum StreamError: Error {
     /// its message — never folded into prose — and the media URN of the
     /// argument the peer's frame attributed the failure to (nil when the
     /// frame carried no attribution).
-    case remoteError(code: String, failureClass: FailureClass, message: String, argUrn: String?)
+    case remoteError(code: String, attributionClass: AttributionClass, message: String, argUrn: String?)
     case closed
     case decode(String)
     case io(String)
@@ -241,7 +241,7 @@ public typealias StreamMeta = [String: CBOR]
 /// - Sequence: iteration delivers per-item metadata from CHUNK frames (an
 ///   item's FIRST fragment carries it).
 ///
-/// Streams are delivered INCREMENTALLY (protocol v3, L16): items arrive from
+/// Streams are delivered INCREMENTALLY (protocol v4, L16): items arrive from
 /// a live channel as the producer emits them — never buffered to completion.
 /// Consumption replenishes the sender's flow-control window (L10) — a slow
 /// handler naturally throttles the producer.
@@ -408,8 +408,8 @@ public enum PeerResponseItem {
 /// Response from a peer call — yields both data items and LOG frames from a single collection.
 ///
 /// The handler drains this with `recv()` and reacts to each `PeerResponseItem` as it arrives.
-/// For callers that don't care about LOG frames, `collectBytes()` and `collectValue()`
-/// silently discard them and return only data.
+/// Collection helpers reject LOG frames so source diagnostics cannot be
+/// silently discarded. Callers that accept diagnostics must drain `recv()`.
 public final class PeerResponse: @unchecked Sendable {
     private let items: UnsafeTransfer<AnyIterator<PeerResponseItem>>
     /// Consumption grants for the responding peer's output window (L10/L14).
@@ -434,7 +434,8 @@ public final class PeerResponse: @unchecked Sendable {
         return item
     }
 
-    /// Collect all data chunks into a single byte vector, discarding LOG frames.
+    /// Collect all data chunks into a single byte vector, rejecting unhandled
+    /// LOG frames.
     public func collectBytes() throws -> Data {
         var result = Data()
         while let item = recv() {
@@ -451,23 +452,32 @@ public final class PeerResponse: @unchecked Sendable {
                     result.append(encoded)
                 }
             case .log:
-                break // Discard LOG frames
+                throw StreamError.protocolError(
+                    "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
+                )
             }
         }
         return result
     }
 
-    /// Collect a single CBOR data value (expects exactly one data chunk), discarding LOG frames.
+    /// Require exactly one data value and no LOG frames in the response.
     public func collectValue() throws -> CBOR {
+        var value: CBOR?
         while let item = recv() {
             switch item {
             case .data(let dataResult, _):
-                return try dataResult.get()
+                if value != nil {
+                    throw StreamError.protocolError("peer response contained more than one value")
+                }
+                value = try dataResult.get()
             case .log:
-                break // Discard LOG frames
+                throw StreamError.protocolError(
+                    "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
+                )
             }
         }
-        throw StreamError.closed
+        guard let value else { throw StreamError.closed }
+        return value
     }
 }
 
@@ -648,7 +658,7 @@ final class FinalStatusHolder: @unchecked Sendable {
 /// - `close()` is idempotent. No-op if `start()` was never called. Unbounded
 ///   streams close with a STREAM_END that carries no chunk_count (L16).
 ///
-/// Flow control (protocol v3, L9): when constructed with a credit router,
+/// Flow control (protocol v4, L9): when constructed with a credit router,
 /// every CHUNK acquires one credit before it is sent — the async variants
 /// await an exhausted window; `blockingWrite`/`blockingEmitListItem` block
 /// the calling thread instead (FFI threads, non-async contexts). Uncredited
@@ -1030,8 +1040,19 @@ public final class OutputStream: @unchecked Sendable {
     }
 
     /// Emit a log message.
-    public func log(level: String, message: String) {
-        var frame = Frame.log(id: requestId, level: level, message: message)
+    public func log(
+        level: String,
+        attributionClass: AttributionClass,
+        message: String,
+        argUrn: String? = nil
+    ) {
+        var frame = Frame.log(
+            id: requestId,
+            level: level,
+            attributionClass: attributionClass,
+            message: message,
+            argUrn: argUrn
+        )
         frame.routingId = routingId
         try? sender.send(frame)
     }
@@ -1151,8 +1172,19 @@ public final class ProgressSender: @unchecked Sendable {
     }
 
     /// Emit a log message.
-    public func log(level: String, message: String) {
-        var frame = Frame.log(id: requestId, level: level, message: message)
+    public func log(
+        level: String,
+        attributionClass: AttributionClass,
+        message: String,
+        argUrn: String? = nil
+    ) {
+        var frame = Frame.log(
+            id: requestId,
+            level: level,
+            attributionClass: attributionClass,
+            message: message,
+            argUrn: argUrn
+        )
         frame.routingId = routingId
         try? sender.send(frame)
     }
@@ -1481,10 +1513,16 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                 return nil
 
             case .err:
-                let code = frame.errorCode ?? "UNKNOWN"
-                let failureClass = frame.errorClass ?? .internal
-                let message = frame.errorMessage ?? "Unknown error"
-                return .data(.failure(.remoteError(code: code, failureClass: failureClass, message: message, argUrn: frame.errorArgUrn)), nil)
+                guard let code = frame.errorCode, let message = frame.errorMessage else {
+                    return .data(.failure(.protocolError("ERR frame missing required code or message")), nil)
+                }
+                let attributionClass: AttributionClass
+                do { attributionClass = try frame.attributionClass() }
+                catch { return .data(.failure(.protocolError("\(error)")), nil) }
+                let argUrn: String?
+                do { argUrn = try frame.attributionArgUrn() }
+                catch { return .data(.failure(.protocolError("\(error)")), nil) }
+                return .data(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)), nil)
 
             default:
                 return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")), nil)
@@ -1500,7 +1538,7 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
 /// Groups frames by stream_id, yields an InputStream for each stream.
 /// Used for incoming requests (cartridge receiving from host).
 ///
-/// Protocol v3 regime (L16): the demux runs on its own thread and feeds each
+/// Protocol v4 regime (L16): the demux runs on its own thread and feeds each
 /// stream's queue LIVE as frames arrive from the iterator — the handler
 /// observes items incrementally while the producer is still emitting; input
 /// is never buffered to completion. When `credit` is supplied, the demux
@@ -1688,14 +1726,32 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 // Error frame — propagate to all open streams AND the package.
                 // Keep the peer's declared code/class/message structural
                 // (docs/failure-taxonomy.md).
-                let code = frame.errorCode ?? "UNKNOWN"
-                let failureClass = frame.errorClass ?? .internal
-                let message = frame.errorMessage ?? "Unknown error"
-                let argUrn = frame.errorArgUrn
-                for (_, queue) in streamChannels {
-                    queue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message, argUrn: argUrn)))
+                guard let code = frame.errorCode, let message = frame.errorMessage else {
+                    let failure = StreamError.protocolError("ERR frame missing required code or message")
+                    for (_, queue) in streamChannels { queue.push(.failure(failure)) }
+                    streamsQueue.push(.failure(failure))
+                    break loop
                 }
-                streamsQueue.push(.failure(.remoteError(code: code, failureClass: failureClass, message: message, argUrn: argUrn)))
+                let attributionClass: AttributionClass
+                do { attributionClass = try frame.attributionClass() }
+                catch {
+                    let failure = StreamError.protocolError("\(error)")
+                    for (_, queue) in streamChannels { queue.push(.failure(failure)) }
+                    streamsQueue.push(.failure(failure))
+                    break loop
+                }
+                let argUrn: String?
+                do { argUrn = try frame.attributionArgUrn() }
+                catch {
+                    let failure = StreamError.protocolError("\(error)")
+                    for (_, queue) in streamChannels { queue.push(.failure(failure)) }
+                    streamsQueue.push(.failure(failure))
+                    break loop
+                }
+                for (_, queue) in streamChannels {
+                    queue.push(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)))
+                }
+                streamsQueue.push(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)))
                 break loop
 
             default:
@@ -1763,8 +1819,8 @@ public protocol PeerInvoker: Sendable {
 
     /// Convenience: open call, write each arg's bytes, finish, return response.
     ///
-    /// Returns a `PeerResponse` — use `collectBytes()` / `collectValue()` to
-    /// discard LOG frames, or `recv()` to process them alongside data.
+    /// Returns a `PeerResponse`. Use `recv()` when the peer may emit
+    /// diagnostics; plain collectors reject LOG frames.
     func callWithBytes(capUrn: String, args: [(mediaUrn: String, data: Data)]) throws -> PeerResponse
 }
 
@@ -2428,7 +2484,7 @@ private struct PendingPeerRequest {
 /// ChannelFrameSender implementation for sending frames from PeerInvokerImpl and OutputStream.
 /// This is the runtime's single output serialization point — the Swift
 /// counterpart of the Rust writer thread. It applies SeqAssigner to every
-/// outbound frame and, per protocol v3 (L4), enforces the WRITER TERMINAL
+/// outbound frame and, per protocol v4 (L4), enforces the WRITER TERMINAL
 /// GATE: once a flow's END/ERR has been written, any later flow frame for the
 /// same FlowKey is post-terminal — dropped and counted, never written. Gating
 /// at the single point where wire order is decided deterministically closes
@@ -3088,7 +3144,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
     private let capacity = CapacityHandle(0)
 
     /// Routes inbound CREDIT frames to the gates of streams local senders are
-    /// writing (protocol v3 flow control). Senders register a `CreditGate` per
+    /// writing (protocol v4 flow control). Senders register a `CreditGate` per
     /// (rid, streamId); unmatched grants are correct no-ops.
     public let creditRouter = CreditRouter()
 
@@ -3821,7 +3877,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
         // Track pending incoming requests (host invoking cartridge caps)
         // Maps request ID to (capUrn, frame queue) — forwards request frames
-        // to the handler LIVE (protocol v3 dispatch regime: the handler starts
+        // to the handler LIVE (protocol v4 dispatch regime: the handler starts
         // at REQ and its InputStreams yield items as they arrive). Created on
         // REQ even for queued requests, so frames accumulate in the queue
         // until the handler thread is spawned and the demux drains them.
@@ -3876,7 +3932,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
 
         // Helper: spawn a handler thread for a request. The handler receives
-        // input INCREMENTALLY (protocol v3): dispatch begins at REQ and its
+        // input INCREMENTALLY (protocol v4): dispatch begins at REQ and its
         // InputStreams yield items as they arrive on the live frame queue —
         // never buffered to completion (L16).
         let initialCredit = self.limits.initialCredit
@@ -3962,10 +4018,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     // HANDLER_ERROR/internal when the handler never
                     // declared one.
                     let identity = classifyHandlerError(error)
-                    var errFrame = Frame.errClassified(
+                    var errFrame = Frame.err(
                         id: requestId,
                         code: identity.code,
-                        failureClass: identity.failureClass,
+                        attributionClass: identity.attributionClass,
                         message: identity.message,
                         argUrn: identity.argUrn
                     )
@@ -3996,6 +4052,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 var dequeuedLog = Frame.log(
                     id: queued.requestId,
                     level: "dequeued",
+                    attributionClass: .internal,
                     message: "Request dequeued, handler starting"
                 )
                 dequeuedLog.routingId = queued.routingId
@@ -4031,7 +4088,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 creditRouter.closeRequest(rid: rid, reason: "END")
                 if cancelledRequests.remove(rid) != nil {
                     let routingId = handlerRoutingIds.removeValue(forKey: rid) ?? nil
-                    var err = Frame.err(id: rid, code: "CANCELLED", message: "Request cancelled")
+                    var err = Frame.err(id: rid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
                     err.routingId = routingId
                     try? outputSender.send(err)
                     fputs("[CartridgeRuntime] Cancelled handler finished, sent ERR: rid=\(rid)\n", stderr)
@@ -4053,7 +4110,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 let routingIdForErrors = frame.routingId
 
                 guard let capUrn = frame.cap else {
-                    var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", message: "Request missing cap URN")
+                    var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", attributionClass: .internal, message: "Request missing cap URN")
                     err.routingId = routingIdForErrors
                     try? outputSender.send(err)
                     continue
@@ -4066,6 +4123,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     var err = Frame.err(
                         id: frame.id,
                         code: "PROTOCOL_ERROR",
+                        attributionClass: .internal,
                         message: "REQ frame must have empty payload — use STREAM_START for arguments"
                     )
                     err.routingId = routingIdForErrors
@@ -4077,7 +4135,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 guard let factory = findHandler(capUrn: capUrn) else {
                     // A dispatched cap this binary doesn't handle is a
                     // deployment/manifest mismatch — Environment.
-                    var err = Frame.errClassified(id: frame.id, code: "NO_HANDLER", failureClass: .environment, message: "No handler registered for cap: \(capUrn)")
+                    var err = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: "No handler registered for cap: \(capUrn)")
                     err.routingId = routingIdForErrors
                     try? outputSender.send(err)
                     continue
@@ -4088,7 +4146,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 do {
                     cap = try CSCapUrn.fromString(capUrn)
                 } catch {
-                    var err = Frame.err(id: frame.id, code: "INVALID_CAP_URN", message: "Failed to parse cap URN: \(error)")
+                    var err = Frame.err(id: frame.id, code: "INVALID_CAP_URN", attributionClass: .internal, message: "Failed to parse cap URN: \(error)")
                     err.routingId = routingIdForErrors
                     try? outputSender.send(err)
                     continue
@@ -4119,6 +4177,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     var logFrame = Frame.log(
                         id: requestId,
                         level: "queued",
+                        attributionClass: .internal,
                         message: "Request queued (position \(queuePos), \(runningHandlerCount) active)"
                     )
                     logFrame.routingId = routingId
@@ -4188,13 +4247,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     // frame total rides every heartbeat so the host can
                     // surface it without a dedicated stats round-trip.
                     meta["drops_total"] = .unsignedInt(dropCounters.total)
+                    meta["handler_capacity"] = .unsignedInt(UInt64(capacity.get()))
                     response.meta = meta
                     try outputSender.send(response)
                 }
 
             case .hello:
                 // Unexpected HELLO after handshake - protocol error
-                try outputSender.send(Frame.err(id: frame.id, code: "PROTOCOL_ERROR", message: "Unexpected HELLO after handshake"))
+                try outputSender.send(Frame.err(id: frame.id, code: "PROTOCOL_ERROR", attributionClass: .internal, message: "Unexpected HELLO after handshake"))
 
             // case .res: REMOVED - old single-response protocol no longer supported
 
@@ -4329,7 +4389,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         pending.frames.finish()
                     }
                     pendingIncomingLock.unlock()
-                    var err = Frame.err(id: targetRid, code: "CANCELLED", message: "Request cancelled while queued")
+                    var err = Frame.err(id: targetRid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled while queued")
                     err.routingId = queued.routingId
                     try? outputSender.send(err)
                     fputs("[CartridgeRuntime] Cancelled queued request: rid=\(targetRid)\n", stderr)
@@ -4397,13 +4457,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // Delegate to the wire layer's cartridge-side handshake: it enforces
         // the protocol-version match (L1), requires all limit fields, and
         // negotiates the element-wise minimum of every limit including
-        // initial_credit (protocol v3). It also sends our HELLO with the
+        // initial_credit (protocol v4). It also sends our HELLO with the
         // manifest — the ONLY way to communicate cartridge capabilities.
         do {
             let negotiated = try acceptHandshakeWithManifest(
                 reader: reader,
                 writer: writer,
-                manifest: manifestData
+                manifest: manifestData,
+                handlerCapacity: capacity.get()
             )
             self.limits = negotiated
         } catch let error as FrameError {

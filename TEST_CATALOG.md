@@ -1,8 +1,8 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 882
+**Total Tests:** 891
 
-**Numbered Tests:** 882
+**Numbered Tests:** 891
 
 **Unnumbered Tests:** 0
 
@@ -87,10 +87,10 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test103 | `test103_resolved_is_json` | TEST103: Test ResolvedMediaDef is_json returns true when json tag is present | Tests/CapDAGTests/CSMediaDefTests.m:297 |
 | test104 | `test104_resolved_is_text` | TEST104: Text-representability is now carried by the orthogonal `enc=` tag. The old is_text()/is_binary() delegates on ResolvedMediaDef are gone; a media is text iff its URN declares an encoding. `media:enc=utf-8` is plain UTF-8 text — has enc, is not JSON. | Tests/CapDAGTests/CSMediaDefTests.m:311 |
 | test106 | `test106_MetadataWithValidation` | TEST106: Metadata with validation | Tests/CapDAGTests/CSMediaDefTests.m:75 |
-| test0108 | `test0108_CapCreation` | TEST0108: Cap creation | Tests/CapDAGTests/CSCapTests.m:32 |
-| test0110 | `test0110_CapMatching` | TEST0110: Cap matching | Tests/CapDAGTests/CSCapTests.m:123 |
-| test115 | `test115_capArgSerialization` | TEST115: Test CapArg serialization and deserialization with multiple sources | Tests/CapDAGTests/CSCapTests.m:817 |
-| test116 | `test116_capArgConstructors` | TEST116: Test CapArg constructor methods basic and with_description create args correctly | Tests/CapDAGTests/CSCapTests.m:851 |
+| test0108 | `test0108_CapCreation` | TEST0108: Cap creation | Tests/CapDAGTests/CSCapTests.m:33 |
+| test0110 | `test0110_CapMatching` | TEST0110: Cap matching | Tests/CapDAGTests/CSCapTests.m:124 |
+| test115 | `test115_capArgSerialization` | TEST115: Test CapArg serialization and deserialization with multiple sources | Tests/CapDAGTests/CSCapTests.m:818 |
+| test116 | `test116_capArgConstructors` | TEST116: Test CapArg constructor methods basic and with_description create args correctly | Tests/CapDAGTests/CSCapTests.m:852 |
 | test125 | `test125_effectNonePreservesRuntimeMedia` | TEST125: effect=none preserves runtime media identity | Tests/CapDAGTests/CSCapUrnTests.m:1579 |
 | test126 | `test126_effectDeclaredUsesDeclaredOutput` | TEST126: default effect=declared uses the declared output | Tests/CapDAGTests/CSCapUrnTests.m:1596 |
 | test0127 | `test0127_invalidEffectNoneFailsHard` | TEST0127: invalid effect=none declarations fail hard | Tests/CapDAGTests/CSCapUrnTests.m:1622 |
@@ -105,7 +105,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test142 | `test142_normalizeHandlesDifferentTagOrders` | / TEST142: Different tag orders normalise to the same URL — the / canonicaliser strips the variation before hashing. | Tests/CapDAGTests/CSFabricRegistryTests.m:194 |
 | test0143 | `test0143_addMasterIdentityFailureRegistersUnhealthy` | TEST0143 (Swift-specific, gap 5): addMaster whose identity probe FAILS must register the master UNHEALTHY (keeping its inventory visible) rather than throwing. Caps stay held back from routing. | Tests/BifaciTests/RelaySwitchTests.swift:1360 |
 | test148 | `test148_capManifestCreation` | TEST148: Cap manifest construction stores name, version, channel, description, and the cap_groups verbatim. | Tests/BifaciTests/ManifestTests.swift:28 |
-| test149 | `test149_CapManifestWithAuthor` | TEST149: Cap manifest with author | Tests/CapDAGTests/CSCapTests.m:461 |
+| test149 | `test149_CapManifestWithAuthor` | TEST149: Cap manifest with author | Tests/CapDAGTests/CSCapTests.m:462 |
 | test151 | `test151_capManifestRequiredFields` | TEST151: Manifest deserialization fails when any required field is missing — including channel, which is part of the cartridge's identity. There is no fallback default; missing means broken. | Tests/BifaciTests/ManifestTests.swift:138 |
 | test152 | `test152_capManifestWithMultipleCaps` | TEST152: Multiple caps across multiple cap_groups serialize and deserialize correctly, preserving group structure. | Tests/BifaciTests/ManifestTests.swift:176 |
 | test153 | `test153_capManifestEmptyCapGroups` | TEST153: An empty cap_groups list round-trips without losing the channel / version envelope. | Tests/BifaciTests/ManifestTests.swift:212 |
@@ -140,7 +140,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test196 | `test196_isEofWhenNil` | TEST196: Test is_eof returns false when eof field is None (unset) | Tests/BifaciTests/FrameTests.swift:338 |
 | test197 | `test197_isEofWhenFalse` | TEST197: Test is_eof returns false when eof field is explicitly Some(false) | Tests/BifaciTests/FrameTests.swift:345 |
 | test198 | `test198_limitsDefault` | TEST198: Test Limits::default provides the documented default values | Tests/BifaciTests/FrameTests.swift:352 |
-| test199 | `test199_protocolVersionConstant` | TEST199: Test PROTOCOL_VERSION is 3 | Tests/BifaciTests/FrameTests.swift:370 |
+| test199 | `test199_protocolVersionConstant` | TEST199: Test PROTOCOL_VERSION is 4 | Tests/BifaciTests/FrameTests.swift:370 |
 | test200 | `test200_keyConstants` | TEST200: Test integer key constants match the protocol specification | Tests/BifaciTests/FrameTests.swift:375 |
 | test201 | `test201_helloManifestBinaryData` | TEST201: Test hello_with_manifest preserves binary manifest data (not just JSON text) | Tests/BifaciTests/FrameTests.swift:392 |
 | test202 | `test202_messageIdEqualityAndHash` | TEST202: Test MessageId Eq/Hash semantics: equal UUIDs are equal, different ones are not | Tests/BifaciTests/FrameTests.swift:139 |
@@ -230,10 +230,10 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test304 | `test304_media_availability_output_constant` | TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:430 |
 | test305 | `test305_media_path_output_constant` | TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:441 |
 | test306 | `test306_availability_and_path_output_distinct` | TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs | Tests/CapDAGTests/CSMediaUrnTests.m:452 |
-| test0314 | `test0314_CapWithDescription` | TEST0314: Cap with description | Tests/CapDAGTests/CSCapTests.m:58 |
-| test0315 | `test0315_CapStdinType` | TEST0315: Cap stdin type | Tests/CapDAGTests/CSCapTests.m:80 |
-| test0317 | `test0317_CapStdinSerialization` | TEST0317: Cap stdin serialization | Tests/CapDAGTests/CSCapTests.m:148 |
-| test0318 | `test0318_CanonicalDictionaryDeserialization` | TEST0318: Canonical dictionary deserialization | Tests/CapDAGTests/CSCapTests.m:178 |
+| test0314 | `test0314_CapWithDescription` | TEST0314: Cap with description | Tests/CapDAGTests/CSCapTests.m:59 |
+| test0315 | `test0315_CapStdinType` | TEST0315: Cap stdin type | Tests/CapDAGTests/CSCapTests.m:81 |
+| test0317 | `test0317_CapStdinSerialization` | TEST0317: Cap stdin serialization | Tests/CapDAGTests/CSCapTests.m:149 |
+| test0318 | `test0318_CanonicalDictionaryDeserialization` | TEST0318: Canonical dictionary deserialization | Tests/CapDAGTests/CSCapTests.m:179 |
 | test336 | `test336_file_path_reads_file_passes_bytes` | TEST336: Single file-path arg with stdin source reads file and passes bytes to handler TEST336: Single file-path arg with stdin source reads file and passes bytes to handler. Mirrors Rust test336_file_path_reads_file_passes_bytes. | Tests/BifaciTests/CartridgeRuntimeTests.swift:715 |
 | test337 | `test337_file_path_without_stdin_passes_string` | TEST337: file-path arg without stdin source passes path as string (no conversion) | Tests/BifaciTests/CartridgeRuntimeTests.swift:754 |
 | test338 | `test338_file_path_via_cli_flag` | TEST338: file-path arg reads file via --file CLI flag | Tests/BifaciTests/CartridgeRuntimeTests.swift:783 |
@@ -264,10 +264,10 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test366 | `test366_streamEndFrame` | TEST366: Frame::stream_end stores request_id and stream_id | Tests/BifaciTests/FrameTests.swift:1091 |
 | test367 | `test367_streamStartWithEmptyStreamId` | TEST367: StreamStart frame with empty stream_id still constructs (validation happens elsewhere) | Tests/BifaciTests/FrameTests.swift:1104 |
 | test368 | `test368_streamStartWithEmptyMediaUrn` | TEST368: StreamStart frame with empty media_urn still constructs (validation happens elsewhere) | Tests/BifaciTests/FrameTests.swift:1116 |
-| test0369 | `test0369_CapDocumentationOmittedWhenNil` | When documentation is nil, toDictionary must omit the field entirely. This matches the Rust serializer's skip-when-None semantics and the JS toJSON behaviour. A regression where nil is emitted as `documentation: NSNull` (or simply not omitted) would break the symmetric round-trip with Rust. | Tests/CapDAGTests/CSCapTests.m:960 |
-| test0370 | `test0370_MediaDefDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaDefs definition through CSResolveMediaUrn into the resolved CSMediaDef. Mirrors TEST924 on the Rust side and testJS_mediaDefDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:996 |
-| test0371 | `test0371_CapVersionZeroRoundTrip` | TEST0371: Cap version zero round trip | Tests/CapDAGTests/CSCapTests.m:1035 |
-| test0372 | `test0372_CapVersionNonZeroRoundTrip` | TEST0372: Cap version non zero round trip | Tests/CapDAGTests/CSCapTests.m:1068 |
+| test0369 | `test0369_CapDocumentationOmittedWhenNil` | When documentation is nil, toDictionary must omit the field entirely. This matches the Rust serializer's skip-when-None semantics and the JS toJSON behaviour. A regression where nil is emitted as `documentation: NSNull` (or simply not omitted) would break the symmetric round-trip with Rust. | Tests/CapDAGTests/CSCapTests.m:961 |
+| test0370 | `test0370_MediaDefDocumentationPropagatesThroughResolve` | Documentation propagates from a mediaDefs definition through CSResolveMediaUrn into the resolved CSMediaDef. Mirrors TEST924 on the Rust side and testJS_mediaDefDocumentationPropagatesThroughResolve on the JS side. | Tests/CapDAGTests/CSCapTests.m:997 |
+| test0371 | `test0371_CapVersionZeroRoundTrip` | TEST0371: Cap version zero round trip | Tests/CapDAGTests/CSCapTests.m:1036 |
+| test0372 | `test0372_CapVersionNonZeroRoundTrip` | TEST0372: Cap version non zero round trip | Tests/CapDAGTests/CSCapTests.m:1069 |
 | test389 | `test389_streamStartRoundtrip` | TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn | Tests/BifaciTests/FrameTests.swift:1128 |
 | test390 | `test390_streamEndRoundtrip` | TEST390: StreamEnd encode/decode roundtrip preserves stream_id, no media_urn | Tests/BifaciTests/FrameTests.swift:1164 |
 | test395 | `test395_build_payload_small` | TEST395: Small payload (< max_chunk) produces correct CBOR arguments | Tests/BifaciTests/CartridgeRuntimeTests.swift:1602 |
@@ -382,7 +382,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test518 | `test518_reorderBufferFlowCleanupAfterEnd` | TEST518: ReorderBuffer handles zero-length ready vec correctly | Tests/BifaciTests/FlowOrderingTests.swift:764 |
 | test519 | `test519_reorderBufferMultipleRids` | TEST519: ReorderBuffer state persists across accept calls | Tests/BifaciTests/FlowOrderingTests.swift:786 |
 | test520 | `test520_reorderBufferDrainsBufferedFrames` | TEST520: ReorderBuffer max_buffer_per_flow is per-flow not global | Tests/BifaciTests/FlowOrderingTests.swift:808 |
-| test521 | `test521_relayNotifyCborRoundtrip` | TEST521: RelayNotify CBOR roundtrip preserves manifest and limits | Tests/BifaciTests/FrameTests.swift:1242 |
+| test521 | `test521_relayNotifyCborRoundtrip` | TEST521: RelayNotify CBOR roundtrip preserves every required v4 limit, and incomplete or zero-credit limit sets are rejected without defaults. | Tests/BifaciTests/FrameTests.swift:1243 |
 | test522 | `test522_relayStateCborRoundtrip` | TEST522: RelayState CBOR roundtrip preserves payload | Tests/BifaciTests/FrameTests.swift:1263 |
 | test523 | `test523_relayNotifyNotFlowFrame` | TEST523: is_flow_frame returns false for RelayNotify | Tests/BifaciTests/FrameTests.swift:1652 |
 | test524 | `test524_relayStateNotFlowFrame` | TEST524: is_flow_frame returns false for RelayState | Tests/BifaciTests/FrameTests.swift:1658 |
@@ -390,23 +390,23 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test526 | `test526_relayStateEmptyPayload` | TEST526: RelayState with empty payload is valid | Tests/BifaciTests/FrameTests.swift:1675 |
 | test527 | `test527_relayNotifyLargeManifest` | TEST527: RelayNotify with large manifest roundtrips correctly | Tests/BifaciTests/FrameTests.swift:1686 |
 | test528 | `test528_relayFramesUseUintZeroId` | TEST528: RelayNotify and RelayState use MessageId::Uint(0) | Tests/BifaciTests/FrameTests.swift:1698 |
-| test529 | `test529_inputStreamIteratorOrder` | TEST529: InputStream recv yields chunks in order | Tests/BifaciTests/StreamingAPITests.swift:20 |
-| test530 | `test530_inputStreamCollectBytes` | TEST530: InputStream::collect_bytes concatenates byte chunks | Tests/BifaciTests/StreamingAPITests.swift:57 |
-| test531 | `test531_inputStreamCollectBytesText` | TEST531: InputStream::collect_bytes handles text chunks | Tests/BifaciTests/StreamingAPITests.swift:79 |
-| test532 | `test532_inputStreamEmpty` | TEST532: InputStream empty stream produces empty bytes | Tests/BifaciTests/StreamingAPITests.swift:101 |
-| test533 | `test533_inputStreamErrorPropagation` | TEST533: InputStream propagates errors | Tests/BifaciTests/StreamingAPITests.swift:119 |
-| test534 | `test534_inputStreamMediaUrn` | TEST534: InputStream::media_urn returns correct URN | Tests/BifaciTests/StreamingAPITests.swift:146 |
-| test535 | `test535_inputPackageIteration` | TEST535: InputPackage recv yields streams | Tests/BifaciTests/StreamingAPITests.swift:156 |
-| test536 | `test536_inputPackageCollectAllBytes` | TEST536: InputPackage::collect_all_bytes aggregates all streams | Tests/BifaciTests/StreamingAPITests.swift:202 |
-| test537 | `test537_inputPackageEmpty` | TEST537: InputPackage empty package produces empty bytes | Tests/BifaciTests/StreamingAPITests.swift:243 |
-| test538 | `test538_inputPackageErrorPropagation` | TEST538: InputPackage propagates stream errors | Tests/BifaciTests/StreamingAPITests.swift:261 |
-| test539 | `test539_outputStreamSendsStreamStart` | TEST539: OutputStream sends STREAM_START on first write | Tests/BifaciTests/StreamingAPITests.swift:289 |
-| test540 | `test540_outputStreamCloseSendsStreamEnd` | TEST540: OutputStream::close sends STREAM_END with correct chunk_count | Tests/BifaciTests/StreamingAPITests.swift:319 |
-| test541 | `test541_outputStreamChunksLargeData` | TEST541: OutputStream chunks large data correctly | Tests/BifaciTests/StreamingAPITests.swift:350 |
-| test542 | `test542_outputStreamCloseWithoutStartIsNoop` | TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only | Tests/BifaciTests/StreamingAPITests.swift:385 |
-| test543 | `test543_peerCallArgCreatesStream` | TEST543: PeerCall::arg creates OutputStream with correct stream_id | Tests/BifaciTests/StreamingAPITests.swift:490 |
-| test544 | `test544_peerCallFinishSendsEnd` | TEST544: PeerCall::finish sends END frame | Tests/BifaciTests/StreamingAPITests.swift:519 |
-| test545 | `test545_peerCallFinishReturnsPeerResponse` | TEST545: PeerCall::finish returns PeerResponse with data | Tests/BifaciTests/StreamingAPITests.swift:541 |
+| test529 | `test529_inputStreamIteratorOrder` | TEST529: InputStream recv yields chunks in order | Tests/BifaciTests/StreamingAPITests.swift:21 |
+| test530 | `test530_inputStreamCollectBytes` | TEST530: InputStream::collect_bytes concatenates byte chunks | Tests/BifaciTests/StreamingAPITests.swift:58 |
+| test531 | `test531_inputStreamCollectBytesText` | TEST531: InputStream::collect_bytes handles text chunks | Tests/BifaciTests/StreamingAPITests.swift:80 |
+| test532 | `test532_inputStreamEmpty` | TEST532: InputStream empty stream produces empty bytes | Tests/BifaciTests/StreamingAPITests.swift:102 |
+| test533 | `test533_inputStreamErrorPropagation` | TEST533: InputStream propagates errors | Tests/BifaciTests/StreamingAPITests.swift:120 |
+| test534 | `test534_inputStreamMediaUrn` | TEST534: InputStream::media_urn returns correct URN | Tests/BifaciTests/StreamingAPITests.swift:147 |
+| test535 | `test535_inputPackageIteration` | TEST535: InputPackage recv yields streams | Tests/BifaciTests/StreamingAPITests.swift:157 |
+| test536 | `test536_inputPackageCollectAllBytes` | TEST536: InputPackage::collect_all_bytes aggregates all streams | Tests/BifaciTests/StreamingAPITests.swift:203 |
+| test537 | `test537_inputPackageEmpty` | TEST537: InputPackage empty package produces empty bytes | Tests/BifaciTests/StreamingAPITests.swift:244 |
+| test538 | `test538_inputPackageErrorPropagation` | TEST538: InputPackage propagates stream errors | Tests/BifaciTests/StreamingAPITests.swift:262 |
+| test539 | `test539_outputStreamSendsStreamStart` | TEST539: OutputStream sends STREAM_START on first write | Tests/BifaciTests/StreamingAPITests.swift:290 |
+| test540 | `test540_outputStreamCloseSendsStreamEnd` | TEST540: OutputStream::close sends STREAM_END with correct chunk_count | Tests/BifaciTests/StreamingAPITests.swift:320 |
+| test541 | `test541_outputStreamChunksLargeData` | TEST541: OutputStream chunks large data correctly | Tests/BifaciTests/StreamingAPITests.swift:351 |
+| test542 | `test542_outputStreamCloseWithoutStartIsNoop` | TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only | Tests/BifaciTests/StreamingAPITests.swift:386 |
+| test543 | `test543_peerCallArgCreatesStream` | TEST543: PeerCall::arg creates OutputStream with correct stream_id | Tests/BifaciTests/StreamingAPITests.swift:491 |
+| test544 | `test544_peerCallFinishSendsEnd` | TEST544: PeerCall::finish sends END frame | Tests/BifaciTests/StreamingAPITests.swift:520 |
+| test545 | `test545_peerCallFinishReturnsPeerResponse` | TEST545: PeerCall::finish returns PeerResponse with data | Tests/BifaciTests/StreamingAPITests.swift:542 |
 | test546 | `test546_is_image` | TEST546: is_image returns true only when image marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:217 |
 | test547 | `test547_is_audio` | TEST547: is_audio returns true only when audio marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:229 |
 | test548 | `test548_is_video` | TEST548: is_video returns true only when video marker tag is present | Tests/CapDAGTests/CSMediaUrnTests.m:240 |
@@ -417,7 +417,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test558 | `test558_predicate_constant_consistency` | TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates | Tests/CapDAGTests/CSMediaUrnTests.m:300 |
 | test559 | `test559_withoutTag` | TEST559: withoutTag removes a tag and returns a new URN, leaving the original unchanged (mirror-local) | Tests/CapDAGTests/CSCapUrnTests.m:432 |
 | test566 | `test566_withTagRejectsStructuralKeys` | TEST566: with_tag rejects structural keys | Tests/CapDAGTests/CSCapUrnTests.m:399 |
-| test597 | `test597_capArgWithFullDefinition` | TEST597: CapArg::with_full_definition stores all fields including optional ones | Tests/CapDAGTests/CSCapTests.m:873 |
+| test597 | `test597_capArgWithFullDefinition` | TEST597: CapArg::with_full_definition stores all fields including optional ones | Tests/CapDAGTests/CSCapTests.m:874 |
 | test614 | `test614_RegistryCreation` | TEST614: Registry creation. Uses the network-free test constructor — the production `init` blocks on a manifest fetch (and fails hard if the registry is unreachable), so unit tests use initForTest, mirroring Rust new_for_test. | Tests/CapDAGTests/CSFabricRegistryTests.m:131 |
 | test638 | `test638_noPeerRouterRejectsAll` | TEST638: Verify NoPeerRouter rejects all requests with PeerInvokeNotSupported | Tests/BifaciTests/RouterTests.swift:14 |
 | test639 | `test639_Wildcard001EmptyCapIsIllegal` | TEST_WILDCARD_001: cap: (empty) is illegal | Tests/CapDAGTests/CSCapUrnTests.m:1025 |
@@ -439,12 +439,12 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test664 | `test664_runningCartridgeUsesManifestCaps` | TEST664: Running cartridge uses manifest caps, not known_caps | Tests/BifaciTests/RuntimeTests.swift:1214 |
 | test665 | `test665_capTableMixedRunningAndNonRunning` | TEST665: Cap table aggregates caps from every healthy cartridge — attached/running cartridges contribute their post-HELLO cap_groups, registered-but-not-yet-spawned cartridges contribute their probe-time cap_groups. Both flow through the same `cap_urns()` view. | Tests/BifaciTests/RuntimeTests.swift:1253 |
 | test667 | `test667_verifyChunkChecksumDetectsCorruption` | TEST667: verify_chunk_checksum detects corrupted payload | Tests/BifaciTests/FrameTests.swift:1275 |
-| test678 | `test678_findStreamEquivalentUrnDifferentTagOrder` | TEST678: find_stream with exact equivalent URN (same tags, different order) succeeds | Tests/BifaciTests/StreamingAPITests.swift:578 |
-| test679 | `test679_findStreamBaseUrnDoesNotMatchFullUrn` | TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:fmt=json;llm-generation-request;record". | Tests/BifaciTests/StreamingAPITests.swift:591 |
-| test680 | `test680_requireStreamMissingUrnReturnsError` | TEST680: require_stream with missing URN returns hard StreamError | Tests/BifaciTests/StreamingAPITests.swift:602 |
-| test681 | `test681_findStreamMultipleStreamsReturnsCorrect` | TEST681: find_stream with multiple streams returns the correct one | Tests/BifaciTests/StreamingAPITests.swift:617 |
-| test682 | `test682_requireStreamStrReturnsUtf8` | TEST682: require_stream_str returns UTF-8 string for text data | Tests/BifaciTests/StreamingAPITests.swift:635 |
-| test683 | `test683_findStreamInvalidUrnReturnsNone` | TEST683: find_stream returns None for invalid media URN string (not a parse error — just None) | Tests/BifaciTests/StreamingAPITests.swift:645 |
+| test678 | `test678_findStreamEquivalentUrnDifferentTagOrder` | TEST678: find_stream with exact equivalent URN (same tags, different order) succeeds | Tests/BifaciTests/StreamingAPITests.swift:579 |
+| test679 | `test679_findStreamBaseUrnDoesNotMatchFullUrn` | TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:fmt=json;llm-generation-request;record". | Tests/BifaciTests/StreamingAPITests.swift:592 |
+| test680 | `test680_requireStreamMissingUrnReturnsError` | TEST680: require_stream with missing URN returns hard StreamError | Tests/BifaciTests/StreamingAPITests.swift:603 |
+| test681 | `test681_findStreamMultipleStreamsReturnsCorrect` | TEST681: find_stream with multiple streams returns the correct one | Tests/BifaciTests/StreamingAPITests.swift:618 |
+| test682 | `test682_requireStreamStrReturnsUtf8` | TEST682: require_stream_str returns UTF-8 string for text data | Tests/BifaciTests/StreamingAPITests.swift:636 |
+| test683 | `test683_findStreamInvalidUrnReturnsNone` | TEST683: find_stream returns None for invalid media URN string (not a parse error — just None) | Tests/BifaciTests/StreamingAPITests.swift:646 |
 | test688 | `test688_is_multiple` | TEST688: Tests is_multiple method correctly identifies multi-value cardinalities Verifies Single returns false while Sequence and AtLeastOne return true | Tests/CapDAGTests/CSCardinalityTests.m:21 |
 | test689 | `test689_accepts_single` | TEST689: Tests accepts_single method identifies cardinalities that accept single values Verifies Single and AtLeastOne accept singles while Sequence does not | Tests/CapDAGTests/CSCardinalityTests.m:28 |
 | test690 | `test690_compatibility_single_to_single` | TEST690: Tests cardinality compatibility for single-to-single data flow Verifies Direct compatibility when both input and output are Single | Tests/CapDAGTests/CSCardinalityTests.m:37 |
@@ -526,13 +526,13 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test836 | `test836_isEquivalent_nonEquivalent` | TEST836: is_equivalent — non-equivalent comparable caps | Tests/CapDAGTests/CSCapUrnTests.m:1265 |
 | test837 | `test837_isDispatchable_opTagMismatch` | TEST837: is_dispatchable — op tag mismatch rejects | Tests/CapDAGTests/CSCapUrnTests.m:1276 |
 | test838 | `test838_isDispatchable_requestWildcardOutput` | TEST838: is_dispatchable — request with wildcard output accepts any candidate output | Tests/CapDAGTests/CSCapUrnTests.m:1286 |
-| test839 | `test839_peerResponseDeliversLogsBeforeStreamStart` | TEST839: LOG frames arriving BEFORE StreamStart are delivered immediately This tests the critical fix: during a peer call, the peer (e.g., modelcartridge) sends LOG frames for minutes during model download BEFORE sending any data (StreamStart + Chunk). The handler must receive these LOGs in real-time so it can re-emit progress and keep the engine's activity timer alive. Previously, demux_single_stream blocked on awaiting StreamStart before returning PeerResponse, which meant the handler couldn't call recv() until data arrived — causing 120s activity timeouts during long downloads. | Tests/BifaciTests/StreamingAPITests.swift:662 |
-| test840 | `test840_peerResponseCollectBytesDiscardsLogs` | TEST840: PeerResponse::collect_bytes discards LOG frames | Tests/BifaciTests/StreamingAPITests.swift:733 |
-| test841 | `test841_peerResponseCollectValueDiscardsLogs` | TEST841: PeerResponse::collect_value discards LOG frames | Tests/BifaciTests/StreamingAPITests.swift:763 |
-| test842 | `test842_runWithKeepaliveReturnsResult` | TEST842: run_with_keepalive returns closure result (fast operation, no keepalive frames) | Tests/BifaciTests/StreamingAPITests.swift:794 |
-| test843 | `test843_runWithKeepaliveReturnsResultType` | TEST843: run_with_keepalive returns Ok/Err from closure | Tests/BifaciTests/StreamingAPITests.swift:817 |
-| test844 | `test844_runWithKeepalivePropagatesError` | TEST844: run_with_keepalive propagates errors from closure | Tests/BifaciTests/StreamingAPITests.swift:835 |
-| test845 | `test845_progressSenderEmitsFrames` | TEST845: ProgressSender emits progress and log frames independently of OutputStream | Tests/BifaciTests/StreamingAPITests.swift:863 |
+| test839 | `test839_peerResponseDeliversLogsBeforeStreamStart` | TEST839: LOG frames arriving BEFORE StreamStart are delivered immediately This tests the critical fix: during a peer call, the peer (e.g., modelcartridge) sends LOG frames for minutes during model download BEFORE sending any data (StreamStart + Chunk). The handler must receive these LOGs in real-time so it can re-emit progress and keep the engine's activity timer alive. Previously, demux_single_stream blocked on awaiting StreamStart before returning PeerResponse, which meant the handler couldn't call recv() until data arrived — causing 120s activity timeouts during long downloads. | Tests/BifaciTests/StreamingAPITests.swift:663 |
+| test840 | `test840_peerResponseCollectBytesRejectsUnhandledLogs` | TEST840: PeerResponse::collect_bytes rejects unhandled LOG frames. | Tests/BifaciTests/StreamingAPITests.swift:734 |
+| test841 | `test841_peerResponseCollectValueRejectsUnhandledLogs` | TEST841: PeerResponse::collect_value rejects unhandled LOG frames. | Tests/BifaciTests/StreamingAPITests.swift:768 |
+| test842 | `test842_runWithKeepaliveReturnsResult` | TEST842: run_with_keepalive returns closure result (fast operation, no keepalive frames) | Tests/BifaciTests/StreamingAPITests.swift:803 |
+| test843 | `test843_runWithKeepaliveReturnsResultType` | TEST843: run_with_keepalive returns Ok/Err from closure | Tests/BifaciTests/StreamingAPITests.swift:826 |
+| test844 | `test844_runWithKeepalivePropagatesError` | TEST844: run_with_keepalive propagates errors from closure | Tests/BifaciTests/StreamingAPITests.swift:844 |
+| test845 | `test845_progressSenderEmitsFrames` | TEST845: ProgressSender emits progress and log frames independently of OutputStream | Tests/BifaciTests/StreamingAPITests.swift:872 |
 | test846 | `test846_progressFrameRoundtrip` | TEST846: Test progress LOG frame encode/decode roundtrip preserves progress float | Tests/BifaciTests/FrameTests.swift:1753 |
 | test847 | `test847_progressDoubleRoundtrip` | TEST847: Double roundtrip (modelcartridge → relay → candlecartridge) | Tests/BifaciTests/FrameTests.swift:1790 |
 | test852 | `test852_lub_identical` | TEST852: LUB of identical URNs returns the same URN | Tests/CapDAGTests/CSMediaUrnTests.m:18 |
@@ -640,9 +640,9 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1271 | `test1271_mediaAdapterSelectionConstant` | TEST1271: MEDIA_ADAPTER_SELECTION constant parses and has expected tags | Tests/BifaciTests/StandardCapsTests.swift:41 |
 | test1272 | `test1272_adapterCapConstantParses` | TEST1272: CAP_ADAPTER_SELECTION constant parses as a valid CapUrn | Tests/BifaciTests/StandardCapsTests.swift:55 |
 | test1273 | `test1273_adapterSelectionUrnBuilder` | TEST1273: the adapter-selection cap URN has correct in/out specs — in is the bare wildcard `media:` (accepts any) and out conforms to the adapter-selection media URN. (The reference exposes this as the `adapter_selection_urn()` builder; here the parsed constant IS the canonical form the runtime registers.) | Tests/BifaciTests/StandardCapsTests.swift:67 |
-| test1300 | `test1300_sequenceItemFragmentsReassembleIntoOneItem` | TEST1300: A sequence item CBOR-encoded once and split across multiple CHUNK frames (the emitListItem framing) reassembles into exactly one delivered item. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:198 |
-| test1301 | `test1301_sequenceStreamTruncatedMidItemFailsHard` | TEST1301: A sequence stream that ENDs mid-item (trailing fragment bytes that never complete a CBOR item) surfaces a hard decode error instead of silently dropping the partial item. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:253 |
-| test1302 | `test1302_sequenceFragmentFramesAreCreditedOnArrival` | TEST1302: Continuation fragments of a multi-frame sequence item are credited back by the demux on arrival — the handler grants one frame per consumed item, so without fragment grants an item spanning more frames than the credit window could never finish arriving. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:277 |
+| test1300 | `test1300_sequenceItemFragmentsReassembleIntoOneItem` | TEST1300: A sequence item CBOR-encoded once and split across multiple CHUNK frames (the emitListItem framing) reassembles into exactly one delivered item. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:198 |
+| test1301 | `test1301_sequenceStreamTruncatedMidItemFailsHard` | TEST1301: A sequence stream that ENDs mid-item (trailing fragment bytes that never complete a CBOR item) surfaces a hard decode error instead of silently dropping the partial item. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:253 |
+| test1302 | `test1302_sequenceFragmentFramesAreCreditedOnArrival` | TEST1302: Continuation fragments of a multi-frame sequence item are credited back by the demux on arrival — the handler grants one frame per consumed item, so without fragment grants an item spanning more frames than the credit window could never finish arriving. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:277 |
 | test1400 | `test1400_missingOutSpecDefaultsToWildcard` | TEST1400: Missing 'out' defaults to media: wildcard (mirror-local variant of TEST002 covering the out-side case) | Tests/CapDAGTests/CSCapUrnTests.m:183 |
 | test1401 | `test1401_directionWildcardMatches` | TEST1401: Wildcard in/out specs accept any concrete value (mirror-local variant of TEST003's wildcard branch) | Tests/CapDAGTests/CSCapUrnTests.m:240 |
 | test1402 | `test1402_invalidCharacters` | TEST1402: Invalid characters (e.g. '@') in tag keys are rejected by the parser (mirror-local variant of TEST003) | Tests/CapDAGTests/CSCapUrnTests.m:160 |
@@ -720,7 +720,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1897 | `test1897_unhealthyMasterInventoryRetainedButNotRoutable` | TEST1897: the installed-cartridge INVENTORY is NOT health-filtered. A master held unhealthy by a failed runtime identity probe still has its cartridges visible in the aggregate inventory, even though its caps are excluded from ROUTING. Pins the deliberate asymmetry. | Tests/BifaciTests/RelaySwitchTests.swift:1198 |
 | test1898 | `test1898_subscribeCapabilitiesDeliversRoutableSet` | TEST1898: the routable-capability watch (subscribeCapabilities). A subscriber must receive the CURRENT routable cap set on subscribe even though it was rebuilt during construction — BEFORE any receiver existed (the watch must persist the value, i.e. send_replace semantics). The delivered set must be the health-filtered routable cap URNs. | Tests/BifaciTests/RelaySwitchTests.swift:1249 |
 | test1899 | `test1899_mediaDefResolvesToVersionedObjectPathUnderManifest` | TEST1899: a media def published under a manifest (v >= 1) resolves to the VERSIONED object path `/media/<sha>/<defver>.json`, never the legacy flat path `/media/<sha>`. The flat path is the pre-manifest (v0) layout; a registry that silently runs in v0 mode fetches it and 404s every lookup against a versioned registry — the exact regression where the app's media-title resolver hit `/media/<sha>` on a staging-v1 registry and logged "Media def … not found (HTTP 404)". This pins BOTH the URL rule and the manifest-driven defver resolution. Mirrors the Rust reference's test0144_media_def_resolves_to_versioned_object_path_under_manifest. | Tests/CapDAGTests/CSFabricRegistryTests.m:66 |
-| test1900 | `test1900_errFrameFailureClassWireContract` | TEST1900: the ERR frame failure-class wire contract (docs/failure-taxonomy.md): errClassified writes meta code+class+message; plain err defaults class to internal; a missing or unknown class token reads as .internal (unclassified means "ours", never a guess); a known token round-trips exactly. | Tests/BifaciTests/FrameTests.swift:2005 |
+| test1900 | `test1900_errFrameAttributionClassWireContract` | TEST1900: ERR attribution is mandatory and strict. Missing and unknown tokens are protocol violations rather than compatibility defaults. | Tests/BifaciTests/FrameTests.swift:2002 |
 | test1905 | `test1905_peerReqNoHandlerSendsErrToCaller` | TEST0142 (Swift-specific, gap 3): a peer cartridge→cartridge REQ for a cap with NO handler must NOT abort the pump. The switch sends an ERR("NO_HANDLER") frame straight back to the calling master (stamped with the synthetic XID) so the caller fails fast, and handleMasterFrame returns nil — it must NOT throw. | Tests/BifaciTests/RelaySwitchTests.swift:1302 |
 | test6200 | `test6200_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:277 |
 | test6205 | `test6205_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:293 |
@@ -742,18 +742,18 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test6273 | `test6273_DotParserCapUrnLabel` | TEST: Parse cap URN label with escaped quotes | Tests/BifaciTests/OrchestratorTests.swift:413 |
 | test6282 | `test6282_resolve_custom_media_def` | TEST6282: Test resolving a custom media URN from a registry-seeded media def | Tests/CapDAGTests/CSMediaDefTests.m:327 |
 | test6283 | `test6283_resolve_custom_with_schema` | TEST6283: Test resolving a custom record media def carrying a schema from a registry-seeded media def | Tests/CapDAGTests/CSMediaDefTests.m:345 |
-| test6285 | `test6285_b_outputStreamStartThenCloseEmpty` | TEST542b: OutputStream start + close sends STREAM_START + STREAM_END (empty stream) | Tests/BifaciTests/StreamingAPITests.swift:407 |
+| test6285 | `test6285_b_outputStreamStartThenCloseEmpty` | TEST542b: OutputStream start + close sends STREAM_START + STREAM_END (empty stream) | Tests/BifaciTests/StreamingAPITests.swift:408 |
 | test6287 | `test6287_local_overrides_registry` | TEST6287: Test local media_defs definition overrides registry definition for same URN | Tests/CapDAGTests/CSMediaDefTests.m:370 |
-| test6289 | `test6289_c_outputStreamWriteWithoutStartThrows` | TEST542c: OutputStream write without start() throws | Tests/BifaciTests/StreamingAPITests.swift:437 |
-| test6291 | `test6291_d_outputStreamDoubleStartThrows` | TEST542d: OutputStream start() twice throws | Tests/BifaciTests/StreamingAPITests.swift:453 |
-| test6293 | `test6293_e_outputStreamModeConflictThrows` | TEST542e: OutputStream mode conflict throws (start write, call emitListItem) | Tests/BifaciTests/StreamingAPITests.swift:470 |
+| test6289 | `test6289_c_outputStreamWriteWithoutStartThrows` | TEST542c: OutputStream write without start() throws | Tests/BifaciTests/StreamingAPITests.swift:438 |
+| test6291 | `test6291_d_outputStreamDoubleStartThrows` | TEST542d: OutputStream start() twice throws | Tests/BifaciTests/StreamingAPITests.swift:454 |
+| test6293 | `test6293_e_outputStreamModeConflictThrows` | TEST542e: OutputStream mode conflict throws (start write, call emitListItem) | Tests/BifaciTests/StreamingAPITests.swift:471 |
 | test6307 | `test6307_PressureAndKill` | / Single test: allocate 90% of RAM with incompressible CSPRNG data, monitor / memory, detect pressure (kernel or threshold), kill cartridge, verify death. / The goal is to overload the system — force the kernel into real pressure. | testcartridge-host/Sources/TestcartridgeHost/main.swift:288 |
 | test6309 | `test6309_BuilderBasicConstruction` | TEST6309: Builder basic construction | Tests/CapDAGTests/CSCapUrnBuilderTests.m:17 |
 | test6311 | `test6311_BuilderFluentAPI` | TEST6311: Builder fluent a p i | Tests/CapDAGTests/CSCapUrnBuilderTests.m:34 |
 | test6313 | `test6313_BuilderDirectionAccess` | TEST6313: Builder direction access | Tests/CapDAGTests/CSCapUrnBuilderTests.m:56 |
 | test6314 | `test6314_ComplexNestedSchema` | TEST6314: Complex nested schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:416 |
 | test6316 | `test6316_BuilderCustomTags` | TEST6316: Builder custom tags | Tests/CapDAGTests/CSCapUrnBuilderTests.m:74 |
-| test6317 | `test6317_MediaUrnResolutionThroughRegistry` | TEST6317: Media urn resolution with registry | Tests/CapDAGTests/CSCapTests.m:371 |
+| test6317 | `test6317_MediaUrnResolutionThroughRegistry` | TEST6317: Media urn resolution with registry | Tests/CapDAGTests/CSCapTests.m:372 |
 | test6319 | `test6319_BuilderTagOverrides` | TEST6319: Builder tag overrides | Tests/CapDAGTests/CSCapUrnBuilderTests.m:93 |
 | test6322 | `test6322_BuilderMissingInSpecFails` | TEST6322: Builder missing in spec fails | Tests/CapDAGTests/CSCapUrnBuilderTests.m:111 |
 | test6324 | `test6324_BuilderMissingOutSpecFails` | TEST6324: Builder missing out spec fails | Tests/CapDAGTests/CSCapUrnBuilderTests.m:125 |
@@ -767,10 +767,10 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test6354 | `test6354_BuilderDirectionMismatchNoMatch` | TEST6354: Builder direction mismatch no match | Tests/CapDAGTests/CSCapUrnBuilderTests.m:308 |
 | test6358 | `test6358_ArgumentValidationWithUnknownSpecFails` | Obj-C specific: unresolved spec ID fails hard during schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:141 |
 | test6362 | `test6362_NonStructuredArgumentSkipsSchemaValidation` | Obj-C specific: Non-structured argument skips schema validation | Tests/CapDAGTests/CSSchemaValidationTests.m:160 |
-| test6363 | `test6363_CapManifestWithPageUrl` | TEST6363: Cap manifest with page url | Tests/CapDAGTests/CSCapTests.m:491 |
+| test6363 | `test6363_CapManifestWithPageUrl` | TEST6363: Cap manifest with page url | Tests/CapDAGTests/CSCapTests.m:492 |
 | test6366 | `test6366_OutputWithEmbeddedSchemaValidationFailure` | TEST6366: Output with embedded schema validation failure | Tests/CapDAGTests/CSSchemaValidationTests.m:233 |
 | test6370 | `test6370_IntegrationWithInputValidation` | TEST6370: Integration with input validation | Tests/CapDAGTests/CSSchemaValidationTests.m:275 |
-| test6371 | `test6371_CapManifestCompatibility` | TEST6371: Cap manifest compatibility | Tests/CapDAGTests/CSCapTests.m:724 |
+| test6371 | `test6371_CapManifestCompatibility` | TEST6371: Cap manifest compatibility | Tests/CapDAGTests/CSCapTests.m:725 |
 | test6373 | `test6373_IntegrationWithOutputValidation` | TEST6373: Integration with output validation | Tests/CapDAGTests/CSSchemaValidationTests.m:346 |
 | test6378 | `test6378_SchemaValidationErrorDetails` | TEST6378: Schema validation error details | Tests/CapDAGTests/CSSchemaValidationTests.m:508 |
 | test6381 | `test6381_BuiltinSpecIdsResolve` | TEST6381: Builtin spec ids resolve | Tests/CapDAGTests/CSSchemaValidationTests.m:555 |
@@ -806,19 +806,19 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test6541 | `test6541_Wildcard004InOutNoValuesAreIllegal` | TEST_WILDCARD_004: cap:in;out collapses to the same illegal bare top form | Tests/CapDAGTests/CSCapUrnTests.m:1049 |
 | test6544 | `test6544_b_builderRejectsStructuralKeys` | TEST023B: Builder rejects reserved structural keys on tag/marker helpers | Tests/CapDAGTests/CSCapUrnTests.m:1383 |
 | test6547 | `test6547_effectPatchAppliesMediaDelta` | TEST655 variant: patch effect applies the declared media delta to runtime input | Tests/CapDAGTests/CSCapUrnTests.m:1609 |
-| test6549 | `test6549_CanonicalArgumentsDeserialization` | TEST6549: Canonical arguments deserialization | Tests/CapDAGTests/CSCapTests.m:226 |
-| test6551 | `test6551_CanonicalOutputDeserialization` | TEST6551: Canonical output deserialization | Tests/CapDAGTests/CSCapTests.m:251 |
-| test6553 | `test6553_CanonicalValidationDeserialization` | TEST6553: Canonical validation deserialization | Tests/CapDAGTests/CSCapTests.m:268 |
-| test6555 | `test6555_CompleteCapDeserialization` | TEST6555: Complete cap deserialization | Tests/CapDAGTests/CSCapTests.m:289 |
-| test6558 | `test6558_CapManifestCreation` | MARK: - Cap Manifest Tests | Tests/CapDAGTests/CSCapTests.m:428 |
-| test6564 | `test6564_CapManifestDictionaryDeserialization` | TEST6564: Cap manifest dictionary deserialization | Tests/CapDAGTests/CSCapTests.m:523 |
-| test6566 | `test6566_CapManifestRequiredFields` | TEST6566: Cap manifest required fields | Tests/CapDAGTests/CSCapTests.m:577 |
-| test6569 | `test6569_CapManifestWithMultipleCaps` | TEST6569: Cap manifest with multiple caps | Tests/CapDAGTests/CSCapTests.m:591 |
-| test6571 | `test6571_CapManifestEmptyCaps` | TEST6571: Cap manifest empty caps | Tests/CapDAGTests/CSCapTests.m:637 |
-| test6573 | `test6573_CapManifestOptionalAuthorField` | TEST6573: Cap manifest optional author field | Tests/CapDAGTests/CSCapTests.m:666 |
-| test6578 | `test6578_ArgumentCreationWithNewAPI` | TEST6578: Argument creation with new a p i | Tests/CapDAGTests/CSCapTests.m:779 |
-| test6580 | `test6580_OutputCreationWithNewAPI` | TEST6580: Output creation with new a p i | Tests/CapDAGTests/CSCapTests.m:900 |
-| test6583 | `test6583_CapDocumentationRoundTrip` | Mirrors TEST920 in capdag/src/cap/definition.rs and the JS testJS_capDocumentationRoundTrip test. The body is non-trivial — multi-line, embedded backticks and double quotes, Unicode dingbat (\u2605) — so any escaping mismatch between dictionary serialization here and the Rust / JS counterparts surfaces as a failed round-trip. | Tests/CapDAGTests/CSCapTests.m:922 |
+| test6549 | `test6549_CanonicalArgumentsDeserialization` | TEST6549: Canonical arguments deserialization | Tests/CapDAGTests/CSCapTests.m:227 |
+| test6551 | `test6551_CanonicalOutputDeserialization` | TEST6551: Canonical output deserialization | Tests/CapDAGTests/CSCapTests.m:252 |
+| test6553 | `test6553_CanonicalValidationDeserialization` | TEST6553: Canonical validation deserialization | Tests/CapDAGTests/CSCapTests.m:269 |
+| test6555 | `test6555_CompleteCapDeserialization` | TEST6555: Complete cap deserialization | Tests/CapDAGTests/CSCapTests.m:290 |
+| test6558 | `test6558_CapManifestCreation` | MARK: - Cap Manifest Tests | Tests/CapDAGTests/CSCapTests.m:429 |
+| test6564 | `test6564_CapManifestDictionaryDeserialization` | TEST6564: Cap manifest dictionary deserialization | Tests/CapDAGTests/CSCapTests.m:524 |
+| test6566 | `test6566_CapManifestRequiredFields` | TEST6566: Cap manifest required fields | Tests/CapDAGTests/CSCapTests.m:578 |
+| test6569 | `test6569_CapManifestWithMultipleCaps` | TEST6569: Cap manifest with multiple caps | Tests/CapDAGTests/CSCapTests.m:592 |
+| test6571 | `test6571_CapManifestEmptyCaps` | TEST6571: Cap manifest empty caps | Tests/CapDAGTests/CSCapTests.m:638 |
+| test6573 | `test6573_CapManifestOptionalAuthorField` | TEST6573: Cap manifest optional author field | Tests/CapDAGTests/CSCapTests.m:667 |
+| test6578 | `test6578_ArgumentCreationWithNewAPI` | TEST6578: Argument creation with new a p i | Tests/CapDAGTests/CSCapTests.m:780 |
+| test6580 | `test6580_OutputCreationWithNewAPI` | TEST6580: Output creation with new a p i | Tests/CapDAGTests/CSCapTests.m:901 |
+| test6583 | `test6583_CapDocumentationRoundTrip` | Mirrors TEST920 in capdag/src/cap/definition.rs and the JS testJS_capDocumentationRoundTrip test. The body is non-trivial — multi-line, embedded backticks and double quotes, Unicode dingbat (\u2605) — so any escaping mismatch between dictionary serialization here and the Rust / JS counterparts surfaces as a failed round-trip. | Tests/CapDAGTests/CSCapTests.m:923 |
 | test6586 | `test6586_file_path_array_invalid_json_fails` | TEST6586: A scalar file-path arg receiving a nonexistent path fails hard with a clear error that names the path. The runtime refuses to silently swallow user mistakes like typos or wrong directories. | Tests/BifaciTests/CartridgeRuntimeTests.swift:959 |
 | test6587 | `test6587_file_path_array_one_file_missing_fails_hard` | TEST6587: file-path-array with literal nonexistent path fails hard | Tests/BifaciTests/CartridgeRuntimeTests.swift:988 |
 | test6588 | `test6588_file_path_array_empty_array` | TEST6588: file-path arg in CBOR mode with empty Array value returns empty. CBOR Array (not JSON) is the multi-input wire form for sequence args. Mirrors Rust test6588_file_path_array_empty_array. | Tests/BifaciTests/CartridgeRuntimeTests.swift:1194 |
@@ -850,59 +850,68 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test6749 | `test6749_identityVerification` | TEST6749: InProcessCartridgeHost handles identity verification (echo nonce) | Tests/BifaciTests/InProcessCartridgeHostTests.swift:188 |
 | test6750 | `test6750_noHandlerReturnsErr` | TEST6750: InProcessCartridgeHost returns NO_HANDLER for unregistered cap | Tests/BifaciTests/InProcessCartridgeHostTests.swift:249 |
 | test6751 | `test6751_manifestIncludesAllCaps` | TEST6751: InProcessCartridgeHost manifest includes identity cap and handler caps | Tests/BifaciTests/InProcessCartridgeHostTests.swift:291 |
-| test7000 | `test7000_v3HandshakeNegotiatesAllFourLimits` | TEST7000: v3 handshake succeeds and negotiates the element-wise minimum of all four limits including initial_credit | Tests/BifaciTests/ProtocolV3Tests.swift:127 |
-| test7001 | `test7001_handshakeRejectsVersion2` | TEST7001: HELLO carrying protocol version 2 is rejected at handshake with a version-mismatch error | Tests/BifaciTests/ProtocolV3Tests.swift:147 |
-| test7002 | `test7002_initialCreditNegotiatedMinimum` | TEST7002: initial_credit negotiation picks the element-wise minimum of the two proposals | Tests/BifaciTests/ProtocolV3Tests.swift:180 |
+| test7000 | `test7000_v4HandshakeNegotiatesAllFourLimits` | TEST7000: v4 handshake succeeds and negotiates all four limits plus required handler capacity. | Tests/BifaciTests/ProtocolV4Tests.swift:127 |
+| test7001 | `test7001_handshakeRejectsVersion2` | TEST7001: HELLO carrying protocol version 2 is rejected at handshake with a version-mismatch error | Tests/BifaciTests/ProtocolV4Tests.swift:147 |
+| test7002 | `test7002_initialCreditNegotiatedMinimum` | TEST7002: initial_credit negotiation picks the element-wise minimum of the two proposals | Tests/BifaciTests/ProtocolV4Tests.swift:180 |
 | test7003 | `test7003_decodeRejectsMalformedIdWrongLength` | TEST7003: decodeFrame rejects a present-but-malformed id (wrong byte length) as a hard error instead of fabricating .uint(0), which would forge a routing key from corruption and misroute the frame. | Tests/BifaciTests/FrameTests.swift:61 |
 | test7004 | `test7004_decodeRejectsMalformedIdWrongType` | TEST7004: decodeFrame rejects an id of the wrong CBOR type as a hard error. | Tests/BifaciTests/FrameTests.swift:72 |
 | test7005 | `test7005_decodeRejectsMalformedRoutingId` | TEST7005: decodeFrame rejects a present-but-malformed routing_id (wrong length or wrong type) rather than silently dropping it — a dropped relay hint would let the switch treat a routed response as a fresh top-level request. A well-formed routing_id still decodes. | Tests/BifaciTests/FrameTests.swift:85 |
-| test7010 | `test7010_creditFrameRoundtrip` | TEST7010: CREDIT frame round-trips encode/decode with rid, stream_id, and credit count | Tests/BifaciTests/ProtocolV3Tests.swift:197 |
-| test7011 | `test7011_creditIsNonFlow` | TEST7011: CREDIT is a non-flow frame — no seq assigned, passes the reorder buffer untouched regardless of flow state | Tests/BifaciTests/ProtocolV3Tests.swift:231 |
-| test7012 | `test7012_streamStartUnboundedRoundtrip` | TEST7012: STREAM_START unbounded flag round-trips through CBOR; absent flag means bounded | Tests/BifaciTests/ProtocolV3Tests.swift:258 |
-| test7013 | `test7013_cborRejectsCreditWithoutCount` | TEST7013: CBOR decode REJECTS a CREDIT frame missing its credit count | Tests/BifaciTests/ProtocolV3Tests.swift:275 |
-| test7014 | `test7014_endTerminalMetaRoundtrip` | TEST7014: END terminal meta (progress, message) round-trips; successful END without progress reads as 1.0; failed END without progress reads as None | Tests/BifaciTests/ProtocolV3Tests.swift:291 |
-| test7015 | `test7015_creditGateAcquireAndGrant` | TEST7015: CreditGate acquire succeeds immediately within the initial window and waits when exhausted until a grant arrives. | Tests/BifaciTests/ProtocolV3Tests.swift:353 |
-| test7016 | `test7016_creditGateCloseReleasesWaiters` | TEST7016: CreditGate close releases blocked waiters with CreditClosed and fails all future acquires. | Tests/BifaciTests/ProtocolV3Tests.swift:374 |
-| test7017 | `test7017_creditRouterRouting` | TEST7017: CreditRouter routes grants by (rid, stream_id), falls back to a request's sole gate for stream-less grants, and reports unmatched grants. | Tests/BifaciTests/ProtocolV3Tests.swift:408 |
-| test7018 | `test7018_creditRouterCloseRequest` | TEST7018: CreditRouter close_request closes and removes every gate of the request, releasing their waiters. | Tests/BifaciTests/ProtocolV3Tests.swift:432 |
-| test7019 | `test7019_dropCountersRecordAndSnapshot` | TEST7019: Drop counters record per-reason exactly once per drop, and the snapshot omits zero-count reasons while totalling all of them. | Tests/BifaciTests/ProtocolV3Tests.swift:466 |
-| test7020 | `test7020_writerGateDropsPostTerminalFlowFrames` | TEST7020: A flow frame reaching the writer after the flow's END has been written is dropped with a counted post_terminal drop — END is the last flow frame on the wire. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:87 |
-| test7021 | `test7021_writerGatePrecision` | TEST7021: The writer gate is precise — flow frames before END are written, non-flow frames (heartbeat, credit) still pass after a flow's terminal, and only that flow is gated. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:116 |
-| test7025 | `test7025_unroutableFlowFrameIsCountedDrop` | TEST7025: A flow frame for a request with no routing state is a counted no_route drop — not a protocol error and not a silent loss — observable in the protocol stats snapshot. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:988 |
-| test7026 | `test7026_reorderFlushesPreTerminalBeforeCleanup` | TEST7026: An out-of-order terminal is buffered until the gap fills; buffered pre-terminal frames flush ahead of it in seq order, and only then may the flow be cleaned up | Tests/BifaciTests/ProtocolV3Tests.swift:317 |
-| test7027 | `test7027_channelClosedSendsAreCounted` | TEST7027: A frame sent through a ChannelFrameSender whose receiver is gone is a counted channel_closed drop, never a silent loss. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:145 |
-| test7029 | `test7029_terminatedFlowsCapacityAndEviction` | TEST7029: TerminatedFlows membership is exact up to capacity and evicts strictly oldest-first beyond it. | Tests/BifaciTests/ProtocolV3Tests.swift:488 |
+| test7010 | `test7010_creditFrameRoundtrip` | TEST7010: CREDIT frame round-trips encode/decode with rid, stream_id, and credit count | Tests/BifaciTests/ProtocolV4Tests.swift:197 |
+| test7011 | `test7011_creditIsNonFlow` | TEST7011: CREDIT is a non-flow frame — no seq assigned, passes the reorder buffer untouched regardless of flow state | Tests/BifaciTests/ProtocolV4Tests.swift:231 |
+| test7012 | `test7012_streamStartUnboundedRoundtrip` | TEST7012: STREAM_START unbounded flag round-trips through CBOR; absent flag means bounded | Tests/BifaciTests/ProtocolV4Tests.swift:258 |
+| test7013 | `test7013_cborRejectsCreditWithoutCount` | TEST7013: CBOR decode REJECTS a CREDIT frame missing its credit count | Tests/BifaciTests/ProtocolV4Tests.swift:275 |
+| test7014 | `test7014_endTerminalMetaRoundtrip` | TEST7014: END terminal meta (progress, message) round-trips; successful END without progress reads as 1.0; failed END without progress reads as None | Tests/BifaciTests/ProtocolV4Tests.swift:291 |
+| test7015 | `test7015_creditGateAcquireAndGrant` | TEST7015: CreditGate acquire succeeds immediately within the initial window and waits when exhausted until a grant arrives. | Tests/BifaciTests/ProtocolV4Tests.swift:353 |
+| test7016 | `test7016_creditGateCloseReleasesWaiters` | TEST7016: CreditGate close releases blocked waiters with CreditClosed and fails all future acquires. | Tests/BifaciTests/ProtocolV4Tests.swift:374 |
+| test7017 | `test7017_creditRouterRouting` | TEST7017: CreditRouter routes grants by (rid, stream_id), falls back to a request's sole gate for stream-less grants, and reports unmatched grants. | Tests/BifaciTests/ProtocolV4Tests.swift:408 |
+| test7018 | `test7018_creditRouterCloseRequest` | TEST7018: CreditRouter close_request closes and removes every gate of the request, releasing their waiters. | Tests/BifaciTests/ProtocolV4Tests.swift:432 |
+| test7019 | `test7019_dropCountersRecordAndSnapshot` | TEST7019: Drop counters record per-reason exactly once per drop, and the snapshot omits zero-count reasons while totalling all of them. | Tests/BifaciTests/ProtocolV4Tests.swift:466 |
+| test7020 | `test7020_writerGateDropsPostTerminalFlowFrames` | TEST7020: A flow frame reaching the writer after the flow's END has been written is dropped with a counted post_terminal drop — END is the last flow frame on the wire. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:87 |
+| test7021 | `test7021_writerGatePrecision` | TEST7021: The writer gate is precise — flow frames before END are written, non-flow frames (heartbeat, credit) still pass after a flow's terminal, and only that flow is gated. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:116 |
+| test7025 | `test7025_unroutableFlowFrameIsCountedDrop` | TEST7025: A flow frame for a request with no routing state is a counted no_route drop — not a protocol error and not a silent loss — observable in the protocol stats snapshot. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:988 |
+| test7026 | `test7026_reorderFlushesPreTerminalBeforeCleanup` | TEST7026: An out-of-order terminal is buffered until the gap fills; buffered pre-terminal frames flush ahead of it in seq order, and only then may the flow be cleaned up | Tests/BifaciTests/ProtocolV4Tests.swift:317 |
+| test7027 | `test7027_channelClosedSendsAreCounted` | TEST7027: A frame sent through a ChannelFrameSender whose receiver is gone is a counted channel_closed drop, never a silent loss. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:145 |
+| test7029 | `test7029_terminatedFlowsCapacityAndEviction` | TEST7029: TerminatedFlows membership is exact up to capacity and evicts strictly oldest-first beyond it. | Tests/BifaciTests/ProtocolV4Tests.swift:488 |
 | test7030 | `test7030_registerOnceTerminateOnce` | TEST7030: A request registers exactly once and terminates exactly once — duplicate registration and double termination are rejected, and after terminate zero state remains for the key. | Tests/BifaciTests/RequestStateTests.swift:152 |
 | test7031 | `test7031_ridIndexConsistency` | TEST7031: The rid index and the entry table never disagree across register/terminate cycles, and a terminated rid is immediately reusable. | Tests/BifaciTests/RequestStateTests.swift:178 |
 | test7032 | `test7032_recordFrameStatsAndPhase` | TEST7032: record_frame accumulates per-stream frame/byte/chunk counters by direction, flips phase Created→Streaming on the first flow frame, and tracks unbounded/ended/credit stream markers. | Tests/BifaciTests/RequestStateTests.swift:199 |
 | test7033 | `test7033_terminatedSummariesRing` | TEST7033: Terminated requests leave a bounded ring of summaries carrying kind, lifetime, and flow totals, and the ring evicts oldest-first at capacity. | Tests/BifaciTests/RequestStateTests.swift:237 |
-| test7035 | `test7035_endTerminatesAndReleasesAllState` | TEST7035: After END, the switch holds zero state for the request — entry, rid index, and response channel all released atomically, with the terminal delivered and a terminated summary recorded. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:1016 |
-| test7036 | `test7036_errTerminatesAndReleasesAllState` | TEST7036: After ERR, the same total-cleanup invariant holds as after END, with kind err. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:1053 |
-| test7037 | `test7037_cancelCascadesToChildrenAndCleansAllState` | TEST7037: Cancelling a request terminates it AND its recursively-linked peer children — Cancel frames reach the destination, waiting channels get ERR CANCELLED, and zero state remains for parent or child. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:1076 |
-| test7038 | `test7038_masterDeathTerminatesPendingRequests` | TEST7038: Master death terminates every request routed to it with kind master_died, delivering synthetic MASTER_DIED ERRs to waiting channels and leaving zero state. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:1160 |
-| test7050 | `test7050_senderStallsAtWindowAndResumesOnGrant` | TEST7050: A credited sender emits exactly its window of chunks then stalls until a CREDIT grant arrives — observed on the frame channel. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:325 |
-| test7052 | `test7052_inputGrantsAreBatched` | TEST7052: Input consumption emits batched CREDIT grants — roughly one grant per half-window consumed, not one per chunk. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:410 |
-| test7053 | `test7053_overWindowChunkIsCreditViolation` | TEST7053: A chunk received beyond the granted window is a fatal CREDIT_VIOLATION surfaced to the consumer (L12). | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:546 |
-| test7059 | `test7059_terminalEndReleasesCreditAndLeaksNoState` | TEST7059: Terminal frames release ALL request state and every registration is accounted exactly once (L7/L13) — across a mixed workload of END-, ERR-, and cancel-terminated requests the active table drains to empty and the terminated-by-kind counts sum to the total registrations. A leaked entry keeps `active` non-empty; a double- or un-counted termination breaks the conservation equation. (The reference runs this over a real cartridge execution; the law under test lives in the switch's request table, which is the layer this mirror implements.) | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:726 |
-| test7061 | `test7061_negotiatedInitialCreditIsMinOfProposals` | TEST7061: The negotiated initial_credit is the element-wise min of all masters' proposals, wire-visible at the switch. A master's RelayNotify carries its limits; renegotiation must include initialCredit — the regression this pins is `rebuildLimits()` dropping the credit field and silently resetting it to the default (which would let switch-side senders overrun a smaller window with CREDIT_VIOLATIONs at the master). | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:795 |
-| test7062 | `test7062_logFlowsWhileWindowExhausted` | TEST7062: LOG/progress frames flow while the data window is exhausted — control frames are never credited. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:372 |
-| test7063 | `test7063_pendingGrantsFlushBeforeBlocking` | TEST7063: A receiver flushes pending sub-batch grants before blocking on an empty input — progress is guaranteed even when the sender's window is smaller than the receiver's grant batch threshold. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:485 |
-| test7070 | `test7070_unboundedInputConsumedLive` | TEST7070: An unbounded input stream is consumed live — the handler observes early items while the producer is still emitting, and the stream reports itself unbounded. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:586 |
-| test7073 | `test7073_collectRefusesUnboundedStreams` | TEST7073: Buffering collectors refuse unbounded streams with a hard error instead of buffering without bound. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:617 |
-| test7085 | `test7085_relayNotifyCarriesHostProtocolStats` | TEST7085: The RelayNotify capabilities payload carries the host's protocol stats snapshot, surviving the wire round-trip. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:955 |
-| test7086 | `test7086_dropSnapshotMatchesInducedDrops` | TEST7086: One runtime's drop counters aggregate every drop source — post-terminal writer drops and closed-channel sends — each counted exactly once, and the snapshot totals match the induced drops. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:164 |
+| test7035 | `test7035_endTerminatesAndReleasesAllState` | TEST7035: After END, the switch holds zero state for the request — entry, rid index, and response channel all released atomically, with the terminal delivered and a terminated summary recorded. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:1016 |
+| test7036 | `test7036_errTerminatesAndReleasesAllState` | TEST7036: After ERR, the same total-cleanup invariant holds as after END, with kind err. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:1053 |
+| test7037 | `test7037_cancelCascadesToChildrenAndCleansAllState` | TEST7037: Cancelling a request terminates it AND its recursively-linked peer children — Cancel frames reach the destination, waiting channels get ERR CANCELLED, and zero state remains for parent or child. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:1076 |
+| test7038 | `test7038_masterDeathTerminatesPendingRequests` | TEST7038: Master death terminates every request routed to it with kind master_died, delivering synthetic MASTER_DIED ERRs to waiting channels and leaving zero state. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:1160 |
+| test7050 | `test7050_senderStallsAtWindowAndResumesOnGrant` | TEST7050: A credited sender emits exactly its window of chunks then stalls until a CREDIT grant arrives — observed on the frame channel. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:325 |
+| test7052 | `test7052_inputGrantsAreBatched` | TEST7052: Input consumption emits batched CREDIT grants — roughly one grant per half-window consumed, not one per chunk. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:410 |
+| test7053 | `test7053_overWindowChunkIsCreditViolation` | TEST7053: A chunk received beyond the granted window is a fatal CREDIT_VIOLATION surfaced to the consumer (L12). | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:546 |
+| test7059 | `test7059_terminalEndReleasesCreditAndLeaksNoState` | TEST7059: Terminal frames release ALL request state and every registration is accounted exactly once (L7/L13) — across a mixed workload of END-, ERR-, and cancel-terminated requests the active table drains to empty and the terminated-by-kind counts sum to the total registrations. A leaked entry keeps `active` non-empty; a double- or un-counted termination breaks the conservation equation. (The reference runs this over a real cartridge execution; the law under test lives in the switch's request table, which is the layer this mirror implements.) | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:726 |
+| test7061 | `test7061_negotiatedInitialCreditIsMinOfProposals` | TEST7061: The negotiated initial_credit is the element-wise min of all masters' proposals, wire-visible at the switch. A master's RelayNotify carries its limits; renegotiation must include initialCredit — the regression this pins is `rebuildLimits()` dropping the credit field and silently resetting it to the default (which would let switch-side senders overrun a smaller window with CREDIT_VIOLATIONs at the master). | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:795 |
+| test7062 | `test7062_logFlowsWhileWindowExhausted` | TEST7062: LOG/progress frames flow while the data window is exhausted — control frames are never credited. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:372 |
+| test7063 | `test7063_pendingGrantsFlushBeforeBlocking` | TEST7063: A receiver flushes pending sub-batch grants before blocking on an empty input — progress is guaranteed even when the sender's window is smaller than the receiver's grant batch threshold. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:485 |
+| test7070 | `test7070_unboundedInputConsumedLive` | TEST7070: An unbounded input stream is consumed live — the handler observes early items while the producer is still emitting, and the stream reports itself unbounded. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:586 |
+| test7073 | `test7073_collectRefusesUnboundedStreams` | TEST7073: Buffering collectors refuse unbounded streams with a hard error instead of buffering without bound. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:617 |
+| test7085 | `test7085_relayNotifyCarriesHostProtocolStats` | TEST7085: The RelayNotify capabilities payload carries the host's protocol stats snapshot, surviving the wire round-trip. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:955 |
+| test7086 | `test7086_dropSnapshotMatchesInducedDrops` | TEST7086: One runtime's drop counters aggregate every drop source — post-terminal writer drops and closed-channel sends — each counted exactly once, and the snapshot totals match the induced drops. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:164 |
 | test7087 | `test7087_snapshotFieldNamesAreStable` | TEST7087: Protocol stats snapshots serialize with stable field names — the snapshot shape is the mirror contract. | Tests/BifaciTests/RequestStateTests.swift:61 |
 | test7088 | `test7088_lastActivityMonotonic` | TEST7088: last_activity is monotonic non-decreasing across a long-lived streaming request — idle time resets on every recorded frame and never runs backwards. | Tests/BifaciTests/RequestStateTests.swift:110 |
 | test7089 | `test7089_helloFailedStaysInInventoryWithError` | TEST7089: A cartridge whose HELLO permanently failed stays IN the inventory advertisement carrying a handshake_failed attachment error and no cap groups — failure is named, never silently absent; a roster-retired cartridge disappears entirely. (The reference drives hello_failed directly and merges daemon-provided static inventory records; on this host both flow through `syncDiscoveryOutcomes` — the macOS discovery authority.) | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:369 |
 | test7090 | `test7090_heartbeatDropsTotalReachesInventoryStats` | TEST7090: The cartridge's cumulative protocol drop counter (`drops_total` heartbeat meta, L8) is ingested by the host and surfaces on the cartridge's inventory runtime stats as `protocol_drops_total` — absent until the first reading, then tracking the running total as-is. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:312 |
 | test7091 | `test7091_switchRetainsHostProtocolStatsFromRelayNotify` | TEST7091: Host protocol stats carried by a master's RelayNotify are RETAINED by the switch (not parsed-and-discarded) and surface in `protocolStats().hosts` keyed by master id; a master that has not yet advertised stats is absent from the map — never a zeroed placeholder. | Tests/BifaciTests/RelaySwitchTests.swift:1412 |
 | test7092 | `test7092_capUrnAttributionSurvivesLifecycle` | TEST7092: A request registered with its originating REQ's cap URN carries that identity through the ACTIVE snapshot and into the terminated ring — observability surfaces can always NAME a request (background chatter vs run traffic), never just show a bare rid. A request registered without one snapshots with cap_urn absent — never invented. | Tests/BifaciTests/RequestStateTests.swift:31 |
-| test7093 | `test7093_deadConsumerCancelsUpstream` | TEST7093: A response frame for a LIVE request whose external consumer is gone (dropped/timed-out caller) is a counted channel_closed drop AND cancels the request upstream — the destination master receives Cancel, the entry terminates as cancelled, and zero state remains: the cartridge stops producing for a dead channel instead of running to completion against it. | Tests/BifaciTests/ProtocolV3RuntimeTests.swift:863 |
+| test7093 | `test7093_deadConsumerCancelsUpstream` | TEST7093: A response frame for a LIVE request whose external consumer is gone (dropped/timed-out caller) is a counted channel_closed drop AND cancels the request upstream — the destination master receives Cancel, the entry terminates as cancelled, and zero state remains: the cartridge stops producing for a dead channel instead of running to completion against it. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:863 |
+| test7100 | `test7100_StreamUrnReturnsStdinSourceUrnWhenItDiffersFromSlotUrn` | TEST7100: streamUrn returns the stdin source's URN when it differs from the declared slot media URN — the stdin URN, not the slot URN, is what the runtime demuxes the argument's input stream by. | Tests/CapDAGTests/CSCapTests.m:1099 |
+| test7101 | `test7101_StreamUrnFallsBackToDeclaredMediaUrnWithoutStdinSource` | TEST7101: streamUrn falls back to the declared slot media URN when the argument declares no stdin source — a producer-fed argument may be delivered by its declared URN without ever appearing on stdin. | Tests/CapDAGTests/CSCapTests.m:1110 |
+| test7102 | `test7102_IsMainInputTrueOnTagOrderInsensitiveEquivalenceToInSpec` | TEST7102: isMainInputForInSpec: is YES when the stdin URN is order-theoretically EQUIVALENT to the cap's in= spec even when the two strings list their tags in a different order — the comparison is the media-URN equivalence predicate, never a string comparison. | Tests/CapDAGTests/CSCapTests.m:1119 |
+| test7103 | `test7103_IsMainInputFalseWithoutEquivalentStdinSource` | TEST7103: isMainInputForInSpec: is NO for cli_flag-only and position-only arguments (no stdin source means never the main input, whatever the declared slot URN says), and NO when the stdin URN is not equivalent to in=. | Tests/CapDAGTests/CSCapTests.m:1137 |
+| test7104 | `test7104_MultiArgCapExactlyOneMainInputAndPartitionOfRest` | TEST7104: A realistic multi-arg cap (one stdin main input; one required, defaultless cli_flag arg; several defaulted cli_flag args): exactly one argument is the main input, and partitioning the remaining arguments by required-without-default vs has-default yields the expected sets. | Tests/CapDAGTests/CSCapTests.m:1163 |
+| test7105 | `test7105_errFrameArgUrnRoundtrip` | TEST7105: an ERR frame built WITH an argument attribution round-trips its full declared identity through encode/decode — the meta map carries the "arg_urn" key, attributionArgUrn returns the URN, and code/class/message stay intact (docs/failure-taxonomy.md). | Tests/BifaciTests/FrameTests.swift:2038 |
+| test7106 | `test7106_errFrameWithoutAttributionHasNoArgUrn` | TEST7106: an ERR frame built WITHOUT attribution has NO "arg_urn" key in the encoded meta — absent, never an empty string — and attributionArgUrn returns nil (docs/failure-taxonomy.md). | Tests/BifaciTests/FrameTests.swift:2083 |
+| test7117 | `test7117_logFrameArgUrnRoundtrip` | TEST7117: non-progress LOG carries the same source attribution tuple as ERR, including an optional argument URN, through the actual wire codec. | Tests/BifaciTests/FrameTests.swift:2064 |
+| test8100 | `test8100_classifyHandlerErrorPreservesOpArgumentAttribution` | TEST8100: Swift handler-error classification preserves a source-declared argument URN together with its code, attribution class, and message. | Tests/BifaciTests/StreamingAPITests.swift:900 |
 ---
 
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 882*
-*Total numbered tests: 882*
+*Total tests: 891*
+*Total numbered tests: 891*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*

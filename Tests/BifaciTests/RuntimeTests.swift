@@ -42,7 +42,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func helloWithManifest(maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
         let limits = Limits(maxFrame: maxFrame, maxChunk: maxChunk, maxReorderBuffer: DEFAULT_MAX_REORDER_BUFFER)
-        return Frame.helloWithManifest(limits: limits, manifest: testManifestData)
+        return Frame.helloWithManifest(limits: limits, manifest: testManifestData, handlerCapacity: 0)
     }
 
     nonisolated static func makeManifest(name: String, caps: [String]) -> Data {
@@ -63,7 +63,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func helloWith(manifest: Data, maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
         let limits = Limits(maxFrame: maxFrame, maxChunk: maxChunk, maxReorderBuffer: DEFAULT_MAX_REORDER_BUFFER)
-        return Frame.helloWithManifest(limits: limits, manifest: manifest)
+        return Frame.helloWithManifest(limits: limits, manifest: manifest, handlerCapacity: 0)
     }
 
     /// Helper for mock cartridges to handle identity verification after HELLO exchange.
@@ -245,7 +245,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             guard let _ = try cartridgeReader.read() else {
                 throw CartridgeHostError.receiveFailed("No HELLO")
             }
-            try cartridgeWriter.write(Frame.err(id: .uint(0), code: "WRONG", message: "Not a HELLO"))
+            try cartridgeWriter.write(Frame.err(id: .uint(0), code: "WRONG", attributionClass: .internal, message: "Not a HELLO"))
         }
 
         let host = CartridgeHost()
@@ -837,7 +837,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             let (reqId, _, _, _) = try CborRuntimeTests.readCompleteRequest(reader: cartridgeReader)
 
             // Send diverse frame types back
-            try cartridgeWriter.write(Frame.log(id: reqId, level: "info", message: "processing"))
+            try cartridgeWriter.write(Frame.log(id: reqId, level: "info", attributionClass: .internal, message: "processing"))
             try cartridgeWriter.write(Frame.streamStart(reqId: reqId, streamId: "output", mediaUrn: "media:"))
             let payload = "data".data(using: .utf8)!
             try cartridgeWriter.write(Frame.chunk(reqId: reqId, streamId: "output", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)))
@@ -1481,7 +1481,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             }
 
             // Return error - identity verification fails
-            try cartridgeWriter.write(Frame.err(id: identityReq.id, code: "IDENTITY_FAILED", message: "Broken cartridge"))
+            try cartridgeWriter.write(Frame.err(id: identityReq.id, code: "IDENTITY_FAILED", attributionClass: .internal, message: "Broken cartridge"))
         }
 
         let host = CartridgeHost()

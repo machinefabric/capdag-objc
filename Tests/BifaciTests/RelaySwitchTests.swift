@@ -823,7 +823,7 @@ final class CborRelaySwitchTests: XCTestCase {
             // Read identity request and return ERR
             if let req = try? reader.read() {
                 if req.frameType == .req {
-                    try! writer.write(Frame.err(id: req.id, code: "IDENTITY_FAILED", message: "Rejected"))
+                    try! writer.write(Frame.err(id: req.id, code: "IDENTITY_FAILED", attributionClass: .internal, message: "Rejected"))
                 }
             }
         }
@@ -1074,7 +1074,7 @@ final class CborRelaySwitchTests: XCTestCase {
                 probeXid = frame.routingId
                 if !succeed {
                     // Broken identity handler: reply ERR on the same flow.
-                    var err = Frame.err(id: frame.id, code: "BROKEN", message: "test cartridge")
+                    var err = Frame.err(id: frame.id, code: "BROKEN", attributionClass: .internal, message: "test cartridge")
                     err.routingId = frame.routingId
                     seq.assign(&err)
                     try? writer.write(err)
@@ -1375,7 +1375,7 @@ final class CborRelaySwitchTests: XCTestCase {
             ready.signal()
             // Reply ERR to the identity REQ — a broken identity handler.
             if let frame = try? reader.read(), frame.frameType == .req {
-                try! writer.write(Frame.err(id: frame.id, code: "IDENTITY_FAILED", message: "Rejected"))
+                try! writer.write(Frame.err(id: frame.id, code: "IDENTITY_FAILED", attributionClass: .internal, message: "Rejected"))
             }
         }
         XCTAssertEqual(ready.wait(timeout: .now() + 2), .success)

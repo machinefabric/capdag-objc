@@ -339,7 +339,10 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let hbId = MessageId.newUUID()
         host.seedPendingHeartbeatForTest(cartridgeIdx: 0, id: hbId)
         var response = Frame.heartbeat(id: hbId)
-        response.meta = ["drops_total": .unsignedInt(42)]
+        response.meta = [
+            "drops_total": .unsignedInt(42),
+            "handler_capacity": .unsignedInt(0),
+        ]
         host.handleCartridgeFrameForTest(cartridgeIdx: 0, frame: response)
 
         records = host.installedCartridgeRecordsForTest()
@@ -352,7 +355,10 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let hbId2 = MessageId.newUUID()
         host.seedPendingHeartbeatForTest(cartridgeIdx: 0, id: hbId2)
         var response2 = Frame.heartbeat(id: hbId2)
-        response2.meta = ["drops_total": .unsignedInt(45)]
+        response2.meta = [
+            "drops_total": .unsignedInt(45),
+            "handler_capacity": .unsignedInt(0),
+        ]
         host.handleCartridgeFrameForTest(cartridgeIdx: 0, frame: response2)
 
         records = host.installedCartridgeRecordsForTest()

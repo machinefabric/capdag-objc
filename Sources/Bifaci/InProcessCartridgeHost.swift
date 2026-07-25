@@ -149,7 +149,7 @@ public final class ResponseWriter: @unchecked Sendable {
 
     /// Send an error response.
     public func emitError(code: String, message: String) {
-        send(Frame.err(id: MessageId.uint(0), code: code, message: message))
+        send(Frame.err(id: MessageId.uint(0), code: code, attributionClass: .internal, message: message))
     }
 }
 
@@ -357,6 +357,16 @@ public final class InProcessCartridgeHost {
             version: identity.version,
             sha256: identity.sha256,
             capGroups: [CapGroup(name: identity.id, caps: caps, adapterUrns: [])],
+            runtimeStats: CartridgeRuntimeStats(
+                running: true,
+                handlerCapacity: 0,
+                pid: UInt32(ProcessInfo.processInfo.processIdentifier),
+                activeRequestCount: 0,
+                peerRequestCount: 0,
+                memoryFootprintMb: 0,
+                memoryRssMb: 0,
+                restartCount: 0
+            ),
             // In-process cartridges have no on-disk presence to
             // inspect and no registry to verify against — the
             // embedder constructed them directly. Operational from
@@ -468,7 +478,7 @@ public final class InProcessCartridgeHost {
                 let rid = frame.id
                 let xid = frame.routingId
                 guard let capUrn = frame.cap else {
-                    var err = Frame.err(id: rid, code: "PROTOCOL_ERROR", message: "REQ missing cap URN")
+                    var err = Frame.err(id: rid, code: "PROTOCOL_ERROR", attributionClass: .internal, message: "REQ missing cap URN")
                     err.routingId = xid
                     writeContinuation.yield(err)
                     continue
@@ -484,7 +494,7 @@ public final class InProcessCartridgeHost {
                     } else {
                         // No registered handler for a dispatched cap is a
                         // deployment mismatch — Environment.
-                        var err = Frame.errClassified(id: rid, code: "NO_HANDLER", failureClass: .environment, message: "no handler for cap: \(capUrn)")
+                        var err = Frame.err(id: rid, code: "NO_HANDLER", attributionClass: .environment, message: "no handler for cap: \(capUrn)")
                         err.routingId = xid
                         writeContinuation.yield(err)
                         return identityHandler // dummy, never used
@@ -528,7 +538,8 @@ public final class InProcessCartridgeHost {
                 }
 
             case .heartbeat:
-                let response = Frame.heartbeat(id: frame.id)
+                var response = Frame.heartbeat(id: frame.id)
+                response.meta = ["handler_capacity": .unsignedInt(0)]
                 writeContinuation.yield(response)
 
             case .err:
@@ -544,7 +555,7 @@ public final class InProcessCartridgeHost {
                 if let continuation = active.removeValue(forKey: targetRid) {
                     continuation.finish()
                 }
-                var err = Frame.err(id: targetRid, code: "CANCELLED", message: "Request cancelled")
+                var err = Frame.err(id: targetRid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
                 err.routingId = xid
                 writeContinuation.yield(err)
 

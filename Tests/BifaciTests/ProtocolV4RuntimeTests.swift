@@ -1,4 +1,4 @@
-/// Protocol v3 RUNTIME-layer parity tests — writer terminal gate (L4),
+/// Protocol v4 RUNTIME-layer parity tests — writer terminal gate (L4),
 /// counted drops (L8), credit flow control (L9/L10/L12/L14), unbounded
 /// streams (L16), unified switch request state (L6/L7), and host stats
 /// surfacing. Mirrors the same-numbered tests in
@@ -39,7 +39,7 @@ final class LockedFlag: @unchecked Sendable {
 }
 
 @available(macOS 10.15.4, iOS 13.4, *)
-final class ProtocolV3RuntimeTests: XCTestCase {
+final class ProtocolV4RuntimeTests: XCTestCase {
 
     /// Build a ChannelFrameSender (the runtime's single output serialization
     /// point — the Swift counterpart of the Rust writer thread) writing to a
@@ -131,7 +131,7 @@ final class ProtocolV3RuntimeTests: XCTestCase {
         try sender.send(Frame.progress(id: ridB, progress: 0.1, message: "other request"))
 
         // But a flow frame for A is gated.
-        try sender.send(Frame.log(id: ridA, level: "info", message: "late"))
+        try sender.send(Frame.log(id: ridA, level: "info", attributionClass: .internal, message: "late"))
 
         let frames = try decodeWire(url)
         XCTAssertEqual(
@@ -177,7 +177,7 @@ final class ProtocolV3RuntimeTests: XCTestCase {
         // the closed writer — the Rust reference induces this drop through a
         // gate-free sender for the same reason.
         writer.close()
-        _ = try? sender.send(Frame.log(id: MessageId.newUUID(), level: "info", message: "dead channel"))
+        _ = try? sender.send(Frame.log(id: MessageId.newUUID(), level: "info", attributionClass: .internal, message: "dead channel"))
 
         let snap = drops.snapshot()
         XCTAssertEqual(snap.total, 3, "each induced drop counted exactly once (L8)")
@@ -643,7 +643,7 @@ final class ProtocolV3RuntimeTests: XCTestCase {
 // MARK: - Switch-layer unified request state (L6/L7) + stats surfacing
 
 @available(macOS 10.15.4, iOS 13.4, *)
-final class ProtocolV3SwitchTests: XCTestCase {
+final class ProtocolV4SwitchTests: XCTestCase {
 
     // Helper: RelayNotify payload with capability URNs wrapped in a synthetic
     // installed cartridge (the wire schema embeds caps in cap_groups).
@@ -760,7 +760,7 @@ final class ProtocolV3SwitchTests: XCTestCase {
         end.routingId = endKey.xid
         _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: end)
 
-        var err = Frame.err(id: errKey.rid, code: "HANDLER_ERROR", message: "boom")
+        var err = Frame.err(id: errKey.rid, code: "HANDLER_ERROR", attributionClass: .internal, message: "boom")
         err.routingId = errKey.xid
         _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: err)
 
@@ -914,7 +914,7 @@ final class ProtocolV3SwitchTests: XCTestCase {
         ))
 
         // The cartridge streams a response frame into the dead channel.
-        var log = Frame.log(id: key.rid, level: "info", message: "first result row")
+        var log = Frame.log(id: key.rid, level: "info", attributionClass: .internal, message: "first result row")
         log.routingId = key.xid
         _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: log)
 
@@ -1058,7 +1058,7 @@ final class ProtocolV3SwitchTests: XCTestCase {
         let channel = BlockingQueue<Frame>()
         try registerExternal(switch_, key: RequestKey(xid: xid, rid: rid), destination: 0, channel: channel)
 
-        var err = Frame.err(id: rid, code: "HANDLER_ERROR", message: "boom")
+        var err = Frame.err(id: rid, code: "HANDLER_ERROR", attributionClass: .internal, message: "boom")
         err.routingId = xid
         _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: err)
 

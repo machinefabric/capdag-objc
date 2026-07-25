@@ -180,7 +180,7 @@ final class CborFrameTests: XCTestCase {
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
-        let frame = Frame.helloWithManifest(limits: limits, manifest: manifestData)
+        let frame = Frame.helloWithManifest(limits: limits, manifest: manifestData, handlerCapacity: 0)
         XCTAssertEqual(frame.frameType, .hello)
         XCTAssertEqual(frame.helloMaxFrame, 1_000_000)
         XCTAssertEqual(frame.helloMaxChunk, 100_000)
@@ -224,7 +224,7 @@ final class CborFrameTests: XCTestCase {
     // TEST185: Test Frame::err stores error code and message in metadata
     func test185_errFrame() {
         let id = MessageId.newUUID()
-        let frame = Frame.err(id: id, code: "NOT_FOUND", message: "Cap not found")
+        let frame = Frame.err(id: id, code: "NOT_FOUND", attributionClass: .internal, message: "Cap not found")
         XCTAssertEqual(frame.frameType, .err)
         XCTAssertEqual(frame.errorCode, "NOT_FOUND")
         XCTAssertEqual(frame.errorMessage, "Cap not found")
@@ -233,7 +233,7 @@ final class CborFrameTests: XCTestCase {
     // TEST186: Test Frame::log stores level and message in metadata
     func test186_logFrame() {
         let id = MessageId.newUUID()
-        let frame = Frame.log(id: id, level: "info", message: "Processing...")
+        let frame = Frame.log(id: id, level: "info", attributionClass: .internal, message: "Processing...")
         XCTAssertEqual(frame.frameType, .log)
         XCTAssertEqual(frame.logLevel, "info")
         XCTAssertEqual(frame.logMessage, "Processing...")
@@ -366,9 +366,9 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(negotiated.maxChunk, 100_000)   // min(100_000, 200_000)
     }
 
-    // TEST199: Test PROTOCOL_VERSION is 3
+    // TEST199: Test PROTOCOL_VERSION is 4
     func test199_protocolVersionConstant() {
-        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 3)
+        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 4)
     }
 
     // TEST200: Test integer key constants match the protocol specification
@@ -396,7 +396,7 @@ final class CborFrameTests: XCTestCase {
             binaryManifest.append(i)
         }
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
-        let frame = Frame.helloWithManifest(limits: limits, manifest: binaryManifest)
+        let frame = Frame.helloWithManifest(limits: limits, manifest: binaryManifest, handlerCapacity: 0)
         XCTAssertEqual(frame.helloManifest, binaryManifest, "Binary manifest data must be preserved exactly")
     }
 
@@ -446,7 +446,7 @@ final class CborFrameTests: XCTestCase {
     // TEST207: Test ERR frame encode/decode roundtrip preserves error code and message
     func test207_errFrameRoundtrip() throws {
         let id = MessageId.newUUID()
-        let original = Frame.err(id: id, code: "NOT_FOUND", message: "Cap not found")
+        let original = Frame.err(id: id, code: "NOT_FOUND", attributionClass: .internal, message: "Cap not found")
         let encoded = try encodeFrame(original)
         let decoded = try decodeFrame(encoded)
 
@@ -458,7 +458,7 @@ final class CborFrameTests: XCTestCase {
     // TEST208: Test LOG frame encode/decode roundtrip preserves level and message
     func test208_logFrameRoundtrip() throws {
         let id = MessageId.newUUID()
-        let original = Frame.log(id: id, level: "warn", message: "Something happened")
+        let original = Frame.log(id: id, level: "warn", attributionClass: .internal, message: "Something happened")
         let encoded = try encodeFrame(original)
         let decoded = try decodeFrame(encoded)
 
@@ -489,7 +489,7 @@ final class CborFrameTests: XCTestCase {
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 500_000, maxChunk: 50_000, maxReorderBuffer: 64)
-        let original = Frame.helloWithManifest(limits: limits, manifest: manifestData)
+        let original = Frame.helloWithManifest(limits: limits, manifest: manifestData, handlerCapacity: 0)
         let encoded = try encodeFrame(original)
         let decoded = try decodeFrame(encoded)
 
@@ -952,8 +952,8 @@ final class CborFrameTests: XCTestCase {
             // RES removed - old single-response protocol no longer supported
             (Frame.chunk(reqId: .newUUID(), streamId: "stream-all", seq: 5, payload: chunkPayload, chunkIndex: 5, checksum: Frame.computeChecksum(chunkPayload)), "CHUNK"),
             (Frame.end(id: .newUUID(), finalPayload: "final".data(using: .utf8)), "END"),
-            (Frame.log(id: .newUUID(), level: "info", message: "test log"), "LOG"),
-            (Frame.err(id: .newUUID(), code: "ERROR", message: "test error"), "ERR"),
+            (Frame.log(id: .newUUID(), level: "info", attributionClass: .internal, message: "test log"), "LOG"),
+            (Frame.err(id: .newUUID(), code: "ERROR", attributionClass: .internal, message: "test error"), "ERR"),
             (Frame.heartbeat(id: .newUUID()), "HEARTBEAT"),
             (Frame.streamStart(reqId: .newUUID(), streamId: "stream-start-all", mediaUrn: "media:"), "STREAM_START"),
             (Frame.streamEnd(reqId: .newUUID(), streamId: "stream-end-all", chunkCount: 1), "STREAM_END"),
@@ -1238,7 +1238,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertNil(FrameType(rawValue: 2), "2 (old Res) is still invalid")
     }
 
-    // TEST521: RelayNotify CBOR roundtrip preserves manifest and limits
+    // TEST521: RelayNotify CBOR roundtrip preserves every required v4 limit,
+    // and incomplete or zero-credit limit sets are rejected without defaults.
     func test521_relayNotifyCborRoundtrip() throws {
         let manifest = "{\"caps\":[\"cap:relay-test\"]}".data(using: .utf8)!
         let limits = Limits(maxFrame: 2_000_000, maxChunk: 128_000, maxReorderBuffer: 64)
@@ -1257,6 +1258,20 @@ final class CborFrameTests: XCTestCase {
         XCTAssertNotNil(extractedLimits, "limits must survive roundtrip")
         XCTAssertEqual(extractedLimits?.maxFrame, limits.maxFrame)
         XCTAssertEqual(extractedLimits?.maxChunk, limits.maxChunk)
+        XCTAssertEqual(extractedLimits?.maxReorderBuffer, limits.maxReorderBuffer)
+        XCTAssertEqual(extractedLimits?.initialCredit, limits.initialCredit)
+
+        var missingCredit = decoded
+        var missingCreditMeta = try XCTUnwrap(missingCredit.meta)
+        missingCreditMeta.removeValue(forKey: "initial_credit")
+        missingCredit.meta = missingCreditMeta
+        XCTAssertNil(missingCredit.relayNotifyLimits, "v4 RelayNotify must declare initial_credit")
+
+        var zeroCredit = decoded
+        var zeroCreditMeta = try XCTUnwrap(zeroCredit.meta)
+        zeroCreditMeta["initial_credit"] = .unsignedInt(0)
+        zeroCredit.meta = zeroCreditMeta
+        XCTAssertNil(zeroCredit.relayNotifyLimits, "v4 RelayNotify initial_credit must be positive")
     }
 
     // TEST522: RelayState CBOR roundtrip preserves payload
@@ -1997,55 +2012,52 @@ final class CborFrameTests: XCTestCase {
         XCTAssertTrue(true)
     }
 
-    // TEST1900: the ERR frame failure-class wire contract
-    // (docs/failure-taxonomy.md): errClassified writes meta code+class+message;
-    // plain err defaults class to internal; a missing or unknown class token
-    // reads as .internal (unclassified means "ours", never a guess); a known
-    // token round-trips exactly.
-    func test1900_errFrameFailureClassWireContract() {
+    // TEST1900: ERR attribution is mandatory and strict. Missing and unknown
+    // tokens are protocol violations rather than compatibility defaults.
+    func test1900_errFrameAttributionClassWireContract() throws {
         let id = MessageId.newUUID()
 
-        let classified = Frame.errClassified(id: id, code: "CONTEXT_OVERFLOW", failureClass: .input, message: "prompt too large")
+        let classified = Frame.err(id: id, code: "CONTEXT_OVERFLOW", attributionClass: .input, message: "prompt too large")
         XCTAssertEqual(classified.errorCode, "CONTEXT_OVERFLOW")
-        XCTAssertEqual(classified.errorClass, .input)
+        XCTAssertEqual(try classified.attributionClass(), .input)
         XCTAssertEqual(classified.errorMessage, "prompt too large")
 
-        let plain = Frame.err(id: id, code: "BOOM", message: "unclassified failure")
-        XCTAssertEqual(plain.errorClass, FailureClass.internal,
-                       "an unclassified ERR emit must declare itself internal on the wire")
+        var missing = Frame.err(id: id, code: "BOOM", attributionClass: .internal, message: "x")
+        missing.meta?.removeValue(forKey: "attribution_class")
+        XCTAssertThrowsError(try missing.attributionClass())
 
-        // A frame from an older/foreign emitter: no class entry at all.
-        var legacy = Frame.err(id: id, code: "BOOM", message: "x")
-        legacy.meta?.removeValue(forKey: "class")
-        XCTAssertEqual(legacy.errorClass, FailureClass.internal)
+        var weird = Frame.err(id: id, code: "BOOM", attributionClass: .internal, message: "x")
+        weird.meta?["attribution_class"] = .utf8String("user-error")
+        XCTAssertThrowsError(try weird.attributionClass())
 
-        // An unknown token is a protocol anomaly, read as unclassified — never a guess.
-        var weird = Frame.err(id: id, code: "BOOM", message: "x")
-        weird.meta?["class"] = .utf8String("user-error")
-        XCTAssertEqual(weird.errorClass, FailureClass.internal)
-
-        XCTAssertNil(FailureClass(rawValue: "user-error"))
-        for c in FailureClass.allCases {
-            XCTAssertEqual(FailureClass(rawValue: c.rawValue), c)
+        XCTAssertNil(AttributionClass(rawValue: "user-error"))
+        for c in AttributionClass.allCases {
+            XCTAssertEqual(AttributionClass(rawValue: c.rawValue), c)
         }
-        XCTAssertTrue(FailureClass.input.isPermanent)
-        XCTAssertFalse(FailureClass.resource.isPermanent)
-        XCTAssertFalse(FailureClass.environment.isPermanent)
-        XCTAssertFalse(FailureClass.internal.isPermanent)
+        XCTAssertTrue(AttributionClass.input.isPermanent)
+        XCTAssertFalse(AttributionClass.resource.isPermanent)
+        XCTAssertFalse(AttributionClass.environment.isPermanent)
+        XCTAssertFalse(AttributionClass.internal.isPermanent)
+
+        var malformedArg = Frame.err(id: id, code: "BOOM", attributionClass: .internal, message: "x")
+        malformedArg.meta?["arg_urn"] = .unsignedInt(7)
+        XCTAssertThrowsError(try malformedArg.attributionArgUrn())
+        malformedArg.meta?["arg_urn"] = .utf8String("")
+        XCTAssertThrowsError(try malformedArg.attributionArgUrn())
     }
 
     // TEST7105: an ERR frame built WITH an argument attribution round-trips
     // its full declared identity through encode/decode — the meta map carries
-    // the "arg_urn" key, errorArgUrn returns the URN, and code/class/message
+    // the "arg_urn" key, attributionArgUrn returns the URN, and code/class/message
     // stay intact (docs/failure-taxonomy.md).
     func test7105_errFrameArgUrnRoundtrip() throws {
         let rid = MessageId.newUUID()
         let argUrn = "media:prompt;str;utf8"
 
-        let frame = Frame.errClassified(
+        let frame = Frame.err(
             id: rid,
             code: "CONTEXT_OVERFLOW",
-            failureClass: .input,
+            attributionClass: .input,
             message: "prompt exceeds context window",
             argUrn: argUrn
         )
@@ -2056,31 +2068,49 @@ final class CborFrameTests: XCTestCase {
             return
         }
         XCTAssertEqual(wireUrn, argUrn, "the arg_urn meta entry must survive the wire verbatim")
-        XCTAssertEqual(decoded.errorArgUrn, argUrn)
+        XCTAssertEqual(try decoded.attributionArgUrn(), argUrn)
         XCTAssertEqual(decoded.errorCode, "CONTEXT_OVERFLOW")
-        XCTAssertEqual(decoded.errorClass, .input)
+        XCTAssertEqual(try decoded.attributionClass(), .input)
         XCTAssertEqual(decoded.errorMessage, "prompt exceeds context window")
     }
 
+    // TEST7117: non-progress LOG carries the same source attribution tuple as
+    // ERR, including an optional argument URN, through the actual wire codec.
+    func test7117_logFrameArgUrnRoundtrip() throws {
+        let frame = Frame.log(
+            id: .newUUID(),
+            level: "warn",
+            attributionClass: .resource,
+            message: "model cache is under memory pressure",
+            argUrn: "media:model-spec"
+        )
+        let decoded = try decodeFrame(try encodeFrame(frame))
+        XCTAssertEqual(decoded.frameType, .log)
+        XCTAssertEqual(decoded.logLevel, "warn")
+        XCTAssertEqual(try decoded.attributionClass(), .resource)
+        XCTAssertEqual(try decoded.attributionArgUrn(), "media:model-spec")
+        XCTAssertEqual(decoded.logMessage, "model cache is under memory pressure")
+    }
+
     // TEST7106: an ERR frame built WITHOUT attribution has NO "arg_urn" key
-    // in the encoded meta — absent, never an empty string — and errorArgUrn
+    // in the encoded meta — absent, never an empty string — and attributionArgUrn
     // returns nil (docs/failure-taxonomy.md).
     func test7106_errFrameWithoutAttributionHasNoArgUrn() throws {
         let rid = MessageId.newUUID()
 
-        let frame = Frame.errClassified(
+        let frame = Frame.err(
             id: rid,
             code: "OOM_KILLED",
-            failureClass: .resource,
+            attributionClass: .resource,
             message: "out of memory"
         )
         let decoded = try decodeFrame(try encodeFrame(frame))
 
         XCTAssertNil(decoded.meta?["arg_urn"],
                      "an ERR frame without attribution must not carry an arg_urn key at all")
-        XCTAssertNil(decoded.errorArgUrn)
+        XCTAssertNil(try decoded.attributionArgUrn())
         XCTAssertEqual(decoded.errorCode, "OOM_KILLED")
-        XCTAssertEqual(decoded.errorClass, .resource)
+        XCTAssertEqual(try decoded.attributionClass(), .resource)
         XCTAssertEqual(decoded.errorMessage, "out of memory")
     }
 }

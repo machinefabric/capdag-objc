@@ -1,8 +1,8 @@
 //
-//  ProtocolV3Tests.swift
+//  ProtocolV4Tests.swift
 //  Bifaci
 //
-//  Protocol v3 parity tests (TEST7000–TEST7029) ported from the Rust
+//  Protocol v4 parity tests (TEST7000–TEST7029) ported from the Rust
 //  reference (capdag/src/bifaci/{io,frame,credit,stats}.rs).
 //
 //  Covers: handshake version enforcement + initial_credit negotiation,
@@ -18,7 +18,7 @@ import XCTest
 import Foundation
 
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
-private let v3TestManifest = """
+private let v4TestManifest = """
 {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]}]}]}
 """.data(using: .utf8)!
 
@@ -58,7 +58,7 @@ private final class TestBox<T>: @unchecked Sendable {
     }
 }
 
-final class ProtocolV3Tests: XCTestCase {
+final class ProtocolV4Tests: XCTestCase {
 
     // MARK: - Helpers
 
@@ -79,9 +79,9 @@ final class ProtocolV3Tests: XCTestCase {
         return (hostWrite, cartridgeRead, cartridgeWrite, hostRead)
     }
 
-    /// Run a full v3 handshake: host with default limits against a cartridge
+    /// Run a full v4 handshake: host with default limits against a cartridge
     /// proposing `cartridgeLimits`. Returns both sides' negotiated results.
-    private func runV3Handshake(cartridgeLimits: Limits) throws -> (host: HandshakeResult, cart: Limits) {
+    private func runV4Handshake(cartridgeLimits: Limits) throws -> (host: HandshakeResult, cart: Limits) {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         let cartResult = TestBox<Result<Limits, Error>>()
@@ -92,7 +92,7 @@ final class ProtocolV3Tests: XCTestCase {
             do {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite, limits: cartridgeLimits)
-                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: v3TestManifest)
+                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: v4TestManifest, handlerCapacity: 0)
                 cartResult.set(.success(limits))
             } catch {
                 cartResult.set(.failure(error))
@@ -123,15 +123,15 @@ final class ProtocolV3Tests: XCTestCase {
 
     // MARK: - Handshake (TEST7000-7002)
 
-    // TEST7000: v3 handshake succeeds and negotiates the element-wise minimum of all four limits including initial_credit
-    func test7000_v3HandshakeNegotiatesAllFourLimits() throws {
+    // TEST7000: v4 handshake succeeds and negotiates all four limits plus required handler capacity.
+    func test7000_v4HandshakeNegotiatesAllFourLimits() throws {
         let cartridgeLimits = Limits(
             maxFrame: 2_000_000,
             maxChunk: 128_000,
             maxReorderBuffer: 32,
             initialCredit: 16
         )
-        let (host, cart) = try runV3Handshake(cartridgeLimits: cartridgeLimits)
+        let (host, cart) = try runV4Handshake(cartridgeLimits: cartridgeLimits)
 
         XCTAssertEqual(host.limits.maxFrame, 2_000_000, "min(3.5MB, 2MB)")
         XCTAssertEqual(host.limits.maxChunk, 128_000, "min(256KB, 128KB)")
@@ -155,7 +155,7 @@ final class ProtocolV3Tests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
                 _ = try reader.read() // host HELLO
-                var hello = Frame.helloWithManifest(limits: Limits(), manifest: v3TestManifest)
+                var hello = Frame.helloWithManifest(limits: Limits(), manifest: v4TestManifest, handlerCapacity: 0)
                 hello.version = 2
                 hello.meta?["version"] = .unsignedInt(2)
                 try writer.write(hello)
@@ -180,13 +180,13 @@ final class ProtocolV3Tests: XCTestCase {
     func test7002_initialCreditNegotiatedMinimum() throws {
         // Cartridge proposes a smaller window than the host default (32) → 8 wins.
         let smaller = Limits(initialCredit: 8)
-        let (smallHost, smallCart) = try runV3Handshake(cartridgeLimits: smaller)
+        let (smallHost, smallCart) = try runV4Handshake(cartridgeLimits: smaller)
         XCTAssertEqual(smallHost.limits.initialCredit, 8)
         XCTAssertEqual(smallCart.initialCredit, 8)
 
         // Cartridge proposes a larger window (128) → the host default 32 wins.
         let larger = Limits(initialCredit: 128)
-        let (largeHost, largeCart) = try runV3Handshake(cartridgeLimits: larger)
+        let (largeHost, largeCart) = try runV4Handshake(cartridgeLimits: larger)
         XCTAssertEqual(largeHost.limits.initialCredit, 32)
         XCTAssertEqual(largeCart.initialCredit, 32)
     }

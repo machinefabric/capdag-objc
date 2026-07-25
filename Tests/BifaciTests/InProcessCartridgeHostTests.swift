@@ -308,6 +308,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
         // embedder supplied, here `forTest(id: "thumb-host")`.
         XCTAssertEqual(payload.installedCartridges[0].id, "thumb-host")
         XCTAssertEqual(payload.installedCartridges[0].capGroups.count, 1)
+        XCTAssertEqual(payload.installedCartridges[0].runtimeStats?.running, true)
+        XCTAssertEqual(payload.installedCartridges[0].runtimeStats?.handlerCapacity, 0)
     }
 
     // TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID
@@ -338,6 +340,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let resp = try! reader.read()!
         XCTAssertEqual(resp.frameType, .heartbeat)
         XCTAssertEqual(resp.id, hbId)
+        XCTAssertEqual(resp.meta?["handler_capacity"], .unsignedInt(0))
 
         testWrite.closeFile()
         testRead.closeFile()

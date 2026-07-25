@@ -650,7 +650,9 @@ public struct HandshakeResult: Sendable {
     /// Negotiated protocol limits
     public let limits: Limits
     /// Cartridge manifest JSON data (from cartridge's HELLO response)
-    public let manifest: Data?
+    public let manifest: Data
+    /// Maximum concurrent handlers. Zero means unlimited.
+    public let handlerCapacity: Int
 }
 
 /// Perform HELLO handshake and extract cartridge manifest (host side - sends first)
@@ -672,7 +674,9 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     }
 
     // Protocol version must match exactly (L1). No cross-version operation.
-    let theirVersion = theirFrame.helloVersion ?? theirFrame.version
+    guard let theirVersion = theirFrame.helloVersion else {
+        throw FrameError.handshakeFailed("HELLO missing required version")
+    }
     guard theirVersion == CBOR_PROTOCOL_VERSION else {
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
@@ -681,8 +685,11 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     guard let manifest = theirFrame.helloManifest else {
         throw FrameError.handshakeFailed("Cartridge HELLO missing required manifest")
     }
+    guard let handlerCapacity = theirFrame.helloHandlerCapacity else {
+        throw FrameError.handshakeFailed("Cartridge HELLO missing required non-negative handler_capacity")
+    }
 
-    // Protocol v3: All three limit fields are REQUIRED
+    // Protocol v4: every negotiated field is required.
     guard let theirMaxFrame = theirFrame.helloMaxFrame else {
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_frame")
     }
@@ -690,9 +697,11 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
     }
     guard let theirMaxReorderBuffer = theirFrame.helloMaxReorderBuffer else {
-        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v3)")
+        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer")
     }
-    let theirInitialCredit = theirFrame.helloInitialCredit ?? DEFAULT_INITIAL_CREDIT
+    guard let theirInitialCredit = theirFrame.helloInitialCredit else {
+        throw FrameError.handshakeFailed("Protocol violation: HELLO missing initial_credit")
+    }
 
     // Negotiate minimum of both sides
     let limits = Limits(
@@ -706,7 +715,7 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     reader.setLimits(limits)
     writer.setLimits(limits)
 
-    return HandshakeResult(limits: limits, manifest: manifest)
+    return HandshakeResult(limits: limits, manifest: manifest, handlerCapacity: handlerCapacity)
 }
 
 /// Accept HELLO handshake with manifest (cartridge side - receives first, sends manifest in response)
@@ -716,7 +725,12 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
 ///   - manifest: Cartridge manifest JSON data to include in HELLO response
 /// - Returns: Negotiated protocol limits
 @available(macOS 10.15.4, iOS 13.4, *)
-public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter, manifest: Data) throws -> Limits {
+public func acceptHandshakeWithManifest(
+    reader: FrameReader,
+    writer: FrameWriter,
+    manifest: Data,
+    handlerCapacity: Int
+) throws -> Limits {
     // Read their HELLO first (host initiates)
     guard let theirFrame = try reader.read() else {
         throw FrameError.handshakeFailed("Connection closed before receiving HELLO")
@@ -727,12 +741,14 @@ public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter
     }
 
     // Protocol version must match exactly (L1). No cross-version operation.
-    let theirVersion = theirFrame.helloVersion ?? theirFrame.version
+    guard let theirVersion = theirFrame.helloVersion else {
+        throw FrameError.handshakeFailed("HELLO missing required version")
+    }
     guard theirVersion == CBOR_PROTOCOL_VERSION else {
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
 
-    // Protocol v3: All three limit fields are REQUIRED
+    // Protocol v4: every negotiated field is required.
     guard let theirMaxFrame = theirFrame.helloMaxFrame else {
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_frame")
     }
@@ -740,9 +756,11 @@ public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_chunk")
     }
     guard let theirMaxReorderBuffer = theirFrame.helloMaxReorderBuffer else {
-        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer (required in protocol v3)")
+        throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_reorder_buffer")
     }
-    let theirInitialCredit = theirFrame.helloInitialCredit ?? DEFAULT_INITIAL_CREDIT
+    guard let theirInitialCredit = theirFrame.helloInitialCredit else {
+        throw FrameError.handshakeFailed("Protocol violation: HELLO missing initial_credit")
+    }
 
     // Negotiate minimum of both sides
     let ourLimits = writer.getLimits()
@@ -754,7 +772,11 @@ public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter
     )
 
     // Send our HELLO with manifest and negotiated limits
-    let ourHello = Frame.helloWithManifest(limits: ourLimits, manifest: manifest)
+    let ourHello = Frame.helloWithManifest(
+        limits: ourLimits,
+        manifest: manifest,
+        handlerCapacity: handlerCapacity
+    )
     try writer.write(ourHello)
 
     // Update both reader and writer with negotiated limits
@@ -763,4 +785,3 @@ public func acceptHandshakeWithManifest(reader: FrameReader, writer: FrameWriter
 
     return limits
 }
-

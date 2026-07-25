@@ -148,7 +148,7 @@ final class FlowOrderingTests: XCTestCase {
         let rid = MessageId.newUUID()
 
         var req = Frame.req(id: rid, capUrn: "cap:test;in=media:;out=media:", payload: Data(), contentType: "")
-        var log = Frame.log(id: rid, level: "info", message: "progress")
+        var log = Frame.log(id: rid, level: "info", attributionClass: .internal, message: "progress")
         var chunk = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
         var end = Frame.end(id: rid, finalPayload: nil)
 
@@ -411,7 +411,7 @@ final class FlowOrderingTests: XCTestCase {
         let flow = FlowKey(rid: rid, xid: nil)
 
         let f0 = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data(), chunkIndex: 0, checksum: 0)
-        var errFrame = Frame.err(id: rid, code: "TEST_ERROR", message: "test")
+        var errFrame = Frame.err(id: rid, code: "TEST_ERROR", attributionClass: .internal, message: "test")
         errFrame.seq = 1  // Terminal frames have sequential seq numbers
 
         _ = try buffer.accept( f0)
@@ -462,7 +462,7 @@ final class FlowOrderingTests: XCTestCase {
 
         // Write cartridge's HELLO with manifest to a pipe
         let pipe1 = Pipe()
-        let cartridgeHello = Frame.helloWithManifest(limits: cartridgeLimits, manifest: manifestData)
+        let cartridgeHello = Frame.helloWithManifest(limits: cartridgeLimits, manifest: manifestData, handlerCapacity: 0)
         var buffer1 = Data()
         try writeFrame(cartridgeHello, toFD: pipe1.fileHandleForWriting.fileDescriptor, limits: cartridgeLimits, buffer: &buffer1)
         pipe1.fileHandleForWriting.closeFile()
