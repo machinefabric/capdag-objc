@@ -1285,6 +1285,38 @@
     _args = [mutableArgs copy];
 }
 
+- (nullable CSCapArg *)mainInputArg {
+    NSError *error = nil;
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:[self.capUrn getInSpec] error:&error];
+    if (inSpec == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"cap registry invariant: cap in= is a valid MediaUrn: %@",
+                           error.localizedDescription];
+    }
+
+    CSMediaUrn *voidMedia = [CSMediaUrn fromString:CSMediaVoid error:&error];
+    if (voidMedia == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"CSMediaVoid is a valid MediaUrn: %@", error.localizedDescription];
+    }
+    if ([inSpec isEquivalentTo:voidMedia]) {
+        return nil;
+    }
+
+    for (CSCapArg *arg in self.args) {
+        if ([arg isMainInputForInSpec:inSpec]) {
+            return arg;
+        }
+    }
+    [NSException raise:NSInternalInconsistencyException
+                format:@"cap registry invariant: every non-void cap declares its main input"];
+    return nil;
+}
+
+- (BOOL)primaryInputIsSequence {
+    return [self mainInputArg].isSequence;
+}
+
 - (nullable CSCapArg *)findArgByMediaUrn:(NSString *)mediaUrn {
     for (CSCapArg *arg in self.args) {
         if ([arg.mediaUrn isEqualToString:mediaUrn]) {

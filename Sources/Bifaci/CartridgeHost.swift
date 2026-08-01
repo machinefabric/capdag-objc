@@ -539,12 +539,15 @@ public struct CartridgeProcessInfo: Sendable {
 
 /// Events from reader threads, delivered to the main run() loop.
 private enum CartridgeEvent {
-    case frame(cartridgeIdx: Int, frame: Frame)
-    case death(cartridgeIdx: Int)
+    case frame(cartridgeIdx: Int, generation: UInt64, frame: Frame)
+    case death(cartridgeIdx: Int, generation: UInt64)
     case relayFrame(Frame)
     case relayClosed
     /// Periodic wakeup to republish runtime stats via RelayNotify.
     case statsRefresh
+    /// Periodic wakeup to evaluate liveness and send the next probes on the
+    /// host run loop, serialized with request dispatch and process teardown.
+    case heartbeatTick
 }
 
 /// Composite routing key: (XID, RID) — uniquely identifies a request flow from relay.
@@ -560,7 +563,7 @@ internal struct RxidKey: Hashable {
 }
 
 /// Interval between heartbeat probes (seconds).
-private let HEARTBEAT_INTERVAL: TimeInterval = 30.0
+private let HEARTBEAT_INTERVAL: TimeInterval = 10.0
 
 /// Maximum time to wait for a heartbeat response (seconds).
 private let HEARTBEAT_TIMEOUT: TimeInterval = 10.0
@@ -578,6 +581,9 @@ enum ShutdownReason {
     case oomKill
     /// Request was cancelled. Pending requests get ERR frames with code "CANCELLED".
     case cancelled
+    /// The host's health probe expired. The complete process generation is
+    /// retired before on-demand dispatch may spawn its replacement.
+    case heartbeatTimeout
     /// Operator disabled this cartridge through the host UI. The
     /// process is killed immediately (yanked out of the system),
     /// pending requests get ERR frames with code "DISABLED" so
@@ -629,6 +635,9 @@ private class ManagedCartridge {
         return out
     }
     var running: Bool
+    /// Monotonic process generation. Reader events carry this value so a late
+    /// event from a retired process cannot affect its replacement.
+    var generation: UInt64
     var helloFailed: Bool
     /// True when this cartridge path disappeared from the latest
     /// discovery scan. The host retains the slot so any in-flight
@@ -653,6 +662,7 @@ private class ManagedCartridge {
     /// `handleCartridgeDeath` checks this to determine ERR frame behavior:
     /// - `nil` → unexpected crash → ERR "CARTRIDGE_DIED"
     /// - `.oomKill` → OOM watchdog kill → ERR "OOM_KILLED"
+    /// - `.heartbeatTimeout` → health failure → ERR "CARTRIDGE_UNHEALTHY"
     /// - `.appExit` → clean shutdown → no ERR frames
     var shutdownReason: ShutdownReason?
     /// Physical memory footprint in MB (self-reported via heartbeat response meta).
@@ -681,6 +691,7 @@ private class ManagedCartridge {
         self.limits = Limits()
         self.capGroups = capGroups
         self.running = false
+        self.generation = 0
         self.helloFailed = false
         self.isRemoved = false
         self.lifecycle = lifecycle
@@ -694,6 +705,14 @@ private class ManagedCartridge {
         self.protocolDropsTotal = nil
         self.handlerCapacity = 0
         self.attachmentError = nil
+    }
+
+    /// Advance the process identity before a spawn or teardown boundary.
+    /// Generation exhaustion is not recoverable: wrapping would make stale
+    /// reader events indistinguishable from events emitted by a new process.
+    func advanceGeneration() {
+        precondition(generation < UInt64.max, "cartridge process generation exhausted")
+        generation += 1
     }
 
     /// Per-cartridge attachment failure, if any. Set by `recordAttachmentError` at
@@ -793,6 +812,7 @@ private class ManagedCartridge {
         cartridge.manifest = manifest
         cartridge.limits = limits
         cartridge.running = true
+        cartridge.generation = 1
         cartridge.handlerCapacity = UInt64(handlerCapacity)
         // Attached ⇒ HELLO + identity verification already succeeded ⇒
         // operational (and therefore dispatchable). Without this the
@@ -1508,7 +1528,11 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.unlock()
 
         // Start reader thread for this cartridge
-        startCartridgeReaderThread(cartridgeIdx: idx, reader: reader)
+        startCartridgeReaderThread(
+            cartridgeIdx: idx,
+            generation: cartridge.generation,
+            reader: reader
+        )
 
         // Notify lifecycle observer (XPC reverse-callback bridge, etc.).
         observer?.cartridgeSpawned(
@@ -1658,7 +1682,7 @@ public final class CartridgeHost: @unchecked Sendable {
         statsTimer.resume()
 
         // Heartbeat probe timer — sends a heartbeat REQ to every
-        // running cartridge every 10s. Each cartridge replies with
+        // running cartridge at HEARTBEAT_INTERVAL. Each cartridge replies with
         // a heartbeat carrying its self-reported memory footprint
         // in `meta` (footprint_mb / rss_mb). The host's
         // .heartbeat handler stores those into
@@ -1668,38 +1692,14 @@ public final class CartridgeHost: @unchecked Sendable {
         // detail view's resident/CPU columns stayed at zero even
         // after the autoreleasepool fix.
         //
-        // 10s cadence is shorter than the Rust reference's 30s
-        // because we're using the same heartbeat for live UI stats,
-        // not just liveness. Cost per probe: one frame in, one
-        // frame out, both ~64 B + meta — negligible compared to
-        // the 2s statsRefresh rebuild.
         let heartbeatTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        heartbeatTimer.schedule(deadline: .now() + .seconds(10), repeating: .seconds(10))
+        let heartbeatInterval = DispatchTimeInterval.seconds(Int(HEARTBEAT_INTERVAL))
+        heartbeatTimer.schedule(
+            deadline: .now() + heartbeatInterval,
+            repeating: heartbeatInterval
+        )
         heartbeatTimer.setEventHandler { [weak self] in
-            guard let self = self else { return }
-            self.stateLock.lock()
-            let snapshot: [(idx: Int, writer: FrameWriter)] = self.cartridges.enumerated().compactMap { (idx, c) in
-                guard c.running, let writer = c.writer else { return nil }
-                return (idx, writer)
-            }
-            self.stateLock.unlock()
-            for entry in snapshot {
-                let probeId = MessageId.newUUID()
-                self.stateLock.lock()
-                self.cartridges[entry.idx].pendingHeartbeats[probeId] = Date()
-                self.stateLock.unlock()
-                let frame = Frame.heartbeat(id: probeId)
-                do {
-                    try entry.writer.write(frame)
-                } catch {
-                    os_log(.error, log: Self.log,
-                           "Failed to write heartbeat probe to cartridge %{public}d: %{public}@",
-                           entry.idx, String(describing: error))
-                    self.stateLock.lock()
-                    self.cartridges[entry.idx].pendingHeartbeats.removeValue(forKey: probeId)
-                    self.stateLock.unlock()
-                }
-            }
+            self?.pushEvent(.heartbeatTick)
         }
         heartbeatTimer.resume()
 
@@ -1762,11 +1762,17 @@ public final class CartridgeHost: @unchecked Sendable {
                     closed = true
                     stateLock.unlock()
                     return true
-                case .frame(let cartridgeIdx, let frame):
-                    handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+                case .frame(let cartridgeIdx, let generation, let frame):
+                    stateLock.lock()
+                    let isCurrent = cartridges.indices.contains(cartridgeIdx)
+                        && cartridges[cartridgeIdx].generation == generation
+                    stateLock.unlock()
+                    if isCurrent {
+                        handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+                    }
                     return false
-                case .death(let cartridgeIdx):
-                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
+                case .death(let cartridgeIdx, let generation):
+                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
                     return false
                 case .statsRefresh:
                     // Re-emit RelayNotify only when at least one cartridge is
@@ -1781,6 +1787,9 @@ public final class CartridgeHost: @unchecked Sendable {
                         rebuildCapabilities()
                         stateLock.unlock()
                     }
+                    return false
+                case .heartbeatTick:
+                    handleHeartbeatTick()
                     return false
                 }
             }
@@ -2175,9 +2184,10 @@ public final class CartridgeHost: @unchecked Sendable {
                 guard let meta = frame.meta,
                       case .unsignedInt(let capacity) = meta["handler_capacity"] else {
                     cartridge.lastDeathMessage = "Protocol violation: heartbeat missing handler_capacity"
+                    let generation = cartridge.generation
                     stateLock.unlock()
                     cartridge.killProcess()
-                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
+                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
                     return
                 }
                 if case .unsignedInt(let v) = meta["footprint_mb"] {
@@ -2283,18 +2293,84 @@ public final class CartridgeHost: @unchecked Sendable {
 
     // MARK: - Cartridge Death Handling
 
+    /// Evaluate previous probes and send the next heartbeat from the host run
+    /// loop. Keeping this transition on the event loop prevents a timer thread
+    /// from racing request dispatch or a replacement spawn.
+    private func handleHeartbeatTick() {
+        let now = Date()
+
+        stateLock.lock()
+        let expired: [(idx: Int, generation: UInt64)] = cartridges.enumerated().compactMap {
+            idx, cartridge in
+            guard cartridge.running,
+                  cartridge.pendingHeartbeats.values.contains(where: {
+                      now.timeIntervalSince($0) > HEARTBEAT_TIMEOUT
+                  }) else {
+                return nil
+            }
+            cartridge.shutdownReason = .heartbeatTimeout
+            return (idx, cartridge.generation)
+        }
+        stateLock.unlock()
+
+        for entry in expired {
+            handleCartridgeDeath(cartridgeIdx: entry.idx, generation: entry.generation)
+        }
+
+        stateLock.lock()
+        let live: [(idx: Int, generation: UInt64, cartridge: ManagedCartridge)] =
+            cartridges.enumerated().compactMap { idx, cartridge in
+                guard cartridge.running else { return nil }
+                return (idx, cartridge.generation, cartridge)
+            }
+        stateLock.unlock()
+
+        for entry in live {
+            let probeId = MessageId.newUUID()
+            stateLock.lock()
+            let isCurrent = cartridges.indices.contains(entry.idx)
+                && cartridges[entry.idx].running
+                && cartridges[entry.idx].generation == entry.generation
+            if isCurrent {
+                cartridges[entry.idx].pendingHeartbeats[probeId] = now
+            }
+            stateLock.unlock()
+            guard isCurrent else { continue }
+
+            if !entry.cartridge.writeFrame(Frame.heartbeat(id: probeId)) {
+                os_log(.error, log: Self.log,
+                       "Failed to write heartbeat probe to cartridge %{public}d",
+                       entry.idx)
+                stateLock.lock()
+                if cartridges[entry.idx].generation == entry.generation {
+                    cartridges[entry.idx].pendingHeartbeats.removeValue(forKey: probeId)
+                    cartridges[entry.idx].shutdownReason = .heartbeatTimeout
+                }
+                stateLock.unlock()
+                handleCartridgeDeath(cartridgeIdx: entry.idx, generation: entry.generation)
+            }
+        }
+    }
+
     /// Handle a cartridge death (reader thread detected EOF/error).
     ///
-    /// Three cases based on `shutdownReason`:
+    /// Four cases based on `shutdownReason`:
     /// 1. **`nil`** (unexpected death): Genuine crash. Send ERR "CARTRIDGE_DIED"
     ///    for all pending requests, store death message.
     /// 2. **`.oomKill`**: OOM watchdog killed the cartridge while it was
     ///    actively processing. Send ERR "OOM_KILLED" for all pending requests
     ///    so callers fail fast instead of hanging.
-    /// 3. **`.appExit`**: Clean shutdown. No ERR frames — the relay
+    /// 3. **`.heartbeatTimeout`**: Unresponsive process. Send ERR
+    ///    "CARTRIDGE_UNHEALTHY" and retire the full process generation.
+    /// 4. **`.appExit`**: Clean shutdown. No ERR frames — the relay
     ///    connection is closing anyway.
-    private func handleCartridgeDeath(cartridgeIdx: Int) {
+    private func handleCartridgeDeath(cartridgeIdx: Int, generation: UInt64) {
         stateLock.lock()
+        guard cartridges.indices.contains(cartridgeIdx),
+              cartridges[cartridgeIdx].generation == generation else {
+            stateLock.unlock()
+            return
+        }
         let cartridge = cartridges[cartridgeIdx]
         let alreadyTornDown =
             !cartridge.running &&
@@ -2311,6 +2387,7 @@ public final class CartridgeHost: @unchecked Sendable {
         // derived `lastPathComponent` once for the callback below).
         let observerPidAtDeath = cartridge.pid
         let observerName = (cartridge.path as NSString).lastPathComponent
+        cartridge.advanceGeneration()
         cartridge.running = false
         // Close the writer atomically with nil-ing the property:
         // `writeFrame()` (CartridgeHost.ManagedCartridge.writeFrame)
@@ -2327,6 +2404,7 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridge.restartCount &+= 1
         let reason = cartridge.shutdownReason
         cartridge.shutdownReason = nil  // Reset for potential respawn
+        cartridge.pendingHeartbeats.removeAll()
 
         // Check process status and kill if still running.
         // The reader thread got EOF on stdout, but the process may still be alive
@@ -2363,6 +2441,16 @@ public final class CartridgeHost: @unchecked Sendable {
             }
             cartridge.pid = nil
         }
+
+        // The process is gone, so release the old stdout ownership and its
+        // reader-thread reference before this slot becomes spawnable again.
+        // Closing the handle also unblocks a reader that has not yet observed
+        // EOF; its generation-stamped death event will be ignored.
+        if let stdoutHandle = cartridge.stdoutHandle {
+            try? stdoutHandle.close()
+            cartridge.stdoutHandle = nil
+        }
+        cartridge.readerThread = nil
 
         // Now that the process is dead, read stderr — readToEnd will get
         // EOF immediately since the write end is closed.
@@ -2457,6 +2545,10 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = "Cartridge \(cartridgePath) killed by cancel request."
             errInfo = (code: "CANCELLED", attributionClass: .internal, message: msg)
             cartridge.lastDeathMessage = msg
+        case .heartbeatTimeout:
+            let msg = "Cartridge stopped responding to heartbeats"
+            errInfo = (code: "CARTRIDGE_UNHEALTHY", attributionClass: .environment, message: msg)
+            cartridge.lastDeathMessage = msg
         case .disabled:
             // Operator-disabled kill — ERR "DISABLED" for all
             // pending work. Distinct from CANCELLED so operators
@@ -2515,7 +2607,11 @@ public final class CartridgeHost: @unchecked Sendable {
     // MARK: - Cartridge Reader Thread
 
     /// Start a background reader thread for a cartridge.
-    private func startCartridgeReaderThread(cartridgeIdx: Int, reader: FrameReader) {
+    private func startCartridgeReaderThread(
+        cartridgeIdx: Int,
+        generation: UInt64,
+        reader: FrameReader
+    ) {
         let thread = Thread { [weak self] in
             // Foundation reads (NSConcreteFileHandle.readDataOfLength)
             // return autoreleased NSConcreteData. A bare `Thread { }`
@@ -2533,14 +2629,24 @@ public final class CartridgeHost: @unchecked Sendable {
                     do {
                         guard let frame = try reader.read() else {
                             // EOF — cartridge closed stdout
-                            self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
+                            self?.pushEvent(.death(
+                                cartridgeIdx: cartridgeIdx,
+                                generation: generation
+                            ))
                             return true
                         }
-                        self?.pushEvent(.frame(cartridgeIdx: cartridgeIdx, frame: frame))
+                        self?.pushEvent(.frame(
+                            cartridgeIdx: cartridgeIdx,
+                            generation: generation,
+                            frame: frame
+                        ))
                         return false
                     } catch {
                         // Read error — treat as death
-                        self?.pushEvent(.death(cartridgeIdx: cartridgeIdx))
+                        self?.pushEvent(.death(
+                            cartridgeIdx: cartridgeIdx,
+                            generation: generation
+                        ))
                         return true
                     }
                 }
@@ -2575,10 +2681,16 @@ public final class CartridgeHost: @unchecked Sendable {
 
         for event in events {
             switch event {
-            case .frame(let cartridgeIdx, let frame):
-                handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
-            case .death(let cartridgeIdx):
-                handleCartridgeDeath(cartridgeIdx: cartridgeIdx)
+            case .frame(let cartridgeIdx, let generation, let frame):
+                stateLock.lock()
+                let isCurrent = cartridges.indices.contains(cartridgeIdx)
+                    && cartridges[cartridgeIdx].generation == generation
+                stateLock.unlock()
+                if isCurrent {
+                    handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+                }
+            case .death(let cartridgeIdx, let generation):
+                handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
             case .relayFrame(let frame):
                 handleRelayFrame(frame)
             case .relayClosed:
@@ -2587,6 +2699,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 // Only the run() loop does the actual RelayNotify push to
                 // avoid double-work. This drain path is test-only.
                 break
+            case .heartbeatTick:
+                handleHeartbeatTick()
             }
         }
     }
@@ -3069,6 +3183,8 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridge.limits = handshakeResult.limits
         cartridge.handlerCapacity = UInt64(handshakeResult.handlerCapacity)
         cartridge.capGroups = capGroups
+        cartridge.advanceGeneration()
+        let generation = cartridge.generation
         cartridge.running = true
         // Successful attach — clear any lingering attachment error from a
         // prior failed attempt (e.g. after a binary replacement).
@@ -3089,7 +3205,7 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.unlock()
 
         // Start reader thread
-        startCartridgeReaderThread(cartridgeIdx: idx, reader: reader)
+        startCartridgeReaderThread(cartridgeIdx: idx, generation: generation, reader: reader)
 
         // Notify lifecycle observer (XPC reverse-callback bridge, etc.).
         // No-op when no observer is registered.
@@ -3144,6 +3260,23 @@ public final class CartridgeHost: @unchecked Sendable {
     /// drive the heartbeat-ingest path without a live process.
     internal func handleCartridgeFrameForTest(cartridgeIdx: Int, frame: Frame) {
         handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
+    }
+
+    /// Test-only: deliver a reader death event with its captured process
+    /// generation. This invokes the production teardown transition so tests
+    /// can prove that a retired reader cannot kill a replacement process.
+    internal func handleCartridgeDeathForTest(cartridgeIdx: Int, generation: UInt64) {
+        handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
+    }
+
+    /// Test-only snapshot of the generation-safe process state.
+    internal func cartridgeProcessStateForTest(
+        cartridgeIdx: Int
+    ) -> (generation: UInt64, running: Bool) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        let cartridge = cartridges[cartridgeIdx]
+        return (cartridge.generation, cartridge.running)
     }
 
     /// Test-only snapshot of the installed-cartridge records exactly as

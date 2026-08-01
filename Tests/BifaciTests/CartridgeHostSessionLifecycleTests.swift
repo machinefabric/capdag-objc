@@ -4,7 +4,7 @@
 //  Rust reference contract in capdag/src/bifaci/host_runtime.rs:875,
 //  `event_rx.take().expect("run() must only be called once")`).
 //
-//  Two contracts are pinned here:
+//  Three contracts are pinned here:
 //
 //    1. On `run()` exit (clean or via `close()`), every managed
 //       cartridge is killed and the lifecycle observer is fired
@@ -22,6 +22,10 @@
 //       run → drop) so a regression that accidentally let
 //       `hasRun` reset between calls would be caught by the
 //       death-on-exit test (cartridges would survive).
+//
+//    3. Reader events are scoped to the process generation that emitted
+//       them. A delayed EOF from a retired process cannot tear down the
+//       replacement occupying the same cartridge slot.
 //
 //  These tests use stub stdio pipes for the cartridge side; we do
 //  not spawn a real child process, so PID-based kill semantics are
@@ -55,6 +59,41 @@ private final class RecordingObserver: CartridgeHostObserver, @unchecked Sendabl
 }
 
 final class CartridgeHostSessionLifecycleTests: XCTestCase {
+
+    /// TEST8067: a late death event from an obsolete reader generation must
+    /// not retire the live process in the same cartridge slot. A death from
+    /// the current generation must perform the real teardown and notify the
+    /// lifecycle observer once.
+    func test8067_StaleReaderDeathCannotKillReplacementGeneration() {
+        let host = CartridgeHost()
+        let observer = RecordingObserver()
+        host.setObserver(observer)
+        let idx = host.attachStubCartridgeForTest()
+
+        let initial = host.cartridgeProcessStateForTest(cartridgeIdx: idx)
+        XCTAssertTrue(initial.running)
+        XCTAssertGreaterThan(initial.generation, 0)
+
+        host.handleCartridgeDeathForTest(
+            cartridgeIdx: idx,
+            generation: initial.generation - 1
+        )
+
+        let afterStaleDeath = host.cartridgeProcessStateForTest(cartridgeIdx: idx)
+        XCTAssertTrue(afterStaleDeath.running)
+        XCTAssertEqual(afterStaleDeath.generation, initial.generation)
+        XCTAssertTrue(observer.died.isEmpty)
+
+        host.handleCartridgeDeathForTest(
+            cartridgeIdx: idx,
+            generation: initial.generation
+        )
+
+        let afterCurrentDeath = host.cartridgeProcessStateForTest(cartridgeIdx: idx)
+        XCTAssertFalse(afterCurrentDeath.running)
+        XCTAssertEqual(afterCurrentDeath.generation, initial.generation + 1)
+        XCTAssertEqual(observer.died.map(\.idx), [idx])
+    }
 
     /// Contract #1: when `run()` exits because the relay closed,
     /// every running cartridge is torn down and the observer is

@@ -577,6 +577,16 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 - (void)addArg:(CSCapArg * _Nonnull)arg;
 
 /**
+ * Return the argument whose stdin source is equivalent to this cap's in= spec.
+ * Void-input caps return nil. A non-void cap without this argument violates the
+ * registry invariant and raises NSInternalInconsistencyException.
+ */
+- (nullable CSCapArg *)mainInputArg;
+
+/** Cardinality of the declared main input. Void-input caps are scalar. */
+- (BOOL)primaryInputIsSequence;
+
+/**
  * Find an argument by media URN
  * @param mediaUrn The media URN to find
  * @return The argument or nil if not found

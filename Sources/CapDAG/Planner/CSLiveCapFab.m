@@ -105,6 +105,7 @@
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSNumber *> *> *capToEdges;
 /// Cached identity URN for skip checks
 @property (nonatomic, strong, nullable) CSCapUrn *identityUrn;
+- (BOOL)canFollowForEach:(CSLiveMachinePlanEdge *)edge;
 @end
 
 @implementation CSLiveCapFab
@@ -213,18 +214,8 @@
     NSString *toCanonical = [toSpec toString];
     NSString *capCanonical = [cap.capUrn toString];
 
-    // Determine input/output is_sequence from cap arg/output definitions
-    // Main input arg: the one with a stdin source
-    BOOL inputIsSeq = NO;
-    for (CSCapArg *arg in cap.args) {
-        for (CSArgSource *source in arg.sources) {
-            if (source.stdinMediaUrn != nil) {
-                inputIsSeq = arg.isSequence;
-                break;
-            }
-        }
-        if (inputIsSeq) break;
-    }
+    // Cardinality follows the declared main input, never argument order.
+    BOOL inputIsSeq = [cap primaryInputIsSequence];
     BOOL outputIsSeq = cap.output ? cap.output.isSequence : NO;
 
     // Create edge
@@ -321,13 +312,13 @@
                                                           maxDepth:(NSUInteger)maxDepth
                                                         isSequence:(BOOL)isSequence {
     NSMutableDictionary<NSString *, CSReachableTargetInfo *> *results = [NSMutableDictionary dictionary];
-    // Visited tracks (urn, isSequence) pairs to avoid infinite loops through ForEach/Collect
+    // Visited also tracks a synthesized ForEach awaiting its body cap.
     NSMutableSet<NSString *> *visited = [NSMutableSet set];
-    // Queue entries: [CSMediaUrn, NSNumber(depth), NSNumber(isSequence)]
+    // Queue entries: [CSMediaUrn, depth, isSequence, pendingForEach]
     NSMutableArray<NSArray *> *queue = [NSMutableArray array];
 
-    NSString *sourceKey = [NSString stringWithFormat:@"%@|%d", [source toString], isSequence];
-    [queue addObject:@[source, @0, @(isSequence)]];
+    NSString *sourceKey = [NSString stringWithFormat:@"%@|%d|0", [source toString], isSequence];
+    [queue addObject:@[source, @0, @(isSequence), @NO]];
     [visited addObject:sourceKey];
 
     while (queue.count > 0) {
@@ -337,33 +328,40 @@
         CSMediaUrn *current = item[0];
         NSUInteger depth = [item[1] unsignedIntegerValue];
         BOOL currentIsSequence = [item[2] boolValue];
+        BOOL pendingForEach = [item[3] boolValue];
 
         if (depth >= maxDepth) continue;
 
         NSArray<NSDictionary *> *outEdges = [self getOutgoingEdges:current isSequence:currentIsSequence];
         for (NSDictionary *edgeDict in outEdges) {
             CSLiveMachinePlanEdge *edge = edgeDict[@"edge"];
+            if (pendingForEach && ![self canFollowForEach:edge]) {
+                continue;
+            }
             BOOL nextIsSequence = [edgeDict[@"isSequence"] boolValue];
             NSUInteger newDepth = depth + 1;
             NSString *outputCanonical = [edge.toSpec toString];
 
-            // Record this target
-            CSReachableTargetInfo *info = results[outputCanonical];
-            if (!info) {
-                info = [[CSReachableTargetInfo alloc] init];
-                info.mediaUrn = outputCanonical;
-                info.displayName = outputCanonical;
-                info.minDepth = newDepth;
-                info.pathCount = 0;
-                results[outputCanonical] = info;
+            BOOL nextPendingForEach = edge.edgeType == CSLiveMachinePlanEdgeTypeForEach;
+            if (!nextPendingForEach) {
+                // A ForEach boundary is not a result; only complete cap
+                // transitions contribute reachable targets.
+                CSReachableTargetInfo *info = results[outputCanonical];
+                if (!info) {
+                    info = [[CSReachableTargetInfo alloc] init];
+                    info.mediaUrn = outputCanonical;
+                    info.displayName = outputCanonical;
+                    info.minDepth = newDepth;
+                    info.pathCount = 0;
+                    results[outputCanonical] = info;
+                }
+                info.pathCount += 1;
             }
-            info.pathCount += 1;
 
-            // Continue BFS if not visited (track isSequence state)
-            NSString *nextKey = [NSString stringWithFormat:@"%@|%d", outputCanonical, nextIsSequence];
+            NSString *nextKey = [NSString stringWithFormat:@"%@|%d|%d", outputCanonical, nextIsSequence, nextPendingForEach];
             if (![visited containsObject:nextKey]) {
                 [visited addObject:nextKey];
-                [queue addObject:@[edge.toSpec, @(newDepth), @(nextIsSequence)]];
+                [queue addObject:@[edge.toSpec, @(newDepth), @(nextIsSequence), @(nextPendingForEach)]];
             }
         }
     }
@@ -426,8 +424,11 @@
 
     if (allPaths.count >= maxPaths) return;
 
-    // Check if we reached the EXACT target using isEquivalentTo:
-    if ([current isEquivalentTo:target]) {
+    BOOL pendingForEach = currentPath.count > 0 &&
+        currentPath.lastObject.stepType == CSStrandStepTypeForEach;
+
+    // A ForEach boundary is incomplete until its scalar body cap follows it.
+    if ([current isEquivalentTo:target] && !pendingForEach) {
         NSMutableArray<NSString *> *titles = [NSMutableArray array];
         NSInteger capStepCount = 0;
         for (CSStrandStep *step in currentPath) {
@@ -456,6 +457,9 @@
     NSArray<NSDictionary *> *outEdges = [self getOutgoingEdges:current isSequence:isSequence];
     for (NSDictionary *edgeDict in outEdges) {
         CSLiveMachinePlanEdge *edge = edgeDict[@"edge"];
+        if (pendingForEach && ![self canFollowForEach:edge]) {
+            continue;
+        }
         BOOL nextIsSequence = [edgeDict[@"isSequence"] boolValue];
         NSString *nextKey = [NSString stringWithFormat:@"%@|%d", [edge.toSpec toString], nextIsSequence];
 
@@ -499,6 +503,10 @@
 
     // Remove from visited for backtracking (enables multiple paths through same node)
     [visited removeObject:currentKey];
+}
+
+- (BOOL)canFollowForEach:(CSLiveMachinePlanEdge *)edge {
+    return edge.edgeType == CSLiveMachinePlanEdgeTypeCap && !edge.inputIsSequence;
 }
 
 // MARK: - Path Comparison (Deterministic Ordering)

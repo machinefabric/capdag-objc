@@ -108,24 +108,17 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 }
 
 + (BOOL)isFilePathStdinChainable:(CSCap *)cap {
-    NSString *inSpec = [cap.capUrn inSpec];
+    CSCapArg *mainInput = [cap mainInputArg];
+    if (mainInput == nil) return NO;
 
-    for (CSCapArg *arg in cap.args) {
-        // Check if this arg is a file-path type
-        NSError *error = nil;
-        CSMediaUrn *urn = [CSMediaUrn fromString:arg.mediaUrn error:&error];
-        if (!urn || ![urn isFilePath]) {
-            continue;
-        }
-
-        // Check if it has a stdin source matching the in_spec
-        for (CSArgSource *source in arg.sources) {
-            if ([source isStdin] && [source.stdinMediaUrn isEqualToString:inSpec]) {
-                return YES;
-            }
-        }
+    NSError *error = nil;
+    CSMediaUrn *urn = [CSMediaUrn fromString:mainInput.mediaUrn error:&error];
+    if (urn == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"cap registry invariant: main arg media_urn is valid: %@",
+                           error.localizedDescription];
     }
-    return NO;
+    return [urn isFilePath];
 }
 
 // MARK: - Find Path (BFS)
@@ -352,14 +345,8 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
             if (cap) {
                 NSString *inSpec = [[cap capUrn] inSpec];
                 NSString *outSpec = [[cap capUrn] outSpec];
-                // Get is_sequence from cap args/output, not from URN tags
-                BOOL inputIsSeq = NO;
-                for (CSCapArg *arg in cap.args) {
-                    if ([arg hasStdinSource]) {
-                        inputIsSeq = arg.isSequence;
-                        break;
-                    }
-                }
+                // Cardinality follows the declared main input, never argument order.
+                BOOL inputIsSeq = [cap primaryInputIsSequence];
                 BOOL outputIsSeq = cap.output ? cap.output.isSequence : NO;
                 info.cardinality = [CSCapCardinalityInfo fromCapUrn:urn
                                                              inSpec:inSpec

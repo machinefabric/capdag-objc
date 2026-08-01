@@ -22,7 +22,11 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSCapUrn *built = [builder build:&error];
     NSCAssert(built != nil, @"Failed to build test cap URN: %@", error);
 
-    return [CSCap capWithUrn:built title:title aliases:@[@"test"]];
+    CSCap *cap = [CSCap capWithUrn:built title:title aliases:@[@"test"]];
+    [cap addArg:[CSCapArg argWithMediaUrn:inSpec
+                                  required:YES
+                                   sources:@[[CSArgSource stdinSourceWithMediaUrn:inSpec]]]];
+    return cap;
 }
 
 @implementation CSLiveCapFabTests
@@ -347,6 +351,45 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
         }
     }
     XCTAssertTrue(hasForEachSeq, @"Sequence input should produce ForEach step");
+}
+
+// TEST8064: a sequence-consuming cap is reached directly from sequence data,
+// never through a dangling ForEach boundary.
+- (void)test8064_sequenceConsumerNeverFollowsForEachDirectly {
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    NSError *error = nil;
+    CSCap *concat = [CSCap capWithDictionary:@{
+        @"urn": @"cap:concat;in=\"media:enc=utf-8\";out=\"media:enc=utf-8;ext=txt\"",
+        @"title": @"Concat Text",
+        @"aliases": @[@"concat"],
+        @"args": @[@{
+            @"media_urn": @"media:enc=utf-8",
+            @"required": @YES,
+            @"is_sequence": @YES,
+            @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
+        }],
+    } error:&error];
+    XCTAssertNotNil(concat, @"%@", error);
+    [graph addCap:concat];
+    [graph addCap:makeTestCap(@"media:enc=utf-8",
+                              @"media:enc=utf-8;summary",
+                              @"summarize",
+                              @"Summarize Text")];
+
+    CSMediaUrn *source = [CSMediaUrn fromString:@"media:enc=utf-8;page" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8;ext=txt" error:&error];
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source
+                                                        target:target
+                                                      maxDepth:4
+                                                      maxPaths:20
+                                                    isSequence:YES];
+
+    XCTAssertGreaterThan(paths.count, 0u);
+    for (CSStrand *path in paths) {
+        for (CSStrandStep *step in path.steps) {
+            XCTAssertNotEqual(step.stepType, CSStrandStepTypeForEach);
+        }
+    }
 }
 
 // TEST790: Tests identity_urn is specific and doesn't match everything

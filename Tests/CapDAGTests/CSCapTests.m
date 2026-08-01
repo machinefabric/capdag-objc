@@ -1217,4 +1217,42 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(withDefault, expectedWithDefault, @"has-default partition");
 }
 
+// TEST8065: cardinality follows the declared main input even when another
+// stdin-capable argument appears first.
+- (void)test8065_sequenceShapeUsesMainInputIdentityNotArgumentOrder {
+    NSError *error = nil;
+    CSCap *cap = [CSCap capWithDictionary:@{
+        @"urn": @"cap:in=\"media:enc=utf-8\";ordered;out=\"media:enc=utf-8;result\"",
+        @"title": @"Ordered args",
+        @"aliases": @[@"ordered"],
+        @"args": @[
+            @{
+                @"media_urn": @"media:enc=utf-8;context",
+                @"required": @NO,
+                @"sources": @[@{@"stdin": @"media:enc=utf-8;context"}],
+            },
+            @{
+                @"media_urn": @"media:enc=utf-8",
+                @"required": @YES,
+                @"is_sequence": @YES,
+                @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
+            },
+        ],
+    } error:&error];
+
+    XCTAssertNotNil(cap, @"%@", error);
+    XCTAssertTrue([cap primaryInputIsSequence]);
+}
+
+// TEST8066: a void-input cap has scalar input cardinality without inventing an arg.
+- (void)test8066_voidInputSequenceShapeIsScalarWithoutArguments {
+    NSError *error = nil;
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=\"media:void\";clock;out=\"media:time\""
+                                   error:&error];
+    XCTAssertNotNil(urn, @"%@", error);
+    CSCap *cap = [CSCap capWithUrn:urn title:@"Clock" aliases:@[@"clock"]];
+
+    XCTAssertFalse([cap primaryInputIsSequence]);
+}
+
 @end
