@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.370.3725
+// version: 1.371.3734
 import PackageDescription
 
 let package = Package(
@@ -18,7 +18,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../tagged-urn-objc"),
-        .package(path: "../ops-objc"),
+        .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.135.1082"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),
     ],
