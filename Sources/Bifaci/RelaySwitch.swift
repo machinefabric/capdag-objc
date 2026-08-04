@@ -1230,11 +1230,12 @@ public final class RelaySwitch: @unchecked Sendable {
     /// The cap-table entry on this master that `capUrn` dispatches to. Caller
     /// must hold `lock`.
     internal func registeredCapForLocked(_ masterIdx: Int, _ capUrn: String) throws -> String {
-        guard let requestUrn = try? CapUrn(capUrn) else {
+        guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
             throw RelaySwitchError.noHandler(capUrn)
         }
         for entry in capTable where entry.masterIdx == masterIdx {
-            if let registered = try? CapUrn(entry.capUrn), registered.isDispatchable(requestUrn) {
+            guard let registeredUrn = try? CSCapUrn.fromString(entry.capUrn) else { continue }
+            if registeredUrn.isDispatchable(requestUrn) {
                 return entry.capUrn
             }
         }
