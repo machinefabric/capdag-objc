@@ -107,4 +107,111 @@ final class CborSyncRosterTests: XCTestCase {
         XCTAssertFalse(afterRemove.contains("latejoiner"),
                        "an empty SyncRoster must retire the cartridge; got \(afterRemove)")
     }
+
+    // =========================================================================
+    // Roster retirement: drain, not kill
+    // =========================================================================
+
+    /// A registered cartridge on disk, registered with the host and marked
+    /// running, for roster-retire tests. Mirrors the reference test fixture.
+    private func retireFixture() throws -> (host: CartridgeHost, root: URL, path: String, dir: String) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RetireTests")
+            .appendingPathComponent(UUID().uuidString)
+        let versionDir = root
+            .appendingPathComponent("dev")
+            .appendingPathComponent("release")
+            .appendingPathComponent("retiring")
+            .appendingPathComponent("1.0.0")
+        try FileManager.default.createDirectory(at: versionDir, withIntermediateDirectories: true)
+        let manifest = """
+        {"name":"retiring","version":"1.0.0","channel":"release","registry_url":null,"entry":"bin","installed_at":"2026-01-01T00:00:00Z","installed_from":"dev"}
+        """
+        try Data(manifest.utf8).write(to: versionDir.appendingPathComponent("cartridge.json"))
+        let entry = versionDir.appendingPathComponent("bin")
+        try Data("#!/bin/sh\n".utf8).write(to: entry)
+
+        let host = CartridgeHost()
+        host.registerCartridge(path: entry.path, cartridgeDir: versionDir.path, capGroups: [])
+        // Pretend it started: retirement only has to make a decision about a
+        // LIVE process.
+        host.markCartridgeRunningForTest(cartridgeIdx: 0)
+        return (host, root, entry.path, versionDir.path)
+    }
+
+    // TEST1945: a roster retire DRAINS a busy cartridge instead of killing it. The incident this pins: a transient registry outage shrank the roster and the host killed three cartridges outright, ERRing every request they were serving. Retirement means "no NEW work" — the process must survive until the requests it is already handling terminate.
+    func test1945_rosterRetireDrainsABusyCartridgeBeforeKillingIt() throws {
+        let fixture = try retireFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        // One request in flight on this cartridge.
+        let key = RxidKey(xid: MessageId.uint(1), rid: MessageId.uint(2))
+        fixture.host.seedIncomingRxidForTest(key: key, cartridgeIdx: 0, touchedAt: 1)
+
+        // An empty outcome set is the discovery sync saying "this install is
+        // no longer wanted".
+        fixture.host.syncDiscoveryOutcomes([])
+
+        var state = fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0)
+        XCTAssertTrue(state.isRemoved, "a retired cartridge must leave the inventory immediately")
+        XCTAssertTrue(state.isDraining, "a busy retired cartridge must be marked draining")
+        XCTAssertTrue(state.running, "a cartridge mid-request must not be killed by a roster change")
+
+        // Still busy → still alive.
+        fixture.host.reapDrainedCartridgesForTest()
+        state = fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0)
+        XCTAssertTrue(state.running)
+
+        // The request terminates; the next reap collects it.
+        fixture.host.removeIncomingRxidForTest(key: key)
+        fixture.host.reapDrainedCartridgesForTest()
+        state = fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0)
+        XCTAssertFalse(state.running, "a drained cartridge must be shut down once its last request ends")
+        XCTAssertFalse(state.isDraining)
+    }
+
+    // TEST1946: an IDLE cartridge is retired immediately (no reason to keep a process nothing routes to).
+    func test1946_rosterRetireKillsAnIdleCartridgeAsRetired() throws {
+        let fixture = try retireFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        fixture.host.syncDiscoveryOutcomes([])
+
+        let state = fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0)
+        XCTAssertFalse(state.isDraining)
+        XCTAssertFalse(state.running)
+        XCTAssertTrue(state.isRemoved)
+    }
+
+    // TEST1947: a roster that flaps — retire then restore the same identity — keeps the SAME live process. This is the incident's shape end to end: the registry became unreachable, the roster shrank, and 26 seconds later it came back. Nothing about that sequence should cost a running cartridge, its warm model, or the work queued on it.
+    func test1947_rosterFlapCancelsRetirementInsteadOfRespawning() throws {
+        let fixture = try retireFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        // Busy, so the outage puts it into a drain rather than killing it.
+        let key = RxidKey(xid: MessageId.uint(1), rid: MessageId.uint(2))
+        fixture.host.seedIncomingRxidForTest(key: key, cartridgeIdx: 0, touchedAt: 1)
+        fixture.host.syncDiscoveryOutcomes([])
+        XCTAssertTrue(fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0).isDraining)
+
+        // The registry answers again and the roster is restored.
+        fixture.host.syncDiscoveryOutcomes([
+            .discovered(path: fixture.path, cartridgeDir: fixture.dir, capGroups: [])
+        ])
+
+        XCTAssertEqual(
+            fixture.host.cartridgeCountForTest, 1,
+            "the restored identity must reuse the draining process, not spawn a second one"
+        )
+        var state = fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0)
+        XCTAssertFalse(state.isDraining)
+        XCTAssertFalse(state.isRemoved)
+        XCTAssertTrue(state.running, "the process must never have been killed")
+
+        // And it is not reaped afterwards.
+        fixture.host.removeIncomingRxidForTest(key: key)
+        fixture.host.reapDrainedCartridgesForTest()
+        state = fixture.host.cartridgeRetirementStateForTest(cartridgeIdx: 0)
+        XCTAssertTrue(state.running)
+    }
 }

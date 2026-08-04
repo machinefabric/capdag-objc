@@ -1,8 +1,8 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 895
+**Total Tests:** 898
 
-**Numbered Tests:** 895
+**Numbered Tests:** 898
 
 **Unnumbered Tests:** 0
 
@@ -722,6 +722,9 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1899 | `test1899_mediaDefResolvesToVersionedObjectPathUnderManifest` | TEST1899: a media def published under a manifest (v >= 1) resolves to the VERSIONED object path `/media/<sha>/<defver>.json`, never the legacy flat path `/media/<sha>`. The flat path is the pre-manifest (v0) layout; a registry that silently runs in v0 mode fetches it and 404s every lookup against a versioned registry — the exact regression where the app's media-title resolver hit `/media/<sha>` on a staging-v1 registry and logged "Media def … not found (HTTP 404)". This pins BOTH the URL rule and the manifest-driven defver resolution. Mirrors the Rust reference's test0144_media_def_resolves_to_versioned_object_path_under_manifest. | Tests/CapDAGTests/CSFabricRegistryTests.m:66 |
 | test1900 | `test1900_errFrameAttributionClassWireContract` | TEST1900: ERR attribution is mandatory and strict. Missing and unknown tokens are protocol violations rather than compatibility defaults. | Tests/BifaciTests/FrameTests.swift:2017 |
 | test1905 | `test1905_peerReqNoHandlerSendsErrToCaller` | TEST0142 (Swift-specific, gap 3): a peer cartridge→cartridge REQ for a cap with NO handler must NOT abort the pump. The switch sends an ERR("NO_HANDLER") frame straight back to the calling master (stamped with the synthetic XID) so the caller fails fast, and handleMasterFrame returns nil — it must NOT throw. | Tests/BifaciTests/RelaySwitchTests.swift:1302 |
+| test1945 | `test1945_rosterRetireDrainsABusyCartridgeBeforeKillingIt` | TEST1945: a roster retire DRAINS a busy cartridge instead of killing it. The incident this pins: a transient registry outage shrank the roster and the host killed three cartridges outright, ERRing every request they were serving. Retirement means "no NEW work" — the process must survive until the requests it is already handling terminate. | Tests/BifaciTests/SyncRosterTests.swift:143 |
+| test1946 | `test1946_rosterRetireKillsAnIdleCartridgeAsRetired` | TEST1946: an IDLE cartridge is retired immediately (no reason to keep a process nothing routes to). | Tests/BifaciTests/SyncRosterTests.swift:174 |
+| test1947 | `test1947_rosterFlapCancelsRetirementInsteadOfRespawning` | TEST1947: a roster that flaps — retire then restore the same identity — keeps the SAME live process. This is the incident's shape end to end: the registry became unreachable, the roster shrank, and 26 seconds later it came back. Nothing about that sequence should cost a running cartridge, its warm model, or the work queued on it. | Tests/BifaciTests/SyncRosterTests.swift:187 |
 | test6200 | `test6200_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:277 |
 | test6205 | `test6205_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:293 |
 | test6207 | `test6207_concatenatedVsFinalPayloadDivergence` | Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk | Tests/BifaciTests/RuntimeTests.swift:1105 |
@@ -914,8 +917,8 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 ---
 
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 895*
-*Total numbered tests: 895*
+*Total tests: 898*
+*Total numbered tests: 898*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*

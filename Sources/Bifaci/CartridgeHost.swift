@@ -591,6 +591,15 @@ enum ShutdownReason {
     /// (distinct from a request cancel and from an unexpected
     /// crash). Re-enabling requires a UI-driven operator action.
     case disabled
+    /// A discovery sync retired this install: it is no longer a
+    /// cartridge this host should run (uninstalled, replaced on
+    /// disk, or de-listed upstream). Pending requests get ERR
+    /// frames with code "CARTRIDGE_RETIRED" and class
+    /// `environment`. Previously this path reused `.appExit`,
+    /// which emits NO ERR frames — so a request in flight when
+    /// its cartridge was retired simply never heard back and hung
+    /// until the executor's activity timeout.
+    case rosterRetired
 }
 
 private class ManagedCartridge {
@@ -645,6 +654,12 @@ private class ManagedCartridge {
     /// cartridge index still lands on a valid entry and can drain
     /// pending routing state deterministically.
     var isRemoved: Bool
+    /// Set when a discovery sync retired this cartridge while it still had
+    /// work in flight. It is already out of the cap table and the inventory,
+    /// so nothing new routes to it; the process stays alive until its
+    /// in-flight requests terminate or `retireDrainTimeout` expires.
+    /// Mirrors the reference `retiring_since`.
+    var retiringSince: Date?
     /// Positive lifecycle phase. Distinct from `attachmentError`:
     /// when `attachmentError != nil` this field is irrelevant
     /// (consumers must check the error first). When
@@ -694,6 +709,7 @@ private class ManagedCartridge {
         self.generation = 0
         self.helloFailed = false
         self.isRemoved = false
+        self.retiringSince = nil
         self.lifecycle = lifecycle
         self.pendingHeartbeats = [:]
         self.lastDeathMessage = nil
@@ -1012,6 +1028,17 @@ public final class CartridgeHost: @unchecked Sendable {
     /// cover bursts (PDF disbind→ForEach×N→LLM-call patterns) while
     /// still catching a runaway producer well before it grows
     /// memory by megabytes.
+    /// How long a retired cartridge may keep running to finish the requests
+    /// it is already serving.
+    ///
+    /// Retirement means "stop giving this install NEW work", not "destroy the
+    /// work it is doing". The cartridge is dropped from the cap table
+    /// immediately (so nothing new routes to it) and killed only once its
+    /// in-flight requests have terminated. This bound is a backstop for a
+    /// cartridge that never finishes; heartbeat monitoring still applies
+    /// during the drain. Mirrors the reference `RETIRE_DRAIN_TIMEOUT`.
+    private static let retireDrainTimeout: TimeInterval = 600
+
     private static let routingTableHardCap = 8192
     /// Soft watermark — when an insertion would push a table at or
     /// above this size, the GC fires and evicts the oldest 25% by
@@ -1335,6 +1362,66 @@ public final class CartridgeHost: @unchecked Sendable {
     ///
     /// Matches by **path**, not by cap set — URN strings are not stable across
     /// rescans (quoting and tag order may differ), but the binary path is.
+    /// Index of a cartridge in `cartridges` (slots are stable for the host's
+    /// lifetime, so identity comparison is the address of the class instance).
+    /// Caller must hold `stateLock`.
+    private func cartridgeIndex(of cartridge: ManagedCartridge) -> Int {
+        for (idx, candidate) in cartridges.enumerated() where candidate === cartridge {
+            return idx
+        }
+        return -1
+    }
+
+    /// Requests this cartridge is currently serving or awaiting a peer
+    /// response for. Both directions count: killing mid-peer-call strands the
+    /// caller just as surely as killing mid-request. Caller must hold
+    /// `stateLock`. Mirrors the reference `in_flight_count`.
+    private func inFlightCountLocked(cartridgeIdx: Int) -> Int {
+        guard cartridgeIdx >= 0 else { return 0 }
+        var n = 0
+        for (_, idx) in incomingRxids where idx == cartridgeIdx { n += 1 }
+        for (_, idx) in outgoingRids where idx == cartridgeIdx { n += 1 }
+        return n
+    }
+
+    /// Kill a retired cartridge, declaring the retirement as the reason so its
+    /// pending work is attributed to the environment rather than reported as a
+    /// cancellation. Caller must hold `stateLock`. Mirrors `retire_kill`.
+    private func retireKillLocked(_ cartridge: ManagedCartridge) {
+        cartridge.retiringSince = nil
+        cartridge.shutdownReason = .rosterRetired
+        cartridge.killProcess()
+        cartridge.writerLock.lock()
+        cartridge.writer?.close()
+        cartridge.writer = nil
+        cartridge.writerLock.unlock()
+        cartridge.stdoutHandle = nil
+        cartridge.stderrHandle = nil
+        cartridge.running = false
+        cartridge.lastDeathMessage = nil
+        cartridge.pendingHeartbeats.removeAll()
+    }
+
+    /// Kill retired cartridges that have finished draining, and any whose
+    /// drain outlived `retireDrainTimeout`. Called on the host's periodic
+    /// stats tick. Caller must hold `stateLock`. Mirrors the reference
+    /// `reap_drained_cartridges`.
+    func reapDrainedCartridgesLocked() {
+        let now = Date()
+        for (idx, cartridge) in cartridges.enumerated() {
+            guard let since = cartridge.retiringSince else { continue }
+            if !cartridge.running {
+                cartridge.retiringSince = nil
+                continue
+            }
+            let drained = inFlightCountLocked(cartridgeIdx: idx) == 0
+            let expired = now.timeIntervalSince(since) >= Self.retireDrainTimeout
+            if drained || expired {
+                retireKillLocked(cartridge)
+            }
+        }
+    }
+
     public func syncDiscoveryOutcomes(_ outcomes: [DiscoveredCartridgeOutcome]) {
         stateLock.lock()
         defer {
@@ -1364,6 +1451,15 @@ public final class CartridgeHost: @unchecked Sendable {
             }
             if let outcomeIdx = outcomeByPath[cartridge.path] {
                 matchedOutcomeIndices.insert(outcomeIdx)
+                // A roster that flaps — retire, then restore the same path
+                // moments later, exactly what a transient registry outage
+                // produces — must find the DRAINING process again rather than
+                // leave it to die. Un-retiring keeps the live process, its warm
+                // model, and its queue.
+                cartridge.retiringSince = nil
+                if cartridge.shutdownReason == .rosterRetired {
+                    cartridge.shutdownReason = nil
+                }
                 cartridge.isRemoved = false
                 switch outcomes[outcomeIdx] {
                 case .inProgress(_, _, let lifecycle):
@@ -1405,22 +1501,27 @@ public final class CartridgeHost: @unchecked Sendable {
                 // replaced. Retain the slot so any in-flight reader /
                 // death event keyed by the historical cartridgeIdx
                 // still resolves to the same ManagedCartridge.
-                cartridge.shutdownReason = .appExit
-                cartridge.killProcess()
-                cartridge.writerLock.lock()
-                cartridge.writer?.close()
-                cartridge.writer = nil
-                cartridge.writerLock.unlock()
-                cartridge.stdoutHandle = nil
-                cartridge.stderrHandle = nil
-                cartridge.running = false
+                //
+                // Retire = stop giving it NEW work. Clearing capGroups and
+                // setting isRemoved does that immediately; whether the
+                // PROCESS dies now depends on whether it is mid-request.
                 cartridge.capGroups = []
                 cartridge.attachmentError = nil
                 cartridge.helloFailed = false
                 cartridge.lifecycle = .discovered
-                cartridge.lastDeathMessage = nil
-                cartridge.pendingHeartbeats.removeAll()
                 cartridge.isRemoved = true
+                if !cartridge.running {
+                    continue
+                }
+                if inFlightCountLocked(cartridgeIdx: cartridgeIndex(of: cartridge)) == 0 {
+                    retireKillLocked(cartridge)
+                } else {
+                    // DRAIN. Killing here would ERR every in-flight request of
+                    // a cartridge that is healthy and doing exactly what it was
+                    // asked to do. It finishes, then dies (see
+                    // `reapDrainedCartridgesLocked`).
+                    cartridge.retiringSince = Date()
+                }
             }
         }
 
@@ -1780,6 +1881,11 @@ public final class CartridgeHost: @unchecked Sendable {
                     // stats for non-running cartridges change only at
                     // spawn/death boundaries which already trigger a rebuild.
                     stateLock.lock()
+                    // Retired-but-draining cartridges are reaped here: the
+                    // tick is the host's regular opportunity to notice that
+                    // the last in-flight request of a retired install has
+                    // terminated.
+                    reapDrainedCartridgesLocked()
                     let anyRunning = cartridges.contains { $0.running }
                     stateLock.unlock()
                     if anyRunning {
@@ -2562,6 +2668,13 @@ public final class CartridgeHost: @unchecked Sendable {
             let msg = "Cartridge \(cartridgePath) killed because the operator disabled it."
             errInfo = (code: "DISABLED", attributionClass: .internal, message: msg)
             cartridge.lastDeathMessage = msg
+        case .rosterRetired:
+            // Retired by a discovery sync. The deployment changed under a
+            // valid request, so the class is `environment` — declared here,
+            // at the emit source, per docs/failure-taxonomy.md.
+            let msg = "Cartridge \(cartridgePath) retired: it is no longer in the host's desired roster."
+            errInfo = (code: "CARTRIDGE_RETIRED", attributionClass: .environment, message: msg)
+            cartridge.lastDeathMessage = msg
         case .appExit:
             // Clean shutdown — no ERR frames, relay is closing
             errInfo = nil
@@ -3277,6 +3390,49 @@ public final class CartridgeHost: @unchecked Sendable {
         defer { stateLock.unlock() }
         let cartridge = cartridges[cartridgeIdx]
         return (cartridge.generation, cartridge.running)
+    }
+
+    /// Test-only view of a cartridge's retirement state: whether it is
+    /// draining, whether the process is still alive, and whether it has left
+    /// the inventory. Together these are the whole retire contract.
+    internal func cartridgeRetirementStateForTest(
+        cartridgeIdx: Int
+    ) -> (isDraining: Bool, running: Bool, isRemoved: Bool) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        let cartridge = cartridges[cartridgeIdx]
+        return (cartridge.retiringSince != nil, cartridge.running, cartridge.isRemoved)
+    }
+
+    /// Test-only: mark a registered cartridge as running so retirement has a
+    /// LIVE process to decide about.
+    internal func markCartridgeRunningForTest(cartridgeIdx: Int) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        cartridges[cartridgeIdx].running = true
+    }
+
+    /// Test-only: run the drain reaper the host's stats tick calls.
+    internal func reapDrainedCartridgesForTest() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        reapDrainedCartridgesLocked()
+    }
+
+    /// Test-only: drop a seeded routing entry, standing in for the request
+    /// terminating.
+    internal func removeIncomingRxidForTest(key: RxidKey) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        incomingRxids.removeValue(forKey: key)
+        incomingRxidsTouched.removeValue(forKey: key)
+    }
+
+    /// Test-only count of registered cartridge slots.
+    internal var cartridgeCountForTest: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return cartridges.count
     }
 
     /// Test-only snapshot of the installed-cartridge records exactly as
