@@ -36,7 +36,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test1150_AddCapAndBasicTraversal {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract_text", @"Extract Text");
+    CSCap *cap = makeTestCap(@"media:ext=pdf", @"media:digitized-text", @"extract_text", @"Extract Text");
     [graph addCap:cap];
 
     XCTAssertEqual([graph edgeCount], 1u);
@@ -86,8 +86,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test1152_MultiStepPath {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap1 = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract", @"Extract");
-    CSCap *cap2 = makeTestCap(@"media:extracted-text", @"media:summary-text", @"summarize", @"Summarize");
+    CSCap *cap1 = makeTestCap(@"media:ext=pdf", @"media:digitized-text", @"extract", @"Extract");
+    CSCap *cap2 = makeTestCap(@"media:digitized-text", @"media:summary-text", @"summarize", @"Summarize");
     [graph addCap:cap1];
     [graph addCap:cap2];
 
@@ -107,14 +107,14 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test1153_DeterministicOrdering {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap1 = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract_a", @"Extract A");
-    CSCap *cap2 = makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"extract_b", @"Extract B");
+    CSCap *cap1 = makeTestCap(@"media:ext=pdf", @"media:digitized-text", @"extract_a", @"Extract A");
+    CSCap *cap2 = makeTestCap(@"media:ext=pdf", @"media:digitized-text", @"extract_b", @"Extract B");
     [graph addCap:cap1];
     [graph addCap:cap2];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:extracted-text" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:digitized-text" error:&error];
 
     // Run twice — same order
     NSArray *paths1 = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
@@ -133,8 +133,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     NSArray *caps = @[
-        makeTestCap(@"media:ext=pdf", @"media:extracted-text", @"op1", @"Op1"),
-        makeTestCap(@"media:extracted-text", @"media:summary-text", @"op2", @"Op2"),
+        makeTestCap(@"media:ext=pdf", @"media:digitized-text", @"op1", @"Op1"),
+        makeTestCap(@"media:digitized-text", @"media:summary-text", @"op2", @"Op2"),
     ];
     [graph syncFromCaps:caps];
 
@@ -143,7 +143,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
     // Sync again — should replace
     NSArray *newCaps = @[
-        makeTestCap(@"media:image", @"media:extracted-text", @"ocr", @"OCR"),
+        makeTestCap(@"media:image", @"media:digitized-text", @"ocr", @"OCR"),
     ];
     [graph syncFromCaps:newCaps];
 
@@ -354,7 +354,9 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 }
 
 // TEST8064: a sequence-consuming cap is reached directly from sequence data,
-// never through a dangling ForEach boundary.
+// never through a dangling ForEach boundary. A ForEach followed by a SCALAR cap
+// stays legal — that is the map half of the ordinary map-then-fold plan — so the
+// invariant is about what may follow the boundary, not about ForEach appearing.
 - (void)test8064_sequenceConsumerNeverFollowsForEachDirectly {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
     NSError *error = nil;
@@ -385,10 +387,27 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
                                                     isSequence:YES];
 
     XCTAssertGreaterThan(paths.count, 0u);
+
+    BOOL direct = NO;
     for (CSStrand *path in paths) {
-        for (CSStrandStep *step in path.steps) {
-            XCTAssertNotEqual(step.stepType, CSStrandStepTypeForEach);
+        if (path.steps.count == 1 &&
+            path.steps[0].stepType == CSStrandStepTypeCap &&
+            path.steps[0].inputIsSequence) {
+            direct = YES;
         }
+    }
+    XCTAssertTrue(direct, @"sequence data must reach the sequence consumer directly");
+
+    for (CSStrand *path in paths) {
+        [path.steps enumerateObjectsUsingBlock:^(CSStrandStep *step, NSUInteger index, BOOL *stop) {
+            if (step.stepType != CSStrandStepTypeForEach) return;
+            XCTAssertLessThan(index + 1, path.steps.count,
+                              @"a ForEach boundary must be followed by a cap");
+            CSStrandStep *next = path.steps[index + 1];
+            XCTAssertEqual(next.stepType, CSStrandStepTypeCap);
+            XCTAssertFalse(next.inputIsSequence,
+                           @"a ForEach boundary must qualify a SCALAR-input cap");
+        }];
     }
 }
 

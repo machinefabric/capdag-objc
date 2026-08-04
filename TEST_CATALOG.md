@@ -1,8 +1,8 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 891
+**Total Tests:** 895
 
-**Numbered Tests:** 891
+**Numbered Tests:** 895
 
 **Unnumbered Tests:** 0
 
@@ -120,8 +120,8 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test175 | `test175_messageIdUUIDUniqueness` | TEST175: Test two MessageId::new_uuid calls produce distinct IDs (no collisions) | Tests/BifaciTests/FrameTests.swift:118 |
 | test176 | `test176_messageIdUintHasNoUUIDString` | TEST176: Test MessageId::Uint does not produce a UUID string, to_uuid_string returns None | Tests/BifaciTests/FrameTests.swift:125 |
 | test177 | `test177_messageIdFromInvalidUUIDStr` | TEST177: Test MessageId::from_uuid_str rejects invalid UUID strings | Tests/BifaciTests/FrameTests.swift:132 |
-| test178 | `test178_messageIdAsBytes` | TEST178: Test MessageId::as_bytes produces correct byte representations for Uuid and Uint variants | Tests/BifaciTests/FrameTests.swift:1303 |
-| test179 | `test179_messageIdNewUUIDIsUUID` | TEST179: Test MessageId::default creates a UUID variant (not Uint) | Tests/BifaciTests/FrameTests.swift:1322 |
+| test178 | `test178_messageIdAsBytes` | TEST178: Test MessageId::as_bytes produces correct byte representations for Uuid and Uint variants | Tests/BifaciTests/FrameTests.swift:1318 |
+| test179 | `test179_messageIdNewUUIDIsUUID` | TEST179: Test MessageId::default creates a UUID variant (not Uint) | Tests/BifaciTests/FrameTests.swift:1337 |
 | test180 | `test180_helloFrame` | TEST180: Test Frame::hello without manifest produces correct HELLO frame for host side | Tests/BifaciTests/FrameTests.swift:166 |
 | test181 | `test181_helloFrameWithManifest` | TEST181: Test Frame::hello_with_manifest produces HELLO with manifest bytes for cartridge side | Tests/BifaciTests/FrameTests.swift:177 |
 | test182 | `test182_reqFrame` | TEST182: Test Frame::req stores cap URN, payload, and content_type correctly | Tests/BifaciTests/FrameTests.swift:193 |
@@ -135,8 +135,8 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test191 | `test191_errorAccessorsOnNonErrFrame` | TEST191: Test error_code and error_message return None for non-Err frame types | Tests/BifaciTests/FrameTests.swift:316 |
 | test192 | `test192_logAccessorsOnNonLogFrame` | TEST192: Test log_level and log_message return None for non-Log frame types | Tests/BifaciTests/FrameTests.swift:323 |
 | test193 | `test193_helloAccessorsOnNonHelloFrame` | TEST193: Test hello_max_frame and hello_max_chunk return None for non-Hello frame types | Tests/BifaciTests/FrameTests.swift:330 |
-| test194 | `test194_frameNewDefaults` | TEST194: Test Frame::new sets version and defaults correctly, optional fields are None | Tests/BifaciTests/FrameTests.swift:1333 |
-| test195 | `test195_frameDefaultType` | TEST195: Test Frame::default creates a Req frame (the documented default) | Tests/BifaciTests/FrameTests.swift:1358 |
+| test194 | `test194_frameNewDefaults` | TEST194: Test Frame::new sets version and defaults correctly, optional fields are None | Tests/BifaciTests/FrameTests.swift:1348 |
+| test195 | `test195_frameDefaultType` | TEST195: Test Frame::default creates a Req frame (the documented default) | Tests/BifaciTests/FrameTests.swift:1373 |
 | test196 | `test196_isEofWhenNil` | TEST196: Test is_eof returns false when eof field is None (unset) | Tests/BifaciTests/FrameTests.swift:338 |
 | test197 | `test197_isEofWhenFalse` | TEST197: Test is_eof returns false when eof field is explicitly Some(false) | Tests/BifaciTests/FrameTests.swift:345 |
 | test198 | `test198_limitsDefault` | TEST198: Test Limits::default provides the documented default values | Tests/BifaciTests/FrameTests.swift:352 |
@@ -170,7 +170,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test227 | `test227_decodeInvalidFrameTypeValue` | TEST227: Test decode_frame rejects CBOR map with invalid frame_type value | Tests/BifaciTests/FrameTests.swift:870 |
 | test228 | `test228_decodeMissingId` | TEST228: Test decode_frame rejects CBOR map missing required id field | Tests/BifaciTests/FrameTests.swift:888 |
 | test229 | `test229_frameReaderWriterSetLimits` | TEST229: Test FrameReader/FrameWriter set_limits updates the negotiated limits | Tests/BifaciTests/FrameTests.swift:907 |
-| test230 | `test230_syncHandshake` | TEST230: Test async handshake exchanges HELLO frames and negotiates minimum limits | Tests/BifaciTests/IntegrationTests.swift:450 |
+| test230 | `test230_syncHandshake` | TEST230: Test async handshake exchanges HELLO frames and negotiates minimum limits | Tests/BifaciTests/IntegrationTests.swift:452 |
 | test231 | `test231_attachCartridgeFailsOnWrongFrameType` | TEST231: Test handshake fails when peer sends non-HELLO frame | Tests/BifaciTests/RuntimeTests.swift:237 |
 | test232 | `test232_attachCartridgeFailsOnMissingManifest` | TEST232: Test handshake fails when cartridge HELLO is missing required manifest | Tests/BifaciTests/RuntimeTests.swift:203 |
 | test233 | `test233_binaryPayloadAllByteValues` | TEST233: Test binary payload with all 256 byte values roundtrips through encode/decode | Tests/BifaciTests/FrameTests.swift:923 |
@@ -222,11 +222,11 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test285 | `test285_requestResponseSimple` | TEST285: Simple request-response flow (REQ → END with payload) | Tests/BifaciTests/IntegrationTests.swift:90 |
 | test286 | `test286_streamingChunks` | TEST286: Streaming response with multiple CHUNK frames | Tests/BifaciTests/IntegrationTests.swift:140 |
 | test287 | `test287_heartbeatFromHost` | TEST287: Host-initiated heartbeat | Tests/BifaciTests/IntegrationTests.swift:206 |
-| test290 | `test290_limitsNegotiation` | TEST290: Limit negotiation picks minimum | Tests/BifaciTests/IntegrationTests.swift:252 |
-| test291 | `test291_binaryPayloadRoundtrip` | TEST291: Binary payload roundtrip (all 256 byte values) | Tests/BifaciTests/IntegrationTests.swift:287 |
-| test292 | `test292_messageIdUniqueness` | TEST292: Sequential requests get distinct MessageIds | Tests/BifaciTests/IntegrationTests.swift:346 |
+| test290 | `test290_limitsNegotiation` | TEST290: Limit negotiation picks minimum | Tests/BifaciTests/IntegrationTests.swift:254 |
+| test291 | `test291_binaryPayloadRoundtrip` | TEST291: Binary payload roundtrip (all 256 byte values) | Tests/BifaciTests/IntegrationTests.swift:289 |
+| test292 | `test292_messageIdUniqueness` | TEST292: Sequential requests get distinct MessageIds | Tests/BifaciTests/IntegrationTests.swift:348 |
 | test293 | `test293_cartridgeRuntimeHandlerRegistration` | TEST293: Test CartridgeRuntime Op registration and lookup by exact and non-existent cap URN | Tests/BifaciTests/RuntimeTests.swift:677 |
-| test299 | `test299_emptyPayloadRoundtrip` | TEST299: Empty payload request/response roundtrip | Tests/BifaciTests/IntegrationTests.swift:399 |
+| test299 | `test299_emptyPayloadRoundtrip` | TEST299: Empty payload request/response roundtrip | Tests/BifaciTests/IntegrationTests.swift:401 |
 | test304 | `test304_media_availability_output_constant` | TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:430 |
 | test305 | `test305_media_path_output_constant` | TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags | Tests/CapDAGTests/CSMediaUrnTests.m:441 |
 | test306 | `test306_availability_and_path_output_distinct` | TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs | Tests/CapDAGTests/CSMediaUrnTests.m:452 |
@@ -311,12 +311,12 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test433 | `test433_capability_aggregation_deduplicates` | TEST433: Capability aggregation deduplicates caps | Tests/BifaciTests/RelaySwitchTests.swift:483 |
 | test434 | `test434_limits_negotiation_minimum` | TEST434: Limits negotiation takes minimum | Tests/BifaciTests/RelaySwitchTests.swift:538 |
 | test435 | `test435_urn_matching_exact_and_accepts` | TEST435: URN matching (exact vs accepts()) Dispatch is contravariant on input (request input must conform to candidate input — i.e. request can be more specific) and covariant on output (candidate output must conform to request output — i.e. candidate can be more specific). A request whose input is in a different type family than any registered candidate has no handler. | Tests/BifaciTests/RelaySwitchTests.swift:588 |
-| test436 | `test436_computeChecksum` | TEST436: Verify FNV-1a checksum function produces consistent results | Tests/BifaciTests/FrameTests.swift:1365 |
+| test436 | `test436_computeChecksum` | TEST436: Verify FNV-1a checksum function produces consistent results | Tests/BifaciTests/FrameTests.swift:1380 |
 | test437 | `test437_preferredCapRoutesToExactMatch` | TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic candidate (in=media:) CAN dispatch specific request (in="media:ext=pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates | Tests/BifaciTests/RelaySwitchTests.swift:662 |
 | test438 | `test438_preferredCapExactMatch` | TEST438: find_master_for_cap with preference falls back to closest-specificity when preferred cap is not in the comparable set | Tests/BifaciTests/RelaySwitchTests.swift:702 |
 | test439 | `test439_specificRequestNoMatchingHandler` | TEST439: Generic candidate CAN dispatch specific request (but only matches if no more specific candidate exists) With is_dispatchable: generic candidate (in=media:) CAN handle specific request (in="media:ext=pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists. | Tests/BifaciTests/RelaySwitchTests.swift:742 |
-| test440 | `test440_chunkIndexChecksumRoundtrip` | TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode | Tests/BifaciTests/FrameTests.swift:1389 |
-| test441 | `test441_streamEndChunkCountRoundtrip` | TEST441: STREAM_END frame with chunk_count roundtrips through encode/decode | Tests/BifaciTests/FrameTests.swift:1407 |
+| test440 | `test440_chunkIndexChecksumRoundtrip` | TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode | Tests/BifaciTests/FrameTests.swift:1404 |
+| test441 | `test441_streamEndChunkCountRoundtrip` | TEST441: STREAM_END frame with chunk_count roundtrips through encode/decode | Tests/BifaciTests/FrameTests.swift:1422 |
 | test442 | `test442_seqAssignerMonotonicSameRid` | TEST442: SeqAssigner assigns seq 0,1,2,3 for consecutive frames with same RID | Tests/BifaciTests/FlowOrderingTests.swift:11 |
 | test443 | `test443_seqAssignerIndependentRids` | TEST443: SeqAssigner maintains independent counters for different RIDs | Tests/BifaciTests/FlowOrderingTests.swift:32 |
 | test444 | `test444_seqAssignerSkipsNonFlow` | TEST444: SeqAssigner skips non-flow frames (Heartbeat, RelayNotify, RelayState, Hello) | Tests/BifaciTests/FlowOrderingTests.swift:57 |
@@ -344,30 +344,30 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test478 | `test478_cartridgeRuntimeAutoRegistersIdentity` | TEST478: CartridgeRuntime auto-registers identity and discard handlers on construction | Tests/BifaciTests/StandardCapsTests.swift:135 |
 | test479 | `test479_identityHandlerEchoesInput` | TEST479: Custom identity Op overrides auto-registered default | Tests/BifaciTests/StandardCapsTests.swift:150 |
 | test480 | `test480_discardHandlerConsumesInput` | TEST480: parse_caps_from_manifest rejects manifest without CAP_IDENTITY | Tests/BifaciTests/StandardCapsTests.swift:218 |
-| test481 | `test481_verifyIdentitySucceeds` | TEST481: verify_identity succeeds with standard identity echo handler | Tests/BifaciTests/IntegrationTests.swift:497 |
-| test482 | `test482_verifyIdentityFailsOnErr` | TEST482: verify_identity fails when cartridge returns ERR on identity call | Tests/BifaciTests/IntegrationTests.swift:584 |
-| test483 | `test483_verifyIdentityFailsOnClose` | TEST483: verify_identity fails when connection closes before response | Tests/BifaciTests/IntegrationTests.swift:927 |
+| test481 | `test481_verifyIdentitySucceeds` | TEST481: verify_identity succeeds with standard identity echo handler | Tests/BifaciTests/IntegrationTests.swift:499 |
+| test482 | `test482_verifyIdentityFailsOnErr` | TEST482: verify_identity fails when cartridge returns ERR on identity call | Tests/BifaciTests/IntegrationTests.swift:586 |
+| test483 | `test483_verifyIdentityFailsOnClose` | TEST483: verify_identity fails when connection closes before response | Tests/BifaciTests/IntegrationTests.swift:929 |
 | test485 | `test485_attachCartridgeIdentityVerificationSucceeds` | TEST485: attach_cartridge completes identity verification with working cartridge | Tests/BifaciTests/RuntimeTests.swift:1378 |
 | test486 | `test486_attachCartridgeIdentityVerificationFails` | TEST486: attach_cartridge rejects cartridge that fails identity verification | Tests/BifaciTests/RuntimeTests.swift:1451 |
 | test487 | `test487_relaySwitchIdentityVerificationSucceeds` | TEST487: RelaySwitch construction verifies identity through relay chain | Tests/BifaciTests/RelaySwitchTests.swift:780 |
 | test488 | `test488_relaySwitchIdentityVerificationFails` | TEST488: RelaySwitch construction fails when master's identity verification fails | Tests/BifaciTests/RelaySwitchTests.swift:809 |
 | test490 | `test490_identityVerificationMultipleCartridges` | TEST490: Identity verification with multiple cartridges through single relay Both cartridges must pass identity verification independently before any real requests are routed. | Tests/BifaciTests/RuntimeTests.swift:1505 |
-| test491 | `test491_chunkRequiresChunkIndexAndChecksum` | TEST491: Frame::chunk constructor requires and sets chunk_index and checksum | Tests/BifaciTests/FrameTests.swift:1421 |
-| test492 | `test492_streamEndRequiresChunkCount` | TEST492: Frame::stream_end constructor requires and sets chunk_count | Tests/BifaciTests/FrameTests.swift:1433 |
-| test493 | `test493_computeChecksumFnv1aTestVectors` | TEST493: compute_checksum produces correct FNV-1a hash for known test vectors | Tests/BifaciTests/FrameTests.swift:1442 |
-| test494 | `test494_computeChecksumDeterministic` | TEST494: compute_checksum is deterministic | Tests/BifaciTests/FrameTests.swift:1460 |
-| test495 | `test495_cborRejectsChunkWithoutChunkIndex` | TEST495: CBOR decode REJECTS CHUNK frame missing chunk_index field | Tests/BifaciTests/FrameTests.swift:1472 |
-| test496 | `test496_cborRejectsChunkWithoutChecksum` | TEST496: CBOR decode REJECTS CHUNK frame missing checksum field | Tests/BifaciTests/FrameTests.swift:1496 |
-| test497 | `test497_chunkCorruptedPayloadRejected` | TEST497: Verify CHUNK frame with corrupted payload is rejected by checksum | Tests/BifaciTests/FrameTests.swift:1520 |
-| test498 | `test498_routingIdCborRoundtrip` | TEST498: routing_id field roundtrips through CBOR encoding | Tests/BifaciTests/FrameTests.swift:1536 |
-| test499 | `test499_chunkIndexChecksumCborRoundtrip` | TEST499: chunk_index and checksum roundtrip through CBOR encoding | Tests/BifaciTests/FrameTests.swift:1550 |
-| test500 | `test500_chunkCountCborRoundtrip` | TEST500: chunk_count roundtrips through CBOR encoding | Tests/BifaciTests/FrameTests.swift:1565 |
-| test501 | `test501_frameNewInitializesOptionalFieldsNone` | TEST501: Frame::new initializes new fields to None | Tests/BifaciTests/FrameTests.swift:1577 |
-| test502 | `test502_keysModuleNewFieldConstants` | TEST502: Keys module has constants for new fields | Tests/BifaciTests/FrameTests.swift:1587 |
-| test503 | `test503_computeChecksumEmptyData` | TEST503: compute_checksum handles empty data correctly | Tests/BifaciTests/FrameTests.swift:1595 |
-| test504 | `test504_computeChecksumLargePayload` | TEST504: compute_checksum handles large payloads without overflow | Tests/BifaciTests/FrameTests.swift:1603 |
-| test505 | `test505_chunkWithOffsetSetsChunkIndex` | TEST505: chunk_with_offset sets chunk_index correctly | Tests/BifaciTests/FrameTests.swift:1614 |
-| test506 | `test506_computeChecksumDifferentDataDifferentHash` | TEST506: Different data produces different checksums | Tests/BifaciTests/FrameTests.swift:1637 |
+| test491 | `test491_chunkRequiresChunkIndexAndChecksum` | TEST491: Frame::chunk constructor requires and sets chunk_index and checksum | Tests/BifaciTests/FrameTests.swift:1436 |
+| test492 | `test492_streamEndRequiresChunkCount` | TEST492: Frame::stream_end constructor requires and sets chunk_count | Tests/BifaciTests/FrameTests.swift:1448 |
+| test493 | `test493_computeChecksumFnv1aTestVectors` | TEST493: compute_checksum produces correct FNV-1a hash for known test vectors | Tests/BifaciTests/FrameTests.swift:1457 |
+| test494 | `test494_computeChecksumDeterministic` | TEST494: compute_checksum is deterministic | Tests/BifaciTests/FrameTests.swift:1475 |
+| test495 | `test495_cborRejectsChunkWithoutChunkIndex` | TEST495: CBOR decode REJECTS CHUNK frame missing chunk_index field | Tests/BifaciTests/FrameTests.swift:1487 |
+| test496 | `test496_cborRejectsChunkWithoutChecksum` | TEST496: CBOR decode REJECTS CHUNK frame missing checksum field | Tests/BifaciTests/FrameTests.swift:1511 |
+| test497 | `test497_chunkCorruptedPayloadRejected` | TEST497: Verify CHUNK frame with corrupted payload is rejected by checksum | Tests/BifaciTests/FrameTests.swift:1535 |
+| test498 | `test498_routingIdCborRoundtrip` | TEST498: routing_id field roundtrips through CBOR encoding | Tests/BifaciTests/FrameTests.swift:1551 |
+| test499 | `test499_chunkIndexChecksumCborRoundtrip` | TEST499: chunk_index and checksum roundtrip through CBOR encoding | Tests/BifaciTests/FrameTests.swift:1565 |
+| test500 | `test500_chunkCountCborRoundtrip` | TEST500: chunk_count roundtrips through CBOR encoding | Tests/BifaciTests/FrameTests.swift:1580 |
+| test501 | `test501_frameNewInitializesOptionalFieldsNone` | TEST501: Frame::new initializes new fields to None | Tests/BifaciTests/FrameTests.swift:1592 |
+| test502 | `test502_keysModuleNewFieldConstants` | TEST502: Keys module has constants for new fields | Tests/BifaciTests/FrameTests.swift:1602 |
+| test503 | `test503_computeChecksumEmptyData` | TEST503: compute_checksum handles empty data correctly | Tests/BifaciTests/FrameTests.swift:1610 |
+| test504 | `test504_computeChecksumLargePayload` | TEST504: compute_checksum handles large payloads without overflow | Tests/BifaciTests/FrameTests.swift:1618 |
+| test505 | `test505_chunkWithOffsetSetsChunkIndex` | TEST505: chunk_with_offset sets chunk_index correctly | Tests/BifaciTests/FrameTests.swift:1629 |
+| test506 | `test506_computeChecksumDifferentDataDifferentHash` | TEST506: Different data produces different checksums | Tests/BifaciTests/FrameTests.swift:1652 |
 | test507 | `test507_reorderBufferXidIsolation` | TEST507: ReorderBuffer isolates flows by XID (routing_id) - same RID different XIDs | Tests/BifaciTests/FlowOrderingTests.swift:496 |
 | test508 | `test508_reorderBufferDuplicateBufferedSeq` | TEST508: ReorderBuffer rejects duplicate seq already in buffer | Tests/BifaciTests/FlowOrderingTests.swift:519 |
 | test509 | `test509_reorderBufferLargeGapRejected` | TEST509: ReorderBuffer handles large seq gaps without DOS | Tests/BifaciTests/FlowOrderingTests.swift:540 |
@@ -383,13 +383,13 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test519 | `test519_reorderBufferMultipleRids` | TEST519: ReorderBuffer state persists across accept calls | Tests/BifaciTests/FlowOrderingTests.swift:786 |
 | test520 | `test520_reorderBufferDrainsBufferedFrames` | TEST520: ReorderBuffer max_buffer_per_flow is per-flow not global | Tests/BifaciTests/FlowOrderingTests.swift:808 |
 | test521 | `test521_relayNotifyCborRoundtrip` | TEST521: RelayNotify CBOR roundtrip preserves every required v4 limit, and incomplete or zero-credit limit sets are rejected without defaults. | Tests/BifaciTests/FrameTests.swift:1243 |
-| test522 | `test522_relayStateCborRoundtrip` | TEST522: RelayState CBOR roundtrip preserves payload | Tests/BifaciTests/FrameTests.swift:1263 |
-| test523 | `test523_relayNotifyNotFlowFrame` | TEST523: is_flow_frame returns false for RelayNotify | Tests/BifaciTests/FrameTests.swift:1652 |
-| test524 | `test524_relayStateNotFlowFrame` | TEST524: is_flow_frame returns false for RelayState | Tests/BifaciTests/FrameTests.swift:1658 |
-| test525 | `test525_relayNotifyEmptyManifest` | TEST525: RelayNotify with empty manifest is valid | Tests/BifaciTests/FrameTests.swift:1664 |
-| test526 | `test526_relayStateEmptyPayload` | TEST526: RelayState with empty payload is valid | Tests/BifaciTests/FrameTests.swift:1675 |
-| test527 | `test527_relayNotifyLargeManifest` | TEST527: RelayNotify with large manifest roundtrips correctly | Tests/BifaciTests/FrameTests.swift:1686 |
-| test528 | `test528_relayFramesUseUintZeroId` | TEST528: RelayNotify and RelayState use MessageId::Uint(0) | Tests/BifaciTests/FrameTests.swift:1698 |
+| test522 | `test522_relayStateCborRoundtrip` | TEST522: RelayState CBOR roundtrip preserves payload | Tests/BifaciTests/FrameTests.swift:1278 |
+| test523 | `test523_relayNotifyNotFlowFrame` | TEST523: is_flow_frame returns false for RelayNotify | Tests/BifaciTests/FrameTests.swift:1667 |
+| test524 | `test524_relayStateNotFlowFrame` | TEST524: is_flow_frame returns false for RelayState | Tests/BifaciTests/FrameTests.swift:1673 |
+| test525 | `test525_relayNotifyEmptyManifest` | TEST525: RelayNotify with empty manifest is valid | Tests/BifaciTests/FrameTests.swift:1679 |
+| test526 | `test526_relayStateEmptyPayload` | TEST526: RelayState with empty payload is valid | Tests/BifaciTests/FrameTests.swift:1690 |
+| test527 | `test527_relayNotifyLargeManifest` | TEST527: RelayNotify with large manifest roundtrips correctly | Tests/BifaciTests/FrameTests.swift:1701 |
+| test528 | `test528_relayFramesUseUintZeroId` | TEST528: RelayNotify and RelayState use MessageId::Uint(0) | Tests/BifaciTests/FrameTests.swift:1713 |
 | test529 | `test529_inputStreamIteratorOrder` | TEST529: InputStream recv yields chunks in order | Tests/BifaciTests/StreamingAPITests.swift:21 |
 | test530 | `test530_inputStreamCollectBytes` | TEST530: InputStream::collect_bytes concatenates byte chunks | Tests/BifaciTests/StreamingAPITests.swift:58 |
 | test531 | `test531_inputStreamCollectBytesText` | TEST531: InputStream::collect_bytes handles text chunks | Tests/BifaciTests/StreamingAPITests.swift:80 |
@@ -431,14 +431,14 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test648 | `test648_Wildcard010WildcardAcceptsSpecific` | TEST_WILDCARD_010: Wildcard in/out match specific caps | Tests/CapDAGTests/CSCapUrnTests.m:1100 |
 | test649 | `test649_Wildcard011SpecificityScoring` | TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count | Tests/CapDAGTests/CSCapUrnTests.m:1110 |
 | test0650 | `test0650_Wildcard012PreserveOtherTags` | TEST_WILDCARD_012: cap:in=media:;out=media:;test preserves other tags | Tests/CapDAGTests/CSCapUrnTests.m:1120 |
-| test658 | `test658_heartbeatResponse` | TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID | Tests/BifaciTests/InProcessCartridgeHostTests.swift:314 |
-| test659 | `test659_handlerErrorReturnsErrFrame` | TEST659: InProcessCartridgeHost handler error returns ERR frame | Tests/BifaciTests/InProcessCartridgeHostTests.swift:348 |
-| test660 | `test660_closestSpecificityRouting` | TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity | Tests/BifaciTests/InProcessCartridgeHostTests.swift:394 |
+| test658 | `test658_heartbeatResponse` | TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID | Tests/BifaciTests/InProcessCartridgeHostTests.swift:316 |
+| test659 | `test659_handlerErrorReturnsErrFrame` | TEST659: InProcessCartridgeHost handler error returns ERR frame | Tests/BifaciTests/InProcessCartridgeHostTests.swift:351 |
+| test660 | `test660_closestSpecificityRouting` | TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity | Tests/BifaciTests/InProcessCartridgeHostTests.swift:397 |
 | test662 | `test662_rebuildCapabilitiesIncludesNonRunningCartridges` | TEST662: rebuild_capabilities includes non-running cartridges' caps (each cartridge's `cap_groups` is the source of truth, regardless of whether its process has been spawned yet). | Tests/BifaciTests/RuntimeTests.swift:1150 |
 | test663 | `test663_helloFailedCartridgeRemovedFromCapabilities` | TEST663: Cartridge with hello_failed is permanently removed from capabilities | Tests/BifaciTests/RuntimeTests.swift:1175 |
 | test664 | `test664_runningCartridgeUsesManifestCaps` | TEST664: Running cartridge uses manifest caps, not known_caps | Tests/BifaciTests/RuntimeTests.swift:1214 |
 | test665 | `test665_capTableMixedRunningAndNonRunning` | TEST665: Cap table aggregates caps from every healthy cartridge — attached/running cartridges contribute their post-HELLO cap_groups, registered-but-not-yet-spawned cartridges contribute their probe-time cap_groups. Both flow through the same `cap_urns()` view. | Tests/BifaciTests/RuntimeTests.swift:1253 |
-| test667 | `test667_verifyChunkChecksumDetectsCorruption` | TEST667: verify_chunk_checksum detects corrupted payload | Tests/BifaciTests/FrameTests.swift:1275 |
+| test667 | `test667_verifyChunkChecksumDetectsCorruption` | TEST667: verify_chunk_checksum detects corrupted payload | Tests/BifaciTests/FrameTests.swift:1290 |
 | test678 | `test678_findStreamEquivalentUrnDifferentTagOrder` | TEST678: find_stream with exact equivalent URN (same tags, different order) succeeds | Tests/BifaciTests/StreamingAPITests.swift:579 |
 | test679 | `test679_findStreamBaseUrnDoesNotMatchFullUrn` | TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:fmt=json;llm-generation-request;record". | Tests/BifaciTests/StreamingAPITests.swift:592 |
 | test680 | `test680_requireStreamMissingUrnReturnsError` | TEST680: require_stream with missing URN returns hard StreamError | Tests/BifaciTests/StreamingAPITests.swift:603 |
@@ -496,7 +496,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test784 | `test784_splitInvalidCbor` | TEST784: split_cbor_array rejects invalid CBOR bytes | Tests/BifaciTests/CborSequenceTests.swift:302 |
 | test785 | `test785_assembleIntegerArray` | TEST785: assemble_cbor_array creates array from individual items | Tests/BifaciTests/CborSequenceTests.swift:321 |
 | test786 | `test786_roundtripSplitAssemble` | TEST786: split then assemble roundtrip preserves data | Tests/BifaciTests/CborSequenceTests.swift:342 |
-| test790 | `test790_identityUrnSpecific` | TEST790: Tests identity_urn is specific and doesn't match everything | Tests/CapDAGTests/CSLiveCapFabTests.m:353 |
+| test790 | `test790_identityUrnSpecific` | TEST790: Tests identity_urn is specific and doesn't match everything | Tests/CapDAGTests/CSLiveCapFabTests.m:415 |
 | test810 | `test810_splitSequenceBytes` | TEST810: Tests EdgeType::JsonPath extracts values using nested path expressions Verifies that JsonPath edge type correctly navigates through multiple levels like "data.nested.value" | Tests/BifaciTests/CborSequenceTests.swift:26 |
 | test811 | `test811_splitSequenceText` | TEST811: Tests EdgeType::Iteration preserves array values for iterative processing Verifies that Iteration edge type passes through arrays unchanged to enable ForEach patterns | Tests/BifaciTests/CborSequenceTests.swift:50 |
 | test812 | `test812_splitSequenceMixed` | TEST812: Tests EdgeType::Collection preserves collected values without transformation Verifies that Collection edge type maintains structure for aggregation patterns | Tests/BifaciTests/CborSequenceTests.swift:66 |
@@ -533,8 +533,8 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test843 | `test843_runWithKeepaliveReturnsResultType` | TEST843: run_with_keepalive returns Ok/Err from closure | Tests/BifaciTests/StreamingAPITests.swift:826 |
 | test844 | `test844_runWithKeepalivePropagatesError` | TEST844: run_with_keepalive propagates errors from closure | Tests/BifaciTests/StreamingAPITests.swift:844 |
 | test845 | `test845_progressSenderEmitsFrames` | TEST845: ProgressSender emits progress and log frames independently of OutputStream | Tests/BifaciTests/StreamingAPITests.swift:872 |
-| test846 | `test846_progressFrameRoundtrip` | TEST846: Test progress LOG frame encode/decode roundtrip preserves progress float | Tests/BifaciTests/FrameTests.swift:1753 |
-| test847 | `test847_progressDoubleRoundtrip` | TEST847: Double roundtrip (modelcartridge → relay → candlecartridge) | Tests/BifaciTests/FrameTests.swift:1790 |
+| test846 | `test846_progressFrameRoundtrip` | TEST846: Test progress LOG frame encode/decode roundtrip preserves progress float | Tests/BifaciTests/FrameTests.swift:1768 |
+| test847 | `test847_progressDoubleRoundtrip` | TEST847: Double roundtrip (modelcartridge → relay → candlecartridge) | Tests/BifaciTests/FrameTests.swift:1805 |
 | test852 | `test852_lub_identical` | TEST852: LUB of identical URNs returns the same URN | Tests/CapDAGTests/CSMediaUrnTests.m:18 |
 | test853 | `test853_lub_no_common_tags` | TEST853: LUB of URNs with no common tags returns media: (universal) | Tests/CapDAGTests/CSMediaUrnTests.m:27 |
 | test854 | `test854_lub_partial_overlap` | TEST854: LUB keeps common tags, drops differing ones | Tests/CapDAGTests/CSMediaUrnTests.m:41 |
@@ -548,13 +548,13 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test891 | `test891_directionSemanticSpecificity` | TEST891: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052) | Tests/CapDAGTests/CSCapUrnTests.m:998 |
 | test893 | `test893_ExtensionsWithMetadataAndValidation` | TEST893: Test extensions can coexist with metadata and validation | Tests/CapDAGTests/CSMediaDefTests.m:168 |
 | test894 | `test894_MultipleExtensions` | TEST894: Test multiple extensions in a media def | Tests/CapDAGTests/CSMediaDefTests.m:201 |
-| test898 | `test898_binaryIntegrityThroughRelay` | TEST898: Binary data integrity through full relay path (256 byte values) | Tests/BifaciTests/IntegrationTests.swift:745 |
-| test899 | `test899_streamingChunksThroughRelay` | TEST899: Streaming chunks flow through relay without accumulation | Tests/BifaciTests/IntegrationTests.swift:803 |
-| test900 | `test900_twoCartridgesRoutedIndependently` | TEST900: Two cartridges routed independently by cap_urn | Tests/BifaciTests/IntegrationTests.swift:860 |
+| test898 | `test898_binaryIntegrityThroughRelay` | TEST898: Binary data integrity through full relay path (256 byte values) | Tests/BifaciTests/IntegrationTests.swift:747 |
+| test899 | `test899_streamingChunksThroughRelay` | TEST899: Streaming chunks flow through relay without accumulation | Tests/BifaciTests/IntegrationTests.swift:805 |
+| test900 | `test900_twoCartridgesRoutedIndependently` | TEST900: Two cartridges routed independently by cap_urn | Tests/BifaciTests/IntegrationTests.swift:862 |
 | test901 | `test901_reqForUnknownCapReturnsErr` | TEST901: REQ for unknown cap returns ERR frame (not fatal) | Tests/BifaciTests/RuntimeTests.swift:624 |
-| test902 | `test902_computeChecksumEmpty` | TEST902: Verify FNV-1a checksum handles empty data | Tests/BifaciTests/FrameTests.swift:1707 |
-| test903 | `test903_chunkWithChunkIndexAndChecksum` | TEST903: Verify CHUNK frame can store chunk_index and checksum fields | Tests/BifaciTests/FrameTests.swift:1714 |
-| test904 | `test904_streamEndWithChunkCount` | TEST904: Verify STREAM_END frame can store chunk_count field | Tests/BifaciTests/FrameTests.swift:1727 |
+| test902 | `test902_computeChecksumEmpty` | TEST902: Verify FNV-1a checksum handles empty data | Tests/BifaciTests/FrameTests.swift:1722 |
+| test903 | `test903_chunkWithChunkIndexAndChecksum` | TEST903: Verify CHUNK frame can store chunk_index and checksum fields | Tests/BifaciTests/FrameTests.swift:1729 |
+| test904 | `test904_streamEndWithChunkCount` | TEST904: Verify STREAM_END frame can store chunk_count field | Tests/BifaciTests/FrameTests.swift:1742 |
 | test908 | `test908_map_progress_basic_mapping` | TEST908: cached caps remain accessible while offline. | Tests/CapDAGTests/CSProgressMapperTests.m:17 |
 | test910 | `test910_map_progress_monotonic` | TEST910: map_progress output is monotonic for monotonically increasing input | Tests/CapDAGTests/CSProgressMapperTests.m:44 |
 | test911 | `test911_map_progress_bounded` | TEST911: map_progress output is bounded within [base, base+weight] | Tests/CapDAGTests/CSProgressMapperTests.m:56 |
@@ -626,16 +626,16 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1093 | `test1093_dir_single_file` | TEST1093: 1 dir with 1 file → is_sequence=false | Tests/CapDAGTests/CSInputResolverTests.m:390 |
 | test1094 | `test1094_dir_multiple_files` | TEST1094: 1 dir with 3 files → is_sequence=true | Tests/CapDAGTests/CSInputResolverTests.m:404 |
 | test1098 | `test1098_extension_based_pdf` | TEST1098: Extension-based detection picks up pdf tag for .pdf files | Tests/CapDAGTests/CSInputResolverTests.m:420 |
-| test1122 | `test1122_fullPathEngineReqToCartridgeResponse` | TEST1122: All cap input media defs that represent user files must have extensions. These are the entry points — the file types users can right-click on. | Tests/BifaciTests/IntegrationTests.swift:636 |
-| test1123 | `test1123_cartridgeErrorFlowsToEngine` | TEST1123: Verify that specific cap output URNs resolve to the correct extension. This catches misconfigurations where a spec exists but has the wrong extension. | Tests/BifaciTests/IntegrationTests.swift:703 |
+| test1122 | `test1122_fullPathEngineReqToCartridgeResponse` | TEST1122: All cap input media defs that represent user files must have extensions. These are the entry points — the file types users can right-click on. | Tests/BifaciTests/IntegrationTests.swift:638 |
+| test1123 | `test1123_cartridgeErrorFlowsToEngine` | TEST1123: Verify that specific cap output URNs resolve to the correct extension. This catches misconfigurations where a spec exists but has the wrong extension. | Tests/BifaciTests/IntegrationTests.swift:705 |
 | test1126 | `test1126_map_progress_deterministic` | TEST1126: set_offline(false) restores fetch ability (would fail with HTTP error, not NetworkBlocked) | Tests/CapDAGTests/CSProgressMapperTests.m:34 |
 | test1144 | `test1144_content_structure_helpers` | TEST1144: ContentStructure is_list/is_record helpers and Display implementation are correct | Tests/CapDAGTests/CSInputResolverTests.m:440 |
 | test1145 | `test1145_resolved_input_set_uses_equivalent_media_and_file_count_cardinality` | TEST1145: ResolvedInputSet uses URN equivalence for common_media and file count for is_sequence | Tests/CapDAGTests/CSInputResolverTests.m:471 |
-| test1150 | `test1150_AddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapFabTests.m:32 |
-| test1151 | `test1151_ExactVsConformanceMatching` | TEST1151: Exact vs conformance matching | Tests/CapDAGTests/CSLiveCapFabTests.m:51 |
-| test1152 | `test1152_MultiStepPath` | TEST1152: Multi step path | Tests/CapDAGTests/CSLiveCapFabTests.m:82 |
-| test1153 | `test1153_DeterministicOrdering` | TEST1153: Deterministic ordering | Tests/CapDAGTests/CSLiveCapFabTests.m:103 |
-| test1154 | `test1154_SyncFromCaps` | TEST1154: Sync from caps | Tests/CapDAGTests/CSLiveCapFabTests.m:128 |
+| test1150 | `test1150_AddCapAndBasicTraversal` | MARK: - Basic Tests (unnumbered, match Rust unnumbered tests) | Tests/CapDAGTests/CSLiveCapFabTests.m:36 |
+| test1151 | `test1151_ExactVsConformanceMatching` | TEST1151: Exact vs conformance matching | Tests/CapDAGTests/CSLiveCapFabTests.m:55 |
+| test1152 | `test1152_MultiStepPath` | TEST1152: Multi step path | Tests/CapDAGTests/CSLiveCapFabTests.m:86 |
+| test1153 | `test1153_DeterministicOrdering` | TEST1153: Deterministic ordering | Tests/CapDAGTests/CSLiveCapFabTests.m:107 |
+| test1154 | `test1154_SyncFromCaps` | TEST1154: Sync from caps | Tests/CapDAGTests/CSLiveCapFabTests.m:132 |
 | test1270 | `test1270_getOwnMemoryMbReturnsValues` | TEST1270: Runtime memory inspection returns non-negative resident and virtual memory values. `getOwnMemoryMb` calls `proc_pid_rusage(getpid())` which must always work — even in a sandbox (the sandbox only blocks querying OTHER processes). If it returns nil on macOS, the self-reporting mechanism is broken and cartridges will report 0 footprint. | Tests/BifaciTests/CartridgeRuntimeTests.swift:534 |
 | test1271 | `test1271_mediaAdapterSelectionConstant` | TEST1271: MEDIA_ADAPTER_SELECTION constant parses and has expected tags | Tests/BifaciTests/StandardCapsTests.swift:41 |
 | test1272 | `test1272_adapterCapConstantParses` | TEST1272: CAP_ADAPTER_SELECTION constant parses as a valid CapUrn | Tests/BifaciTests/StandardCapsTests.swift:55 |
@@ -720,13 +720,13 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1897 | `test1897_unhealthyMasterInventoryRetainedButNotRoutable` | TEST1897: the installed-cartridge INVENTORY is NOT health-filtered. A master held unhealthy by a failed runtime identity probe still has its cartridges visible in the aggregate inventory, even though its caps are excluded from ROUTING. Pins the deliberate asymmetry. | Tests/BifaciTests/RelaySwitchTests.swift:1198 |
 | test1898 | `test1898_subscribeCapabilitiesDeliversRoutableSet` | TEST1898: the routable-capability watch (subscribeCapabilities). A subscriber must receive the CURRENT routable cap set on subscribe even though it was rebuilt during construction — BEFORE any receiver existed (the watch must persist the value, i.e. send_replace semantics). The delivered set must be the health-filtered routable cap URNs. | Tests/BifaciTests/RelaySwitchTests.swift:1249 |
 | test1899 | `test1899_mediaDefResolvesToVersionedObjectPathUnderManifest` | TEST1899: a media def published under a manifest (v >= 1) resolves to the VERSIONED object path `/media/<sha>/<defver>.json`, never the legacy flat path `/media/<sha>`. The flat path is the pre-manifest (v0) layout; a registry that silently runs in v0 mode fetches it and 404s every lookup against a versioned registry — the exact regression where the app's media-title resolver hit `/media/<sha>` on a staging-v1 registry and logged "Media def … not found (HTTP 404)". This pins BOTH the URL rule and the manifest-driven defver resolution. Mirrors the Rust reference's test0144_media_def_resolves_to_versioned_object_path_under_manifest. | Tests/CapDAGTests/CSFabricRegistryTests.m:66 |
-| test1900 | `test1900_errFrameAttributionClassWireContract` | TEST1900: ERR attribution is mandatory and strict. Missing and unknown tokens are protocol violations rather than compatibility defaults. | Tests/BifaciTests/FrameTests.swift:2002 |
+| test1900 | `test1900_errFrameAttributionClassWireContract` | TEST1900: ERR attribution is mandatory and strict. Missing and unknown tokens are protocol violations rather than compatibility defaults. | Tests/BifaciTests/FrameTests.swift:2017 |
 | test1905 | `test1905_peerReqNoHandlerSendsErrToCaller` | TEST0142 (Swift-specific, gap 3): a peer cartridge→cartridge REQ for a cap with NO handler must NOT abort the pump. The switch sends an ERR("NO_HANDLER") frame straight back to the calling master (stamped with the synthetic XID) so the caller fails fast, and handleMasterFrame returns nil — it must NOT throw. | Tests/BifaciTests/RelaySwitchTests.swift:1302 |
 | test6200 | `test6200_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:277 |
 | test6205 | `test6205_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:293 |
 | test6207 | `test6207_concatenatedVsFinalPayloadDivergence` | Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk | Tests/BifaciTests/RuntimeTests.swift:1105 |
-| test6209 | `test6209_RunExitKillsAllManagedCartridges` | / Contract #1: when `run()` exits because the relay closed, / every running cartridge is torn down and the observer is / fired with a death notification for each. The Rust reference / enforces this by calling `kill_all_cartridges().await` at / the very end of `run()`. The Swift mirror's previous / behavior was to leak cartridges across reconnects, which is / what allowed the XPC-service NSConcreteData accumulator bug. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:66 |
-| test6213 | `test6213_NewHostInstancePerRelaySession` | / Contract #2 (well-behaved path): one host → one run() → / drop. The misuse path (calling run() twice) is enforced via / `precondition` and is not death-tested here — the well- / behaved path is sufficient because if the precondition were / silently disabled, the prior test (`testRunExitKills…`) / would still pass on the first invocation but the second / call would race with itself and fail intermittently. This / test documents the contract by demonstrating that a fresh / `CartridgeHost` instance is the only correct way to start / a new relay session. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:141 |
+| test6209 | `test6209_RunExitKillsAllManagedCartridges` | / Contract #1: when `run()` exits because the relay closed, / every running cartridge is torn down and the observer is / fired with a death notification for each. The Rust reference / enforces this by calling `kill_all_cartridges().await` at / the very end of `run()`. The Swift mirror's previous / behavior was to leak cartridges across reconnects, which is / what allowed the XPC-service NSConcreteData accumulator bug. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:105 |
+| test6213 | `test6213_NewHostInstancePerRelaySession` | / Contract #2 (well-behaved path): one host → one run() → / drop. The misuse path (calling run() twice) is enforced via / `precondition` and is not death-tested here — the well- / behaved path is sufficient because if the precondition were / silently disabled, the prior test (`testRunExitKills…`) / would still pass on the first invocation but the second / call would race with itself and fail intermittently. This / test documents the contract by demonstrating that a fresh / `CartridgeHost` instance is the only correct way to start / a new relay session. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:180 |
 | test6217 | `test6217_HostConstructsAndClosesWithoutAnObserver` | TEST6217: Host constructs and closes without an observer | Tests/BifaciTests/CartridgeHostObserverTests.swift:54 |
 | test6221 | `test6221_SetObserverNilClearsThePreviouslyRegisteredObserver` | TEST6221: Set observer nil clears the previously registered observer | Tests/BifaciTests/CartridgeHostObserverTests.swift:64 |
 | test6229 | `test6229_b_limitsNegotiation` | TEST198 (continued): Limits negotiation picks minimum of both sides | Tests/BifaciTests/FrameTests.swift:360 |
@@ -826,22 +826,22 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test6598 | `test6598_manifestValidatePassesWithIdentity` | TEST6598: CapManifest::validate() passes when CAP_IDENTITY is present | Tests/BifaciTests/StandardCapsTests.swift:81 |
 | test6599 | `test6599_manifestValidateFailsWithoutIdentity` | TEST6599: CapManifest::validate() fails when CAP_IDENTITY is missing | Tests/BifaciTests/StandardCapsTests.swift:96 |
 | test6623 | `test6623_cartridgeDeathKeepsKnownCapsAdvertised` | TEST6623: Cartridge death keeps caps advertised for on-demand respawn. Identity is the gating filter for advertisement; we provision a real cartridge directory with a valid `cartridge.json` so the cartridge has a resolvable identity. cap_table routes regardless of identity (in-process / attached cartridges still need to be dispatchable), but the relay payload only advertises cartridges with identity records. | Tests/BifaciTests/RuntimeTests.swift:1128 |
-| test6650 | `test6650_findPathsMultiStep` | TEST6650: Multi-step path through intermediate node | Tests/CapDAGTests/CSLiveCapFabTests.m:153 |
-| test6651 | `test6651_findPathsEmptyWhenNoPath` | TEST6651: Empty when target unreachable | Tests/CapDAGTests/CSLiveCapFabTests.m:175 |
-| test6652 | `test6652_getReachableTargetsAll` | TEST6652: BFS finds multiple direct targets | Tests/CapDAGTests/CSLiveCapFabTests.m:191 |
-| test6653 | `test6653_typeMismatchPdfPng` | TEST6653: PDF cap does not match PNG input | Tests/CapDAGTests/CSLiveCapFabTests.m:214 |
-| test6654 | `test6654_typeMismatchPngPdf` | TEST6654: PNG cap does not match PDF input | Tests/CapDAGTests/CSLiveCapFabTests.m:229 |
-| test6655 | `test6655_reachableTargetsTypeMatching` | TEST6655: BFS respects type matching | Tests/CapDAGTests/CSLiveCapFabTests.m:244 |
-| test6656 | `test6656_findPathsTypeChain` | TEST6656: Multi-step type chain enforcement | Tests/CapDAGTests/CSLiveCapFabTests.m:267 |
-| test6657 | `test6657_sortingShorterFirst` | TEST6657: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapFabTests.m:290 |
-| test6658 | `test6658_forEachWithSequenceInput` | TEST6658: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapFabTests.m:312 |
-| test6672 | `test6672_cborAcceptsStreamEndWithoutChunkCount` | TEST6672: CBOR decode ACCEPTS STREAM_END without chunk_count — unbounded streams make no length promise (v3, L16) | Tests/BifaciTests/FrameTests.swift:1737 |
-| test6720 | `test6720_writeAfterCloseThrowsCleanly` | TEST6720: Writing to a closed FrameWriter must throw FrameError.ioError("writer closed"), never raise an Objective-C NSException that aborts the process. | Tests/BifaciTests/FrameTests.swift:1837 |
-| test6721 | `test6721_doubleCloseIsIdempotent` | TEST6721: Calling close() twice on a FrameWriter is a no-op — the second call must not throw, must not double-close the underlying fd, and must leave the writer in the closed state. | Tests/BifaciTests/FrameTests.swift:1862 |
-| test6722 | `test6722_flushAfterCloseThrowsCleanly` | TEST6722: flush() on a closed FrameWriter — even with an empty buffer — must throw FrameError.ioError, not silently succeed. A flush call after close() is a programmer error and must surface, not be papered over. | Tests/BifaciTests/FrameTests.swift:1885 |
-| test6723 | `test6723_concurrentCloseAndWriteDoesNotCrash` | TEST6723: Concurrent close() + write() must not raise an Objective-C NSException. This is the regression test for the CartridgeXPCService crash on cartridge OOM: the old writer accessed `handle.fileDescriptor` on every write, so a close() racing a write() called the accessor on a closed handle and aborted the process. The cached-fd writer keeps the descriptor in the writer's own state, so the worst outcome of the race is a clean FrameError thrown from write(). | Tests/BifaciTests/FrameTests.swift:1899 |
-| test6724 | `test6724_closeShutsTheUnderlyingPipe` | TEST6724: After FrameWriter.close(), the underlying FileHandle is closed. A subsequent read on the paired read end must observe EOF — proving that close() actually closes the pipe (not just marks the writer dead in software). This guards against the regression where close() flips the writer flag but leaves the pipe open, which would let buffered data still drain into a peer that's been told the writer is gone. | Tests/BifaciTests/FrameTests.swift:1966 |
-| test6725 | `test6725_deinitDoesNotAccessClosedHandle` | TEST6725: A FrameWriter going through deinit must NOT touch the underlying handle's `fileDescriptor` accessor. The original bug used to deinit-flush by reading `handle.fileDescriptor`, which raises NSFileHandleOperationException on a closed handle and aborts the process. The new contract: deinit does no I/O. This test deinits a writer whose handle was closed externally, then asserts the test process is still alive (i.e. did not crash via NSException). | Tests/BifaciTests/FrameTests.swift:1978 |
+| test6650 | `test6650_findPathsMultiStep` | TEST6650: Multi-step path through intermediate node | Tests/CapDAGTests/CSLiveCapFabTests.m:157 |
+| test6651 | `test6651_findPathsEmptyWhenNoPath` | TEST6651: Empty when target unreachable | Tests/CapDAGTests/CSLiveCapFabTests.m:179 |
+| test6652 | `test6652_getReachableTargetsAll` | TEST6652: BFS finds multiple direct targets | Tests/CapDAGTests/CSLiveCapFabTests.m:195 |
+| test6653 | `test6653_typeMismatchPdfPng` | TEST6653: PDF cap does not match PNG input | Tests/CapDAGTests/CSLiveCapFabTests.m:218 |
+| test6654 | `test6654_typeMismatchPngPdf` | TEST6654: PNG cap does not match PDF input | Tests/CapDAGTests/CSLiveCapFabTests.m:233 |
+| test6655 | `test6655_reachableTargetsTypeMatching` | TEST6655: BFS respects type matching | Tests/CapDAGTests/CSLiveCapFabTests.m:248 |
+| test6656 | `test6656_findPathsTypeChain` | TEST6656: Multi-step type chain enforcement | Tests/CapDAGTests/CSLiveCapFabTests.m:271 |
+| test6657 | `test6657_sortingShorterFirst` | TEST6657: Sorting prefers shorter paths | Tests/CapDAGTests/CSLiveCapFabTests.m:294 |
+| test6658 | `test6658_forEachWithSequenceInput` | TEST6658: ForEach synthesized when input is a sequence | Tests/CapDAGTests/CSLiveCapFabTests.m:316 |
+| test6672 | `test6672_cborAcceptsStreamEndWithoutChunkCount` | TEST6672: CBOR decode ACCEPTS STREAM_END without chunk_count — unbounded streams make no length promise (v3, L16) | Tests/BifaciTests/FrameTests.swift:1752 |
+| test6720 | `test6720_writeAfterCloseThrowsCleanly` | TEST6720: Writing to a closed FrameWriter must throw FrameError.ioError("writer closed"), never raise an Objective-C NSException that aborts the process. | Tests/BifaciTests/FrameTests.swift:1852 |
+| test6721 | `test6721_doubleCloseIsIdempotent` | TEST6721: Calling close() twice on a FrameWriter is a no-op — the second call must not throw, must not double-close the underlying fd, and must leave the writer in the closed state. | Tests/BifaciTests/FrameTests.swift:1877 |
+| test6722 | `test6722_flushAfterCloseThrowsCleanly` | TEST6722: flush() on a closed FrameWriter — even with an empty buffer — must throw FrameError.ioError, not silently succeed. A flush call after close() is a programmer error and must surface, not be papered over. | Tests/BifaciTests/FrameTests.swift:1900 |
+| test6723 | `test6723_concurrentCloseAndWriteDoesNotCrash` | TEST6723: Concurrent close() + write() must not raise an Objective-C NSException. This is the regression test for the CartridgeXPCService crash on cartridge OOM: the old writer accessed `handle.fileDescriptor` on every write, so a close() racing a write() called the accessor on a closed handle and aborted the process. The cached-fd writer keeps the descriptor in the writer's own state, so the worst outcome of the race is a clean FrameError thrown from write(). | Tests/BifaciTests/FrameTests.swift:1914 |
+| test6724 | `test6724_closeShutsTheUnderlyingPipe` | TEST6724: After FrameWriter.close(), the underlying FileHandle is closed. A subsequent read on the paired read end must observe EOF — proving that close() actually closes the pipe (not just marks the writer dead in software). This guards against the regression where close() flips the writer flag but leaves the pipe open, which would let buffered data still drain into a peer that's been told the writer is gone. | Tests/BifaciTests/FrameTests.swift:1981 |
+| test6725 | `test6725_deinitDoesNotAccessClosedHandle` | TEST6725: A FrameWriter going through deinit must NOT touch the underlying handle's `fileDescriptor` accessor. The original bug used to deinit-flush by reading `handle.fileDescriptor`, which raises NSFileHandleOperationException on a closed handle and aborts the process. The new contract: deinit does no I/O. This test deinits a writer whose handle was closed externally, then asserts the test process is still alive (i.e. did not crash via NSException). | Tests/BifaciTests/FrameTests.swift:1993 |
 | test6734 | `test6734_reject_invalid_combinations` | TEST6734: Invalid qualifier combinations must be rejected. | Tests/CapDAGTests/CSCapUrnTests.m:1836 |
 | test6735 | `test6735_axis_weighting_out_dominates` | TEST6735: out-axis difference dominates combined in+y differences. | Tests/CapDAGTests/CSCapUrnTests.m:1852 |
 | test6736 | `test6736_axis_weighting_decoded_layout` | TEST6736: Decoded layout — 10000*out + 100*in + y. | Tests/CapDAGTests/CSCapUrnTests.m:1878 |
@@ -893,7 +893,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test7086 | `test7086_dropSnapshotMatchesInducedDrops` | TEST7086: One runtime's drop counters aggregate every drop source — post-terminal writer drops and closed-channel sends — each counted exactly once, and the snapshot totals match the induced drops. | Tests/BifaciTests/ProtocolV4RuntimeTests.swift:164 |
 | test7087 | `test7087_snapshotFieldNamesAreStable` | TEST7087: Protocol stats snapshots serialize with stable field names — the snapshot shape is the mirror contract. | Tests/BifaciTests/RequestStateTests.swift:61 |
 | test7088 | `test7088_lastActivityMonotonic` | TEST7088: last_activity is monotonic non-decreasing across a long-lived streaming request — idle time resets on every recorded frame and never runs backwards. | Tests/BifaciTests/RequestStateTests.swift:110 |
-| test7089 | `test7089_helloFailedStaysInInventoryWithError` | TEST7089: A cartridge whose HELLO permanently failed stays IN the inventory advertisement carrying a handshake_failed attachment error and no cap groups — failure is named, never silently absent; a roster-retired cartridge disappears entirely. (The reference drives hello_failed directly and merges daemon-provided static inventory records; on this host both flow through `syncDiscoveryOutcomes` — the macOS discovery authority.) | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:369 |
+| test7089 | `test7089_helloFailedStaysInInventoryWithError` | TEST7089: A cartridge whose HELLO permanently failed stays IN the inventory advertisement carrying a handshake_failed attachment error and no cap groups — failure is named, never silently absent; a roster-retired cartridge disappears entirely. (The reference drives hello_failed directly and merges daemon-provided static inventory records; on this host both flow through `syncDiscoveryOutcomes` — the macOS discovery authority.) | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:375 |
 | test7090 | `test7090_heartbeatDropsTotalReachesInventoryStats` | TEST7090: The cartridge's cumulative protocol drop counter (`drops_total` heartbeat meta, L8) is ingested by the host and surfaces on the cartridge's inventory runtime stats as `protocol_drops_total` — absent until the first reading, then tracking the running total as-is. | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:312 |
 | test7091 | `test7091_switchRetainsHostProtocolStatsFromRelayNotify` | TEST7091: Host protocol stats carried by a master's RelayNotify are RETAINED by the switch (not parsed-and-discarded) and surface in `protocolStats().hosts` keyed by master id; a master that has not yet advertised stats is absent from the map — never a zeroed placeholder. | Tests/BifaciTests/RelaySwitchTests.swift:1412 |
 | test7092 | `test7092_capUrnAttributionSurvivesLifecycle` | TEST7092: A request registered with its originating REQ's cap URN carries that identity through the ACTIVE snapshot and into the terminated ring — observability surfaces can always NAME a request (background chatter vs run traffic), never just show a bare rid. A request registered without one snapshots with cap_urn absent — never invented. | Tests/BifaciTests/RequestStateTests.swift:31 |
@@ -903,15 +903,19 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test7102 | `test7102_IsMainInputTrueOnTagOrderInsensitiveEquivalenceToInSpec` | TEST7102: isMainInputForInSpec: is YES when the stdin URN is order-theoretically EQUIVALENT to the cap's in= spec even when the two strings list their tags in a different order — the comparison is the media-URN equivalence predicate, never a string comparison. | Tests/CapDAGTests/CSCapTests.m:1119 |
 | test7103 | `test7103_IsMainInputFalseWithoutEquivalentStdinSource` | TEST7103: isMainInputForInSpec: is NO for cli_flag-only and position-only arguments (no stdin source means never the main input, whatever the declared slot URN says), and NO when the stdin URN is not equivalent to in=. | Tests/CapDAGTests/CSCapTests.m:1137 |
 | test7104 | `test7104_MultiArgCapExactlyOneMainInputAndPartitionOfRest` | TEST7104: A realistic multi-arg cap (one stdin main input; one required, defaultless cli_flag arg; several defaulted cli_flag args): exactly one argument is the main input, and partitioning the remaining arguments by required-without-default vs has-default yields the expected sets. | Tests/CapDAGTests/CSCapTests.m:1163 |
-| test7105 | `test7105_errFrameArgUrnRoundtrip` | TEST7105: an ERR frame built WITH an argument attribution round-trips its full declared identity through encode/decode — the meta map carries the "arg_urn" key, attributionArgUrn returns the URN, and code/class/message stay intact (docs/failure-taxonomy.md). | Tests/BifaciTests/FrameTests.swift:2038 |
-| test7106 | `test7106_errFrameWithoutAttributionHasNoArgUrn` | TEST7106: an ERR frame built WITHOUT attribution has NO "arg_urn" key in the encoded meta — absent, never an empty string — and attributionArgUrn returns nil (docs/failure-taxonomy.md). | Tests/BifaciTests/FrameTests.swift:2083 |
-| test7117 | `test7117_logFrameArgUrnRoundtrip` | TEST7117: non-progress LOG carries the same source attribution tuple as ERR, including an optional argument URN, through the actual wire codec. | Tests/BifaciTests/FrameTests.swift:2064 |
+| test7105 | `test7105_errFrameArgUrnRoundtrip` | TEST7105: an ERR frame built WITH an argument attribution round-trips its full declared identity through encode/decode — the meta map carries the "arg_urn" key, attributionArgUrn returns the URN, and code/class/message stay intact (docs/failure-taxonomy.md). | Tests/BifaciTests/FrameTests.swift:2053 |
+| test7106 | `test7106_errFrameWithoutAttributionHasNoArgUrn` | TEST7106: an ERR frame built WITHOUT attribution has NO "arg_urn" key in the encoded meta — absent, never an empty string — and attributionArgUrn returns nil (docs/failure-taxonomy.md). | Tests/BifaciTests/FrameTests.swift:2098 |
+| test7117 | `test7117_logFrameArgUrnRoundtrip` | TEST7117: non-progress LOG carries the same source attribution tuple as ERR, including an optional argument URN, through the actual wire codec. | Tests/BifaciTests/FrameTests.swift:2079 |
+| test8064 | `test8064_sequenceConsumerNeverFollowsForEachDirectly` | TEST8064: a sequence-consuming cap is reached directly from sequence data, never through a dangling ForEach boundary. A ForEach followed by a SCALAR cap stays legal — that is the map half of the ordinary map-then-fold plan — so the invariant is about what may follow the boundary, not about ForEach appearing. | Tests/CapDAGTests/CSLiveCapFabTests.m:360 |
+| test8065 | `test8065_sequenceShapeUsesMainInputIdentityNotArgumentOrder` | TEST8065: cardinality follows the declared main input even when another stdin-capable argument appears first. | Tests/CapDAGTests/CSCapTests.m:1222 |
+| test8066 | `test8066_voidInputSequenceShapeIsScalarWithoutArguments` | TEST8066: a void-input cap has scalar input cardinality without inventing an arg. | Tests/CapDAGTests/CSCapTests.m:1248 |
+| test8067 | `test8067_StaleReaderDeathCannotKillReplacementGeneration` | / TEST8067: a late death event from an obsolete reader generation must / not retire the live process in the same cartridge slot. A death from / the current generation must perform the real teardown and notify the / lifecycle observer once. | Tests/BifaciTests/CartridgeHostSessionLifecycleTests.swift:67 |
 | test8100 | `test8100_classifyHandlerErrorPreservesOpArgumentAttribution` | TEST8100: Swift handler-error classification preserves a source-declared argument URN together with its code, attribution class, and message. | Tests/BifaciTests/StreamingAPITests.swift:900 |
 ---
 
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 891*
-*Total numbered tests: 891*
+*Total tests: 895*
+*Total numbered tests: 895*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*

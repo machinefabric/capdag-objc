@@ -11,7 +11,7 @@ import Ops
 // means "ours", never a guess).
 
 /// Re-export: `Bifaci.AttributionClass` IS `Ops.AttributionClass` — one type, one
-/// vocabulary, matching Rust's `pub use ops::failure::AttributionClass`.
+/// vocabulary, matching Rust's `pub use ops_rs::failure::AttributionClass`.
 public typealias AttributionClass = Ops.AttributionClass
 
 /// The declaration convention every cartridge's typed error follows (the
