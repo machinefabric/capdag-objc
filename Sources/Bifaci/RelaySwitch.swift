@@ -1267,19 +1267,20 @@ public final class RelaySwitch: @unchecked Sendable {
     ) throws -> AdmissionPermit {
         lock.lock()
         let key: AdmissionKey
-        let capacity: UInt64
         do {
             guard let destIdx = findMasterForCap(capUrn, preferredCap: preferredCap) else {
-                lock.unlock()
+                // Thrown, not returned: the single `catch` below owns unlocking
+                // on every failure path. Unlocking here too would double-unlock.
                 throw RelaySwitchError.noHandler(capUrn)
             }
             let registered = try registeredCapForLocked(destIdx, capUrn)
-            (key, capacity) = try capAdmissionTargetLocked(destIdx, registered)
+            let (resolvedKey, capacity) = try capAdmissionTargetLocked(destIdx, registered)
+            admission.configure(resolvedKey, capacity: capacity)
+            key = resolvedKey
         } catch {
             lock.unlock()
             throw error
         }
-        admission.configure(key, capacity: capacity)
         lock.unlock()
 
         do {
