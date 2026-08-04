@@ -434,6 +434,67 @@ public final class PeerResponse: @unchecked Sendable {
         return item
     }
 
+    /// Collect finite peer data while preserving every peer side-channel frame.
+    ///
+    /// `collectBytes` REJECTS a peer LOG because silently discarding a callee's
+    /// diagnostics loses the only record of what the callee said. This is the
+    /// method its error message points at: progress is mapped into the caller's
+    /// declared range so a nested cap advances the caller's bar proportionally
+    /// rather than resetting it, and non-progress LOGs keep the SOURCE's class
+    /// and argument attribution — a diagnostic is never re-classified as it
+    /// passes through a caller (docs/failure-taxonomy.md).
+    ///
+    /// Mirrors the reference `PeerResponse::collect_bytes_forwarding`.
+    public func collectBytesForwarding(
+        output: OutputStream,
+        progressBase: Float,
+        progressWeight: Float
+    ) throws -> Data {
+        var result = Data()
+        while let item = recv() {
+            switch item {
+            case .data(let dataResult, _):
+                let value = try dataResult.get()
+                switch value {
+                case .byteString(let bytes):
+                    result.append(contentsOf: bytes)
+                case .utf8String(let str):
+                    result.append(str.data(using: .utf8) ?? Data())
+                default:
+                    result.append(Data(value.encode()))
+                }
+            case .log(let frame):
+                guard let level = frame.logLevel else {
+                    throw StreamError.protocolError("peer LOG missing required text level")
+                }
+                guard let message = frame.logMessage else {
+                    throw StreamError.protocolError("peer LOG missing required text message")
+                }
+                if level == "progress" {
+                    guard let progress = frame.logProgress else {
+                        throw StreamError.protocolError(
+                            "peer progress LOG missing numeric progress"
+                        )
+                    }
+                    output.progress(
+                        progressBase + min(max(progress, 0.0), 1.0) * progressWeight,
+                        message: message
+                    )
+                } else {
+                    let attributionClass = try frame.attributionClass()
+                    let argUrn = try frame.attributionArgUrn()
+                    output.log(
+                        level: level,
+                        attributionClass: attributionClass,
+                        message: message,
+                        argUrn: argUrn
+                    )
+                }
+            }
+        }
+        return result
+    }
+
     /// Collect all data chunks into a single byte vector, rejecting unhandled
     /// LOG frames.
     public func collectBytes() throws -> Data {
@@ -453,7 +514,7 @@ public final class PeerResponse: @unchecked Sendable {
                 }
             case .log:
                 throw StreamError.protocolError(
-                    "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
+                    "peer response emitted a LOG frame; use collectBytesForwarding(output:progressBase:progressWeight:) to forward the peer's diagnostics"
                 )
             }
         }
@@ -472,7 +533,7 @@ public final class PeerResponse: @unchecked Sendable {
                 value = try dataResult.get()
             case .log:
                 throw StreamError.protocolError(
-                    "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
+                    "peer response emitted a LOG frame; use collectBytesForwarding(output:progressBase:progressWeight:) to forward the peer's diagnostics"
                 )
             }
         }
@@ -1057,6 +1118,20 @@ public final class OutputStream: @unchecked Sendable {
         try? sender.send(frame)
     }
 
+    /// Emit a diagnostic attributed to ONE argument by media URN — the
+    /// emit-source declaration that this record is about that argument
+    /// (docs/failure-taxonomy.md). Equivalent to `log(level:attributionClass:
+    /// message:argUrn:)` with a non-nil `argUrn`; named to match the reference's
+    /// `OutputStream::log_for_argument` so the two read alike at call sites.
+    public func logForArgument(
+        level: String,
+        attributionClass: AttributionClass,
+        message: String,
+        argUrn: String
+    ) {
+        log(level: level, attributionClass: attributionClass, message: message, argUrn: argUrn)
+    }
+
     /// Emit a progress update (0.0–1.0) with a human-readable status message.
     public func progress(_ progress: Float, message: String) {
         var frame = Frame.progress(id: requestId, progress: progress, message: message)
@@ -1187,6 +1262,20 @@ public final class ProgressSender: @unchecked Sendable {
         )
         frame.routingId = routingId
         try? sender.send(frame)
+    }
+
+    /// Emit a diagnostic attributed to ONE argument by media URN — the
+    /// emit-source declaration that this record is about that argument
+    /// (docs/failure-taxonomy.md). Equivalent to `log(level:attributionClass:
+    /// message:argUrn:)` with a non-nil `argUrn`; named to match the reference's
+    /// `OutputStream::log_for_argument` so the two read alike at call sites.
+    public func logForArgument(
+        level: String,
+        attributionClass: AttributionClass,
+        message: String,
+        argUrn: String
+    ) {
+        log(level: level, attributionClass: attributionClass, message: message, argUrn: argUrn)
     }
 }
 

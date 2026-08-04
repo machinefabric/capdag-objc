@@ -1,8 +1,8 @@
 # CapDag-ObjC/Swift Test Catalog
 
-**Total Tests:** 903
+**Total Tests:** 905
 
-**Numbered Tests:** 903
+**Numbered Tests:** 905
 
 **Unnumbered Tests:** 0
 
@@ -726,6 +726,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test1945 | `test1945_rosterRetireDrainsABusyCartridgeBeforeKillingIt` | TEST1945: a roster retire DRAINS a busy cartridge instead of killing it. The incident this pins: a transient registry outage shrank the roster and the host killed three cartridges outright, ERRing every request they were serving. Retirement means "no NEW work" — the process must survive until the requests it is already handling terminate. | Tests/BifaciTests/SyncRosterTests.swift:143 |
 | test1946 | `test1946_rosterRetireKillsAnIdleCartridgeAsRetired` | TEST1946: an IDLE cartridge is retired immediately (no reason to keep a process nothing routes to). | Tests/BifaciTests/SyncRosterTests.swift:174 |
 | test1947 | `test1947_rosterFlapCancelsRetirementInsteadOfRespawning` | TEST1947: a roster that flaps — retire then restore the same identity — keeps the SAME live process. This is the incident's shape end to end: the registry became unreachable, the roster shrank, and 26 seconds later it came back. Nothing about that sequence should cost a running cartridge, its warm model, or the work queued on it. | Tests/BifaciTests/SyncRosterTests.swift:187 |
+| test1949 | `test1949_peerProgressWithoutNumericValueFailsHard` | TEST1949: a peer progress LOG with no numeric value FAILS HARD. Forwarding must not silently drop it or substitute a value — a malformed frame is an emitter defect and must surface as one, which is exactly the failure the engine raises for the same frame. | Tests/BifaciTests/StreamingAPITests.swift:1011 |
 | test6200 | `test6200_csCapManifestWithPageUrl` | MARK: - CSCapManifest With PageUrl Test | Tests/BifaciTests/ManifestTests.swift:277 |
 | test6205 | `test6205_csCapManifestRejectsUnknownChannel` | Channel is part of the cartridge's identity; the deserializer accepts the closed enum {release, nightly} only. Anything else is a publish-pipeline bug we want to surface. | Tests/BifaciTests/ManifestTests.swift:293 |
 | test6207 | `test6207_concatenatedVsFinalPayloadDivergence` | Mirror-specific coverage: concatenated() returns full payload while finalPayload returns only last chunk | Tests/BifaciTests/RuntimeTests.swift:1105 |
@@ -914,6 +915,7 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 | test7112 | `test7112_capacityReconfigurationWakesExistingWaiters` | TEST7112: the post-HELLO capacity update wakes already queued work. This is what changes an unstarted cartridge's one bootstrap slot to its authoritative runtime capacity without waiting for the first body to end. | Tests/BifaciTests/RequestStateTests.swift:375 |
 | test7114 | `test7114_transientUnavailabilityDoesNotFailQueuedWork` | TEST7114: a cartridge that disappears and comes back does NOT terminally fail the work queued behind it. This is 17.2's "queued bodies are not assigned terminal failure from another body's process loss; once a replacement instance advertises capacity, subsequent queued work is admitted to that live instance". The regression this pins: a single failed registry-manifest fetch retired three live cartridges for ~24s, and every queued ForEach body was failed with "became unavailable while waiting for capacity" — 195 bodies lost to an outage that had already healed. | Tests/BifaciTests/RequestStateTests.swift:396 |
 | test7117 | `test7117_logFrameArgUrnRoundtrip` | TEST7117: non-progress LOG carries the same source attribution tuple as ERR, including an optional argument URN, through the actual wire codec. | Tests/BifaciTests/FrameTests.swift:2079 |
+| test7118 | `test7118_collectBytesForwardingPreservesPeerSideChannels` | TEST7118: finite peer collection preserves source diagnostics instead of consuming them as data or dropping them. Progress is mapped into the caller's range and argument attribution survives byte-for-byte. | Tests/BifaciTests/StreamingAPITests.swift:977 |
 | test8064 | `test8064_sequenceConsumerNeverFollowsForEachDirectly` | TEST8064: a sequence-consuming cap is reached directly from sequence data, never through a dangling ForEach boundary. A ForEach followed by a SCALAR cap stays legal — that is the map half of the ordinary map-then-fold plan — so the invariant is about what may follow the boundary, not about ForEach appearing. | Tests/CapDAGTests/CSLiveCapFabTests.m:360 |
 | test8065 | `test8065_sequenceShapeUsesMainInputIdentityNotArgumentOrder` | TEST8065: cardinality follows the declared main input even when another stdin-capable argument appears first. | Tests/CapDAGTests/CSCapTests.m:1222 |
 | test8066 | `test8066_voidInputSequenceShapeIsScalarWithoutArguments` | TEST8066: a void-input cap has scalar input cardinality without inventing an arg. | Tests/CapDAGTests/CSCapTests.m:1248 |
@@ -922,8 +924,8 @@ This catalog lists all tests in the CapDag-ObjC/Swift codebase.
 ---
 
 *Generated from CapDag-ObjC/Swift source tree*
-*Total tests: 903*
-*Total numbered tests: 903*
+*Total tests: 905*
+*Total numbered tests: 905*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*

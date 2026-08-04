@@ -945,4 +945,95 @@ private final class CaptureFrameSender: FrameSender, @unchecked Sendable {
         _frames.append(frame)
         lock.unlock()
     }
+
+    // =========================================================================
+    // Peer diagnostic forwarding (mirrors capdag PeerResponse::collect_bytes_forwarding)
+    // =========================================================================
+
+    /// Build a PeerResponse over a fixed item list, and an OutputStream whose
+    /// emissions are captured, so forwarding can be asserted on the wire.
+    private func forwardingFixture(
+        _ items: [PeerResponseItem]
+    ) -> (peer: PeerResponse, output: Bifaci.OutputStream, sender: CaptureFrameSender) {
+        var idx = 0
+        let iterator = AnyIterator<PeerResponseItem> {
+            guard idx < items.count else { return nil }
+            defer { idx += 1 }
+            return items[idx]
+        }
+        let sender = CaptureFrameSender()
+        let output = Bifaci.OutputStream(
+            sender: sender,
+            streamId: "fwd-stream",
+            mediaUrn: "media:test",
+            requestId: .uint(7),
+            routingId: nil,
+            maxChunk: 1000
+        )
+        return (PeerResponse(items: iterator), output, sender)
+    }
+
+    // TEST7118: finite peer collection preserves source diagnostics instead of consuming them as data or dropping them. Progress is mapped into the caller's range and argument attribution survives byte-for-byte.
+    func test7118_collectBytesForwardingPreservesPeerSideChannels() throws {
+        let peerId = MessageId.newUUID()
+        let fixture = forwardingFixture([
+            .log(Frame.progress(id: peerId, progress: 0.5, message: "halfway")),
+            .log(Frame.log(
+                id: peerId,
+                level: "warn",
+                attributionClass: .resource,
+                message: "cache pressure",
+                argUrn: "media:model-spec"
+            )),
+            .data(.success(.utf8String("payload")), nil),
+        ])
+
+        let bytes = try fixture.peer.collectBytesForwarding(
+            output: fixture.output,
+            progressBase: 0.2,
+            progressWeight: 0.4
+        )
+        XCTAssertEqual(bytes, Data("payload".utf8), "peer data must still be collected")
+
+        let frames = fixture.sender.frames.filter { $0.frameType == .log }
+        XCTAssertEqual(frames.count, 2, "both peer diagnostics must be forwarded")
+        // 0.2 + 0.5 * 0.4 = 0.4 — the caller's range, NOT the peer's raw 0.5.
+        XCTAssertEqual(try XCTUnwrap(frames[0].logProgress), 0.4, accuracy: 0.0001,
+                       "peer progress must be mapped as base + p * weight")
+        XCTAssertEqual(frames[0].logMessage, "halfway")
+        XCTAssertEqual(try frames[1].attributionClass(), .resource,
+                       "the SOURCE's class must survive — never re-classified by the caller")
+        XCTAssertEqual(try frames[1].attributionArgUrn(), "media:model-spec",
+                       "the source's argument attribution must survive")
+    }
+
+    // TEST1949: a peer progress LOG with no numeric value FAILS HARD. Forwarding must not silently drop it or substitute a value — a malformed frame is an emitter defect and must surface as one, which is exactly the failure the engine raises for the same frame.
+    func test1949_peerProgressWithoutNumericValueFailsHard() throws {
+        // level="progress" with no `progress` key — malformed at the emitter.
+        var malformed = Frame(frameType: .log, id: .uint(99))
+        malformed.meta = [
+            "level": .utf8String("progress"),
+            "message": .utf8String("no number here")
+        ]
+        let fixture = forwardingFixture([.log(malformed)])
+
+        XCTAssertThrowsError(
+            try fixture.peer.collectBytesForwarding(
+                output: fixture.output,
+                progressBase: 0,
+                progressWeight: 1
+            ),
+            "a progress LOG without a numeric value must fail, not pass silently"
+        ) { error in
+            guard case StreamError.protocolError(let message) = error else {
+                return XCTFail("expected a protocol error, got \(error)")
+            }
+            XCTAssertTrue(message.contains("progress"),
+                          "the failure must name the missing progress value: \(message)")
+        }
+        XCTAssertTrue(
+            fixture.sender.frames.filter { $0.logLevel == "progress" }.isEmpty,
+            "no progress frame may be emitted from a malformed peer frame"
+        )
+    }
 }
