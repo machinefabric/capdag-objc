@@ -411,12 +411,21 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Create a LOG frame with progress (0.0–1.0) and a human-readable status message.
+    ///
+    /// The value is encoded as a CBOR **double**, matching the reference
+    /// (`Frame::progress` stores `ciborium::Value::Float(progress as f64)`) and
+    /// matching this file's own END terminal-progress path (`endOkWith`), which
+    /// has always used `.double`. This was the one place in the frame layer that
+    /// wrote single-precision `.float`, and it was the one progress path that
+    /// failed: the engine saw a `level="progress"` LOG whose numeric value it
+    /// could not read, and rejected the frame. Progress is a fraction in [0,1] —
+    /// double costs 4 bytes more per frame and removes an entire divergence.
     public static func progress(id: MessageId, progress: Float, message: String) -> Frame {
         var frame = Frame(frameType: .log, id: id)
         frame.meta = [
             "level": .utf8String("progress"),
             "message": .utf8String(message),
-            "progress": .float(progress)
+            "progress": .double(Double(progress))
         ]
         return frame
     }
