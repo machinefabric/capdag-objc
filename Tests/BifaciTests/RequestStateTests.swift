@@ -260,4 +260,186 @@ final class RequestStateTests: XCTestCase {
         XCTAssertEqual(last.bytesIn, 10)
         XCTAssertEqual(snap.terminatedByKind["cancelled"], UInt64(cap + 3))
     }
+
+    // =========================================================================
+    // Admission control (mirrors Rust src/bifaci/request_state.rs tests)
+    // =========================================================================
+
+    private func admissionTestKey() -> AdmissionKey {
+        AdmissionKey(
+            masterIdx: 0,
+            registryURL: nil,
+            channel: "release",
+            id: "cartridge",
+            version: "1.0.0",
+            sha256: "sha"
+        )
+    }
+
+    /// Acquire on a background queue, recording the permit or the error.
+    private func acquireAsync(
+        _ controller: AdmissionController,
+        _ key: AdmissionKey,
+        isCancelled: (() -> Bool)? = nil,
+        into box: AdmissionOutcomeBox
+    ) {
+        DispatchQueue.global().async {
+            do {
+                box.set(permit: try controller.acquire(key, isCancelled: isCancelled))
+            } catch {
+                box.set(error: error)
+            }
+        }
+    }
+
+    /// Thread-safe holder for an async acquire's outcome.
+    final class AdmissionOutcomeBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var permitValue: AdmissionPermit?
+        private var errorValue: Error?
+        func set(permit: AdmissionPermit) { lock.lock(); permitValue = permit; lock.unlock() }
+        func set(error: Error) { lock.lock(); errorValue = error; lock.unlock() }
+        var permit: AdmissionPermit? { lock.lock(); defer { lock.unlock() }; return permitValue }
+        var error: Error? { lock.lock(); defer { lock.unlock() }; return errorValue }
+        var settled: Bool { permit != nil || error != nil }
+    }
+
+    /// Spin until `condition` holds or the deadline passes.
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        return condition()
+    }
+
+    // TEST7110: admission is strict FIFO and a terminal request releases exactly one waiter.
+    func test7110_admissionFifoReleasesOneWaiter() throws {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configure(key, capacity: 1)
+        let first = try controller.acquire(key)
+
+        let second = AdmissionOutcomeBox()
+        let third = AdmissionOutcomeBox()
+        acquireAsync(controller, key, into: second)
+        // Let the second waiter take its ticket before the third queues, so the
+        // FIFO order under test is deterministic.
+        Thread.sleep(forTimeInterval: 0.05)
+        acquireAsync(controller, key, into: third)
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertFalse(second.settled, "no waiter is admitted while the slot is held")
+        XCTAssertFalse(third.settled, "no waiter is admitted while the slot is held")
+
+        first.release()
+        XCTAssertTrue(waitUntil(2) { second.settled }, "second FIFO waiter must be admitted")
+        XCTAssertNotNil(second.permit)
+        XCTAssertFalse(third.settled, "one release admits only one waiter")
+
+        second.permit?.release()
+        XCTAssertTrue(waitUntil(2) { third.settled }, "third FIFO waiter must be admitted next")
+        XCTAssertNotNil(third.permit)
+        third.permit?.release()
+    }
+
+    // TEST7111: cancelling a queued body removes its ticket; it cannot strand later ForEach bodies behind a dead queue head.
+    func test7111_cancelledAdmissionWaiterCannotBlockQueue() throws {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configure(key, capacity: 1)
+        let active = try controller.acquire(key)
+
+        let cancelFlag = NSLock()
+        var cancelled = false
+        let waiter = AdmissionOutcomeBox()
+        acquireAsync(controller, key, isCancelled: {
+            cancelFlag.lock(); defer { cancelFlag.unlock() }; return cancelled
+        }, into: waiter)
+        Thread.sleep(forTimeInterval: 0.05)
+        cancelFlag.lock(); cancelled = true; cancelFlag.unlock()
+        XCTAssertTrue(waitUntil(2) { waiter.settled }, "a cancelled waiter must return")
+        XCTAssertNotNil(waiter.error, "a cancelled waiter must report why it stopped waiting")
+
+        let next = AdmissionOutcomeBox()
+        acquireAsync(controller, key, into: next)
+        Thread.sleep(forTimeInterval: 0.05)
+        active.release()
+        XCTAssertTrue(waitUntil(2) { next.settled },
+                      "the next body must be admitted, not stranded behind the cancelled ticket")
+        XCTAssertNotNil(next.permit)
+        next.permit?.release()
+    }
+
+    // TEST7112: the post-HELLO capacity update wakes already queued work. This is what changes an unstarted cartridge's one bootstrap slot to its authoritative runtime capacity without waiting for the first body to end.
+    func test7112_capacityReconfigurationWakesExistingWaiters() throws {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configure(key, capacity: 1)
+        let active = try controller.acquire(key)
+
+        let waiting = AdmissionOutcomeBox()
+        acquireAsync(controller, key, into: waiting)
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertFalse(waiting.settled,
+                       "a waiter must not be admitted at capacity 1 while the slot is held")
+
+        controller.configure(key, capacity: 0) // unlimited
+        XCTAssertTrue(waitUntil(2) { waiting.settled },
+                      "unlimited HELLO capacity must wake queued work")
+        XCTAssertNotNil(waiting.permit)
+        waiting.permit?.release()
+        active.release()
+    }
+
+    // TEST7114: a cartridge that disappears and comes back does NOT terminally fail the work queued behind it. This is 17.2's "queued bodies are not assigned terminal failure from another body's process loss; once a replacement instance advertises capacity, subsequent queued work is admitted to that live instance". The regression this pins: a single failed registry-manifest fetch retired three live cartridges for ~24s, and every queued ForEach body was failed with "became unavailable while waiting for capacity" — 195 bodies lost to an outage that had already healed.
+    func test7114_transientUnavailabilityDoesNotFailQueuedWork() throws {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configure(key, capacity: 1)
+        let active = try controller.acquire(key)
+
+        let waiting = AdmissionOutcomeBox()
+        acquireAsync(controller, key, into: waiting)
+        Thread.sleep(forTimeInterval: 0.05)
+
+        // The target vanishes from its host's inventory...
+        controller.disableMaster(key.masterIdx)
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertFalse(waiting.settled,
+                       "an outage inside the grace window must not fail queued work")
+
+        // ...and comes back, which is what must release the queue.
+        controller.configure(key, capacity: 1)
+        active.release()
+        XCTAssertTrue(waitUntil(2) { waiting.settled },
+                      "a restored admission target must admit the work queued on it")
+        XCTAssertNotNil(waiting.permit, "queued work must acquire the restored target")
+        waiting.permit?.release()
+    }
+
+    // TEST1943: the grace window is a BOUND, not a hang. A target that stays gone fails its queued work once the window expires, so a cartridge that is genuinely retired surfaces as a failure instead of stalling the run forever.
+    func test1943_outageOutlivingTheGraceWindowFailsQueuedWork() throws {
+        let controller = AdmissionController()
+        // Shorten the window so the expiry path is exercised without sleeping
+        // through a real minute. Production uses `admissionUnavailableGrace`.
+        controller.grace = 0.15
+        let key = admissionTestKey()
+        controller.configure(key, capacity: 1)
+        let active = try controller.acquire(key)
+
+        let waiting = AdmissionOutcomeBox()
+        acquireAsync(controller, key, into: waiting)
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertFalse(waiting.settled, "the window must not expire early")
+
+        controller.disableMaster(key.masterIdx)
+        XCTAssertTrue(waitUntil(3) { waiting.settled },
+                      "an expired grace window must wake queued work")
+        let error = try XCTUnwrap(waiting.error as? AdmissionError,
+                                  "queued work must not acquire a target that never came back")
+        XCTAssertTrue(error.reason.contains("unavailable for longer than"),
+                      "the failure must name the outage, not a generic routing error")
+        active.release()
+    }
 }

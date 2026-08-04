@@ -145,6 +145,10 @@ public final class RequestState {
     /// request's nameable identity on the L8 surface (TEST7092). Set after
     /// init (mirrors Rust's `with_cap_urn` builder).
     public var capUrn: String?
+    /// The process slot this request owns, released exactly once when the
+    /// request terminates. `nil` for requests that took no permit (peer calls
+    /// and relay-internal probes).
+    public var admissionPermit: AdmissionPermit?
     /// Child peer calls spawned under this request (cancel cascade).
     public internal(set) var children: [RequestKey] = []
     public internal(set) var phase: RequestPhase = .created
@@ -299,6 +303,10 @@ public final class RequestTable {
         guard let state = entries.removeValue(forKey: key) else {
             return nil
         }
+        // Terminal state reached: give the cartridge its slot back. Exactly
+        // once — the entry is removed above, so no other path can
+        // double-release.
+        state.admissionPermit?.release()
         // Only remove the rid index if it points at THIS xid — a re-used RID
         // under another XID (never valid per register, but defensive against
         // the impossible) must not lose its index.
@@ -536,5 +544,248 @@ public struct RequestTableSnapshot: Codable, Sendable {
         case recentTerminated = "recent_terminated"
         case totalRegistered = "total_registered"
         case terminatedByKind = "terminated_by_kind"
+    }
+}
+
+
+// =============================================================================
+// Admission control (mirrors Rust src/bifaci/request_state.rs).
+//
+// FIFO admission per cartridge install identity behind one relay master. The
+// cartridge-side `handler_capacity` gate (CartridgeRuntime.swift) bounds what
+// one process runs at a time; THIS gate bounds what the switch dispatches to
+// it, so work queues in the switch instead of piling up unacknowledged on the
+// wire.
+// =============================================================================
+
+/// How long a queued request waits for an admission target that has gone
+/// unavailable before it is failed.
+///
+/// A cartridge disappearing from its host's inventory is not, by itself, a
+/// reason to fail work that has not started: the process may be respawning, the
+/// host may be re-publishing its roster, or a transient registry outage may
+/// have briefly retired and then restored the install. 17.2 requires that
+/// queued bodies are NOT assigned terminal failure from another body's process
+/// loss and that "once a replacement instance advertises capacity, subsequent
+/// queued work is admitted to that live instance" — this window is how long the
+/// queue is held open for that replacement to appear.
+///
+/// It is a bound, not a retry: when it expires the wait fails hard and the
+/// failure is classified `environment`, so a target that is genuinely gone
+/// surfaces promptly instead of hanging the run.
+public let admissionUnavailableGrace: TimeInterval = 60
+
+/// A request could not take an admission slot. Carries the operator-facing
+/// reason; the switch maps it to a cartridge-unavailable routing error.
+public struct AdmissionError: Error, LocalizedError, Sendable {
+    public let reason: String
+    public init(_ reason: String) { self.reason = reason }
+    public var errorDescription: String? { reason }
+}
+
+/// Stable admission identity for one cartridge behind one relay master.
+public struct AdmissionKey: Hashable, Sendable {
+    public let masterIdx: Int
+    public let registryURL: String?
+    public let channel: String
+    public let id: String
+    public let version: String
+    public let sha256: String
+
+    public init(
+        masterIdx: Int,
+        registryURL: String?,
+        channel: String,
+        id: String,
+        version: String,
+        sha256: String
+    ) {
+        self.masterIdx = masterIdx
+        self.registryURL = registryURL
+        self.channel = channel
+        self.id = id
+        self.version = version
+        self.sha256 = sha256
+    }
+}
+
+private final class AdmissionSlot {
+    /// `nil` while the target is available; the instant it went unavailable
+    /// otherwise. Kept as an instant rather than a flag so the grace window
+    /// measures the OUTAGE, not the arrival time of each waiter — a request
+    /// that queues late into an outage does not get a fresh window.
+    var unavailableSince: Date?
+    var capacity: UInt64 = 0
+    var active: UInt64 = 0
+    var queue: [UInt64] = []
+
+    var available: Bool { unavailableSince == nil }
+
+    /// Mark unavailable, preserving the start of an outage already in progress.
+    func markUnavailable(_ now: Date) {
+        if unavailableSince == nil { unavailableSince = now }
+    }
+
+    /// Remaining grace for an outage, or `nil` when available. Zero means the
+    /// window has expired.
+    func graceRemaining(_ now: Date, grace: TimeInterval) -> TimeInterval? {
+        guard let since = unavailableSince else { return nil }
+        return max(0, grace - now.timeIntervalSince(since))
+    }
+}
+
+/// An actively owned process slot. Released exactly once.
+public final class AdmissionPermit {
+    private weak var controller: AdmissionController?
+    private let key: AdmissionKey
+    private var released = false
+    private let lock = NSLock()
+
+    fileprivate init(controller: AdmissionController, key: AdmissionKey) {
+        self.controller = controller
+        self.key = key
+    }
+
+    public func release() {
+        lock.lock()
+        let alreadyReleased = released
+        released = true
+        lock.unlock()
+        if alreadyReleased { return }
+        controller?.releaseSlot(key)
+    }
+}
+
+/// FIFO admission shared by every request path in a RelaySwitch.
+public final class AdmissionController: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var slots: [AdmissionKey: AdmissionSlot] = [:]
+    private var tickets: UInt64 = 0
+    /// `admissionUnavailableGrace` in production. Tests shorten it to drive the
+    /// expiry path without sleeping through a real minute.
+    internal var grace: TimeInterval = admissionUnavailableGrace
+
+    public init() {}
+
+    /// Register or update a target's capacity. A configure is the target
+    /// advertising itself: it ENDS any outage, which is what releases waiters
+    /// queued through a respawn or a roster round-trip.
+    public func configure(_ key: AdmissionKey, capacity: UInt64) {
+        condition.lock()
+        let slot = slots[key] ?? AdmissionSlot()
+        slots[key] = slot
+        slot.unavailableSince = nil
+        slot.capacity = capacity
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    /// Mark every slot of this master absent from the advertised set
+    /// unavailable.
+    public func reconcileMaster(_ masterIdx: Int, available: Set<AdmissionKey>) {
+        let now = Date()
+        condition.lock()
+        for (key, slot) in slots where key.masterIdx == masterIdx && !available.contains(key) {
+            slot.markUnavailable(now)
+        }
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    /// Mark every slot of this master unavailable (the master died).
+    public func disableMaster(_ masterIdx: Int) {
+        let now = Date()
+        condition.lock()
+        for (key, slot) in slots where key.masterIdx == masterIdx {
+            slot.markUnavailable(now)
+        }
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    /// Take a FIFO admission slot for `key`, waiting for capacity.
+    ///
+    /// An UNAVAILABLE target does not fail the caller immediately. The request
+    /// stays queued for `admissionUnavailableGrace` measured from the start of
+    /// the outage, so a cartridge that is respawning — or that a transient
+    /// registry outage briefly retired — resumes serving its queue instead of
+    /// terminally failing every body waiting on it (17.2: one body's process
+    /// loss must not terminate unrelated queued bodies). Only when the window
+    /// expires does the wait fail, and it fails hard.
+    ///
+    /// `isCancelled`, when supplied, abandons the wait (the caller gave up);
+    /// the ticket is removed so it cannot strand the queue behind a dead head.
+    public func acquire(
+        _ key: AdmissionKey,
+        isCancelled: (() -> Bool)? = nil
+    ) throws -> AdmissionPermit {
+        condition.lock()
+        defer { condition.unlock() }
+
+        guard let slot = slots[key] else {
+            throw AdmissionError("cartridge '\(key.id)' has no configured admission target")
+        }
+        let ticket = tickets
+        tickets += 1
+        // Queue even while unavailable: the loop below owns the grace window,
+        // so a request arriving mid-outage gets the same treatment as one that
+        // was already waiting when the outage began.
+        slot.queue.append(ticket)
+
+        while true {
+            if isCancelled?() == true {
+                removeTicketLocked(key, ticket)
+                throw AdmissionError("admission wait for '\(key.id)' was cancelled")
+            }
+            guard let slot = slots[key] else {
+                throw AdmissionError("admission slot for '\(key.id)' disappeared while queued")
+            }
+            let hasCapacity = slot.capacity == 0 || slot.active < slot.capacity
+            if slot.available, hasCapacity, slot.queue.first == ticket {
+                slot.queue.removeFirst()
+                slot.active += 1
+                condition.broadcast()
+                return AdmissionPermit(controller: self, key: key)
+            }
+            let remaining = slot.graceRemaining(Date(), grace: grace)
+            if let remaining, remaining <= 0 {
+                // Outage outlived the window — the target is gone, not slow.
+                removeTicketLocked(key, ticket)
+                throw AdmissionError(
+                    "cartridge '\(key.id)' was unavailable for longer than \(Int(grace))s "
+                        + "while this request waited for capacity"
+                )
+            }
+            // Available: wait for capacity. Mid-outage: wait no longer than
+            // what is left of the window — a timeout there is not an error, the
+            // next iteration re-reads the slot and decides. A cancellable wait
+            // polls, because NSCondition cannot select on a cancel flag.
+            var budget = remaining ?? .greatestFiniteMagnitude
+            if isCancelled != nil { budget = min(budget, 0.02) }
+            if budget == .greatestFiniteMagnitude {
+                condition.wait()
+            } else {
+                _ = condition.wait(until: Date().addingTimeInterval(budget))
+            }
+        }
+    }
+
+    /// Drop a ticket so an abandoned waiter cannot strand the queue behind it.
+    /// Caller must hold `condition`.
+    private func removeTicketLocked(_ key: AdmissionKey, _ ticket: UInt64) {
+        guard let slot = slots[key] else { return }
+        if let idx = slot.queue.firstIndex(of: ticket) {
+            slot.queue.remove(at: idx)
+        }
+        condition.broadcast()
+    }
+
+    fileprivate func releaseSlot(_ key: AdmissionKey) {
+        condition.lock()
+        if let slot = slots[key], slot.active > 0 {
+            slot.active -= 1
+        }
+        condition.broadcast()
+        condition.unlock()
     }
 }

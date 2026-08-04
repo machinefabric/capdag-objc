@@ -60,6 +60,12 @@ public enum RelaySwitchError: Error, LocalizedError, Sendable {
     case unknownRequest(String)
     case protocolError(String)
     case allMastersUnhealthy
+    /// The cartridge that would serve this request left its host's inventory
+    /// and did not come back within the admission grace window. Distinct from
+    /// `protocolError` because nothing violated the protocol — the deployment
+    /// changed under a valid request, which is an `environment` failure, not an
+    /// engine defect (docs/failure-taxonomy.md).
+    case cartridgeUnavailable(String)
 
     public var errorDescription: String? {
         switch self {
@@ -67,6 +73,7 @@ public enum RelaySwitchError: Error, LocalizedError, Sendable {
         case .unknownRequest(let reqId): return "Unknown request ID: \(reqId)"
         case .protocolError(let msg): return "Protocol violation: \(msg)"
         case .allMastersUnhealthy: return "All relay masters are unhealthy"
+        case .cartridgeUnavailable(let msg): return "Cartridge unavailable: \(msg)"
         }
     }
 }
@@ -404,6 +411,10 @@ private final class ResponseChannel: @unchecked Sendable {
 @available(macOS 10.15.4, iOS 13.4, *)
 public final class RelaySwitch: @unchecked Sendable {
     private var masters: [MasterConnection] = []
+    /// Switch-side FIFO admission: a positive handler_capacity bounds how many
+    /// requests the switch dispatches to one cartridge install at a time.
+    /// Mirrors the reference `RelaySwitch.admission`.
+    internal let admission = AdmissionController()
     private var capTable: [(capUrn: String, masterIdx: Int)] = []
 
     /// Unified per-request state (L7): routing, origin, peer markers,
@@ -652,6 +663,9 @@ public final class RelaySwitch: @unchecked Sendable {
                 healthy: true
             )
             masters.append(masterConn)
+            // Seed admission from this master's inventory, so the very first
+            // dispatch is gated exactly like every later one.
+            try configureMasterAdmissionLocked(masters.count - 1, masterConn.installedCartridges)
         }
 
         // Phase 2: All masters verified — spawn reader threads
@@ -1010,6 +1024,9 @@ public final class RelaySwitch: @unchecked Sendable {
                 lastError: identityFailure
             )
             masters.append(masterConn)
+            // Seed admission from this master's inventory, so the very first
+            // dispatch is gated exactly like every later one.
+            try configureMasterAdmissionLocked(masters.count - 1, masterConn.installedCartridges)
         } else {
             let slot = masters[masterIdx]
             if slot.id != socket.id {
@@ -1032,6 +1049,7 @@ public final class RelaySwitch: @unchecked Sendable {
             slot.hostProtocolStats = notifyPayload.hostProtocolStats
             slot.healthy = healthyAtRegister
             slot.lastError = identityFailure
+            try configureMasterAdmissionLocked(masterIdx, notifyPayload.installedCartridges)
         }
 
         // Spawn reader thread bound to the slot's index. For
@@ -1127,7 +1145,172 @@ public final class RelaySwitch: @unchecked Sendable {
     ///                   When provided, uses comparable matching and prefers masters
     ///                   whose registered cap is equivalent to this URN.
     ///                   When nil, uses standard accepts + closest-specificity routing.
+    /// Stable admission identity for one installed cartridge behind one master.
+    /// Mirrors the reference `RelaySwitch::admission_key`.
+    internal static func admissionKey(
+        masterIdx: Int,
+        record: InstalledCartridgeRecord
+    ) -> AdmissionKey {
+        AdmissionKey(
+            masterIdx: masterIdx,
+            registryURL: record.registryURL,
+            channel: record.channel,
+            id: record.id,
+            version: record.version,
+            sha256: record.sha256
+        )
+    }
+
+    /// Refresh every admission slot this master advertises and mark the rest of
+    /// its slots unavailable. Caller must hold `lock`. Mirrors
+    /// `configure_master_admission`.
+    internal func configureMasterAdmissionLocked(
+        _ masterIdx: Int,
+        _ cartridges: [InstalledCartridgeRecord]
+    ) throws {
+        var available = Set<AdmissionKey>()
+        for record in cartridges {
+            guard let stats = record.runtimeStats else {
+                throw RelaySwitchError.protocolError(
+                    "cartridge '\(record.id)' on master \(masterIdx) is missing mandatory v4 runtime_stats"
+                )
+            }
+            let capacity = stats.running ? stats.handlerCapacity : 1
+            let key = Self.admissionKey(masterIdx: masterIdx, record: record)
+            // A host may expose several process instances of the same logical
+            // install. They share one admission identity: preserve the first
+            // host-ordered record, matching host dispatch.
+            if available.insert(key).inserted {
+                admission.configure(key, capacity: capacity)
+            }
+        }
+        admission.reconcileMaster(masterIdx, available: available)
+    }
+
+    /// Admission identity and capacity of the cartridge that owns
+    /// `registeredCap` on this master. Caller must hold `lock`. Mirrors
+    /// `cap_admission_target`.
+    internal func capAdmissionTargetLocked(
+        _ masterIdx: Int,
+        _ registeredCap: String
+    ) throws -> (AdmissionKey, UInt64) {
+        guard masterIdx >= 0, masterIdx < masters.count else {
+            throw RelaySwitchError.protocolError(
+                "selected master index \(masterIdx) no longer exists")
+        }
+        var owner: InstalledCartridgeRecord?
+        var ownerKey: AdmissionKey?
+        for record in masters[masterIdx].installedCartridges {
+            if record.attachmentError != nil { continue }
+            guard record.capUrns().contains(registeredCap) else { continue }
+            let key = Self.admissionKey(masterIdx: masterIdx, record: record)
+            if owner == nil {
+                owner = record
+                ownerKey = key
+                continue
+            }
+            if key != ownerKey {
+                throw RelaySwitchError.protocolError(
+                    "master \(masterIdx) has multiple distinct installed cartridges claiming "
+                        + "cap '\(registeredCap)'; routing is ambiguous")
+            }
+        }
+        guard let cartridge = owner, let key = ownerKey else {
+            throw RelaySwitchError.protocolError(
+                "master \(masterIdx) advertises cap '\(registeredCap)' without an "
+                    + "installed-cartridge owner")
+        }
+        guard let stats = cartridge.runtimeStats else {
+            throw RelaySwitchError.protocolError(
+                "cartridge '\(cartridge.id)' on master \(masterIdx) is missing mandatory v4 runtime_stats")
+        }
+        return (key, stats.running ? stats.handlerCapacity : 1)
+    }
+
+    /// The cap-table entry on this master that `capUrn` dispatches to. Caller
+    /// must hold `lock`.
+    internal func registeredCapForLocked(_ masterIdx: Int, _ capUrn: String) throws -> String {
+        guard let requestUrn = try? CapUrn(capUrn) else {
+            throw RelaySwitchError.noHandler(capUrn)
+        }
+        for entry in capTable where entry.masterIdx == masterIdx {
+            if let registered = try? CapUrn(entry.capUrn), registered.isDispatchable(requestUrn) {
+                return entry.capUrn
+            }
+        }
+        throw RelaySwitchError.noHandler(capUrn)
+    }
+
+    /// Authoritative handler capacity for the cartridge selected by normal cap
+    /// dispatch. A positive capacity is an execution boundary: callers must not
+    /// pre-acquire that request as part of a multi-cap live pipeline, because
+    /// the permit represents an actively owned process slot. Zero means
+    /// unlimited. Mirrors `admission_capacity_for_cap`.
+    public func admissionCapacityForCap(_ capUrn: String) throws -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let destIdx = findMasterForCap(capUrn, preferredCap: nil) else {
+            throw RelaySwitchError.noHandler(capUrn)
+        }
+        let registered = try registeredCapForLocked(destIdx, capUrn)
+        return try capAdmissionTargetLocked(destIdx, registered).1
+    }
+
+    /// Resolve the cartridge that will serve `capUrn` and take its admission
+    /// slot, waiting for capacity. Called WITHOUT `lock` held: acquiring can
+    /// block, and blocking under the switch lock would deadlock every path that
+    /// must run for a slot to be released.
+    internal func acquireCapAdmission(
+        _ capUrn: String,
+        preferredCap: String?
+    ) throws -> AdmissionPermit {
+        lock.lock()
+        let key: AdmissionKey
+        let capacity: UInt64
+        do {
+            guard let destIdx = findMasterForCap(capUrn, preferredCap: preferredCap) else {
+                lock.unlock()
+                throw RelaySwitchError.noHandler(capUrn)
+            }
+            let registered = try registeredCapForLocked(destIdx, capUrn)
+            (key, capacity) = try capAdmissionTargetLocked(destIdx, registered)
+        } catch {
+            lock.unlock()
+            throw error
+        }
+        admission.configure(key, capacity: capacity)
+        lock.unlock()
+
+        do {
+            return try admission.acquire(key)
+        } catch let error as AdmissionError {
+            throw RelaySwitchError.cartridgeUnavailable(error.reason)
+        }
+    }
+
     public func sendToMaster(_ frame: Frame, preferredCap: String? = nil) throws {
+        // A REQ takes an admission permit BEFORE the switch lock: acquiring can
+        // block waiting for a slot, and blocking under `lock` would deadlock
+        // every path that must run for a slot to be released. Route resolution
+        // needs the lock, so the sequence is resolve → unlock → acquire →
+        // relock → register, exactly as the reference orders it. Direct
+        // target_cartridge routing bypasses cap dispatch and so does not take a
+        // cap-selected permit.
+        var permit: AdmissionPermit?
+        if frame.frameType == .req, let cap = frame.cap {
+            let routesByCartridgeId: Bool = frame.meta.flatMap { meta in
+                if case .utf8String = meta["target_cartridge"] { return true }
+                return nil
+            } ?? false
+            if !routesByCartridgeId {
+                permit = try acquireCapAdmission(cap, preferredCap: preferredCap)
+            }
+        }
+        // Any throw past this point must give the slot back, or a bounded
+        // cartridge loses capacity permanently.
+        var admitted = false
+        defer { if !admitted { permit?.release() } }
+
         lock.lock()
         defer { lock.unlock() }
 
@@ -1198,10 +1381,14 @@ public final class RelaySwitch: @unchecked Sendable {
                     isPeer: false
                 )
                 state.capUrn = mutableFrame.cap
+                // The request table owns the permit now: it is released when
+                // the request terminates (End | Err | Cancelled | MasterDied).
+                state.admissionPermit = permit
                 try requests.register(key, state)
             } catch {
                 throw RelaySwitchError.protocolError("\(error.localizedDescription)")
             }
+            admitted = true
 
             // Forward to destination with XID
             try writeToMasterIdx(destIdx, &mutableFrame)
@@ -1670,6 +1857,10 @@ public final class RelaySwitch: @unchecked Sendable {
     }
 
     func handleMasterDeath(_ masterIdx: Int) throws {
+        // Every slot behind this master goes unavailable. Queued work is NOT
+        // failed here: it rides the admission grace window in case the master
+        // reconnects.
+        admission.disableMaster(masterIdx)
         lock.lock()
         defer { lock.unlock() }
 
@@ -1829,6 +2020,10 @@ public final class RelaySwitch: @unchecked Sendable {
         // cap_table rebuild excludes it.
         masters[sourceIdx].caps = newCaps
         masters[sourceIdx].installedCartridges = payload.installedCartridges
+        // Refresh admission from the fresh inventory: a cartridge that left it
+        // goes unavailable (starting its grace window), one that returned is
+        // configured again, which releases anything queued on it.
+        try configureMasterAdmissionLocked(sourceIdx, payload.installedCartridges)
         masters[sourceIdx].hostProtocolStats = payload.hostProtocolStats
         masters[sourceIdx].manifest = manifest
         masters[sourceIdx].limits = newLimits
