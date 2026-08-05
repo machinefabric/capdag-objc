@@ -302,6 +302,71 @@ final class CborFrameTests: XCTestCase {
         XCTAssertTrue(last.isEof)
     }
 
+    // Swift-only regression tests for the macOS relay-hop float-width defect.
+    // The reference encoder (ciborium) shrinks lossless floats on the wire —
+    // a progress of 0.5 arrives as half-precision (0xf9). SwiftCBOR decodes
+    // that as `.half`, which its own encoder cannot emit: it silently encodes
+    // `.half` as `undefined`, which a ciborium peer reads as null. decodeFrame
+    // must therefore collapse float widths to `.double` (the reference decodes
+    // every width to f64), so a decoded frame always re-encodes faithfully.
+
+    /// Rewrite one byte pattern inside encoded frame bytes, failing the test if
+    /// the pattern is absent (the fixture must actually contain the value).
+    private func replacing(_ data: Data, pattern: [UInt8], with replacement: [UInt8], file: StaticString = #filePath, line: UInt = #line) -> Data {
+        guard let range = data.range(of: Data(pattern)) else {
+            XCTFail("fixture does not contain expected byte pattern", file: file, line: line)
+            return data
+        }
+        var out = data
+        out.replaceSubrange(range, with: replacement)
+        return out
+    }
+
+    // Wire encodings of 0.5: double fb 3fe0…, single fa 3f00…, half f9 3800.
+    private static let doubleHalfPoint: [UInt8] = [0xfb, 0x3f, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    private static let singleHalfPoint: [UInt8] = [0xfa, 0x3f, 0x00, 0x00, 0x00]
+    private static let halfHalfPoint: [UInt8] = [0xf9, 0x38, 0x00]
+
+    // TEST8111: decodeFrame collapses half- and single-precision meta floats to
+    // `.double`, matching the reference decoder (ciborium yields f64 for every
+    // float width) — a progress LOG that ciborium shrank to 0xf9 on the wire
+    // must decode to a `.double` meta value, never a width SwiftCBOR cannot re-emit.
+    func test8111_decodeFrameNormalizesNarrowFloatWidthsToDouble() throws {
+        let template = try encodeFrame(Frame.progress(id: .uint(7), progress: 0.5, message: "halfway"))
+
+        let halfWire = replacing(template, pattern: Self.doubleHalfPoint, with: Self.halfHalfPoint)
+        let fromHalf = try decodeFrame(halfWire)
+        XCTAssertEqual(fromHalf.meta?["progress"], .double(0.5), "half-precision wire float must decode as .double")
+        XCTAssertEqual(fromHalf.logProgress, 0.5)
+
+        let singleWire = replacing(template, pattern: Self.doubleHalfPoint, with: Self.singleHalfPoint)
+        let fromSingle = try decodeFrame(singleWire)
+        XCTAssertEqual(fromSingle.meta?["progress"], .double(0.5), "single-precision wire float must decode as .double")
+        XCTAssertEqual(fromSingle.logProgress, 0.5)
+    }
+
+    // TEST8112: the relay forwarding path — decode a cartridge frame whose
+    // progress rode the wire as half-precision, re-encode it for the engine,
+    // and decode again: the progress value must survive as a number. Without
+    // width normalization this exact hop turned progress into CBOR undefined
+    // (read as null by the engine), failing every ForEach body on macOS.
+    func test8112_halfPrecisionProgressSurvivesDecodeEncodeRelayHop() throws {
+        let cartridgeWire = replacing(
+            try encodeFrame(Frame.progress(id: .uint(7), progress: 0.5, message: "halfway")),
+            pattern: Self.doubleHalfPoint,
+            with: Self.halfHalfPoint
+        )
+
+        let received = try decodeFrame(cartridgeWire)
+        let forwarded = try encodeFrame(received)
+        XCTAssertFalse(forwarded.contains(0xf7), "re-encoded frame must not contain CBOR undefined")
+
+        let atEngine = try decodeFrame(forwarded)
+        XCTAssertEqual(atEngine.logLevel, "progress")
+        XCTAssertEqual(atEngine.meta?["progress"], .double(0.5), "progress must reach the engine as a number")
+        XCTAssertEqual(atEngine.logProgress, 0.5)
+    }
+
     // TEST190: Test Frame::heartbeat creates minimal frame with no payload or metadata
     func test190_heartbeatFrame() {
         let id = MessageId.newUUID()

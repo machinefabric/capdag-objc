@@ -474,6 +474,8 @@
                     step.stepType = CSStrandStepTypeCap;
                     step.capUrn = [edge.capUrn toString];
                     step.specificity = edge.specificity;
+                    step.inputIsSequence = edge.inputIsSequence;
+                    step.outputIsSequence = edge.outputIsSequence;
                     break;
                 case CSLiveMachinePlanEdgeTypeForEach:
                     step.stepType = CSStrandStepTypeForEach;

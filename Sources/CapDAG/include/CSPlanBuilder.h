@@ -78,6 +78,12 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 @property (nonatomic, copy, nullable) NSString *mediaUrn;
 /// Specificity score (0 for cardinality transitions)
 @property (nonatomic, assign) NSUInteger specificity;
+/// Whether the cap's main input expects a sequence (Cap steps; NO for cardinality transitions).
+/// Mirrors Rust: StrandStepType::Cap { input_is_sequence }
+@property (nonatomic, assign) BOOL inputIsSequence;
+/// Whether the cap's output produces a sequence (Cap steps; NO for cardinality transitions).
+/// Mirrors Rust: StrandStepType::Cap { output_is_sequence }
+@property (nonatomic, assign) BOOL outputIsSequence;
 /// Human-readable title for this step
 - (NSString *)title;
 /// Whether this is a real cap step

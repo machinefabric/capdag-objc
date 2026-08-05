@@ -246,6 +246,27 @@ final class CborSequenceTests: XCTestCase {
         }
     }
 
+    // TEST8113: splitCborArray / assembleCborArray decode-then-re-encode with
+    // SwiftCBOR, whose encoder corrupts `.half` to `undefined`. The reference
+    // encoder shrinks lossless floats to half-precision on the wire, so a
+    // ciborium-authored array holding 0.5 arrives as 0xf9 — both directions must
+    // width-normalize so the value survives as a number, never CBOR undefined.
+    func test8113_arraySplitAssembleNormalizeHalfPrecisionFloats() throws {
+        // [0.5] with 0.5 as half-precision, exactly as ciborium encodes it.
+        let ciboriumArray = Data([0x81, 0xf9, 0x38, 0x00])
+
+        let items = try splitCborArray(ciboriumArray)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(try CBOR.decode([UInt8](items[0])), .double(0.5),
+                       "split item must re-encode the half-precision float as a double")
+
+        let halfItem = Data([0xf9, 0x38, 0x00])
+        let assembled = try assembleCborArray([halfItem])
+        XCTAssertFalse(assembled.contains(0xf7), "assembled array must not contain CBOR undefined")
+        XCTAssertEqual(try CBOR.decode([UInt8](assembled)), .array([.double(0.5)]),
+                       "assembled array must carry the value as a double")
+    }
+
     // TEST951: split_cbor_array with nested maps
     func test951_splitMapArray() throws {
         let map1 = CBOR.map([.utf8String("name"): .utf8String("Alice")])

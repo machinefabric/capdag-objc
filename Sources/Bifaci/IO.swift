@@ -131,6 +131,35 @@ public func encodeFrame(_ frame: Frame) throws -> Data {
     return Data(cbor.encode())
 }
 
+/// Collapse CBOR float widths to `.double`, recursively.
+///
+/// Parity with the reference decoder: ciborium decodes every float width
+/// (half/single/double) into one in-memory representation
+/// (`ciborium::Value::Float(f64)`), so a decoded frame always re-encodes
+/// faithfully. SwiftCBOR instead preserves the wire width as `.half`/`.float`
+/// — and its encoder cannot emit half-precision: it silently encodes `.half`
+/// as `undefined` (SwiftCBOR `CBOREncodable`), which a ciborium peer reads as
+/// null. The reference shrinks lossless floats to half on the wire, so any
+/// relay hop that decodes and re-forwards a frame here would corrupt e.g. a
+/// `progress` of 0.5 into null. Collapsing widths at the decode boundary
+/// restores the reference invariant: frame meta in memory never holds
+/// `.half`/`.float`.
+func widthNormalized(_ value: CBOR) -> CBOR {
+    switch value {
+    case .half(let h): return .double(Double(h))
+    case .float(let f): return .double(Double(f))
+    case .array(let items): return .array(items.map(widthNormalized))
+    case .map(let entries):
+        var normalized: [CBOR: CBOR] = Dictionary(minimumCapacity: entries.count)
+        for (k, v) in entries {
+            normalized[widthNormalized(k)] = widthNormalized(v)
+        }
+        return .map(normalized)
+    case .tagged(let tag, let inner): return .tagged(tag, widthNormalized(inner))
+    default: return value
+    }
+}
+
 /// Decode a frame from CBOR bytes
 public func decodeFrame(_ data: Data) throws -> Frame {
     guard let cbor = try? CBOR.decode([UInt8](data)) else {
@@ -194,7 +223,7 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         var meta: [String: CBOR] = [:]
         for (k, v) in metaMap {
             if case .utf8String(let key) = k {
-                meta[key] = v
+                meta[key] = widthNormalized(v)
             }
         }
         frame.meta = meta

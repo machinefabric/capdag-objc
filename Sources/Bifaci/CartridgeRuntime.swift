@@ -472,8 +472,14 @@ public final class PeerResponse: @unchecked Sendable {
                 }
                 if level == "progress" {
                     guard let progress = frame.logProgress else {
+                        // Carry the evidence: "absent" and "a text value" are
+                        // different defects in the PEER, and an error that
+                        // cannot tell them apart forces whoever reads it to
+                        // reproduce the failure to learn which.
                         throw StreamError.protocolError(
-                            "peer progress LOG missing numeric progress"
+                            "peer progress LOG has no numeric progress — the `progress` slot is "
+                                + "\(frame.logProgressSlotDescription) "
+                                + "(level is \"progress\", so a number is required)"
                         )
                     }
                     output.progress(

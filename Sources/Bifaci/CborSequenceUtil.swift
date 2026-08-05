@@ -140,8 +140,11 @@ public func splitCborArray(_ data: Data) throws -> [Data] {
         throw CborSequenceError.emptyArray
     }
 
+    // Width-normalize before re-encoding: SwiftCBOR decodes half-precision wire
+    // floats (which the reference encoder emits for lossless values) as `.half`,
+    // a case its own encoder corrupts to `undefined`. See widthNormalized (IO.swift).
     return items.map { item in
-        Data(item.encode())
+        Data(widthNormalized(item).encode())
     }
 }
 
@@ -160,7 +163,8 @@ public func assembleCborArray(_ items: [Data]) throws -> Data {
         guard let value = try? CBOR.decode([UInt8](item)) else {
             throw CborSequenceError.deserializationError("Item \(i): not valid CBOR")
         }
-        values.append(value)
+        // Width-normalize before re-encoding — see widthNormalized (IO.swift).
+        values.append(widthNormalized(value))
     }
 
     let array = CBOR.array(values)

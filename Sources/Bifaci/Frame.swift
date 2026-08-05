@@ -659,6 +659,31 @@ public struct Frame: @unchecked Sendable {
         return s
     }
 
+    /// Describe what the `progress` meta slot actually holds, for the protocol
+    /// error a receiver raises when `logProgress` is nil on a `level="progress"`
+    /// LOG.
+    ///
+    /// A violation must carry its own evidence: "absent" and "a text value" are
+    /// different defects in the emitter, and an error that cannot tell them
+    /// apart forces the reader to reproduce the failure to learn which one it
+    /// is. Mirrors the reference `Frame::log_progress_slot_description`.
+    public var logProgressSlotDescription: String {
+        guard let meta else { return "absent (frame carries no meta)" }
+        guard let value = meta["progress"] else { return "absent" }
+        switch value {
+        case .utf8String: return "a text value"
+        case .byteString: return "a byte string"
+        case .boolean: return "a boolean"
+        case .null: return "null"
+        case .array: return "an array"
+        case .map: return "a map"
+        case .tagged: return "a tagged value"
+        case .float, .double, .half: return "a float (readable — not this error)"
+        case .unsignedInt, .negativeInt: return "an integer (readable — not this error)"
+        default: return "an unrecognized CBOR type"
+        }
+    }
+
     /// Get progress value (0.0–1.0) if this is a LOG frame with level="progress".
     /// Accepts float32, float64, and half-precision floats from CBOR encoding.
     public var logProgress: Float? {
