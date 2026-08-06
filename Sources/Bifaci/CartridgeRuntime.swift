@@ -1530,22 +1530,43 @@ private final class UnsafeTransfer<T>: @unchecked Sendable {
 
 /// Thread-safe blocking queue for bridging async streams to sync iterators.
 /// Used to stream frames from AsyncStream to handler threads.
+///
+/// Unbounded by default. A queue created with a `capacity` is BOUNDED: a
+/// push that would exceed it blocks until the consumer drains one item —
+/// the backpressure the live-feed delivery path depends on (12.5 §Overrun),
+/// where the elastic stage is the capture ring, never this queue.
 public final class BlockingQueue<T>: @unchecked Sendable {
     private var queue: [T] = []
-    private let lock = NSLock()
     private let condition = NSCondition()
     private var finished = false
+    /// nil = unbounded; N = at most N undelivered items.
+    private let capacity: Int?
 
-    public init() {}
-
-    public func push(_ item: T) {
-        condition.lock()
-        queue.append(item)
-        condition.signal()
-        condition.unlock()
+    public init(capacity: Int? = nil) {
+        self.capacity = capacity
     }
 
-    public func enqueue(_ item: T) {
+    /// Enqueue one item, blocking while a bounded queue is full. Returns
+    /// false when the queue was finished (the consumer is gone) — a
+    /// producer that sees false must stop producing.
+    @discardableResult
+    public func push(_ item: T) -> Bool {
+        condition.lock()
+        while let capacity = capacity, queue.count >= capacity, !finished {
+            condition.wait(until: Date().addingTimeInterval(0.05))
+        }
+        if finished {
+            condition.unlock()
+            return false
+        }
+        queue.append(item)
+        condition.broadcast()
+        condition.unlock()
+        return true
+    }
+
+    @discardableResult
+    public func enqueue(_ item: T) -> Bool {
         push(item)
     }
 
@@ -1558,7 +1579,10 @@ public final class BlockingQueue<T>: @unchecked Sendable {
         }
 
         if !queue.isEmpty {
-            return queue.removeFirst()
+            let item = queue.removeFirst()
+            // Wake a producer blocked on a bounded queue's capacity.
+            condition.broadcast()
+            return item
         }
         return nil
     }
@@ -1575,14 +1599,16 @@ public final class BlockingQueue<T>: @unchecked Sendable {
         }
 
         if !queue.isEmpty {
-            return queue.removeFirst()
+            let item = queue.removeFirst()
+            condition.broadcast()
+            return item
         }
         return nil
     }
 
     public func isEmpty() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
+        condition.lock()
+        defer { condition.unlock() }
         return queue.isEmpty
     }
 
@@ -1786,12 +1812,27 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
 /// over-window chunk as a fatal CREDIT_VIOLATION stream error (L12); handler
 /// consumption emits batched grants (window/2) via each stream's
 /// `InputGrantEmitter` (L10).
-internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputCreditContext? = nil) -> InputPackage {
+///
+/// When a `liveFeedCtx` is supplied, incoming streams whose media URN is a
+/// live-feed REFERENCE (13.2 §Reference Media) are intercepted here: their
+/// small selector value is accumulated by the demux and never reaches the
+/// handler, and on STREAM_END the feed is opened through the registered
+/// providers and delivered as an UNBOUNDED SEQUENCE stream labeled with the
+/// arg's stdin CONTENT urn — the live sibling of file-path resolution.
+internal func demuxMultiStream(
+    frameIterator: AnyIterator<Frame>,
+    liveFeedCtx: LiveFeedContext? = nil,
+    credit: InputCreditContext? = nil
+) -> InputPackage {
     let streamsQueue = BlockingQueue<Result<InputStream, StreamError>>()
 
     Thread.detachNewThread {
         // Per-stream live channels: streamId → chunk queue.
         var streamChannels: [String: BlockingQueue<Result<(CBOR, StreamMeta?), StreamError>>] = [:]
+        // Live-feed reference accumulators: streamId → (referenceUrn,
+        // accumulated selector-value payloads). Resolved on STREAM_END: the
+        // value is a small reference, never the data.
+        var lfAccumulators: [String: (referenceUrn: String, chunks: [Data])] = [:]
         // Per-stream remaining credit windows (L10/L12). The window starts at
         // the negotiated initialCredit; handler consumption (grants) extends
         // it; a chunk arriving with the window at zero is a fatal
@@ -1817,6 +1858,13 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 guard let streamId = frame.streamId else {
                     streamsQueue.push(.failure(.protocolError("STREAM_START missing stream_id")))
                     break loop
+                }
+                let mediaUrn = frame.mediaUrn ?? "media:"
+                // A live-feed reference: accumulate the selector value here
+                // (it never reaches the handler) and resolve at STREAM_END.
+                if let ctx = liveFeedCtx, ctx.isLiveFeed(mediaUrn) {
+                    lfAccumulators[streamId] = (referenceUrn: mediaUrn, chunks: [])
+                    continue
                 }
                 let chunkQueue = BlockingQueue<Result<(CBOR, StreamMeta?), StreamError>>()
                 streamChannels[streamId] = chunkQueue
@@ -1854,7 +1902,7 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                     return chunkQueue.dequeue()
                 }
                 let inputStream = InputStream(
-                    mediaUrn: frame.mediaUrn ?? "media:",
+                    mediaUrn: mediaUrn,
                     streamMeta: frame.meta,
                     rx: iterator,
                     unbounded: frame.isUnbounded,
@@ -1863,8 +1911,18 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
                 streamsQueue.push(.success(inputStream))
 
             case .chunk:
-                guard let streamId = frame.streamId,
-                      let queue = streamChannels[streamId],
+                guard let streamId = frame.streamId else {
+                    continue
+                }
+                // Live-feed reference accumulation: the demux consumes the
+                // small selector value; it never reaches the handler.
+                if lfAccumulators[streamId] != nil {
+                    if let payload = frame.payload {
+                        lfAccumulators[streamId]?.chunks.append(payload)
+                    }
+                    continue
+                }
+                guard let queue = streamChannels[streamId],
                       let payload = frame.payload else {
                     continue
                 }
@@ -1943,6 +2001,42 @@ internal func demuxMultiStream(frameIterator: AnyIterator<Frame>, credit: InputC
 
             case .streamEnd:
                 guard let streamId = frame.streamId else {
+                    continue
+                }
+                // Live-feed reference ended — resolve: open the device
+                // through the registered provider and deliver the unbounded
+                // sequence stream (13.2 §Reference Media). A resolution
+                // failure is fatal for the request: the op must never see a
+                // mislabeled or silently-absent feed.
+                if let accumulated = lfAccumulators.removeValue(forKey: streamId) {
+                    guard let ctx = liveFeedCtx else { continue }
+                    // Decode the accumulated payloads → selector bytes (the
+                    // same value-decode contract as file paths).
+                    var selectorBytes = Data()
+                    for chunkPayload in accumulated.chunks {
+                        if let value = try? CBOR.decode([UInt8](chunkPayload)) {
+                            switch value {
+                            case .byteString(let bytes): selectorBytes.append(contentsOf: bytes)
+                            case .utf8String(let text): selectorBytes.append(Data(text.utf8))
+                            default: selectorBytes.append(Data(value.encode()))
+                            }
+                        } else {
+                            selectorBytes.append(chunkPayload)
+                        }
+                    }
+                    do {
+                        let feedStream = try ctx.resolve(
+                            referenceUrn: accumulated.referenceUrn,
+                            selectorBytes: selectorBytes
+                        )
+                        streamsQueue.push(.success(feedStream))
+                    } catch let error as StreamError {
+                        streamsQueue.push(.failure(error))
+                        break loop
+                    } catch {
+                        streamsQueue.push(.failure(.protocolError("\(error)")))
+                        break loop
+                    }
                     continue
                 }
                 // Sequence stream ending mid-item is a truncation — surface
@@ -3456,6 +3550,26 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// expected teardown race, indicated as benign, never as drops.
     let stragglerCounters = StragglerCounters()
 
+    /// Live-capture backends this runtime can resolve live-feed references
+    /// against (13.2 §Reference Media, live family). The built-in synthetic
+    /// provider is pre-registered; capture-capable cartridges add hardware
+    /// providers via `registerLiveFeedProvider`.
+    let liveFeedProviders = LiveFeedProviders()
+
+    /// Register a live-capture backend for a live reference-URN pattern
+    /// (e.g. `media:audio;live;microphone`). The pattern must carry the
+    /// `live` marker — an off-family pattern would never be resolved.
+    public func registerLiveFeedProvider(pattern: String, provider: any LiveFeedProvider) {
+        liveFeedProviders.register(pattern: pattern, provider: provider)
+    }
+
+    /// Capture-edge overruns across every feed this runtime opened (12.5
+    /// §Overrun). Rides heartbeat meta as `overruns_total` — never counted
+    /// as drops.
+    public func protocolOverrunsTotal() -> UInt64 {
+        return liveFeedProviders.overrunsTotal
+    }
+
     /// Snapshot of this runtime's dropped-frame counters (L8).
     public func protocolDrops() -> DropSnapshot {
         return dropCounters.snapshot()
@@ -3829,8 +3943,19 @@ public final class CartridgeRuntime: @unchecked Sendable {
             return frame
         }
 
-        // Demux frames into InputPackage
-        let inputPackage = demuxMultiStream(frameIterator: frameIterator)
+        // Demux frames into InputPackage. Live-feed references resolve in
+        // CLI mode exactly as on the wire (13.2 §Reference Media):
+        // `mic-selector | cartridge cap` is the standalone form of the same
+        // contract. Handles are per-invocation; a direct CLI run stops via
+        // its own process lifecycle.
+        let cliFeedHandles = LiveFeedHandles()
+        let cliLiveFeedCtx = try? LiveFeedContext(
+            capUrn: cap.urn,
+            manifest: parsedManifest,
+            providers: liveFeedProviders,
+            handles: cliFeedHandles
+        )
+        let inputPackage = demuxMultiStream(frameIterator: frameIterator, liveFeedCtx: cliLiveFeedCtx)
 
         // Create CLI-mode OutputStream (writes to stdout). Same derived
         // response label as the wire path: the CLI mode is a debugging
@@ -4250,6 +4375,12 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // never buffered to completion (L16).
         let initialCredit = self.limits.initialCredit
         let creditRouter = self.creditRouter
+        let liveFeedProviders = self.liveFeedProviders
+        let liveFeedManifest = self.parsedManifest
+        // Per-request open live feeds (13.2 §Reference Media): a stop
+        // (non-force Cancel) closes these taps so the run drains, and a
+        // finished handler's remaining feeds are closed on reap.
+        var liveFeedHandlesByRid: [MessageId: LiveFeedHandles] = [:]
         func spawnHandler(
             requestId: MessageId,
             capUrn: String,
@@ -4261,7 +4392,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
             pendingPeerRequests: NSMutableDictionary,
             pendingPeerRequestsLock: NSLock,
             maxChunk: Int,
-            eventQueue: BlockingQueue<LoopEvent>
+            eventQueue: BlockingQueue<LoopEvent>,
+            feedHandles: LiveFeedHandles
         ) {
             Thread.detachNewThread {
                 fputs("[CartridgeRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
@@ -4269,11 +4401,22 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     return frames.dequeue()
                 }
 
+                // Live-feed reference resolution for this request (13.2
+                // §Reference Media): built per handler because it resolves
+                // against THIS cap's declared args.
+                let liveFeedCtx = try? LiveFeedContext(
+                    capUrn: capUrn,
+                    manifest: liveFeedManifest,
+                    providers: liveFeedProviders,
+                    handles: feedHandles
+                )
+
                 // Input streams are credited (L14): the handler's consumption
                 // grants the engine's sender window; over-window chunks are
                 // CREDIT_VIOLATION (L12).
                 let inputPackage = demuxMultiStream(
                     frameIterator: frameIterator,
+                    liveFeedCtx: liveFeedCtx,
                     credit: InputCreditContext(
                         sender: outputSender,
                         rid: requestId,
@@ -4371,6 +4514,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 dequeuedLog.routingId = queued.routingId
                 try? outputSender.send(dequeuedLog)
 
+                let queuedFeedHandles = LiveFeedHandles()
+                liveFeedHandlesByRid[queued.requestId] = queuedFeedHandles
                 spawnHandler(
                     requestId: queued.requestId,
                     capUrn: queued.capUrn,
@@ -4382,7 +4527,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     pendingPeerRequests: pendingPeerRequests,
                     pendingPeerRequestsLock: pendingPeerRequestsLock,
                     maxChunk: self.limits.maxChunk,
-                    eventQueue: eventQueue
+                    eventQueue: eventQueue,
+                    feedHandles: queuedFeedHandles
                 )
                 handlerRoutingIds[queued.requestId] = queued.routingId
                 runningHandlerCount += 1
@@ -4399,6 +4545,11 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // Release credit waiters for this request's output streams
                 // promptly (L13) — a sender blocked on credit must not hang.
                 creditRouter.closeRequest(rid: rid, reason: "END")
+                // A finished handler's feeds are over — close any the
+                // provider hasn't observed as ended yet, and forget them.
+                if let feeds = liveFeedHandlesByRid.removeValue(forKey: rid) {
+                    feeds.closeAll()
+                }
                 if cancelledRequests.remove(rid) != nil {
                     let routingId = handlerRoutingIds.removeValue(forKey: rid) ?? nil
                     var err = Frame.err(id: rid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
@@ -4518,6 +4669,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     ))
                 } else {
                     // Under capacity — spawn handler immediately.
+                    let feedHandles = LiveFeedHandles()
+                    liveFeedHandlesByRid[requestId] = feedHandles
                     spawnHandler(
                         requestId: requestId,
                         capUrn: capUrn,
@@ -4529,7 +4682,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         pendingPeerRequests: pendingPeerRequests,
                         pendingPeerRequestsLock: pendingPeerRequestsLock,
                         maxChunk: self.limits.maxChunk,
-                        eventQueue: eventQueue
+                        eventQueue: eventQueue,
+                        feedHandles: feedHandles
                     )
                     handlerRoutingIds[requestId] = routingId
                     runningHandlerCount += 1
@@ -4573,6 +4727,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     // name — stragglers are not drops.
                     meta["drops_total"] = .unsignedInt(dropCounters.total)
                     meta["stragglers_total"] = .unsignedInt(stragglerCounters.total)
+                    // Capture-edge overruns (12.5 §Overrun) ride alongside,
+                    // under their own name — an overrun is declared loss at
+                    // the capture edge, never a dropped frame.
+                    meta["overruns_total"] = .unsignedInt(self.liveFeedProviders.overrunsTotal)
                     meta["handler_capacity"] = .unsignedInt(UInt64(capacity.get()))
                     response.meta = meta
                     try outputSender.send(response)
@@ -4705,6 +4863,21 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // Skip if already cancelled
                 if cancelledRequests.contains(targetRid) {
                     continue
+                }
+
+                // STOP, not cancel (15.2 §Runs Stop): a non-force Cancel for
+                // a request with OPEN live feeds closes the tap — the feeds
+                // end, the pipeline drains, and the request terminates
+                // naturally with complete outputs. The handles are forgotten
+                // here, so a SECOND Cancel falls through to the ordinary
+                // cooperative cancel (abort).
+                if !(frame.forceKill ?? false) {
+                    if let feeds = liveFeedHandlesByRid[targetRid], feeds.count > 0 {
+                        liveFeedHandlesByRid.removeValue(forKey: targetRid)
+                        feeds.closeAll()
+                        fputs("[CartridgeRuntime] stop: closed \(feeds.count) live feed(s) — the run drains and ends naturally (a second Cancel aborts): rid=\(targetRid)\n", stderr)
+                        continue
+                    }
                 }
 
                 // Case 1: Queued — remove from queue and send ERR

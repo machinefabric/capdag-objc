@@ -741,7 +741,24 @@ internal final class LiveFeedContext: @unchecked Sendable {
     /// registry (the stop path closes through the same object).
     private let handles: LiveFeedHandles
 
-    init(
+    private init(
+        livePattern: CSMediaUrn,
+        canonicalCapUrn: String,
+        manifest: Manifest?,
+        providers: LiveFeedProviders,
+        handles: LiveFeedHandles
+    ) {
+        self.livePattern = livePattern
+        self.capUrn = canonicalCapUrn
+        self.manifest = manifest
+        self.providers = providers
+        self.handles = handles
+    }
+
+    /// Build the context for one request. The cap URN is stored CANONICAL so
+    /// the manifest lookup compares canonical-to-canonical, independent of
+    /// the caller's surface spelling (tag order, quoting).
+    convenience init(
         capUrn: String,
         manifest: Manifest?,
         providers: LiveFeedProviders,
@@ -755,15 +772,19 @@ internal final class LiveFeedContext: @unchecked Sendable {
                 "live-feed context: cap URN '\(capUrn)' does not parse: \(error)"
             )
         }
+        let livePattern: CSMediaUrn
         do {
-            self.livePattern = try CSMediaUrn.fromString(MEDIA_LIVE_FEED)
+            livePattern = try CSMediaUrn.fromString(MEDIA_LIVE_FEED)
         } catch {
             throw CartridgeRuntimeError.handlerError("Failed to create live-feed pattern: \(error)")
         }
-        self.capUrn = parsedCap.toString()
-        self.manifest = manifest
-        self.providers = providers
-        self.handles = handles
+        self.init(
+            livePattern: livePattern,
+            canonicalCapUrn: parsedCap.toString(),
+            manifest: manifest,
+            providers: providers,
+            handles: handles
+        )
     }
 
     /// Whether an incoming stream's media URN is a live-feed reference.
@@ -777,7 +798,13 @@ internal final class LiveFeedContext: @unchecked Sendable {
     /// URN-equivalence predicate, never by string compare.
     private func findArg(_ incoming: CSMediaUrn) -> CapArg? {
         guard let manifest = manifest else { return nil }
-        guard let capDef = manifest.allCaps().first(where: { $0.urn == capUrn }) else { return nil }
+        // Canonical-to-canonical: the manifest's declared spelling and the
+        // dispatched cap URN may differ in tag order or quoting and still be
+        // the same cap.
+        guard let capDef = manifest.allCaps().first(where: { candidate in
+            guard let parsed = try? CSCapUrn.fromString(candidate.urn) else { return false }
+            return parsed.toString() == capUrn
+        }) else { return nil }
         return capDef.args.first { arg in
             guard let argUrn = try? CSMediaUrn.fromString(arg.mediaUrn) else { return false }
             return argUrn.isEquivalent(to: incoming)
