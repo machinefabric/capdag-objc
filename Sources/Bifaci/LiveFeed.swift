@@ -488,6 +488,12 @@ public final class LiveFeedHandles: @unchecked Sendable {
 public protocol LiveFeedProvider: Sendable {
     /// Provider name, for errors and logs.
     var name: String { get }
+    /// The CONTENT media URN this provider's feed delivers (e.g. the
+    /// microphone provider delivers `media:audio-frames;pcm`). Used when a
+    /// live reference resolves against a cap's MAIN INPUT (the cap declares
+    /// no explicit reference arg): the content urn must conform to the main
+    /// input's declared urn, and the delivered stream is labeled with it.
+    var contentUrn: String { get }
     /// Open the device described by `selector` and start capturing into
     /// `sink`. A device that cannot be opened is a hard error — never a
     /// silent empty feed.
@@ -537,6 +543,13 @@ public final class LiveFeedProviders: @unchecked Sendable {
         defer { lock.unlock() }
         // pattern.accepts(reference) == reference.conforms(to: pattern).
         return entries.first { reference.conforms(to: $0.pattern) }?.provider
+    }
+
+    /// The CONTENT urn the provider matching `reference` delivers, if a
+    /// provider is registered for it. Used by main-input resolution: the
+    /// content urn must conform to the consuming arg's declared urn.
+    public func contentUrn(for reference: CSMediaUrn) -> String? {
+        find(reference)?.contentUrn
     }
 
     /// Runtime-wide overrun total (rides heartbeat meta).
@@ -677,10 +690,15 @@ public func openFeed(
 /// deterministic; `capture_ts_us` is wall clock. `interval_ms = 0` emits
 /// as fast as possible — with a small `ring` and a slow consumer this
 /// exercises real overruns without hardware.
+/// The content urn the synthetic feed delivers: opaque test frames.
+public let MEDIA_FEED_FRAMES: String = "media:feed-frames"
+
 public struct SyntheticFeedProvider: LiveFeedProvider {
     public init() {}
 
     public var name: String { "synthetic" }
+
+    public var contentUrn: String { MEDIA_FEED_FRAMES }
 
     public func open(selector: LiveFeedSelector, sink: LiveFeedSink) throws -> StreamMeta? {
         let items = selector.paramUInt("items") ?? 10
@@ -790,32 +808,83 @@ internal final class LiveFeedContext: @unchecked Sendable {
         }
     }
 
+    /// The cap's MAIN INPUT arg (the stdin-sourced arg carrying `in=`, via
+    /// the encapsulated `CapArg.isMainInput` predicate) — the arg a
+    /// transport-blind cap consumes a live feed's CONTENT through.
+    private func findMainInputArg() -> CapArg? {
+        guard let manifest = manifest else { return nil }
+        guard let capDef = manifest.allCaps().first(where: { candidate in
+            guard let parsed = try? CSCapUrn.fromString(candidate.urn) else { return false }
+            return parsed.toString() == capUrn
+        }) else { return nil }
+        guard let parsedCap = try? CSCapUrn.fromString(capUrn),
+              let inSpec = try? CSMediaUrn.fromString(parsedCap.getInSpec()) else { return nil }
+        return capDef.args.first { $0.isMainInput(inSpec: inSpec) }
+    }
+
     /// Resolve the live reference into an open feed and the InputStream
-    /// delivering it. Hard errors on: no matching arg, an arg without a
-    /// stdin source (a live reference MUST resolve to piped content), an
-    /// arg not declared `isSequence` (a feed is a sequence of items), an
-    /// unparseable selector, or a provider/device failure.
+    /// delivering it, by one of two arg matches (13.2 §Reference Media):
+    /// an EXPLICIT reference arg (urn equivalent to the reference; content
+    /// label = its stdin urn), else the cap's MAIN INPUT — the registered
+    /// provider's `contentUrn` must conform to it, and labels the
+    /// delivered stream. Hard errors on: no matching arg, no stdin source,
+    /// `isSequence=false`, non-conforming provider content, an unparseable
+    /// selector, or a provider/device failure. (matches Rust
+    /// `LiveFeedContext::resolve`)
     func resolve(referenceUrn: String, selectorBytes: Data) throws -> InputStream {
         guard let incoming = try? CSMediaUrn.fromString(referenceUrn) else {
             throw StreamError.protocolError("invalid live-feed reference URN: \(referenceUrn)")
         }
-        guard let arg = findArg(incoming) else {
-            throw StreamError.protocolError(
-                "cap '\(capUrn)' declares no arg matching live-feed reference '\(referenceUrn)'"
-            )
-        }
-        var stdinUrn: String? = nil
-        for source in arg.sources {
-            if case .stdin(let target) = source {
-                stdinUrn = target
-                break
+        let arg: CapArg
+        let contentUrn: String
+        if let explicit = findArg(incoming) {
+            var stdinUrn: String? = nil
+            for source in explicit.sources {
+                if case .stdin(let target) = source {
+                    stdinUrn = target
+                    break
+                }
             }
-        }
-        guard let stdinUrn = stdinUrn else {
-            throw StreamError.protocolError(
-                "live-feed arg '\(arg.mediaUrn)' on cap '\(capUrn)' declares no stdin source — a live "
-                + "reference must resolve to piped content (13.2 §Reference Media)"
-            )
+            guard let stdinUrn = stdinUrn else {
+                throw StreamError.protocolError(
+                    "live-feed arg '\(explicit.mediaUrn)' on cap '\(capUrn)' declares no stdin source — a live "
+                    + "reference must resolve to piped content (13.2 §Reference Media)"
+                )
+            }
+            arg = explicit
+            contentUrn = stdinUrn
+        } else {
+            guard let main = findMainInputArg() else {
+                throw StreamError.protocolError(
+                    "cap '\(capUrn)' declares no arg matching live-feed reference '\(referenceUrn)' "
+                    + "and no stdin-sourced main input to resolve it against"
+                )
+            }
+            guard let providerContent = providers.contentUrn(for: incoming) else {
+                throw StreamError.protocolError(
+                    "no live-feed provider is registered for reference '\(referenceUrn)' in this "
+                    + "runtime — the cap's cartridge must register a capture backend for that device family"
+                )
+            }
+            guard let content = try? CSMediaUrn.fromString(providerContent) else {
+                throw StreamError.protocolError(
+                    "provider for '\(referenceUrn)' declares an invalid content urn '\(providerContent)'"
+                )
+            }
+            guard let mainUrn = try? CSMediaUrn.fromString(main.mediaUrn) else {
+                throw StreamError.protocolError(
+                    "main input urn '\(main.mediaUrn)' on cap '\(capUrn)' is not a valid media URN"
+                )
+            }
+            guard content.conforms(to: mainUrn) else {
+                throw StreamError.protocolError(
+                    "live-feed reference '\(referenceUrn)' delivers '\(providerContent)' which does not "
+                    + "conform to cap '\(capUrn)' main input '\(main.mediaUrn)' — this machine cannot "
+                    + "consume that device"
+                )
+            }
+            arg = main
+            contentUrn = providerContent
         }
         if !arg.isSequence {
             throw StreamError.protocolError(
@@ -837,7 +906,7 @@ internal final class LiveFeedContext: @unchecked Sendable {
         }
         handles.add(opened.handle)
         return InputStream(
-            mediaUrn: stdinUrn,
+            mediaUrn: contentUrn,
             streamMeta: opened.streamMeta,
             rx: opened.items,
             unbounded: true,

@@ -3224,6 +3224,22 @@ public struct CapArg: Codable, Sendable {
         argDescription = try container.decodeIfPresent(String.self, forKey: .argDescription)
         defaultValue = try container.decodeIfPresent(JSONValue.self, forKey: .defaultValue)
     }
+
+    /// Whether this arg is the cap's MAIN INPUT for the given `in=` spec:
+    /// it declares a `stdin` source whose URN is tagged-URN-equivalent to
+    /// `inSpec`. Mirrors Rust `CapArg::is_main_input` (and the ObjC
+    /// `CSCapArg` predicate) — compared by URN equivalence, never strings.
+    public func isMainInput(inSpec: CSMediaUrn) -> Bool {
+        for source in sources {
+            if case .stdin(let stdin) = source {
+                if let stdinUrn = try? CSMediaUrn.fromString(stdin),
+                   stdinUrn.isEquivalent(to: inSpec) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
 }
 
 /// Cap definition in the manifest.

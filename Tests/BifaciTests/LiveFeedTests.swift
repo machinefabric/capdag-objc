@@ -295,6 +295,75 @@ final class LiveFeedTests: XCTestCase {
         )
     }
 
+    // A TRANSPORT-BLIND cap (no explicit live arg): its main input consumes
+    // `mainIn` via stdin. Used by the main-input fallback tests.
+    private func makeBlindContext(
+        mainIn: String
+    ) throws -> (ctx: LiveFeedContext, providers: LiveFeedProviders, handles: LiveFeedHandles) {
+        let capUrn = "cap:consume;in=\"\(mainIn)\";out=\"media:fmt=json;record\""
+        let escapedCap = capUrn.replacingOccurrences(of: "\"", with: "\\\"")
+        let json = """
+        {"name":"BlindCartridge","version":"1.0.0","channel":"release","registry_url":null,\
+        "description":"Transport-blind live consumer","cap_groups":[{"name":"default","caps":[\
+        {"urn":"\(escapedCap)","title":"Consume","aliases":["consume"],"args":[\
+        {"media_urn":"\(mainIn)","required":true,"is_sequence":true,\
+        "sources":[{"stdin":"\(mainIn)"}]}]}]}]}
+        """
+        let manifest = try JSONDecoder().decode(Manifest.self, from: Data(json.utf8))
+        let providers = LiveFeedProviders()
+        let handles = LiveFeedHandles()
+        let ctx = try LiveFeedContext(
+            capUrn: capUrn,
+            manifest: manifest,
+            providers: providers,
+            handles: handles
+        )
+        return (ctx, providers, handles)
+    }
+
+    // TEST8137: main-input fallback — a cap with NO explicit reference arg
+    // consumes a live source through its MAIN INPUT when the registered
+    // provider's content urn conforms to it. This is what makes generic
+    // machines (planned over the CONTENT type) valid live-source machines.
+    func test8137_mainInputFallbackResolvesLiveReference() throws {
+        let (ctx, _, handles) = try makeBlindContext(mainIn: "media:feed-frames")
+        let package = demuxLiveReference(
+            ctx: ctx,
+            selector: #"{"params":{"items":3,"interval_ms":1,"item_bytes":4}}"#
+        )
+        guard let first = package.nextStream() else {
+            return XCTFail("the resolved feed stream must be delivered")
+        }
+        let stream = try first.get()
+        XCTAssertEqual(stream.mediaUrn, "media:feed-frames", "labeled with the PROVIDER's content urn")
+        XCTAssertTrue(stream.isUnbounded)
+        var count = 0
+        for itemResult in stream {
+            _ = try itemResult.get()
+            count += 1
+        }
+        XCTAssertEqual(count, 3, "all captured items delivered through the main input")
+        XCTAssertEqual(handles.count, 1, "the open feed registered its handle")
+    }
+
+    // TEST8138: main-input fallback content mismatch — a provider whose
+    // content does not conform to the cap's main input is a hard error at
+    // resolution, never a mislabeled stream.
+    func test8138_mainInputFallbackContentMismatchRejected() throws {
+        let (ctx, _, _) = try makeBlindContext(mainIn: "media:audio-frames;pcm")
+        let package = demuxLiveReference(ctx: ctx, selector: "{}")
+        guard let result = package.nextStream() else {
+            return XCTFail("the failure must be delivered")
+        }
+        guard case .failure(let error) = result else {
+            return XCTFail("a non-conforming provider content must be rejected")
+        }
+        XCTAssertTrue(
+            "\(error)".contains("does not conform"),
+            "the error names the conformance failure: \(error)"
+        )
+    }
+
     // TEST8136: unknown selector fields are rejected at every nesting level
     // — a misspelled stop condition (`duration` for `duration_ms`) silently
     // ignored would run an unbounded feed the caller meant to bound.
