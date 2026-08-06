@@ -294,4 +294,25 @@ final class LiveFeedTests: XCTestCase {
             7
         )
     }
+
+    // TEST8136: unknown selector fields are rejected at every nesting level
+    // — a misspelled stop condition (`duration` for `duration_ms`) silently
+    // ignored would run an unbounded feed the caller meant to bound.
+    func test8136_unknownSelectorFieldsRejected() throws {
+        for bad in [
+            #"{"devise": "mic0"}"#,
+            #"{"stop": {"duration": 1000}}"#,
+            #"{"stop": {"max_item": 3}}"#,
+        ] {
+            let (ctx, _, _) = try makeContext()
+            let package = demuxLiveReference(ctx: ctx, selector: bad)
+            guard let result = package.nextStream() else {
+                return XCTFail("the failure must be delivered: \(bad)")
+            }
+            guard case .failure(let error) = result else {
+                return XCTFail("unknown selector field must be rejected: \(bad)")
+            }
+            XCTAssertTrue("\(error)".contains("selector"), "\(bad): \(error)")
+        }
+    }
 }

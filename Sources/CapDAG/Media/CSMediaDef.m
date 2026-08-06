@@ -311,6 +311,13 @@ BOOL CSMediaUrnIsFilePath(NSString *mediaUrn) {
     return CSMediaUrnHasMarkerTag(mediaUrn, @"file-path");
 }
 
+/// Public function to check if a media URN is a live-feed reference (13.2
+/// §Reference Media, live family). Canonical membership predicate — callers
+/// must not test the 'live' tag themselves.
+BOOL CSMediaUrnIsLiveFeed(NSString *mediaUrn) {
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"live");
+}
+
 /// Public function to check if a media URN represents a model specification.
 BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
     return CSMediaUrnHasMarkerTag(mediaUrn, @"model-spec");

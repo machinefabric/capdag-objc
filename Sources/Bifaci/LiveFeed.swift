@@ -730,7 +730,6 @@ public struct SyntheticFeedProvider: LiveFeedProvider {
 /// register their handles so a stop (non-force Cancel on a feed-bearing
 /// request) can close the tap and let the run drain (15.2 §Runs Stop).
 internal final class LiveFeedContext: @unchecked Sendable {
-    private let livePattern: CSMediaUrn
     /// The CANONICAL rendering of this request's cap URN, so the manifest
     /// lookup compares canonical-to-canonical, independent of the caller's
     /// surface spelling (tag order, quoting).
@@ -741,24 +740,10 @@ internal final class LiveFeedContext: @unchecked Sendable {
     /// registry (the stop path closes through the same object).
     private let handles: LiveFeedHandles
 
-    private init(
-        livePattern: CSMediaUrn,
-        canonicalCapUrn: String,
-        manifest: Manifest?,
-        providers: LiveFeedProviders,
-        handles: LiveFeedHandles
-    ) {
-        self.livePattern = livePattern
-        self.capUrn = canonicalCapUrn
-        self.manifest = manifest
-        self.providers = providers
-        self.handles = handles
-    }
-
     /// Build the context for one request. The cap URN is stored CANONICAL so
     /// the manifest lookup compares canonical-to-canonical, independent of
     /// the caller's surface spelling (tag order, quoting).
-    convenience init(
+    init(
         capUrn: String,
         manifest: Manifest?,
         providers: LiveFeedProviders,
@@ -772,26 +757,20 @@ internal final class LiveFeedContext: @unchecked Sendable {
                 "live-feed context: cap URN '\(capUrn)' does not parse: \(error)"
             )
         }
-        let livePattern: CSMediaUrn
-        do {
-            livePattern = try CSMediaUrn.fromString(MEDIA_LIVE_FEED)
-        } catch {
-            throw CartridgeRuntimeError.handlerError("Failed to create live-feed pattern: \(error)")
-        }
-        self.init(
-            livePattern: livePattern,
-            canonicalCapUrn: parsedCap.toString(),
-            manifest: manifest,
-            providers: providers,
-            handles: handles
-        )
+        self.capUrn = parsedCap.toString()
+        self.manifest = manifest
+        self.providers = providers
+        self.handles = handles
     }
 
-    /// Whether an incoming stream's media URN is a live-feed reference.
+    /// Whether an incoming stream's media URN is a live-feed reference —
+    /// delegated to the canonical family predicate `CSMediaUrnIsLiveFeed`.
+    /// The URN arrives off the wire, so it is parse-guarded first: an
+    /// unparseable URN is simply not a live reference (the demux's own
+    /// validation rejects it downstream), never a raised exception.
     func isLiveFeed(_ mediaUrn: String) -> Bool {
-        guard let argUrn = try? CSMediaUrn.fromString(mediaUrn) else { return false }
-        // livePattern.accepts(argUrn) == argUrn.conforms(to: livePattern).
-        return argUrn.conforms(to: livePattern)
+        guard let parsed = try? CSMediaUrn.fromString(mediaUrn) else { return false }
+        return CSMediaUrnIsLiveFeed(parsed.toString())
     }
 
     /// The cap's arg declaring this reference — matched by the encapsulated

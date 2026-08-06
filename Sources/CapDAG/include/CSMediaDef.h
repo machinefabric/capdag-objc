@@ -454,6 +454,17 @@ BOOL CSMediaUrnIsBool(NSString *mediaUrn);
 BOOL CSMediaUrnIsFilePath(NSString *mediaUrn);
 
 /**
+ * Check if a media URN is a live-feed REFERENCE (has the 'live' marker tag).
+ * Live-feed URNs mirror media:file-path transport resolution: the arg value
+ * is a selector record the runtime resolves into an unbounded content stream
+ * via a registered provider. Canonical membership predicate for that family;
+ * callers must not test the 'live' tag themselves.
+ * @param mediaUrn The media URN to check (must be non-empty)
+ * @return YES if the media URN has the 'live' marker tag
+ */
+BOOL CSMediaUrnIsLiveFeed(NSString *mediaUrn);
+
+/**
  * Check if a media URN represents a model specification (has model-spec marker).
  * This is a pure syntax check - no resolution required.
  * @param mediaUrn The media URN to check (must be non-empty)
