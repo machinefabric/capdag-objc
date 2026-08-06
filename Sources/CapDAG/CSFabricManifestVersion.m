@@ -9,4 +9,4 @@
 // stays in lockstep with the registry the engine was built against.
 #import <stdint.h>
 
-const uint32_t CSBakedFabricManifestVersion = 1;
+const uint32_t CSBakedFabricManifestVersion = 2;
