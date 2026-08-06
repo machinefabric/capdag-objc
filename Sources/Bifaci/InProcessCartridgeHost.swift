@@ -340,7 +340,9 @@ public final class InProcessCartridgeHost {
     /// `installed_cartridges` and derives the flat cap list.
     internal func buildManifest() -> Data {
         var caps: [CapDefinition] = [
-            CapDefinition(urn: CSCapIdentity, title: "Identity", aliases: ["identity"]),
+            // The canonical identity definition — its argument contract must
+            // match what the fabric publishes (cap-drift guard).
+            identityCapDefinition(),
         ]
         for entry in handlers {
             for cap in entry.caps {

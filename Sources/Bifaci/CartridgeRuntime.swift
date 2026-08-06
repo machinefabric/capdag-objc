@@ -3121,6 +3121,31 @@ public struct CapArg: Codable, Sendable {
 }
 
 /// Cap definition in the manifest.
+/// The canonical Identity `CapDefinition` — byte-for-byte the contract the
+/// fabric publishes for `cap:effect=none` and the one the Rust reference's
+/// `standard::caps::identity_cap()` builds. The identity cap declares one
+/// wildcard input arg (`media:`, required, stdin-sourced) that any concrete
+/// media URN conforms to; a cartridge manifest that declares identity WITHOUT
+/// this arg advertises a different argument contract than the fabric promises,
+/// which the publish pipeline's cap-drift guard rejects. Every Swift cartridge
+/// composes its manifest with THIS definition — never a hand-built one.
+public func identityCapDefinition() -> CapDefinition {
+    CapDefinition(
+        urn: CSCapIdentity as String,
+        title: "Identity",
+        aliases: ["identity"],
+        capDescription:
+            "The categorical identity morphism. Echoes input as output unchanged. Mandatory in every capability set.",
+        args: [
+            CapArg(
+                mediaUrn: "media:",
+                required: true,
+                sources: [.stdin("media:")]
+            )
+        ]
+    )
+}
+
 public struct CapDefinition: Codable, Sendable {
     public let urn: String
     public let title: String
