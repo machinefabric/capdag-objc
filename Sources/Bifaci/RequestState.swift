@@ -105,7 +105,11 @@ public struct StreamFlowStats: Codable, Sendable {
     public var bytesOut: UInt64 = 0
     public var chunksIn: UInt64 = 0
     public var chunksOut: UInt64 = 0
-    /// Credits granted through this runtime minus chunks that consumed them.
+    /// The stream's REMAINING credit window as observed by this runtime: the
+    /// negotiated initial window, plus credits granted through this runtime,
+    /// minus chunks that consumed them (in either direction — a stream's
+    /// chunks flow one way and its grants the other). Non-negative in healthy
+    /// operation; a negative value means the producer overran its window.
     /// Diagnostic — the endpoints hold the authoritative windows.
     public var creditOutstanding: Int64 = 0
     /// Stream announced with unbounded=true (no length promise).
@@ -154,6 +158,10 @@ public final class RequestState {
     public internal(set) var phase: RequestPhase = .created
     /// Per-stream flow stats (nil key = non-stream frames).
     public internal(set) var streams: [String?: StreamFlowStats] = [:]
+    /// The NEGOTIATED initial credit window of this request's destination —
+    /// the ledger seed for every stream (see
+    /// `StreamFlowStats.creditOutstanding`).
+    public let initialCredit: UInt64
     /// Monotonic timestamps (nanoseconds, `DispatchTime.uptimeNanoseconds`).
     public let createdAtNanos: UInt64
     public internal(set) var lastActivityNanos: UInt64
@@ -162,13 +170,15 @@ public final class RequestState {
         routing: RoutingEntry,
         origin: Int?,
         externalChannel: ((Frame) -> Bool)?,
-        isPeer: Bool
+        isPeer: Bool,
+        initialCredit: UInt64
     ) {
         let now = DispatchTime.now().uptimeNanoseconds
         self.routing = routing
         self.origin = origin
         self.externalChannel = externalChannel
         self.isPeer = isPeer
+        self.initialCredit = initialCredit
         self.createdAtNanos = now
         self.lastActivityNanos = now
     }
@@ -178,7 +188,15 @@ public final class RequestState {
         if frame.isFlowFrame() {
             phase = .streaming
         }
-        var stats = streams[frame.streamId] ?? StreamFlowStats()
+        // A fresh stream starts with the NEGOTIATED initial window (L10): the
+        // producer may send that many chunks before any CREDIT frame arrives,
+        // so a ledger that starts at zero reads every healthy stream as
+        // negative by exactly the initial window.
+        var stats = streams[frame.streamId] ?? {
+            var seeded = StreamFlowStats()
+            seeded.creditOutstanding = Int64(initialCredit)
+            return seeded
+        }()
         let bytes = UInt64(frame.payload?.count ?? 0)
         switch direction {
         case .inbound:
@@ -186,7 +204,6 @@ public final class RequestState {
             stats.bytesIn += bytes
             if frame.frameType == .chunk {
                 stats.chunksIn += 1
-                stats.creditOutstanding -= 1
             }
         case .outbound:
             stats.framesOut += 1
@@ -194,6 +211,12 @@ public final class RequestState {
             if frame.frameType == .chunk {
                 stats.chunksOut += 1
             }
+        }
+        // A chunk consumes one credit from ITS stream's window regardless of
+        // which way it flows past this runtime — a stream's chunks all flow
+        // one direction, and its grants flow the other.
+        if frame.frameType == .chunk {
+            stats.creditOutstanding -= 1
         }
         switch frame.frameType {
         case .streamStart where frame.isUnbounded:
@@ -351,6 +374,24 @@ public final class RequestTable {
     /// not routing.
     public func recordFrame(_ key: RequestKey, direction: FrameDirection, frame: Frame) {
         entries[key]?.record(direction: direction, frame: frame)
+    }
+
+    /// Whether this RID belongs to a recently terminated request (the bounded
+    /// `recentTerminated` ring).
+    ///
+    /// This is the discriminator between the two ways a frame can arrive with
+    /// no routing state. A hit here means the frame CROSSED its request's
+    /// terminal in flight — the ordinary teardown race of credit-based flow
+    /// control (a grant or straggler emitted before the sender observed
+    /// END/ERR) — which receivers count as `post_terminal`. A miss means the
+    /// table has never known the RID within the ring's horizon: a genuine
+    /// `no_route` anomaly worth alarming on. The ring holds the last
+    /// `recentTerminatedCap` terminations; the race window is milliseconds,
+    /// so eviction cannot misclassify a real race, only age a pathologically
+    /// late frame back into `no_route` — where something that stale belongs.
+    public func recentlyTerminatedRid(_ rid: MessageId) -> Bool {
+        let rid = rid.description
+        return recentTerminated.contains { $0.rid == rid }
     }
 
     /// Register a child peer call under its parent (cancel cascade).

@@ -990,6 +990,43 @@ public final class CartridgeHost: @unchecked Sendable {
     /// the entry is released immediately. Cleared with the entry.
     private var incomingResponseDone: Set<RxidKey> = []
 
+    /// How many terminal-released RIDs the discrimination ring retains
+    /// (mirrors the Rust host's `RECENT_RELEASED_RIDS_CAP`).
+    static let recentReleasedRidsCap = 64
+
+    /// Bounded ring of RIDs whose routing entries were released by an
+    /// OBSERVED terminal — a completed request, a completed peer response, or
+    /// a cartridge death (which synthesizes the ERR terminal itself). This is
+    /// the discriminator between the two ways a frame can arrive with no
+    /// routing entry: a hit means the frame crossed its request's terminal in
+    /// flight (the ordinary teardown race of credit-based flow control —
+    /// counted `post_terminal`), a miss means the host never routed this RID
+    /// within the ring's horizon (`no_route`, a genuine anomaly). GC
+    /// evictions are deliberately NOT recorded here: an evicted entry never
+    /// saw its terminal, so a frame for it is real routing loss and stays
+    /// `no_route` beside `routingGcEvictedTotal`. Guarded by `stateLock`.
+    internal var recentReleasedRids: [MessageId] = []
+
+    /// Record that `rid`'s routing entry was released by an observed
+    /// terminal. Deduplicated; bounded at `recentReleasedRidsCap`.
+    /// Caller holds `stateLock`.
+    internal func noteReleasedRidLocked(_ rid: MessageId) {
+        if recentReleasedRids.contains(rid) {
+            return
+        }
+        if recentReleasedRids.count == Self.recentReleasedRidsCap {
+            recentReleasedRids.removeFirst()
+        }
+        recentReleasedRids.append(rid)
+    }
+
+    /// Whether `rid`'s routing entry was recently released by a terminal —
+    /// the post_terminal / no_route discriminator for unroutable frames.
+    /// Caller holds `stateLock`.
+    internal func recentlyReleasedRidLocked(_ rid: MessageId) -> Bool {
+        recentReleasedRids.contains(rid)
+    }
+
     /// Tracks which incoming request spawned which outgoing peer RIDs.
     /// Maps parent (xid, rid) → list of child peer RIDs. Used for cancel cascade.
     /// Same GC discipline as `incomingRxids` — eviction here is
@@ -2051,6 +2088,9 @@ public final class CartridgeHost: @unchecked Sendable {
                 stateLock.lock()
                 incomingRxids.removeValue(forKey: key)
                 incomingRxidsTouched.removeValue(forKey: key)
+                // The synthesized ERR terminated this request; stragglers for
+                // it are post_terminal, not routing anomalies.
+                noteReleasedRidLocked(frame.id)
                 stateLock.unlock()
             }
 
@@ -2122,12 +2162,16 @@ public final class CartridgeHost: @unchecked Sendable {
                 routedViaIncoming = true
             }
             guard let resolvedIdx = cartridgeIdx else {
+                // Discriminate the teardown race from real routing loss: a
+                // RID released by an observed terminal is the ordinary
+                // END/Credit race (`post_terminal`); a RID this host never
+                // routed is a genuine anomaly (`no_route`). Never a protocol
+                // error and never a silent loss (L6/L8).
+                let reason: DropReason =
+                    recentlyReleasedRidLocked(frame.id) ? .postTerminal : .noRoute
                 stateLock.unlock()
-                // Already cleaned up (e.g., cartridge died, death handler
-                // sent ERR). A counted no_route drop (L6/L8) — never a
-                // protocol error and never a silent loss.
-                let total = drops.record(.noRoute)
-                fputs("[CartridgeHost] dropped continuation frame — no routing entry (no_route, total=\(total)) type=\(frame.frameType) rid=\(frame.id)\n", stderr)
+                let total = drops.record(reason)
+                fputs("[CartridgeHost] dropped continuation frame — no routing entry (\(reason.rawValue), total=\(total)) type=\(frame.frameType) rid=\(frame.id)\n", stderr)
                 return
             }
             let cartridge = cartridges[resolvedIdx]
@@ -2147,6 +2191,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 incomingRxidsTouched.removeValue(forKey: key)
                 incomingBodyDone.remove(key)
                 incomingResponseDone.remove(key)
+                // The synthesized ERR below terminates this request.
+                noteReleasedRidLocked(frame.id)
                 stateLock.unlock()
                 let deathMsg = cartridge.lastDeathMessage ?? "Cartridge exited while processing request"
                 var err = Frame.err(id: frame.id, code: "CARTRIDGE_DIED", attributionClass: .environment, message: deathMsg)
@@ -2171,6 +2217,7 @@ public final class CartridgeHost: @unchecked Sendable {
                         // race): the request is fully over — release.
                         incomingRxids.removeValue(forKey: key)
                         incomingRxidsTouched.removeValue(forKey: key)
+                        noteReleasedRidLocked(frame.id)
                     } else {
                         incomingBodyDone.insert(key)
                     }
@@ -2178,6 +2225,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     // Peer response completed — clean up outgoingRids
                     outgoingRids.removeValue(forKey: frame.id)
                     outgoingRidsTouched.removeValue(forKey: frame.id)
+                    noteReleasedRidLocked(frame.id)
                 }
                 stateLock.unlock()
             }
@@ -2195,8 +2243,17 @@ public final class CartridgeHost: @unchecked Sendable {
             if let idx = cartridgeIdx {
                 let cartridge = cartridges[idx]
                 let _ = cartridge.writeFrame(frame)
+            } else {
+                // No routing entry: COUNTED drop, never silent (L8) — a LOG
+                // that crossed its peer request's terminal is post_terminal;
+                // one for a RID never routed here is no_route.
+                stateLock.lock()
+                let reason: DropReason =
+                    recentlyReleasedRidLocked(frame.id) ? .postTerminal : .noRoute
+                stateLock.unlock()
+                let total = drops.record(reason)
+                fputs("[CartridgeHost] dropped LOG with no routing entry (\(reason.rawValue), total=\(total)) rid=\(frame.id)\n", stderr)
             }
-            // If not a peer response LOG, ignore silently (e.g., stale routing)
 
         case .hello, .heartbeat:
             // These should never arrive from the engine through the relay
@@ -2382,6 +2439,7 @@ public final class CartridgeHost: @unchecked Sendable {
                         if incomingBodyDone.remove(key) != nil {
                             incomingRxids.removeValue(forKey: key)
                             incomingRxidsTouched.removeValue(forKey: key)
+                            noteReleasedRidLocked(frame.id)
                         } else if incomingRxids[key] != nil {
                             incomingResponseDone.insert(key)
                         }
@@ -2598,6 +2656,9 @@ public final class CartridgeHost: @unchecked Sendable {
         for entry in failedOutgoing {
             outgoingRids.removeValue(forKey: entry.rid)
             outgoingRidsTouched.removeValue(forKey: entry.rid)
+            // The death sweep synthesizes ERR terminals for these RIDs below;
+            // stragglers for them are post_terminal.
+            noteReleasedRidLocked(entry.rid)
         }
 
         // incomingRxids: requests routed to this cartridge (intentionally leaked)
@@ -2617,6 +2678,7 @@ public final class CartridgeHost: @unchecked Sendable {
             incomingResponseDone.remove(entry.key)
             incomingToPeerRids.removeValue(forKey: entry.key)
             incomingToPeerRidsTouched.removeValue(forKey: entry.key)
+            noteReleasedRidLocked(entry.rid)
         }
 
         // Determine error code and message based on shutdown reason.
@@ -3371,6 +3433,10 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Test-only: deliver a frame to the host's frame handler as if it
     /// had been read from the cartridge's stdout. Lets contract tests
     /// drive the heartbeat-ingest path without a live process.
+    internal func handleRelayFrameForTest(_ frame: Frame) {
+        handleRelayFrame(frame)
+    }
+
     internal func handleCartridgeFrameForTest(cartridgeIdx: Int, frame: Frame) {
         handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
     }

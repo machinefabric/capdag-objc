@@ -730,6 +730,71 @@ final class FinalStatusHolder: @unchecked Sendable {
 /// await an exhausted window; `blockingWrite`/`blockingEmitListItem` block
 /// the calling thread instead (FFI threads, non-async contexts). Uncredited
 /// streams (CLI mode, tests, in-process host) never wait.
+/// Scalar-stream write coalescing: cap on BYTES buffered before a write
+/// forces a flush. Mirrors the reference (`COALESCE_MAX_BYTES`).
+let COALESCE_MAX_BYTES = 4096
+
+/// Scalar-stream write coalescing: oldest buffered byte AGE that forces a
+/// flush on the next write. Mirrors the reference (`COALESCE_MAX_AGE`).
+let COALESCE_MAX_AGE_NANOS: UInt64 = 20_000_000
+
+/// Shared write-coalescing buffer for one SCALAR stream (mirrors the Rust
+/// `CoalesceBuf`).
+///
+/// Chunk boundaries on a scalar stream are non-semantic — every receiver
+/// decodes each CHUNK payload as one CBOR byteString and concatenates the
+/// inner bytes — so folding many small writes into one chunk is invisible to
+/// consumers while dividing frame count, credit traffic, and the relay's
+/// per-frame work by the batch factor. Sequence streams are NEVER coalesced:
+/// their chunk runs delimit items (per-item meta rides the first chunk), and
+/// mode exclusivity keeps this buffer empty in sequence mode by construction.
+/// Nothing is ever dropped: `close()` flushes before STREAM_END, and every
+/// non-byteString emission flushes first so ordering within the stream is
+/// preserved.
+final class CoalesceBuf {
+    private let lock = NSLock()
+    private var buf: [UInt8] = []
+    private var oldestNanos: UInt64? = nil
+
+    /// Append `data`; returns a batch that is DUE (size or age threshold
+    /// crossed) and must be sent now, or nil while still accumulating.
+    func append(_ data: [UInt8]) -> [UInt8]? {
+        lock.lock()
+        defer { lock.unlock() }
+        if buf.isEmpty {
+            oldestNanos = DispatchTime.now().uptimeNanoseconds
+        }
+        buf.append(contentsOf: data)
+        let aged: Bool
+        if let oldest = oldestNanos {
+            aged = DispatchTime.now().uptimeNanoseconds &- oldest >= COALESCE_MAX_AGE_NANOS
+        } else {
+            aged = false
+        }
+        if buf.count >= COALESCE_MAX_BYTES || aged {
+            oldestNanos = nil
+            let batch = buf
+            buf = []
+            return batch
+        }
+        return nil
+    }
+
+    /// Take whatever is buffered, unconditionally. The flush/close/ordering
+    /// barrier primitive.
+    func take() -> [UInt8]? {
+        lock.lock()
+        defer { lock.unlock() }
+        if buf.isEmpty {
+            return nil
+        }
+        oldestNanos = nil
+        let batch = buf
+        buf = []
+        return batch
+    }
+}
+
 public final class OutputStream: @unchecked Sendable {
     private let sender: any FrameSender
     private let streamId: String
@@ -764,6 +829,9 @@ public final class OutputStream: @unchecked Sendable {
     /// the END frame's terminal metadata (L3/L5). Unset means the runtime
     /// stamps the default: progress 1.0 on success.
     let finalStatusHolder = FinalStatusHolder()
+
+    /// Write-coalescing buffer for scalar byte emissions (see `CoalesceBuf`).
+    private let coalesce = CoalesceBuf()
 
     init(
         sender: any FrameSender,
@@ -947,13 +1015,39 @@ public final class OutputStream: @unchecked Sendable {
         if data.isEmpty {
             return
         }
+        // Coalesce: small writes accumulate and ship as one CHUNK once the
+        // size or age threshold is crossed (see `CoalesceBuf`); `close()`
+        // flushes the tail. Chunk boundaries on a scalar stream are
+        // non-semantic, so this is invisible to every consumer.
+        if let batch = coalesce.append([UInt8](data)) {
+            try await writeBatch(batch)
+        }
+    }
+
+    /// Ship one coalesced batch: split at `maxChunk`, one credit per CHUNK.
+    private func writeBatch(_ data: [UInt8]) async throws {
         var offset = 0
         while offset < data.count {
             let chunkSize = min(data.count - offset, maxChunk)
-            let chunkBytes = data.subdata(in: offset..<(offset + chunkSize))
+            let chunkBytes = Array(data[offset..<(offset + chunkSize)])
             try await acquireCredit()
-            try sendChunk(.byteString([UInt8](chunkBytes)))
+            try sendChunk(.byteString(chunkBytes))
             offset += chunkSize
+        }
+    }
+
+    /// Flush any coalesced-but-unsent bytes to the wire now. `close()` calls
+    /// this; handlers only need it for explicit mid-stream latency barriers.
+    public func flush() async throws {
+        if let batch = coalesce.take() {
+            try await writeBatch(batch)
+        }
+    }
+
+    /// Blocking-context counterpart of `flush()`.
+    public func blockingFlush() throws {
+        if let batch = coalesce.take() {
+            try blockingWriteBatch(batch)
         }
     }
 
@@ -965,12 +1059,19 @@ public final class OutputStream: @unchecked Sendable {
         if data.isEmpty {
             return
         }
+        if let batch = coalesce.append([UInt8](data)) {
+            try blockingWriteBatch(batch)
+        }
+    }
+
+    /// Blocking-context counterpart of `writeBatch(_:)`.
+    private func blockingWriteBatch(_ data: [UInt8]) throws {
         var offset = 0
         while offset < data.count {
             let chunkSize = min(data.count - offset, maxChunk)
-            let chunkBytes = data.subdata(in: offset..<(offset + chunkSize))
+            let chunkBytes = Array(data[offset..<(offset + chunkSize)])
             try blockingAcquireCredit()
-            try sendChunk(.byteString([UInt8](chunkBytes)))
+            try sendChunk(.byteString(chunkBytes))
             offset += chunkSize
         }
     }
@@ -1054,16 +1155,19 @@ public final class OutputStream: @unchecked Sendable {
         try checkMode(false)
         switch value {
         case .byteString(let bytes):
-            var offset = 0
-            while offset < bytes.count {
-                let chunkSize = min(bytes.count - offset, maxChunk)
-                let chunkBytes = Array(bytes[offset..<(offset + chunkSize)])
-                try await acquireCredit()
-                try sendChunk(.byteString(chunkBytes))
-                offset += chunkSize
+            // Byte emissions coalesce exactly like `write` — on a scalar
+            // stream a byteString chunk is pure byte-stream continuation.
+            if bytes.isEmpty {
+                return
+            }
+            if let batch = coalesce.append(bytes) {
+                try await writeBatch(batch)
             }
 
         case .utf8String(let text):
+            // ORDERING BARRIER: a non-byteString value must not overtake
+            // bytes still sitting in the coalescing buffer.
+            try await flush()
             let textBytes = Data(text.utf8)
             var offset = 0
             while offset < textBytes.count {
@@ -1087,12 +1191,14 @@ public final class OutputStream: @unchecked Sendable {
             }
 
         case .array(let elements):
+            try await flush()
             for element in elements {
                 try await acquireCredit()
                 try sendChunk(element)
             }
 
         case .map(let entries):
+            try await flush()
             for (key, val) in entries {
                 let entry = CBOR.array([key, val])
                 try await acquireCredit()
@@ -1101,6 +1207,7 @@ public final class OutputStream: @unchecked Sendable {
 
         default:
             // Other types (int, float, bool, null): send as single chunk
+            try await flush()
             try await acquireCredit()
             try sendChunk(value)
         }
@@ -1188,7 +1295,7 @@ public final class OutputStream: @unchecked Sendable {
     /// so no STREAM_END is needed — the handler produced no output).
     /// Unbounded streams made no length promise — their STREAM_END carries
     /// no chunkCount (L16).
-    public func close() throws {
+    public func close() async throws {
         closedLock.lock()
         let alreadyClosed = _closed
         if !alreadyClosed {
@@ -1202,12 +1309,51 @@ public final class OutputStream: @unchecked Sendable {
 
         streamModeLock.lock()
         let mode = _streamMode
-        let unbounded = _unbounded
         streamModeLock.unlock()
 
         if mode == nil {
             return // Never started — no output produced, nothing to close
         }
+
+        // Coalesced tail bytes ship BEFORE the STREAM_END that promises the
+        // chunk count — flushing here is what makes coalescing lossless.
+        try await flush()
+        try sendStreamEnd()
+    }
+
+    /// Blocking-context counterpart of `close()` — FFI threads and non-async
+    /// contexts. The credit wait for the flushed tail blocks the calling
+    /// thread instead of yielding.
+    public func blockingClose() throws {
+        closedLock.lock()
+        let alreadyClosed = _closed
+        if !alreadyClosed {
+            _closed = true
+        }
+        closedLock.unlock()
+
+        if alreadyClosed {
+            return
+        }
+
+        streamModeLock.lock()
+        let mode = _streamMode
+        streamModeLock.unlock()
+
+        if mode == nil {
+            return
+        }
+
+        try blockingFlush()
+        try sendStreamEnd()
+    }
+
+    /// Build and send this stream's STREAM_END (chunk_count only for bounded
+    /// streams, L16). Shared tail of both close variants.
+    private func sendStreamEnd() throws {
+        streamModeLock.lock()
+        let unbounded = _unbounded
+        streamModeLock.unlock()
 
         var frame: Frame
         if unbounded {
@@ -1929,7 +2075,7 @@ extension PeerInvoker {
             // Blocking credit acquisition — this convenience is a sync API
             // used from handler threads (L9).
             try arg.blockingWrite(data)
-            try arg.close()
+            try arg.blockingClose()
         }
         return try call.finish()
     }
@@ -2557,8 +2703,9 @@ func dispatchOp(op: AnyOp<Void>, input: InputPackage, output: OutputStream, peer
     if let err = holder.error {
         throw err
     }
-    // Auto-close output stream on success
-    try? output.close()
+    // Auto-close output stream on success — flushes any coalesced tail
+    // before STREAM_END (blocking variant: dispatchOp is a sync bridge).
+    try? output.blockingClose()
 }
 
 // MARK: - Internal: Pending Peer Request

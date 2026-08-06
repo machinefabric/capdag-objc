@@ -1,0 +1,94 @@
+import XCTest
+@testable import Bifaci
+
+// =============================================================================
+// Host-side drop classification (mirrors Rust TEST8116/TEST8117)
+//
+// The host discriminates the two ways a frame can arrive with no routing
+// entry: a RID released by an OBSERVED terminal is the ordinary teardown race
+// of credit-based flow control (`post_terminal`); a RID this host never routed
+// is a genuine routing anomaly (`no_route`). Both are COUNTED drops (L8) —
+// never errors and never silent.
+// =============================================================================
+
+final class CartridgeHostDropClassificationTests: XCTestCase {
+
+    // TEST8116: the terminal-release ring discriminates and stays bounded —
+    // released rids classify as post_terminal material, unknown rids do not,
+    // duplicates collapse, and eviction past the cap ages a rid back out.
+    func test8116_releasedRidRingDiscriminatesDedupesAndAgesOut() {
+        let host = CartridgeHost()
+        let rid = MessageId.uint(7)
+
+        XCTAssertFalse(host.recentlyReleasedRidLocked(rid), "nothing released yet")
+        host.noteReleasedRidLocked(rid)
+        host.noteReleasedRidLocked(rid) // duplicate must collapse
+        XCTAssertTrue(host.recentlyReleasedRidLocked(rid))
+        XCTAssertEqual(
+            host.recentReleasedRids.count, 1,
+            "duplicate releases collapse to one ring entry"
+        )
+        XCTAssertFalse(
+            host.recentlyReleasedRidLocked(.uint(9999)),
+            "a rid never released here is a genuine anomaly"
+        )
+
+        for n in 100..<(100 + CartridgeHost.recentReleasedRidsCap) {
+            host.noteReleasedRidLocked(.uint(UInt64(n)))
+        }
+        XCTAssertFalse(
+            host.recentlyReleasedRidLocked(rid),
+            "eviction past recentReleasedRidsCap ends post_terminal classification"
+        )
+        XCTAssertEqual(
+            host.recentReleasedRids.count, CartridgeHost.recentReleasedRidsCap,
+            "the ring is bounded"
+        )
+    }
+
+    // TEST8117: an unroutable continuation from the relay is classified by
+    // the release ring — post_terminal for a rid a terminal just released,
+    // no_route for a rid this host never routed. The same law covers
+    // unroutable LOG frames: counted, never silent.
+    func test8117_unroutableContinuationClassifiedByReleaseRing() {
+        let host = CartridgeHost()
+
+        // Unknown rid: no routing entry, nothing released → no_route.
+        var unknown = Frame(frameType: .chunk, id: .uint(41))
+        unknown.routingId = .uint(4)
+        unknown.streamId = "s"
+        unknown.chunkIndex = 0
+        unknown.checksum = 0
+        host.handleRelayFrameForTest(unknown)
+        XCTAssertEqual(host.drops.get(.noRoute), 1, "a rid never routed here is a routing anomaly")
+        XCTAssertEqual(host.drops.get(.postTerminal), 0)
+
+        // Released rid: the same frame after a terminal released the route →
+        // post_terminal, and the no_route counter must NOT move.
+        host.noteReleasedRidLocked(.uint(42))
+        var straggler = Frame(frameType: .chunk, id: .uint(42))
+        straggler.routingId = .uint(4)
+        straggler.streamId = "s"
+        straggler.chunkIndex = 0
+        straggler.checksum = 0
+        host.handleRelayFrameForTest(straggler)
+        XCTAssertEqual(
+            host.drops.get(.postTerminal), 1,
+            "a released rid's straggler is the teardown race"
+        )
+        XCTAssertEqual(
+            host.drops.get(.noRoute), 1,
+            "the routing-anomaly counter must not absorb teardown races"
+        )
+
+        // Unroutable LOG frames follow the same law — counted, never silent.
+        var logReleased = Frame.progress(id: .uint(42), progress: 0.5, message: "late log")
+        logReleased.routingId = .uint(4)
+        host.handleRelayFrameForTest(logReleased)
+        XCTAssertEqual(host.drops.get(.postTerminal), 2)
+        var logUnknown = Frame.progress(id: .uint(43), progress: 0.5, message: "alien log")
+        logUnknown.routingId = .uint(4)
+        host.handleRelayFrameForTest(logUnknown)
+        XCTAssertEqual(host.drops.get(.noRoute), 2)
+    }
+}

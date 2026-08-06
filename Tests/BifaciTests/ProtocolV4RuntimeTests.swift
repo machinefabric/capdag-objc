@@ -343,7 +343,10 @@ final class ProtocolV4RuntimeTests: XCTestCase {
         let finished = LockedFlag()
         let writerTask = Task {
             try await output.write(data)
-            try output.close()
+            // write() coalesces (24 bytes is far under the batch threshold);
+            // close() flushes the batch, so the window stall now happens
+            // inside close's flush — same wire behavior, same law.
+            try await output.close()
             finished.set()
         }
 
@@ -710,7 +713,8 @@ final class ProtocolV4SwitchTests: XCTestCase {
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: destination),
             origin: nil,
             externalChannel: channel.map { q in { frame in q.push(frame); return true } },
-            isPeer: false
+            isPeer: false,
+            initialCredit: DEFAULT_INITIAL_CREDIT
         ))
     }
 
@@ -910,7 +914,8 @@ final class ProtocolV4SwitchTests: XCTestCase {
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
             origin: nil,
             externalChannel: { _ in false }, // dead consumer
-            isPeer: false
+            isPeer: false,
+            initialCredit: DEFAULT_INITIAL_CREDIT
         ))
 
         // The cartridge streams a response frame into the dead channel.
@@ -1010,6 +1015,106 @@ final class ProtocolV4SwitchTests: XCTestCase {
         )
         XCTAssertTrue(stats.requests.active.isEmpty)
         switch_.shutdown()
+    }
+
+    // TEST8114: A flow frame that CROSSED its request's terminal in flight is
+    // counted post_terminal, not no_route — the ordinary teardown race of
+    // credit-based flow control must not pollute the routing-anomaly alarm.
+    // A frame for a RID the table never knew stays no_route (TEST7025).
+    func test8114_stragglerForTerminatedRequestCountsPostTerminal() throws {
+        let switch_ = try RelaySwitch(sockets: [])
+        defer { switch_.shutdown() }
+
+        let xid = MessageId.uint(21)
+        let rid = MessageId.newUUID()
+        let key = RequestKey(xid: xid, rid: rid)
+        let channel = BlockingQueue<Frame>()
+        try registerExternal(switch_, key: key, destination: 0, channel: channel)
+
+        var end = Frame.endOkWith(id: rid, finalPayload: nil, progress: 1.0, message: nil)
+        end.routingId = xid
+        _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: end)
+        XCTAssertEqual(try XCTUnwrap(channel.tryPop(timeout: 2)).frameType, .end)
+
+        // A response continuation (has XID) that raced the END.
+        var late = Frame.progress(id: rid, progress: 0.9, message: "late")
+        late.routingId = xid
+        XCTAssertNil(try switch_.handleMasterFrame(sourceIdx: 0, frame: late))
+
+        // A request continuation (no XID) for the same terminated RID.
+        var chunk = Frame(frameType: .chunk, id: rid)
+        chunk.streamId = "s"
+        chunk.chunkIndex = 0
+        chunk.checksum = 0
+        XCTAssertNil(try switch_.handleMasterFrame(sourceIdx: 0, frame: chunk))
+
+        // A duplicate terminal for the released request.
+        var dupEnd = Frame.endOkWith(id: rid, finalPayload: nil, progress: 1.0, message: nil)
+        dupEnd.routingId = xid
+        XCTAssertNil(try switch_.handleMasterFrame(sourceIdx: 0, frame: dupEnd))
+
+        let stats = switch_.protocolStats()
+        XCTAssertEqual(
+            stats.drops.byReason["post_terminal"], 3,
+            "all three stragglers classified post_terminal: \(stats.drops)"
+        )
+        XCTAssertNil(
+            stats.drops.byReason["no_route"],
+            "a terminated request's stragglers must never read as routing anomalies: \(stats.drops)"
+        )
+    }
+
+    // TEST8118: the flow ledger is a WINDOW — seeded with the request's
+    // negotiated initial credit, consumed by chunks, replenished by grants —
+    // and engine-originated frames sent through sendToMaster are recorded as
+    // its outbound half. Before this, engine grants and chunks bypassed the
+    // ledger entirely, so every healthy stream snapshot read as negative by
+    // exactly the un-seeded initial window.
+    func test8118_sendToMasterRecordsOutboundFlowAndWindow() throws {
+        let switch_ = try RelaySwitch(sockets: [])
+        defer { switch_.shutdown() }
+
+        let xid = MessageId.uint(31)
+        let rid = MessageId.uint(310)
+        let key = RequestKey(xid: xid, rid: rid)
+        try switch_.requests.register(key, RequestState(
+            routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
+            origin: nil,
+            externalChannel: nil,
+            isPeer: false,
+            initialCredit: 5 // negotiated window under test — odd-sized so seed arithmetic is visible
+        ))
+
+        // An outbound chunk and an outbound grant from the engine side. There
+        // is no master 0 attached, so delivery fails — but the ledger records
+        // BEFORE the write, exactly like the inbound path records before
+        // routing, so stats never depend on delivery succeeding.
+        let payload = Data(repeating: 0, count: 7)
+        let checksum = Frame.computeChecksum(payload)
+        var chunk = Frame.chunk(reqId: rid, streamId: "s", seq: 0, payload: payload, chunkIndex: 0, checksum: checksum)
+        chunk.routingId = xid
+        _ = try? switch_.sendToMaster(chunk)
+
+        var credit = Frame.credit(targetRid: rid, streamId: "s", credits: 3, direction: .response)
+        credit.routingId = xid
+        _ = try? switch_.sendToMaster(credit)
+
+        let stats = switch_.protocolStats()
+        let req = try XCTUnwrap(
+            stats.requests.active.first { $0.rid == rid.description },
+            "request must still be active"
+        )
+        let stream = try XCTUnwrap(
+            req.streams.first { $0.streamId == "s" },
+            "stream ledger must exist for the outbound flow"
+        )
+        XCTAssertEqual(stream.stats.chunksOut, 1, "outbound chunk recorded")
+        XCTAssertEqual(stream.stats.bytesOut, 7, "outbound bytes recorded")
+        XCTAssertEqual(
+            stream.stats.creditOutstanding,
+            5 - 1 + 3,
+            "window = seed - chunks + grants, never a bare running delta"
+        )
     }
 
     // TEST7035: After END, the switch holds zero state for the request — entry, rid index, and response channel all released atomically, with the terminal delivered and a terminated summary recorded.
@@ -1123,13 +1228,15 @@ final class ProtocolV4SwitchTests: XCTestCase {
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
             origin: nil,
             externalChannel: { frame in parentChannel.push(frame); return true },
-            isPeer: false
+            isPeer: false,
+            initialCredit: DEFAULT_INITIAL_CREDIT
         ))
         try switch_.requests.register(childKey, RequestState(
             routing: RoutingEntry(sourceMasterIdx: 0, destinationMasterIdx: 0),
             origin: 0,
             externalChannel: nil,
-            isPeer: true
+            isPeer: true,
+            initialCredit: DEFAULT_INITIAL_CREDIT
         ))
         switch_.requests.linkChild(parent: parentKey, child: childKey)
 
@@ -1182,7 +1289,8 @@ final class ProtocolV4SwitchTests: XCTestCase {
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
             origin: nil,
             externalChannel: { frame in channel.push(frame); return true },
-            isPeer: false
+            isPeer: false,
+            initialCredit: DEFAULT_INITIAL_CREDIT
         ))
 
         try switch_.handleMasterDeath(0)

@@ -433,6 +433,18 @@ public final class RelaySwitch: @unchecked Sendable {
     private var aggregateCapabilities: Data = Data()
     private var aggregateInstalledCartridges: [InstalledCartridgeRecord] = []
     private var negotiatedLimits: Limits = Limits()
+
+    /// The destination master's negotiated initial credit — the ledger seed
+    /// for requests routed to it (`RequestState.initialCredit`). When the
+    /// slot has already detached (a resolve/attach race — the registration
+    /// that follows will fail on delivery), the switch-level negotiated
+    /// minimum is the correct window bound. Caller holds the switch lock.
+    private func masterInitialCredit(_ destIdx: Int) -> UInt64 {
+        guard masters.indices.contains(destIdx) else {
+            return negotiatedLimits.initialCredit
+        }
+        return masters[destIdx].limits.initialCredit
+    }
     private let lock = NSLock()
     private var frameChannel: [(masterIdx: Int, frame: Frame?, error: Error?)] = []
     private let frameSemaphore = DispatchSemaphore(value: 0)
@@ -1380,7 +1392,8 @@ public final class RelaySwitch: @unchecked Sendable {
                     routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: destIdx),
                     origin: nil,
                     externalChannel: nil,
-                    isPeer: false
+                    isPeer: false,
+                    initialCredit: masterInitialCredit(destIdx)
                 )
                 state.capUrn = mutableFrame.cap
                 // The request table owns the permit now: it is released when
@@ -1417,6 +1430,12 @@ public final class RelaySwitch: @unchecked Sendable {
             guard let entry = requests.get(key) else {
                 throw RelaySwitchError.unknownRequest(frame.id.toString())
             }
+
+            // RECORD the outbound frame in the request's flow ledger.
+            // Engine-originated grants and chunks are half of every stream's
+            // credit arithmetic; skipping them made the snapshot ledger read
+            // healthy streams as deep-negative.
+            requests.recordFrame(key, direction: .outbound, frame: mutableFrame)
 
             let destIdx = entry.routing.destinationMasterIdx
 
@@ -1659,7 +1678,8 @@ public final class RelaySwitch: @unchecked Sendable {
                     routing: RoutingEntry(sourceMasterIdx: sourceIdx, destinationMasterIdx: destIdx),
                     origin: sourceIdx,
                     externalChannel: nil,
-                    isPeer: true
+                    isPeer: true,
+                    initialCredit: masterInitialCredit(destIdx)
                 )
                 state.capUrn = cap
                 try requests.register(key, state)
@@ -1721,8 +1741,14 @@ public final class RelaySwitch: @unchecked Sendable {
                 if isTerminal {
                     let kind: TerminalKind = frame.frameType == .end ? .end : .err
                     guard let state = requests.terminate(key, kind: kind) else {
-                        let total = drops.record(.noRoute)
-                        fputs("[RelaySwitch] dropped terminal for released request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                        // Classify by the terminated ring: a frame for a
+                        // request that JUST terminated is the ordinary
+                        // teardown race (`post_terminal`); only a RID the
+                        // table never knew is a routing anomaly (`no_route`).
+                        let reason: DropReason =
+                            requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
+                        let total = drops.record(reason)
+                        fputs("[RelaySwitch] dropped duplicate terminal for released request (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
                         return nil
                     }
                     capForLog = state.capUrn
@@ -1732,8 +1758,10 @@ public final class RelaySwitch: @unchecked Sendable {
                     }
                 } else {
                     guard let state = requests.get(key) else {
-                        let total = drops.record(.noRoute)
-                        fputs("[RelaySwitch] dropped post-terminal response frame (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                        let reason: DropReason =
+                            requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
+                        let total = drops.record(reason)
+                        fputs("[RelaySwitch] dropped response frame with no routing state (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
                         return nil
                     }
                     capForLog = state.capUrn
@@ -1787,8 +1815,10 @@ public final class RelaySwitch: @unchecked Sendable {
                 let rid = frame.id
 
                 guard let xid = requests.xidForRid(rid) else {
-                    let total = drops.record(.noRoute)
-                    fputs("[RelaySwitch] dropped continuation for unknown/terminated request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                    let reason: DropReason =
+                        requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
+                    let total = drops.record(reason)
+                    fputs("[RelaySwitch] dropped continuation with no routing state (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
                     return nil
                 }
 
@@ -1796,8 +1826,10 @@ public final class RelaySwitch: @unchecked Sendable {
                 requests.recordFrame(key, direction: .inbound, frame: frame)
 
                 guard let entry = requests.get(key) else {
-                    let total = drops.record(.noRoute)
-                    fputs("[RelaySwitch] dropped continuation for unknown/terminated request (no_route) rid=\(rid) no_route_total=\(total)\n", stderr)
+                    let reason: DropReason =
+                        requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
+                    let total = drops.record(reason)
+                    fputs("[RelaySwitch] dropped continuation with no routing state (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
                     return nil
                 }
 
@@ -2118,7 +2150,8 @@ public final class RelaySwitch: @unchecked Sendable {
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: masterIdx),
             origin: nil,
             externalChannel: nil,
-            isPeer: false
+            isPeer: false,
+            initialCredit: masterInitialCredit(masterIdx)
         )
         probeState.capUrn = CSCapIdentity as String
         try? requests.register(key, probeState)

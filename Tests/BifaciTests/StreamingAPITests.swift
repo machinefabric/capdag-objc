@@ -332,19 +332,33 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: 1000
         )
 
-        // start() then write 3 chunks
+        // Three small rapid writes COALESCE into one CHUNK (scalar-stream
+        // chunk boundaries are non-semantic), flushed by close() BEFORE the
+        // STREAM_END that promises the count — coalescing must be lossless
+        // and the count must match what actually shipped.
         try output.start(isSequence: false)
         try output.blockingWrite(Data([1]))
         try output.blockingWrite(Data([2]))
         try output.blockingWrite(Data([3]))
-        try output.close()
+        try output.blockingClose()
 
-        // Last frame before any END should be STREAM_END
+        let chunks = sentFrames.filter { $0.frameType == .chunk }
+        XCTAssertEqual(chunks.count, 1, "small rapid writes coalesce into one chunk")
+        let decoded = try CBOR.decode([UInt8](chunks[0].payload ?? Data()))
+        XCTAssertEqual(
+            decoded, .byteString([1, 2, 3]),
+            "coalescing is lossless and order-preserving"
+        )
+
         let streamEndFrames = sentFrames.filter { $0.frameType == .streamEnd }
         XCTAssertEqual(streamEndFrames.count, 1, "Should send exactly one STREAM_END")
-
-        let streamEnd = streamEndFrames[0]
-        XCTAssertEqual(streamEnd.chunkCount, 3, "chunk_count should be 3")
+        XCTAssertEqual(
+            streamEndFrames[0].chunkCount, 1,
+            "STREAM_END promises the COALESCED chunk count"
+        )
+        let chunkPos = sentFrames.firstIndex { $0.frameType == .chunk }!
+        let endPos = sentFrames.firstIndex { $0.frameType == .streamEnd }!
+        XCTAssertLessThan(chunkPos, endPos, "the flushed tail ships BEFORE STREAM_END")
     }
 
     // TEST541: OutputStream chunks large data correctly
@@ -368,7 +382,7 @@ final class StreamingAPITests: XCTestCase {
         try output.start(isSequence: false)
         let largeData = Data(repeating: 0x42, count: 35)
         try output.blockingWrite(largeData)
-        try output.close()
+        try output.blockingClose()
 
         // Should have STREAM_START + 4 CHUNKs + STREAM_END
         // 35 bytes / 10 max = 4 chunks (10 + 10 + 10 + 5)
@@ -380,6 +394,103 @@ final class StreamingAPITests: XCTestCase {
             // The payload contains CBOR-encoded data, so size may vary slightly
             XCTAssertNotNil(chunk.payload)
         }
+    }
+
+    // TEST8119: the coalescing AGE bound — a write arriving after the buffer's
+    // oldest byte crossed COALESCE_MAX_AGE flushes the accumulated batch, so
+    // steady token emission lags the wire by at most one write-gap; the tail
+    // written after that flush ships with close. Nothing is lost, order is
+    // preserved, and the frame count is the batch count, not the write count.
+    func test8119_coalesceAgeBoundFlushesOnNextWrite() throws {
+        var sentFrames: [Frame] = []
+        let mockSender = MockFrameSender { frame in
+            sentFrames.append(frame)
+        }
+        let output = Bifaci.OutputStream(
+            sender: mockSender,
+            streamId: "test-stream",
+            mediaUrn: "media:enc=utf-8",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 256_000
+        )
+        try output.start(isSequence: false)
+
+        try output.blockingWrite(Data("ab".utf8))
+        try output.blockingWrite(Data("cd".utf8))
+        // Cross the age bound, then write again: THIS write must flush all
+        // three fragments as one chunk.
+        Thread.sleep(forTimeInterval: Double(COALESCE_MAX_AGE_NANOS) / 1_000_000_000 + 0.01)
+        try output.blockingWrite(Data("ef".utf8))
+        // A fresh fragment after the flush stays buffered until close.
+        try output.blockingWrite(Data("gh".utf8))
+        try output.blockingClose()
+
+        let chunks = sentFrames.filter { $0.frameType == .chunk }
+        XCTAssertEqual(
+            chunks.count, 2,
+            "one age-flushed batch + one close-flushed tail — never one frame per write"
+        )
+        XCTAssertEqual(
+            try CBOR.decode([UInt8](chunks[0].payload ?? Data())),
+            .byteString([UInt8]("abcdef".utf8))
+        )
+        XCTAssertEqual(
+            try CBOR.decode([UInt8](chunks[1].payload ?? Data())),
+            .byteString([UInt8]("gh".utf8))
+        )
+    }
+
+    // TEST8120: byteString emissions through emitCbor coalesce (the mlx
+    // per-token path), a non-byteString value is an ordering BARRIER (buffered
+    // bytes ship first), and close flushes the tail — STREAM_END promises the
+    // coalesced count.
+    func test8120_emitCborCoalescesAndBarriersNonBytes() async throws {
+        var sentFrames: [Frame] = []
+        let mockSender = MockFrameSender { frame in
+            sentFrames.append(frame)
+        }
+        let output = Bifaci.OutputStream(
+            sender: mockSender,
+            streamId: "test-stream",
+            mediaUrn: "media:enc=utf-8",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 256_000
+        )
+        try output.start(isSequence: false)
+
+        // Buffered per-token emissions…
+        try await output.emitCbor(.byteString([UInt8]("tok1".utf8)))
+        try await output.emitCbor(.byteString([UInt8]("tok2".utf8)))
+        // …a non-byteString value must NOT overtake them: barrier-flush first.
+        try await output.emitCbor(.unsignedInt(7))
+        // …and bytes buffered after the barrier flush with close.
+        try await output.emitCbor(.byteString([UInt8]("tok3".utf8)))
+        try await output.close()
+
+        let chunks = sentFrames.filter { $0.frameType == .chunk }
+        XCTAssertEqual(chunks.count, 3, "batch, barrier value, close-flushed tail")
+        XCTAssertEqual(
+            try CBOR.decode([UInt8](chunks[0].payload ?? Data())),
+            .byteString([UInt8]("tok1tok2".utf8))
+        )
+        XCTAssertEqual(
+            try CBOR.decode([UInt8](chunks[1].payload ?? Data())),
+            .unsignedInt(7)
+        )
+        XCTAssertEqual(
+            try CBOR.decode([UInt8](chunks[2].payload ?? Data())),
+            .byteString([UInt8]("tok3".utf8))
+        )
+
+        let endPos = sentFrames.firstIndex { $0.frameType == .streamEnd }!
+        let lastChunkPos = sentFrames.lastIndex { $0.frameType == .chunk }!
+        XCTAssertLessThan(lastChunkPos, endPos, "tail ships before STREAM_END")
+        XCTAssertEqual(
+            sentFrames[endPos].chunkCount, 3,
+            "STREAM_END promises the coalesced count"
+        )
     }
 
     // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
@@ -399,7 +510,7 @@ final class StreamingAPITests: XCTestCase {
         )
 
         // Close without calling start() — no output produced, nothing to close
-        try output.close()
+        try output.blockingClose()
 
         XCTAssertEqual(sentFrames.count, 0, "close() without start() must send no frames")
     }
@@ -422,7 +533,7 @@ final class StreamingAPITests: XCTestCase {
 
         // start() then close without writing — empty stream
         try output.start(isSequence: false)
-        try output.close()
+        try output.blockingClose()
 
         let streamStartFrames = sentFrames.filter { $0.frameType == .streamStart }
         let chunkFrames = sentFrames.filter { $0.frameType == .chunk }
@@ -509,7 +620,7 @@ final class StreamingAPITests: XCTestCase {
 
         try output.start(isSequence: false)
         try output.blockingWrite(Data([1, 2, 3]))
-        try output.close()
+        try output.blockingClose()
 
         // Verify stream ID is used
         let streamStart = sentFrames.first { $0.frameType == .streamStart }

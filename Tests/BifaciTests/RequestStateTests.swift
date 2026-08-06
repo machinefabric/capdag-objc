@@ -12,12 +12,17 @@ final class RequestStateTests: XCTestCase {
         return RequestKey(xid: .uint(x), rid: .uint(r))
     }
 
+    /// The ledger seed every test request negotiates — deliberately a small
+    /// odd-sized window so seed arithmetic is visible in assertions.
+    private static let testInitialCredit: UInt64 = 8
+
     private func state(dest: Int, origin: Int?, isPeer: Bool) -> RequestState {
         return RequestState(
             routing: RoutingEntry(sourceMasterIdx: origin, destinationMasterIdx: dest),
             origin: origin,
             externalChannel: nil,
-            isPeer: isPeer
+            isPeer: isPeer,
+            initialCredit: Self.testInitialCredit
         )
     }
 
@@ -229,8 +234,55 @@ final class RequestStateTests: XCTestCase {
         XCTAssertEqual(s1.bytesOut, 100)
         XCTAssertTrue(s1.unbounded)
         XCTAssertTrue(s1.ended)
-        // +4 granted, -1 consumed inbound chunk
-        XCTAssertEqual(s1.creditOutstanding, 3)
+        // The ledger is the REMAINING WINDOW: seeded with the negotiated
+        // initial credit, +4 granted, -1 per chunk in EITHER direction (the
+        // inbound chunk and the outbound chunk each consumed one).
+        XCTAssertEqual(
+            s1.creditOutstanding,
+            Int64(Self.testInitialCredit) + 4 - 2,
+            "window = seed + grants - chunks"
+        )
+    }
+
+    // TEST8115: recently_terminated_rid discriminates the teardown race from
+    // genuine routing loss: true for a rid whose request just terminated,
+    // false for a rid the table never knew, false again once the summary is
+    // evicted past the ring's horizon — a pathologically late frame ages back
+    // into no_route, where something that stale belongs.
+    func test8115_recentlyTerminatedRidDiscriminatesAndAgesOut() throws {
+        let table = RequestTable()
+
+        let k = key(1, 500)
+        try table.register(k, state(dest: 0, origin: nil, isPeer: false))
+        XCTAssertFalse(
+            table.recentlyTerminatedRid(.uint(500)),
+            "a LIVE request is not recently terminated"
+        )
+        XCTAssertNotNil(table.terminate(k, kind: .end))
+        XCTAssertTrue(
+            table.recentlyTerminatedRid(.uint(500)),
+            "a just-terminated rid must be in the ring"
+        )
+        XCTAssertFalse(
+            table.recentlyTerminatedRid(.uint(9999)),
+            "an unknown rid is a genuine routing anomaly, never post_terminal"
+        )
+
+        // Push the ring past its horizon: rid 500's summary must age out.
+        let cap = RequestTable.recentTerminatedCap
+        for n in 1000..<(1000 + cap) {
+            let k = key(UInt64(n), UInt64(n))
+            try table.register(k, state(dest: 0, origin: nil, isPeer: false))
+            XCTAssertNotNil(table.terminate(k, kind: .end))
+        }
+        XCTAssertFalse(
+            table.recentlyTerminatedRid(.uint(500)),
+            "eviction past recentTerminatedCap ends post_terminal classification"
+        )
+        XCTAssertTrue(
+            table.recentlyTerminatedRid(.uint(UInt64(1000 + cap - 1))),
+            "the newest termination is still in the ring"
+        )
     }
 
     // TEST7033: Terminated requests leave a bounded ring of summaries carrying kind, lifetime, and flow totals, and the ring evicts oldest-first at capacity.
