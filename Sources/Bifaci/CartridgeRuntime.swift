@@ -1295,23 +1295,34 @@ public final class OutputStream: @unchecked Sendable {
     /// so no STREAM_END is needed — the handler produced no output).
     /// Unbounded streams made no length promise — their STREAM_END carries
     /// no chunkCount (L16).
-    public func close() async throws {
+    /// Atomically mark the stream closed, reporting whether it already was.
+    /// A SYNCHRONOUS helper by necessity: `NSLock.lock()` is lexically
+    /// unavailable inside async function bodies, but a sync method called
+    /// FROM one is the sanctioned pattern (same as `checkMode`/`sendChunk`).
+    private func markClosed() -> Bool {
         closedLock.lock()
         let alreadyClosed = _closed
         if !alreadyClosed {
             _closed = true
         }
         closedLock.unlock()
+        return alreadyClosed
+    }
 
-        if alreadyClosed {
-            return
-        }
-
+    /// Read the started stream mode (nil = never started). Sync helper for
+    /// the same lexical-lock reason as `markClosed()`.
+    private func startedMode() -> Bool? {
         streamModeLock.lock()
         let mode = _streamMode
         streamModeLock.unlock()
+        return mode
+    }
 
-        if mode == nil {
+    public func close() async throws {
+        if markClosed() {
+            return // Already closed
+        }
+        if startedMode() == nil {
             return // Never started — no output produced, nothing to close
         }
 
@@ -1325,22 +1336,10 @@ public final class OutputStream: @unchecked Sendable {
     /// contexts. The credit wait for the flushed tail blocks the calling
     /// thread instead of yielding.
     public func blockingClose() throws {
-        closedLock.lock()
-        let alreadyClosed = _closed
-        if !alreadyClosed {
-            _closed = true
-        }
-        closedLock.unlock()
-
-        if alreadyClosed {
+        if markClosed() {
             return
         }
-
-        streamModeLock.lock()
-        let mode = _streamMode
-        streamModeLock.unlock()
-
-        if mode == nil {
+        if startedMode() == nil {
             return
         }
 
