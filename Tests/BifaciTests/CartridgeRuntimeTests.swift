@@ -141,6 +141,28 @@ fileprivate func makeTestCap(urn: String, args: [CapArg]) -> CapDefinition {
 @available(macOS 10.15.4, iOS 13.4, *)
 final class CartridgeRuntimeTests: XCTestCase {
 
+    // TEST8126: deriveResponseMedia — the response label is the effect
+    // inference over the declared input, per effect value; an unparseable
+    // cap URN fails hard instead of falling back.
+    func test8126_deriveResponseMediaPerEffect() throws {
+        XCTAssertEqual(
+            try deriveResponseMedia(capUrn: "cap:extract;in=\"media:ext=pdf\";out=\"media:record\""),
+            "media:record",
+            "effect=declared derives the declared out=")
+        XCTAssertEqual(
+            try deriveResponseMedia(
+                capUrn: "cap:decimate-sequence;effect=none;in=\"media:ext=png;image\";out=\"media:image\""),
+            "media:ext=png;image",
+            "effect=none derives the declared in=")
+        XCTAssertEqual(
+            try deriveResponseMedia(
+                capUrn: "cap:convert;effect=patch;in=\"media:ext=jpeg;image\";out=\"media:ext=png;image\""),
+            "media:ext=png;image",
+            "effect=patch derives the patched declared in=")
+        XCTAssertThrowsError(try deriveResponseMedia(capUrn: "not-a-cap-urn"),
+                             "an unparseable cap URN is a broken declaration: hard error")
+    }
+
     // MARK: - Test Constants
 
     static let testManifestJSON = """

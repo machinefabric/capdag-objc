@@ -1618,6 +1618,85 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqualObjects([result toString], @"media:ext=png;image");
 }
 
+// TEST8121: isConformantRuntimeOutput — effect=declared accepts a more
+// specific emission, rejects a more generic one
+- (void)test8121_effectConformanceDeclaredAsymmetry {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:extract;in=\"media:ext=pdf\";out=\"media:record\"" error:&error];
+    XCTAssertNotNil(cap, @"%@", error.localizedDescription);
+    CSMediaUrn *input = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
+    XCTAssertNotNil(input, @"%@", error.localizedDescription);
+
+    CSMediaUrn *declared = [CSMediaUrn fromString:@"media:record" error:&error];
+    XCTAssertTrue([cap isConformantRuntimeOutput:input runtimeOutput:declared error:&error],
+                  @"emitting exactly the declared out is conformant: %@", error.localizedDescription);
+
+    CSMediaUrn *moreSpecific = [CSMediaUrn fromString:@"media:fmt=json;record" error:&error];
+    XCTAssertTrue([cap isConformantRuntimeOutput:input runtimeOutput:moreSpecific error:&error],
+                  @"a more specific emission than the declared out is conformant: %@", error.localizedDescription);
+
+    error = nil;
+    CSMediaUrn *moreGeneric = [CSMediaUrn fromString:@"media:" error:&error];
+    XCTAssertFalse([cap isConformantRuntimeOutput:input runtimeOutput:moreGeneric error:&error],
+                   @"a more generic emission than the declared out is a violation");
+    XCTAssertNil(error, @"a clean nonconformant emission is NO without an error");
+
+    CSMediaUrn *unrelated = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
+    XCTAssertFalse([cap isConformantRuntimeOutput:input runtimeOutput:unrelated error:&error],
+                   @"an unrelated emission is a violation");
+}
+
+// TEST8122: isConformantRuntimeOutput — effect=none requires the emission
+// to be tag-equivalent to the runtime input; MORE specific is still a lie
+- (void)test8122_effectConformanceNoneRequiresEquivalence {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:decimate-sequence;effect=none" error:&error];
+    XCTAssertNotNil(cap, @"%@", error.localizedDescription);
+    CSMediaUrn *input = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
+    XCTAssertNotNil(input, @"%@", error.localizedDescription);
+
+    XCTAssertTrue([cap isConformantRuntimeOutput:input runtimeOutput:input error:&error],
+                  @"emitting exactly the runtime input type is conformant: %@", error.localizedDescription);
+
+    CSMediaUrn *moreSpecific = [CSMediaUrn fromString:@"media:ext=png;image;width=64" error:&error];
+    XCTAssertFalse([cap isConformantRuntimeOutput:input runtimeOutput:moreSpecific error:&error],
+                   @"effect=none promises the output type IS the input type; more specific is a lie");
+
+    CSMediaUrn *moreGeneric = [CSMediaUrn fromString:@"media:image" error:&error];
+    XCTAssertFalse([cap isConformantRuntimeOutput:input runtimeOutput:moreGeneric error:&error],
+                   @"a more generic emission is a violation");
+
+    // A nonconforming runtime input is an upstream contract break,
+    // surfaced through *error — not as a clean NO.
+    CSCapUrn *strict = [CSCapUrn fromString:@"cap:effect=none;in=\"media:image\";out=\"media:image\"" error:&error];
+    XCTAssertNotNil(strict, @"%@", error.localizedDescription);
+    CSMediaUrn *nonImage = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
+    error = nil;
+    XCTAssertFalse([strict isConformantRuntimeOutput:nonImage runtimeOutput:nonImage error:&error]);
+    XCTAssertNotNil(error, @"a nonconforming runtime input must surface an error, not a clean NO");
+}
+
+// TEST8123: isConformantRuntimeOutput — effect=patch requires exactly the
+// delta-patched input type
+- (void)test8123_effectConformancePatchRequiresPatchedInput {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:convert;effect=patch;in=\"media:ext=jpeg;image\";out=\"media:ext=png;image\"" error:&error];
+    XCTAssertNotNil(cap, @"%@", error.localizedDescription);
+    CSMediaUrn *input = [CSMediaUrn fromString:@"media:ext=jpeg;image;width=64" error:&error];
+    XCTAssertNotNil(input, @"%@", error.localizedDescription);
+
+    CSMediaUrn *patched = [CSMediaUrn fromString:@"media:ext=png;image;width=64" error:&error];
+    XCTAssertTrue([cap isConformantRuntimeOutput:input runtimeOutput:patched error:&error],
+                  @"the delta-patched input type (preserved tags intact) is conformant: %@", error.localizedDescription);
+
+    CSMediaUrn *bareDeclared = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
+    XCTAssertFalse([cap isConformantRuntimeOutput:input runtimeOutput:bareDeclared error:&error],
+                   @"dropping the preserved width tag violates the patch promise");
+
+    XCTAssertFalse([cap isConformantRuntimeOutput:input runtimeOutput:input error:&error],
+                   @"emitting the unpatched input type is a violation");
+}
+
 // TEST0127: invalid effect=none declarations fail hard
 - (void)test0127_invalidEffectNoneFailsHard {
     NSError *error = nil;

@@ -383,7 +383,8 @@ public final class RequestTable {
     /// no routing state. A hit here means the frame CROSSED its request's
     /// terminal in flight — the ordinary teardown race of credit-based flow
     /// control (a grant or straggler emitted before the sender observed
-    /// END/ERR) — which receivers count as `post_terminal`. A miss means the
+    /// END/ERR) — which receivers count as a BENIGN post-terminal straggler
+    /// (nothing went wrong; never a drop). A miss means the
     /// table has never known the RID within the ring's horizon: a genuine
     /// `no_route` anomaly worth alarming on. The ring holds the last
     /// `recentTerminatedCap` terminations; the race window is milliseconds,

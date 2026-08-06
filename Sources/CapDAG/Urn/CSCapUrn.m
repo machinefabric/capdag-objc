@@ -1002,6 +1002,62 @@ NSString *CSCapKindToString(CSCapKind kind) {
     return result;
 }
 
+- (BOOL)isConformantRuntimeOutput:(CSMediaUrn *)runtimeInput
+                    runtimeOutput:(CSMediaUrn *)runtimeOutput
+                            error:(NSError **)error {
+    // THE effect-audit predicate: every check of "did the cap emit what its
+    // effect promised" must go through it — never a hand-rolled combination
+    // of inferRuntimeOutputMedia with equality or conformance checks, so the
+    // contract has exactly one definition.
+    //
+    // effect=none / effect=patch compute an EXACT runtime output type, so
+    // the emission must be tag-equivalent to the inference (a more specific
+    // emission is still a lie). effect=declared promises only the declared
+    // out=, so the emission must conform to it — more specific is legal,
+    // more generic fails.
+    //
+    // Returns NO with *error set when the inference itself is impossible
+    // (nonconforming runtime input, unconstrained ?effect, inconsistent URN
+    // state) — an upstream contract break, not an emission mismatch.
+    // Returns NO with no error for a clean nonconformant emission.
+    NSError *inferError = nil;
+    CSMediaUrn *inferred = [self inferRuntimeOutputMedia:runtimeInput error:&inferError];
+    if (!inferred) {
+        if (error) {
+            *error = inferError
+                ?: [NSError errorWithDomain:CSCapUrnErrorDomain
+                                       code:CSCapUrnErrorInvalidEffectApplication
+                                   userInfo:@{NSLocalizedDescriptionKey: @"Runtime output inference failed without a diagnostic"}];
+        }
+        return NO;
+    }
+
+    CSCapEffect effect = [self effect];
+    if (effect == CSCapEffectNone || effect == CSCapEffectPatch) {
+        return [runtimeOutput isEquivalentTo:inferred];
+    }
+    if (effect == CSCapEffectDeclared) {
+        NSError *compareError = nil;
+        BOOL conforms = [runtimeOutput conformsTo:inferred error:&compareError];
+        if (!conforms && compareError) {
+            if (error) {
+                *error = compareError;
+            }
+            return NO;
+        }
+        return conforms;
+    }
+    // CSCapEffectAny is unreachable — inferRuntimeOutputMedia already
+    // rejected it above — but the audit must never silently pass an
+    // unhandled effect.
+    if (error) {
+        *error = [NSError errorWithDomain:CSCapUrnErrorDomain
+                                     code:CSCapUrnErrorInvalidEffectApplication
+                                 userInfo:@{NSLocalizedDescriptionKey: @"Cannot audit an emission against an unconstrained effect request"}];
+    }
+    return NO;
+}
+
 - (BOOL)isComparable:(CSCapUrn *)other {
     return [self accepts:other] || [other accepts:self];
 }

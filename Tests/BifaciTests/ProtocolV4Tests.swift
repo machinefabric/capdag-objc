@@ -462,26 +462,60 @@ final class ProtocolV4Tests: XCTestCase {
 
     // MARK: - Stats (TEST7019, TEST7029)
 
-    // TEST7019: Drop counters record per-reason exactly once per drop, and the snapshot omits zero-count reasons while totalling all of them.
+    // TEST7019: Drop counters record per-reason × per-frame-type exactly
+    // once per drop; the snapshot totals all of them, breaks each reason
+    // down by frame type, and omits zero-count entries.
     func test7019_dropCountersRecordAndSnapshot() {
         let counters = DropCounters()
         XCTAssertEqual(counters.total, 0)
         XCTAssertEqual(counters.snapshot(), DropSnapshot())
 
-        XCTAssertEqual(counters.record(.postTerminal), 1)
-        XCTAssertEqual(counters.record(.postTerminal), 2)
-        XCTAssertEqual(counters.record(.channelClosed), 1)
+        XCTAssertEqual(counters.record(.noRoute, .chunk), 1)
+        XCTAssertEqual(counters.record(.noRoute, .credit), 2)
+        XCTAssertEqual(counters.record(.channelClosed, .log), 1)
 
-        XCTAssertEqual(counters.get(.postTerminal), 2)
+        XCTAssertEqual(counters.get(.noRoute), 2)
         XCTAssertEqual(counters.get(.channelClosed), 1)
-        XCTAssertEqual(counters.get(.noRoute), 0)
+        XCTAssertEqual(counters.get(.cancelled), 0)
+        XCTAssertEqual(counters.getFrame(.noRoute, .chunk), 1)
+        XCTAssertEqual(counters.getFrame(.noRoute, .credit), 1)
+        XCTAssertEqual(counters.getFrame(.noRoute, .end), 0)
         XCTAssertEqual(counters.total, 3)
 
         let snap = counters.snapshot()
         XCTAssertEqual(snap.total, 3)
-        XCTAssertEqual(snap.byReason["post_terminal"], 2)
+        XCTAssertEqual(snap.byReason["no_route"], 2)
         XCTAssertEqual(snap.byReason["channel_closed"], 1)
-        XCTAssertNil(snap.byReason["no_route"], "zero-count reasons are omitted from the snapshot")
+        XCTAssertNil(snap.byReason["cancelled"], "zero-count reasons are omitted from the snapshot")
+        XCTAssertEqual(snap.byReasonFrameType["no_route"]?["chunk"], 1)
+        XCTAssertEqual(snap.byReasonFrameType["no_route"]?["credit"], 1)
+        XCTAssertNil(
+            snap.byReasonFrameType["no_route"]?["end"],
+            "zero-count frame types are omitted from the breakdown")
+    }
+
+    // TEST8127: Straggler counters — the benign post-terminal category is
+    // separate from drops, counted per frame type, and its snapshot names
+    // what crossed the terminal (late credit vs late chunk) while omitting
+    // zero-count types.
+    func test8127_stragglerCountersRecordAndSnapshot() {
+        let stragglers = StragglerCounters()
+        XCTAssertEqual(stragglers.total, 0)
+        XCTAssertEqual(stragglers.snapshot(), StragglerSnapshot())
+
+        XCTAssertEqual(stragglers.record(.credit), 1)
+        XCTAssertEqual(stragglers.record(.credit), 2)
+        XCTAssertEqual(stragglers.record(.chunk), 3)
+
+        XCTAssertEqual(stragglers.get(.credit), 2)
+        XCTAssertEqual(stragglers.get(.chunk), 1)
+        XCTAssertEqual(stragglers.get(.end), 0)
+
+        let snap = stragglers.snapshot()
+        XCTAssertEqual(snap.total, 3)
+        XCTAssertEqual(snap.byFrameType["credit"], 2)
+        XCTAssertEqual(snap.byFrameType["chunk"], 1)
+        XCTAssertNil(snap.byFrameType["end"], "zero-count frame types are omitted from the snapshot")
     }
 
     // TEST7029: TerminatedFlows membership is exact up to capacity and evicts strictly oldest-first beyond it.

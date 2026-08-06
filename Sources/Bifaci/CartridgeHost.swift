@@ -882,6 +882,9 @@ private class ManagedCartridge {
 /// over RelayNotify JSON).
 public struct HostProtocolStats: Codable, Sendable {
     public let drops: DropSnapshot
+    /// Benign post-terminal stragglers — the expected teardown crossing,
+    /// counted per frame type. Separate from `drops`: nothing went wrong.
+    public let stragglers: StragglerSnapshot
     public let outgoingRids: Int
     public let incomingRxids: Int
     public let incomingToPeerRids: Int
@@ -891,6 +894,7 @@ public struct HostProtocolStats: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case drops
+        case stragglers
         case outgoingRids = "outgoing_rids"
         case incomingRxids = "incoming_rxids"
         case incomingToPeerRids = "incoming_to_peer_rids"
@@ -901,6 +905,7 @@ public struct HostProtocolStats: Codable, Sendable {
 
     public init(
         drops: DropSnapshot,
+        stragglers: StragglerSnapshot = StragglerSnapshot(),
         outgoingRids: Int,
         incomingRxids: Int,
         incomingToPeerRids: Int,
@@ -909,6 +914,7 @@ public struct HostProtocolStats: Codable, Sendable {
         routingGcEvictedTotal: UInt64
     ) {
         self.drops = drops
+        self.stragglers = stragglers
         self.outgoingRids = outgoingRids
         self.incomingRxids = incomingRxids
         self.incomingToPeerRids = incomingToPeerRids
@@ -1000,7 +1006,7 @@ public final class CartridgeHost: @unchecked Sendable {
     /// the discriminator between the two ways a frame can arrive with no
     /// routing entry: a hit means the frame crossed its request's terminal in
     /// flight (the ordinary teardown race of credit-based flow control —
-    /// counted `post_terminal`), a miss means the host never routed this RID
+    /// counted as a benign straggler), a miss means the host never routed this RID
     /// within the ring's horizon (`no_route`, a genuine anomaly). GC
     /// evictions are deliberately NOT recorded here: an evicted entry never
     /// saw its terminal, so a frame for it is real routing loss and stays
@@ -1021,7 +1027,7 @@ public final class CartridgeHost: @unchecked Sendable {
     }
 
     /// Whether `rid`'s routing entry was recently released by a terminal —
-    /// the post_terminal / no_route discriminator for unroutable frames.
+    /// the benign-straggler / no_route discriminator for unroutable frames.
     /// Caller holds `stateLock`.
     internal func recentlyReleasedRidLocked(_ rid: MessageId) -> Bool {
         recentReleasedRids.contains(rid)
@@ -1101,6 +1107,9 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Dropped-frame accounting (L8): unroutable continuations and frames
     /// for dead cartridges are counted drops, never silent losses.
     let drops = DropCounters()
+    /// Benign post-terminal stragglers — the expected teardown race,
+    /// counted per frame type, never drops (nothing went wrong).
+    let stragglers = StragglerCounters()
 
     /// Protocol observability snapshot (L8): drop counters, routing-table
     /// sizes, and GC totals for this host. Serialized field names are the
@@ -1115,6 +1124,7 @@ public final class CartridgeHost: @unchecked Sendable {
     private func protocolStatsLocked() -> HostProtocolStats {
         return HostProtocolStats(
             drops: drops.snapshot(),
+            stragglers: stragglers.snapshot(),
             outgoingRids: outgoingRids.count,
             incomingRxids: incomingRxids.count,
             incomingToPeerRids: incomingToPeerRids.count,
@@ -2089,7 +2099,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 incomingRxids.removeValue(forKey: key)
                 incomingRxidsTouched.removeValue(forKey: key)
                 // The synthesized ERR terminated this request; stragglers for
-                // it are post_terminal, not routing anomalies.
+                // it are benign stragglers, not routing anomalies.
                 noteReleasedRidLocked(frame.id)
                 stateLock.unlock()
             }
@@ -2132,7 +2142,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     preferIncoming = false
                 case nil:
                     stateLock.unlock()
-                    let total = drops.record(.noRoute)
+                    let total = drops.record(.noRoute, frame.frameType)
                     fputs("[CartridgeHost] dropped CREDIT without direction — v4 requires credit_dir (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
                     return
                 }
@@ -2163,15 +2173,21 @@ public final class CartridgeHost: @unchecked Sendable {
             }
             guard let resolvedIdx = cartridgeIdx else {
                 // Discriminate the teardown race from real routing loss: a
-                // RID released by an observed terminal is the ordinary
-                // END/Credit race (`post_terminal`); a RID this host never
-                // routed is a genuine anomaly (`no_route`). Never a protocol
-                // error and never a silent loss (L6/L8).
-                let reason: DropReason =
-                    recentlyReleasedRidLocked(frame.id) ? .postTerminal : .noRoute
+                // RID released by an observed terminal is a BENIGN
+                // post-terminal straggler (the ordinary END/Credit race —
+                // nothing went wrong, counted separately from drops); a RID
+                // this host never routed is a genuine anomaly (`no_route`
+                // drop). Never a protocol error and never a silent loss
+                // (L6/L8) — and never conflated.
+                let recentlyReleased = recentlyReleasedRidLocked(frame.id)
                 stateLock.unlock()
-                let total = drops.record(reason)
-                fputs("[CartridgeHost] dropped continuation frame — no routing entry (\(reason.rawValue), total=\(total)) type=\(frame.frameType) rid=\(frame.id)\n", stderr)
+                if recentlyReleased {
+                    let total = stragglers.record(frame.frameType)
+                    fputs("[CartridgeHost] benign post-terminal straggler — frame crossed its request's terminal in flight (expected teardown race). type=\(frame.frameType.asString) rid=\(frame.id) straggler_total=\(total)\n", stderr)
+                } else {
+                    let total = drops.record(.noRoute, frame.frameType)
+                    fputs("[CartridgeHost] dropped continuation frame — no routing entry (no_route, total=\(total)) type=\(frame.frameType.asString) rid=\(frame.id)\n", stderr)
+                }
                 return
             }
             let cartridge = cartridges[resolvedIdx]
@@ -2244,15 +2260,19 @@ public final class CartridgeHost: @unchecked Sendable {
                 let cartridge = cartridges[idx]
                 let _ = cartridge.writeFrame(frame)
             } else {
-                // No routing entry: COUNTED drop, never silent (L8) — a LOG
-                // that crossed its peer request's terminal is post_terminal;
-                // one for a RID never routed here is no_route.
+                // A LOG that crossed its peer request's terminal is a benign
+                // straggler (never a drop); one for a RID never routed here
+                // is a genuine no_route drop — counted, never silent (L8).
                 stateLock.lock()
-                let reason: DropReason =
-                    recentlyReleasedRidLocked(frame.id) ? .postTerminal : .noRoute
+                let recentlyReleased = recentlyReleasedRidLocked(frame.id)
                 stateLock.unlock()
-                let total = drops.record(reason)
-                fputs("[CartridgeHost] dropped LOG with no routing entry (\(reason.rawValue), total=\(total)) rid=\(frame.id)\n", stderr)
+                if recentlyReleased {
+                    let total = stragglers.record(frame.frameType)
+                    fputs("[CartridgeHost] benign post-terminal straggler LOG — crossed its peer request's terminal (expected teardown race). rid=\(frame.id) straggler_total=\(total)\n", stderr)
+                } else {
+                    let total = drops.record(.noRoute, frame.frameType)
+                    fputs("[CartridgeHost] dropped LOG with no routing entry (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
+                }
             }
 
         case .hello, .heartbeat:
@@ -2657,7 +2677,7 @@ public final class CartridgeHost: @unchecked Sendable {
             outgoingRids.removeValue(forKey: entry.rid)
             outgoingRidsTouched.removeValue(forKey: entry.rid)
             // The death sweep synthesizes ERR terminals for these RIDs below;
-            // stragglers for them are post_terminal.
+            // frames for them classify as benign stragglers.
             noteReleasedRidLocked(entry.rid)
         }
 

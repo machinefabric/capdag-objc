@@ -54,6 +54,33 @@ public enum FrameType: UInt8, Sendable {
     /// stream. Non-flow: bypasses seq assignment and reorder buffers, and is
     /// forwarded end-to-end by intermediaries (never originated or absorbed).
     case credit = 13
+
+    /// All variants, for counter arrays and snapshot serialization
+    /// (matches Rust FrameType::ALL).
+    public static let all: [FrameType] = [
+        .hello, .req, .chunk, .end, .log, .err, .heartbeat,
+        .streamStart, .streamEnd, .relayNotify, .relayState, .cancel, .credit,
+    ]
+
+    /// Stable snake_case name (the snapshot contract for mirrors and
+    /// traces; matches Rust FrameType::as_str).
+    public var asString: String {
+        switch self {
+        case .hello: return "hello"
+        case .req: return "req"
+        case .chunk: return "chunk"
+        case .end: return "end"
+        case .log: return "log"
+        case .err: return "err"
+        case .heartbeat: return "heartbeat"
+        case .streamStart: return "stream_start"
+        case .streamEnd: return "stream_end"
+        case .relayNotify: return "relay_notify"
+        case .relayState: return "relay_state"
+        case .cancel: return "cancel"
+        case .credit: return "credit"
+        }
+    }
 }
 
 /// Message ID - either a 16-byte UUID or a simple integer
@@ -892,13 +919,18 @@ public enum CreditDirection: String, CaseIterable, Hashable, Sendable, Codable {
 /// observable via the protocol stats snapshots. Frames are never dropped
 /// silently.
 ///
+/// A DROP means something went wrong. The benign teardown crossing — a flow
+/// frame that arrives after its request's terminal, which the protocol
+/// expects (in-flight frames legally race END/ERR, L13) — is NOT a drop and
+/// has no reason here: it is counted as a post-terminal STRAGGLER
+/// (`StragglerCounters` in Stats.swift), indicated as benign in every stats
+/// surface.
+///
 /// The raw values are the stable snake_case names — the wire/snapshot
 /// contract mirrored from the Rust reference.
 public enum DropReason: String, CaseIterable, Hashable, Sendable, Codable {
-    /// Flow frame enqueued/received after the request's terminal (END/ERR) frame.
-    case postTerminal = "post_terminal"
-    /// Flow frame for a request with no routing state (already released or never
-    /// registered).
+    /// Flow frame for a request with no routing state (never registered, or
+    /// released for a reason the terminated-ledger cannot vouch for).
     case noRoute = "no_route"
     /// Send attempted on a closed channel (receiver gone).
     case channelClosed = "channel_closed"
@@ -911,7 +943,7 @@ public enum DropReason: String, CaseIterable, Hashable, Sendable, Codable {
 
     /// All variants, for counter arrays and snapshot serialization.
     public static let all: [DropReason] = [
-        .postTerminal, .noRoute, .channelClosed, .creditViolation, .cancelled, .masterDied,
+        .noRoute, .channelClosed, .creditViolation, .cancelled, .masterDied,
     ]
 
     /// Stable snake_case name (the wire/snapshot contract for mirrors).

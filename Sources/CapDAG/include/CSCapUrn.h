@@ -212,6 +212,31 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (nullable CSMediaUrn *)inferRuntimeOutputMedia:(CSMediaUrn * _Nonnull)runtimeInput error:(NSError * _Nullable * _Nullable)error;
 
 /**
+ * THE effect-audit predicate: does an actually-emitted runtime output satisfy
+ * this cap's declared effect contract for the given runtime input? Every
+ * check of "did the cap emit what its effect promised" must go through this
+ * — never a hand-rolled combination of inferRuntimeOutputMedia with equality
+ * or conformance checks.
+ *
+ * effect=none / effect=patch require the emission to be tag-equivalent to
+ * the inferred output (the effect fully determines the type — a more
+ * specific emission is still a violation). effect=declared requires the
+ * emission to conform to the declared out= (more specific is legal, more
+ * generic is a violation).
+ *
+ * @param runtimeInput The concrete runtime input media URN
+ * @param runtimeOutput The media URN the cap actually emitted
+ * @param error Set when the inference itself is impossible (nonconforming
+ *        runtime input, unconstrained ?effect, inconsistent URN state) — an
+ *        upstream contract break, not an emission mismatch. A clean
+ *        nonconformant emission returns NO with no error.
+ * @return YES iff the emission satisfies the effect contract
+ */
+- (BOOL)isConformantRuntimeOutput:(CSMediaUrn * _Nonnull)runtimeInput
+                    runtimeOutput:(CSMediaUrn * _Nonnull)runtimeOutput
+                            error:(NSError * _Nullable * _Nullable)error;
+
+/**
  * Create a new cap URN with an added or updated non-structural tag.
  * Reserved structural keys (`in`, `out`, `effect`) are illegal here and raise
  * `NSInvalidArgumentException`. Use withInSpec:, withOutSpec:, or withEffect:

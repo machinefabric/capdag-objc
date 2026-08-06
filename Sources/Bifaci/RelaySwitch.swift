@@ -171,6 +171,10 @@ private let ENGINE_SOURCE = Int.max
 public struct RelaySwitchProtocolStats: Codable, Sendable {
     public let requests: RequestTableSnapshot
     public let drops: DropSnapshot
+    /// Benign post-terminal stragglers — the expected teardown crossing,
+    /// counted per frame type. Indicated separately from `drops` because
+    /// nothing went wrong.
+    public let stragglers: StragglerSnapshot
     /// Per-master host protocol stats, keyed by master id, as reported in
     /// each host's latest RelayNotify. A master that has not yet advertised
     /// host stats is absent (never a zeroed placeholder). Decodes to empty
@@ -180,16 +184,19 @@ public struct RelaySwitchProtocolStats: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case requests
         case drops
+        case stragglers
         case hosts
     }
 
     public init(
         requests: RequestTableSnapshot,
         drops: DropSnapshot,
+        stragglers: StragglerSnapshot = StragglerSnapshot(),
         hosts: [String: HostProtocolStats] = [:]
     ) {
         self.requests = requests
         self.drops = drops
+        self.stragglers = stragglers
         self.hosts = hosts
     }
 
@@ -197,6 +204,7 @@ public struct RelaySwitchProtocolStats: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.requests = try c.decode(RequestTableSnapshot.self, forKey: .requests)
         self.drops = try c.decode(DropSnapshot.self, forKey: .drops)
+        self.stragglers = try c.decodeIfPresent(StragglerSnapshot.self, forKey: .stragglers) ?? StragglerSnapshot()
         self.hosts = try c.decodeIfPresent([String: HostProtocolStats].self, forKey: .hosts) ?? [:]
     }
 }
@@ -427,6 +435,9 @@ public final class RelaySwitch: @unchecked Sendable {
     /// Dropped-frame accounting (L8): unroutable/post-terminal frames are
     /// counted drops, never silent losses and never protocol errors.
     let drops = DropCounters()
+    /// Benign post-terminal stragglers — the expected teardown race,
+    /// counted per frame type, never drops (nothing went wrong).
+    let stragglers = StragglerCounters()
     /// XID counter for assigning unique routing IDs
     private var xidCounter: UInt64 = 0
 
@@ -1742,13 +1753,14 @@ public final class RelaySwitch: @unchecked Sendable {
                     let kind: TerminalKind = frame.frameType == .end ? .end : .err
                     guard let state = requests.terminate(key, kind: kind) else {
                         // Classify by the terminated ring: a frame for a
-                        // request that JUST terminated is the ordinary
-                        // teardown race (`post_terminal`); only a RID the
-                        // table never knew is a routing anomaly (`no_route`).
-                        let reason: DropReason =
-                            requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
-                        let total = drops.record(reason)
-                        fputs("[RelaySwitch] dropped duplicate terminal for released request (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
+                        // request that JUST terminated is a benign
+                        // straggler; only a RID the table never knew is a
+                        // routing anomaly (`no_route` drop).
+                        accountUnroutedFrame(
+                            recentlyTerminated: requests.recentlyTerminatedRid(rid),
+                            frame: frame,
+                            context: "duplicate terminal for released request"
+                        )
                         return nil
                     }
                     capForLog = state.capUrn
@@ -1758,10 +1770,11 @@ public final class RelaySwitch: @unchecked Sendable {
                     }
                 } else {
                     guard let state = requests.get(key) else {
-                        let reason: DropReason =
-                            requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
-                        let total = drops.record(reason)
-                        fputs("[RelaySwitch] dropped response frame with no routing state (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
+                        accountUnroutedFrame(
+                            recentlyTerminated: requests.recentlyTerminatedRid(rid),
+                            frame: frame,
+                            context: "response frame with no routing state"
+                        )
                         return nil
                     }
                     capForLog = state.capUrn
@@ -1775,7 +1788,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 case .external(.some(let channel)):
                     // Deliver to the external response channel (keep XID).
                     if !channel(mutableFrame) {
-                        let total = drops.record(.channelClosed)
+                        let total = drops.record(.channelClosed, frame.frameType)
                         fputs("[RelaySwitch] response channel receiver gone (channel_closed) rid=\(rid) cap=\(capForLog ?? "?") channel_closed_total=\(total)\n", stderr)
                         // A dead consumer on a LIVE request means the caller
                         // abandoned it — cancel upstream so the cartridge
@@ -1815,10 +1828,11 @@ public final class RelaySwitch: @unchecked Sendable {
                 let rid = frame.id
 
                 guard let xid = requests.xidForRid(rid) else {
-                    let reason: DropReason =
-                        requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
-                    let total = drops.record(reason)
-                    fputs("[RelaySwitch] dropped continuation with no routing state (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
+                    accountUnroutedFrame(
+                        recentlyTerminated: requests.recentlyTerminatedRid(rid),
+                        frame: frame,
+                        context: "continuation with no routing state"
+                    )
                     return nil
                 }
 
@@ -1826,10 +1840,11 @@ public final class RelaySwitch: @unchecked Sendable {
                 requests.recordFrame(key, direction: .inbound, frame: frame)
 
                 guard let entry = requests.get(key) else {
-                    let reason: DropReason =
-                        requests.recentlyTerminatedRid(rid) ? .postTerminal : .noRoute
-                    let total = drops.record(reason)
-                    fputs("[RelaySwitch] dropped continuation with no routing state (\(reason.rawValue)) rid=\(rid) reason_total=\(total)\n", stderr)
+                    accountUnroutedFrame(
+                        recentlyTerminated: requests.recentlyTerminatedRid(rid),
+                        frame: frame,
+                        context: "continuation with no routing state"
+                    )
                     return nil
                 }
 
@@ -1962,7 +1977,12 @@ public final class RelaySwitch: @unchecked Sendable {
                 hosts[master.id] = stats
             }
         }
-        return RelaySwitchProtocolStats(requests: requests.snapshot(), drops: drops.snapshot(), hosts: hosts)
+        return RelaySwitchProtocolStats(
+            requests: requests.snapshot(),
+            drops: drops.snapshot(),
+            stragglers: stragglers.snapshot(),
+            hosts: hosts
+        )
     }
 
     /// Cancel a specific in-flight request by RID.
@@ -1975,6 +1995,23 @@ public final class RelaySwitch: @unchecked Sendable {
     /// 3. Sends a Cancel frame to the destination master
     /// 4. Recursively cancels the child peer calls recorded on the entry
     /// 5. Sends ERR "CANCELLED" to the external response channel if present
+    /// Account a flow frame that found no routing state, for the narrow case
+    /// it actually is: when the terminated ledger vouches the request JUST
+    /// terminated, the frame is a benign post-terminal straggler — the
+    /// expected teardown crossing, counted per frame type and logged as
+    /// benign, never as a drop. Otherwise the RID is one the table never
+    /// knew: a genuine routing anomaly, counted as a `no_route` drop.
+    /// (matches Rust RelaySwitch::account_unrouted_frame)
+    private func accountUnroutedFrame(recentlyTerminated: Bool, frame: Frame, context: String) {
+        if recentlyTerminated {
+            let total = stragglers.record(frame.frameType)
+            fputs("[RelaySwitch] benign post-terminal straggler (\(context)): frame crossed its request's terminal in flight — expected teardown race, nothing lost. type=\(frame.frameType.asString) rid=\(frame.id) straggler_total=\(total)\n", stderr)
+        } else {
+            let total = drops.record(.noRoute, frame.frameType)
+            fputs("[RelaySwitch] dropped \(context) — RID has no routing state and never terminated here (no_route). type=\(frame.frameType.asString) rid=\(frame.id) no_route_total=\(total)\n", stderr)
+        }
+    }
+
     public func cancelRequest(rid: MessageId, forceKill: Bool) {
         lock.lock()
         guard let xid = requests.xidForRid(rid) else {

@@ -44,20 +44,22 @@ final class ProtocolV4RuntimeTests: XCTestCase {
     /// Build a ChannelFrameSender (the runtime's single output serialization
     /// point — the Swift counterpart of the Rust writer thread) writing to a
     /// temp file whose bytes the test decodes back into frames.
-    private func makeWireCapture() throws -> (sender: ChannelFrameSender, writer: FrameWriter, drops: DropCounters, url: URL) {
+    private func makeWireCapture() throws -> (sender: ChannelFrameSender, writer: FrameWriter, drops: DropCounters, stragglers: StragglerCounters, url: URL) {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("wire-\(UUID().uuidString).bin")
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let handle = try FileHandle(forWritingTo: url)
         let writer = FrameWriter(handle: handle)
         let drops = DropCounters()
+        let stragglers = StragglerCounters()
         let sender = ChannelFrameSender(
             writer: writer,
             writerLock: NSLock(),
             seqAssigner: SeqAssigner(),
-            drops: drops
+            drops: drops,
+            stragglers: stragglers
         )
-        return (sender, writer, drops, url)
+        return (sender, writer, drops, stragglers, url)
     }
 
     /// Decode every length-prefixed frame from a captured wire buffer.
@@ -83,10 +85,10 @@ final class ProtocolV4RuntimeTests: XCTestCase {
 
     // MARK: - Writer terminal gate (L4)
 
-    // TEST7020: A flow frame reaching the writer after the flow's END has been written is dropped with a counted post_terminal drop — END is the last flow frame on the wire.
-    func test7020_writerGateDropsPostTerminalFlowFrames() throws {
+    // TEST7020: A flow frame reaching the writer after the flow's END has been written is suppressed as a benign counted straggler (never a drop) — END is the last flow frame on the wire.
+    func test7020_writerGateSuppressesPostTerminalStragglers() throws {
         let rid = MessageId.newUUID()
-        let (sender, _, drops, url) = try makeWireCapture()
+        let (sender, _, drops, stragglers, url) = try makeWireCapture()
 
         // In-order: chunk, END — both written.
         let payload = Data([1, 2, 3])
@@ -97,10 +99,12 @@ final class ProtocolV4RuntimeTests: XCTestCase {
         try sender.send(end)
 
         // The detached-sender race: a straggler progress LOG enqueued after
-        // the handler returned reaches the writer after END. Dropped+counted.
+        // the handler returned reaches the writer after END. Suppressed as a
+        // benign counted straggler — never a drop.
         let straggler = Frame.progress(id: rid, progress: 1.0, message: "late keepalive")
-        try sender.send(straggler) // gated drop — not an error
-        XCTAssertEqual(drops.get(.postTerminal), 1)
+        try sender.send(straggler) // benign suppression — not an error
+        XCTAssertEqual(stragglers.get(.log), 1, "the suppressed straggler is counted as benign, named by frame type")
+        XCTAssertEqual(drops.total, 0, "benign stragglers must never count as drops")
 
         let frames = try decodeWire(url)
         XCTAssertEqual(frames.count, 2, "straggler must not reach the wire")
@@ -116,7 +120,7 @@ final class ProtocolV4RuntimeTests: XCTestCase {
     func test7021_writerGatePrecision() throws {
         let ridA = MessageId.uint(1)
         let ridB = MessageId.uint(2)
-        let (sender, _, drops, url) = try makeWireCapture()
+        let (sender, _, drops, stragglers, url) = try makeWireCapture()
 
         // Progress before END is written (the gate never over-drops).
         try sender.send(Frame.progress(id: ridA, progress: 0.5, message: "halfway"))
@@ -138,12 +142,13 @@ final class ProtocolV4RuntimeTests: XCTestCase {
             frames.map { $0.frameType },
             [.log, .end, .heartbeat, .credit, .log]
         )
-        XCTAssertEqual(drops.get(.postTerminal), 1)
+        XCTAssertEqual(stragglers.get(.log), 1, "only A's late flow frame was suppressed, as a benign straggler")
+        XCTAssertEqual(drops.total, 0, "benign stragglers must never count as drops")
     }
 
     // TEST7027: A frame sent through a ChannelFrameSender whose receiver is gone is a counted channel_closed drop, never a silent loss.
     func test7027_channelClosedSendsAreCounted() throws {
-        let (sender, writer, drops, _) = try makeWireCapture()
+        let (sender, writer, drops, _, _) = try makeWireCapture()
 
         // Receiver alive: send succeeds, nothing counted.
         let frame = Frame.progress(id: .newUUID(), progress: 0.4, message: "working")
@@ -160,29 +165,38 @@ final class ProtocolV4RuntimeTests: XCTestCase {
         XCTAssertEqual(drops.get(.channelClosed), 2, "every dropped frame increments exactly once (L8)")
     }
 
-    // TEST7086: One runtime's drop counters aggregate every drop source — post-terminal writer drops and closed-channel sends — each counted exactly once, and the snapshot totals match the induced drops.
+    // TEST7086: The runtime's counters keep the two categories apart — benign
+    // writer-gate stragglers land in the straggler counters (named by frame
+    // type), a closed-channel send is a genuine drop — each counted exactly
+    // once, and neither pollutes the other (L8/L4).
     func test7086_dropSnapshotMatchesInducedDrops() throws {
         let rid = MessageId.newUUID()
-        let (sender, writer, drops, _) = try makeWireCapture()
+        let (sender, writer, drops, stragglers, _) = try makeWireCapture()
 
-        // Source 1: post-terminal drops at the writer gate (two stragglers).
+        // Source 1: benign post-terminal stragglers at the writer gate (two).
         try sender.send(Frame.endOk(id: rid, finalPayload: nil))
         for _ in 0..<2 {
             try sender.send(Frame.progress(id: rid, progress: 1.0, message: "straggler"))
         }
 
-        // Source 2: closed-channel send (one drop). Must use a FRESH rid:
-        // `rid`'s END is already on the wire, so a frame for it would be
-        // claimed by the terminal gate (post_terminal) before ever reaching
-        // the closed writer — the Rust reference induces this drop through a
-        // gate-free sender for the same reason.
+        // Source 2: closed-channel send (one genuine drop). Must use a FRESH
+        // rid: `rid`'s END is already on the wire, so a frame for it would be
+        // claimed by the terminal gate (benign straggler) before ever
+        // reaching the closed writer.
         writer.close()
         _ = try? sender.send(Frame.log(id: MessageId.newUUID(), level: "info", attributionClass: .internal, message: "dead channel"))
 
+        let stragglerSnap = stragglers.snapshot()
+        XCTAssertEqual(stragglerSnap.total, 2, "each benign straggler counted exactly once (L4)")
+        XCTAssertEqual(stragglerSnap.byFrameType["log"], 2)
+
         let snap = drops.snapshot()
-        XCTAssertEqual(snap.total, 3, "each induced drop counted exactly once (L8)")
-        XCTAssertEqual(snap.byReason["post_terminal"], 2)
+        XCTAssertEqual(snap.total, 1, "each genuine drop counted exactly once (L8)")
         XCTAssertEqual(snap.byReason["channel_closed"], 1)
+        XCTAssertEqual(
+            snap.byReasonFrameType["channel_closed"]?["log"], 1,
+            "the drop is named by frame type")
+        XCTAssertNil(snap.byReason["post_terminal"], "benign stragglers never appear among drops")
     }
 
     // MARK: - Sequence item reassembly (RFC 8742 fragments)
@@ -959,10 +973,13 @@ final class ProtocolV4SwitchTests: XCTestCase {
     // TEST7085: The RelayNotify capabilities payload carries the host's protocol stats snapshot, surviving the wire round-trip.
     func test7085_relayNotifyCarriesHostProtocolStats() throws {
         let counters = DropCounters()
-        counters.record(.noRoute)
-        counters.record(.noRoute)
+        counters.record(.noRoute, .chunk)
+        counters.record(.noRoute, .credit)
+        let stragglerCounters = StragglerCounters()
+        stragglerCounters.record(.credit)
         let stats = HostProtocolStats(
             drops: counters.snapshot(),
+            stragglers: stragglerCounters.snapshot(),
             outgoingRids: 3,
             incomingRxids: 5,
             incomingToPeerRids: 1,
@@ -978,6 +995,12 @@ final class ProtocolV4SwitchTests: XCTestCase {
         let got = try XCTUnwrap(parsed.hostProtocolStats, "host stats must survive the round trip")
         XCTAssertEqual(got.drops.total, 2)
         XCTAssertEqual(got.drops.byReason["no_route"], 2)
+        XCTAssertEqual(
+            got.drops.byReasonFrameType["no_route"]?["credit"], 1,
+            "the per-frame-type breakdown survives the wire round-trip")
+        XCTAssertEqual(
+            got.stragglers.byFrameType["credit"], 1,
+            "the benign straggler counters survive the wire round-trip")
         XCTAssertEqual(got.incomingRxids, 5)
         XCTAssertEqual(got.routingGcEvictedTotal, 7)
 

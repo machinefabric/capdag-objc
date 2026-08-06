@@ -2740,15 +2740,26 @@ final class ChannelFrameSender: FrameSender, @unchecked Sendable {
     private let seqAssigner: SeqAssigner
     /// Flows whose terminal has been written (L4). Guarded by writerLock.
     private let terminated: TerminatedFlows
-    /// Process-wide dropped-frame accounting (L8).
+    /// Process-wide dropped-frame accounting (L8). Drops mean something
+    /// went wrong.
     private let drops: DropCounters
+    /// Benign post-terminal stragglers suppressed by the gate (L4) — the
+    /// expected teardown race, never drops.
+    private let stragglers: StragglerCounters
 
-    init(writer: FrameWriter, writerLock: NSLock, seqAssigner: SeqAssigner, drops: DropCounters) {
+    init(
+        writer: FrameWriter,
+        writerLock: NSLock,
+        seqAssigner: SeqAssigner,
+        drops: DropCounters,
+        stragglers: StragglerCounters
+    ) {
         self.writer = writer
         self.writerLock = writerLock
         self.seqAssigner = seqAssigner
         self.terminated = TerminatedFlows(cap: 1024)
         self.drops = drops
+        self.stragglers = stragglers
     }
 
     func send(_ frame: Frame) throws {
@@ -2756,13 +2767,14 @@ final class ChannelFrameSender: FrameSender, @unchecked Sendable {
         defer { writerLock.unlock() }
         var mutableFrame = frame
 
-        // WRITER TERMINAL GATE (L4): flow frames for a flow whose END/ERR is
-        // already on the wire are dropped and counted — they never reach the
-        // wire. Non-flow frames (heartbeat, credit) always pass.
+        // WRITER TERMINAL GATE (L4): a flow frame for a flow whose END/ERR
+        // is already on the wire is a BENIGN straggler — suppressed and
+        // counted as such (never a drop, nothing went wrong); it never
+        // reaches the wire. Non-flow frames (heartbeat, credit) always pass.
         let key = FlowKey.fromFrame(mutableFrame)
         if mutableFrame.isFlowFrame() && terminated.contains(key) {
-            let total = drops.record(.postTerminal)
-            fputs("[CartridgeRuntime] writer: dropped post-terminal flow frame — END/ERR already written for this flow (L4) type=\(mutableFrame.frameType) rid=\(mutableFrame.id) post_terminal_total=\(total)\n", stderr)
+            let total = stragglers.record(mutableFrame.frameType)
+            fputs("[CartridgeRuntime] writer: suppressed benign post-terminal straggler — END/ERR already written for this flow, the frame is moot (L4) type=\(mutableFrame.frameType.asString) rid=\(mutableFrame.id) straggler_total=\(total)\n", stderr)
             return
         }
 
@@ -2772,7 +2784,7 @@ final class ChannelFrameSender: FrameSender, @unchecked Sendable {
         } catch {
             // The writer is gone (relay/host side closed). Counted drop —
             // never silent (L8) — surfaced to callers that check.
-            let total = drops.record(.channelClosed)
+            let total = drops.record(.channelClosed, mutableFrame.frameType)
             fputs("[CartridgeRuntime] frame dropped: output channel closed (channel_closed_total=\(total)) type=\(mutableFrame.frameType) rid=\(mutableFrame.id)\n", stderr)
             throw CartridgeRuntimeError.handlerError("Output channel closed")
         }
@@ -3129,6 +3141,27 @@ public struct CapArg: Codable, Sendable {
 /// this arg advertises a different argument contract than the fabric promises,
 /// which the publish pipeline's cap-drift guard rejects. Every Swift cartridge
 /// composes its manifest with THIS definition — never a hand-built one.
+/// The media URN a cap's response STREAM_START must carry, derived from the
+/// cap's declared effect over its declared main input — the label every
+/// engine-fed input stream carries (spec 13.2):
+///
+/// - `effect=declared` → the declared `out=`
+/// - `effect=none`     → the declared `in=` (the type passes through)
+/// - `effect=patch`    → the declared `in=` with the declared delta applied
+///
+/// This is `CSCapUrn.inferRuntimeOutputMedia` over the declared input — the
+/// SAME inference the engine's effect audit checks emissions against
+/// (`CSCapUrn.isConformantRuntimeOutput`), so a runtime-labeled response is
+/// conformant by construction. Every runtime that labels a response must go
+/// through this function; a hand-picked label is how a cap lies about its
+/// effect. (matches Rust derive_response_media)
+public func deriveResponseMedia(capUrn: String) throws -> String {
+    let cap = try CSCapUrn.fromString(capUrn)
+    let declaredIn = try CSMediaUrn.fromString(cap.inSpec)
+    let inferred = try cap.inferRuntimeOutputMedia(declaredIn)
+    return inferred.toString()
+}
+
 public func identityCapDefinition() -> CapDefinition {
     CapDefinition(
         urn: CSCapIdentity as String,
@@ -3414,14 +3447,24 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// (rid, streamId); unmatched grants are correct no-ops.
     public let creditRouter = CreditRouter()
 
-    /// Process-wide dropped-frame accounting (L8). Shared with the writer's
-    /// terminal gate (post_terminal), every closed-channel send
-    /// (channel_closed), and the stats surface.
+    /// Process-wide dropped-frame accounting (L8): closed-channel sends and
+    /// other genuine losses. Drops mean something went wrong.
     let dropCounters = DropCounters()
+
+    /// Benign post-terminal stragglers suppressed by the writer's terminal
+    /// gate (L4): late frames that crossed their flow's END/ERR — the
+    /// expected teardown race, indicated as benign, never as drops.
+    let stragglerCounters = StragglerCounters()
 
     /// Snapshot of this runtime's dropped-frame counters (L8).
     public func protocolDrops() -> DropSnapshot {
         return dropCounters.snapshot()
+    }
+
+    /// Benign post-terminal straggler snapshot (L4), per frame type.
+    /// Separate from drops — nothing went wrong.
+    public func protocolStragglers() -> StragglerSnapshot {
+        return stragglerCounters.snapshot()
     }
 
     // MARK: - Initialization
@@ -3789,12 +3832,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // Demux frames into InputPackage
         let inputPackage = demuxMultiStream(frameIterator: frameIterator)
 
-        // Create CLI-mode OutputStream (writes to stdout)
+        // Create CLI-mode OutputStream (writes to stdout). Same derived
+        // response label as the wire path: the CLI mode is a debugging
+        // surface for the same contract, not a wildcard-labeled side channel.
         let cliSender = CliFrameSender()
         let outputStream = OutputStream(
             sender: cliSender,
             streamId: "cli-output",
-            mediaUrn: "media:", // CLI outputs raw bytes
+            mediaUrn: try deriveResponseMedia(capUrn: cap.urn),
             requestId: requestId,
             routingId: nil,
             maxChunk: DEFAULT_MAX_CHUNK
@@ -4122,13 +4167,15 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
         // Shared output sender — all outbound frames go through this.
         // The runtime's single output serialization point: applies SeqAssigner,
-        // enforces the writer terminal gate (L4: post-terminal flow frames are
-        // dropped and counted, never written), and counts closed-channel sends.
+        // enforces the writer terminal gate (L4: post-terminal flow frames
+        // are suppressed as benign counted stragglers, never written), and
+        // counts closed-channel sends as genuine drops.
         let outputSender = ChannelFrameSender(
             writer: frameWriter,
             writerLock: writerLock,
             seqAssigner: seqAssigner,
-            drops: dropCounters
+            drops: dropCounters,
+            stragglers: stragglerCounters
         )
 
         // Track pending peer requests (cartridge invoking host caps)
@@ -4407,12 +4454,23 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // Parse cap URN for output media type
-                let cap: CSCapUrn
+                // The response label is DERIVED from the cap's declared
+                // effect — not chosen by the op — so an honest lib-runtime
+                // cartridge satisfies the engine's effect audit by
+                // construction (this also parses the cap URN; an unparseable
+                // or underivable declaration fails the request here, before
+                // it is registered — never falls back).
+                let outputMediaUrn: String
                 do {
-                    cap = try CSCapUrn.fromString(capUrn)
+                    outputMediaUrn = try deriveResponseMedia(capUrn: capUrn)
                 } catch {
-                    var err = Frame.err(id: frame.id, code: "INVALID_CAP_URN", attributionClass: .internal, message: "Failed to parse cap URN: \(error)")
+                    fputs("[CartridgeRuntime] response media derivation FAILED: cap='\(capUrn)' rid=\(frame.id) error=\(error)\n", stderr)
+                    var err = Frame.err(
+                        id: frame.id,
+                        code: "HANDLER_ERROR",
+                        attributionClass: .internal,
+                        message: "response media derivation failed for cap '\(capUrn)': \(error.localizedDescription)"
+                    )
                     err.routingId = routingIdForErrors
                     try? outputSender.send(err)
                     continue
@@ -4434,7 +4492,6 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
                 let requestId = frame.id
                 let routingId = frame.routingId
-                let outputMediaUrn = cap.getOutSpec()
 
                 let cap2 = capacity.get()
                 if cap2 > 0 && runningHandlerCount >= cap2 {
@@ -4511,8 +4568,11 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     }
                     // Protocol observability (L8): the cartridge's dropped-
                     // frame total rides every heartbeat so the host can
-                    // surface it without a dedicated stats round-trip.
+                    // surface it without a dedicated stats round-trip. The
+                    // benign straggler total rides alongside, under its own
+                    // name — stragglers are not drops.
                     meta["drops_total"] = .unsignedInt(dropCounters.total)
+                    meta["stragglers_total"] = .unsignedInt(stragglerCounters.total)
                     meta["handler_capacity"] = .unsignedInt(UInt64(capacity.get()))
                     response.meta = meta
                     try outputSender.send(response)

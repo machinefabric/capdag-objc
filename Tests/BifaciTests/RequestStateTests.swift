@@ -265,7 +265,7 @@ final class RequestStateTests: XCTestCase {
         )
         XCTAssertFalse(
             table.recentlyTerminatedRid(.uint(9999)),
-            "an unknown rid is a genuine routing anomaly, never post_terminal"
+            "an unknown rid is a genuine routing anomaly, never a benign straggler"
         )
 
         // Push the ring past its horizon: rid 500's summary must age out.
@@ -277,7 +277,7 @@ final class RequestStateTests: XCTestCase {
         }
         XCTAssertFalse(
             table.recentlyTerminatedRid(.uint(500)),
-            "eviction past recentTerminatedCap ends post_terminal classification"
+            "eviction past recentTerminatedCap ends benign-straggler classification"
         )
         XCTAssertTrue(
             table.recentlyTerminatedRid(.uint(UInt64(1000 + cap - 1))),
