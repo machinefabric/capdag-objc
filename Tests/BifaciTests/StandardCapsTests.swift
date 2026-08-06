@@ -17,6 +17,15 @@ final class StandardCapsTests: XCTestCase {
         XCTAssertNotNil(discardUrn, "CAP_DISCARD must parse as valid CapUrn")
         XCTAssertEqual(discardUrn.inSpec, "media:", "CAP_DISCARD input must be media: (any media type)")
         XCTAssertEqual(discardUrn.outSpec, "media:void", "CAP_DISCARD output must be media:void")
+        // The constant is the canonical rendering: default in= (media:) and
+        // default effect (declared) are omitted; only out=media:void remains.
+        XCTAssertEqual(
+            discardUrn.toString(), CSCapDiscard as String,
+            "CAP_DISCARD must be the canonical rendering of the discard cap")
+        let explicit = try CSCapUrn.fromString("cap:in=media:;out=media:void")
+        XCTAssertEqual(
+            explicit.toString(), CSCapDiscard as String,
+            "explicit in=media: surface form must normalize to CAP_DISCARD")
     }
 
     // TEST474: CAP_DISCARD accepts specific-input/void-output caps

@@ -24,7 +24,7 @@ extern NSString * const CSCapIdentity;
  * Standard, but NOT mandatory.
  * Accepts any media type as input and produces void output.
  * The capdag lib MAY provide a default implementation; cartridges may override.
- * URN: cap:in=media:;out=media:void
+ * URN: cap:out=media:void
  */
 extern NSString * const CSCapDiscard;
 

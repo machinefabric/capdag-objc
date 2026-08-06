@@ -21,8 +21,10 @@ NSString * const CSCapIdentity = @"cap:effect=none";
  * Discard capability — the terminal morphism.
  * Standard, but NOT mandatory.
  * Accepts any media type as input and produces void output.
+ * Canonical URN: cap:out=media:void (default in=media: and default
+ * effect=declared are omitted in canonical form).
  */
-NSString * const CSCapDiscard = @"cap:in=media:;out=media:void";
+NSString * const CSCapDiscard = @"cap:out=media:void";
 
 /**
  * Adapter selection capability — content inspection for file type detection.

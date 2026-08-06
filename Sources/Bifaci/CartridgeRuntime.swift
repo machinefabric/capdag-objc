@@ -3486,7 +3486,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         if findHandler(capUrn: CSCapIdentity) == nil {
             register_op_type(capUrn: CSCapIdentity, make: IdentityOp.init)
         }
-        // CAP_DISCARD: "cap:in=media:;out=media:void" (standard, optional)
+        // CAP_DISCARD: "cap:out=media:void" (standard, optional)
         if findHandler(capUrn: CSCapDiscard) == nil {
             register_op_type(capUrn: CSCapDiscard, make: DiscardOp.init)
         }
