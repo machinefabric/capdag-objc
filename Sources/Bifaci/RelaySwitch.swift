@@ -471,8 +471,37 @@ public final class RelaySwitch: @unchecked Sendable {
     /// small slot count.
     private let addMasterLock = NSLock()
 
-    /// Shutdown flag - when true, reader threads should exit
-    private var isShutdown = false
+    /// Shutdown flag — when true, reader threads and the probe driver exit.
+    ///
+    /// Deliberately NOT guarded by `lock`, and read/written through its own
+    /// tiny lock instead. The reference stores this as an `AtomicBool`
+    /// (`background_pump_stop`) for exactly one reason: `Drop` must be able to
+    /// signal shutdown WITHOUT acquiring the switch mutex. Guarding it with
+    /// `lock` made `deinit` take that mutex, so a deallocation racing anything
+    /// that holds it deadlocks the deallocating thread — which is precisely the
+    /// hang this suite showed (`RelaySwitch.deinit` parked in
+    /// `__psynch_mutexwait` while every other thread sat in `read()`).
+    ///
+    /// A dedicated lock rather than an atomic keeps the change dependency-free;
+    /// what matters is that it is a DIFFERENT lock from `lock`, so setting the
+    /// flag can never contend with the switch's own critical sections.
+    private let shutdownLock = NSLock()
+    private var shutdownFlag = false
+
+    /// The shutdown flag. Safe to read and write from any thread, including
+    /// `deinit`, without holding `lock`.
+    private var isShutdown: Bool {
+        get {
+            shutdownLock.lock()
+            defer { shutdownLock.unlock() }
+            return shutdownFlag
+        }
+        set {
+            shutdownLock.lock()
+            defer { shutdownLock.unlock() }
+            shutdownFlag = newValue
+        }
+    }
 
     /// Response channels for in-flight deferred identity probes, keyed
     /// by the probe's (xid, rid). The master reader thread diverts a
@@ -709,20 +738,27 @@ public final class RelaySwitch: @unchecked Sendable {
     /// Shutdown the relay switch, stopping all reader threads.
     /// Call this before closing file handles to prevent crashes.
     public func shutdown() {
-        lock.lock()
+        // The flag has its own lock, so signalling shutdown never waits on the
+        // switch mutex — a caller must be able to stop a switch whose critical
+        // sections are busy.
         isShutdown = true
-        lock.unlock()
 
         // Signal semaphores to wake any waiting readers and the probe driver
         frameSemaphore.signal()
         probeSemaphore.signal()
     }
 
-    /// deinit sets shutdown flag
+    /// deinit signals shutdown — WITHOUT taking `lock`.
+    ///
+    /// Mirrors the reference's `Drop`, which stores into an `AtomicBool` and
+    /// touches no mutex. Taking `lock` here meant deallocation could block on
+    /// the switch's own critical sections, and a deallocation that blocks
+    /// blocks the thread that happened to release the last reference — which
+    /// is how this became a whole-suite hang with `deinit` parked in
+    /// `__psynch_mutexwait`.
     deinit {
-        lock.lock()
         isShutdown = true
-        lock.unlock()
+        frameSemaphore.signal()
         probeSemaphore.signal()
     }
 
@@ -732,10 +768,7 @@ public final class RelaySwitch: @unchecked Sendable {
         var mutableReader = reader
         while true {
             // Check shutdown flag before reading
-            lock.lock()
-            let shouldStop = isShutdown
-            lock.unlock()
-            if shouldStop { return }
+            if isShutdown { return }
 
             do {
                 guard let frame = try mutableReader.read() else {
@@ -744,10 +777,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 }
 
                 // Check shutdown after read
-                lock.lock()
-                let shouldStopAfterRead = isShutdown
-                lock.unlock()
-                if shouldStopAfterRead { return }
+                if isShutdown { return }
 
                 // Intercept RelayNotify before sending to queue
                 if frame.frameType == .relayNotify {
@@ -810,10 +840,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 }
             } catch {
                 // Don't enqueue errors if we're shutting down
-                lock.lock()
-                let shuttingDown = isShutdown
-                lock.unlock()
-                if shuttingDown { return }
+                if isShutdown { return }
 
                 enqueueFrame(masterIdx: masterIdx, frame: nil, error: error)
                 return
@@ -833,6 +860,17 @@ public final class RelaySwitch: @unchecked Sendable {
     /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
     /// Cleans up seq tracking on terminal frames (END/ERR).
     private func writeToMasterIdx(_ masterIdx: Int, _ frame: inout Frame) throws {
+        // Checked, not subscripted. A routing decision and the write that acts
+        // on it are not atomic — a master can detach in between — and the
+        // reference returns `Protocol("selected master index N no longer
+        // exists")` for exactly that. Subscripting instead TRAPS, taking the
+        // whole process down (`Fatal error: Index out of range`) on a race the
+        // contract says to report.
+        guard masters.indices.contains(masterIdx) else {
+            throw RelaySwitchError.protocolError(
+                "selected master index \(masterIdx) no longer exists"
+            )
+        }
         let master = masters[masterIdx]
         master.seqAssigner.assign(&frame)
         try master.socketWriter.write(frame)
@@ -1022,13 +1060,22 @@ public final class RelaySwitch: @unchecked Sendable {
         let healthyAtRegister = identityFailure == nil
 
         // Commit the connection state into the slot.
+        // `defer`, not hand-paired unlocks: this region contains throwing calls
+        // (`configureMasterAdmissionLocked` rejects a cartridge record missing
+        // mandatory v4 runtime_stats), and an error unwinds straight past a
+        // trailing `lock.unlock()`. Rust holds a `MutexGuard` here, which
+        // releases on every exit including the error path; hand-pairing lost
+        // that property in translation and turned one legitimate registration
+        // error into a permanently held switch lock — after which every
+        // acquirer blocks forever, `deinit` included.
         lock.lock()
+        var registrationDone = false
+        defer { if !registrationDone { lock.unlock() } }
         if existingIdx == nil {
             // Append. The captured `masterIdx` MUST equal the new
             // length; if not, a concurrent appender bypassed
             // `addMasterLock`, which is a protocol violation.
             if masters.count != masterIdx {
-                lock.unlock()
                 throw RelaySwitchError.protocolError(
                     "addMaster: append-index race for id '\(socket.id)': reserved \(masterIdx) but masters.count is now \(masters.count) " +
                     "(a concurrent caller bypassed addMasterLock)"
@@ -1053,7 +1100,6 @@ public final class RelaySwitch: @unchecked Sendable {
         } else {
             let slot = masters[masterIdx]
             if slot.id != socket.id {
-                lock.unlock()
                 throw RelaySwitchError.protocolError(
                     "addMaster: reattach-id mismatch at index \(masterIdx): expected '\(socket.id)' but found '\(slot.id)'"
                 )
@@ -1087,6 +1133,7 @@ public final class RelaySwitch: @unchecked Sendable {
         rebuildCapTable()
         rebuildCapabilities()
         rebuildLimits()
+        registrationDone = true
         lock.unlock()
 
         return masterIdx
@@ -2123,34 +2170,59 @@ public final class RelaySwitch: @unchecked Sendable {
     private func ensureProbeDriverStarted() {
         if probeDriverStarted { return }
         probeDriverStarted = true
+        // The driver must NOT keep the switch alive. `self?.loop()` looks weak
+        // but is not: the optional-chained call retains `self` for the whole
+        // duration of the callee, and the callee is a `while true` loop parked
+        // in `probeSemaphore.wait()`. A switch that is never explicitly shut
+        // down is then immortal, held by its own background thread — and its
+        // deinit eventually runs at an arbitrary moment on whichever thread
+        // happens to drop the last reference, taking `lock` while a stranded
+        // driver still owns it.
+        //
+        // The reference does this correctly: `Arc::downgrade` once, then
+        // `weak_probe.upgrade()` PER ITERATION, breaking when the upgrade
+        // fails ("relay torn down"). This mirrors that — the semaphore is
+        // captured by value so waiting needs no `self` at all, and the strong
+        // reference exists only while an iteration is actually running.
+        let semaphore = probeSemaphore
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.identityProbeDriverLoop()
+            while true {
+                semaphore.wait()
+                // Upgrade per iteration, exactly as the reference does. A nil
+                // here is the switch having gone away: the driver's work is
+                // over and holding on would be the leak this avoids.
+                guard let switchRef = self else { return }
+                if !switchRef.runOneQueuedProbe() { return }
+                // `switchRef` goes out of scope HERE, before the next wait, so
+                // the switch is never retained across a park.
+            }
         }
     }
 
-    /// Serially drains `pendingIdentityProbes`, running an end-to-end
-    /// identity probe against each queued master. On success the master
-    /// flips healthy and its caps become routable; on failure it stays
-    /// unhealthy with `lastError` set. Mirrors Rust's
+    /// One iteration of the probe driver: pop a queued master and probe it.
+    ///
+    /// Serially drains `pendingIdentityProbes` one entry per signal. On success
+    /// the master flips healthy and its caps become routable; on failure it
+    /// stays unhealthy with `lastError` set. Mirrors Rust's
     /// spawn_identity_probe_driver task body.
-    private func identityProbeDriverLoop() {
-        while true {
-            probeSemaphore.wait()
-
-            lock.lock()
-            if isShutdown {
-                lock.unlock()
-                return
-            }
-            guard !pendingIdentityProbes.isEmpty else {
-                lock.unlock()
-                continue
-            }
-            let masterIdx = pendingIdentityProbes.removeFirst()
+    /// Returns false when the driver must stop (the switch is shutting down).
+    /// Split out from the loop so the strong reference the body needs is
+    /// scoped to the iteration rather than to the driver's whole lifetime.
+    private func runOneQueuedProbe() -> Bool {
+        lock.lock()
+        if isShutdown {
             lock.unlock()
-
-            runIdentityProbeViaRelay(masterIdx)
+            return false
         }
+        guard !pendingIdentityProbes.isEmpty else {
+            lock.unlock()
+            return true
+        }
+        let masterIdx = pendingIdentityProbes.removeFirst()
+        lock.unlock()
+
+        runIdentityProbeViaRelay(masterIdx)
+        return true
     }
 
     /// Run the end-to-end runtime identity probe against `masterIdx`.

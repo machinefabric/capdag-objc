@@ -922,6 +922,21 @@ public struct HostProtocolStats: Codable, Sendable {
         self.routingGcRunsTotal = routingGcRunsTotal
         self.routingGcEvictedTotal = routingGcEvictedTotal
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        drops = try c.decode(DropSnapshot.self, forKey: .drops)
+        // `stragglers` mirrors Rust's `#[serde(default)]`: absent means "none
+        // reported", not "malformed payload".
+        stragglers = try c.decodeIfPresent(StragglerSnapshot.self, forKey: .stragglers) ?? StragglerSnapshot()
+        outgoingRids = try c.decode(Int.self, forKey: .outgoingRids)
+        incomingRxids = try c.decode(Int.self, forKey: .incomingRxids)
+        incomingToPeerRids = try c.decode(Int.self, forKey: .incomingToPeerRids)
+        outgoingMaxSeq = try c.decode(Int.self, forKey: .outgoingMaxSeq)
+        routingGcRunsTotal = try c.decode(UInt64.self, forKey: .routingGcRunsTotal)
+        routingGcEvictedTotal = try c.decode(UInt64.self, forKey: .routingGcEvictedTotal)
+    }
+
 }
 
 // MARK: - CartridgeHost

@@ -520,7 +520,8 @@ public final class PeerResponse: @unchecked Sendable {
                 }
             case .log:
                 throw StreamError.protocolError(
-                    "peer response emitted a LOG frame; use collectBytesForwarding(output:progressBase:progressWeight:) to forward the peer's diagnostics"
+                    "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
+                        + " — use collectBytesForwarding(output:progressBase:progressWeight:)"
                 )
             }
         }
@@ -538,8 +539,11 @@ public final class PeerResponse: @unchecked Sendable {
                 }
                 value = try dataResult.get()
             case .log:
+                // No `collectValueForwarding` exists (nor does the reference have
+                // one): a caller that wants the peer's diagnostics drains the
+                // response with `recv()` and forwards each `.log` itself.
                 throw StreamError.protocolError(
-                    "peer response emitted a LOG frame; use collectBytesForwarding(output:progressBase:progressWeight:) to forward the peer's diagnostics"
+                    "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
                 )
             }
         }

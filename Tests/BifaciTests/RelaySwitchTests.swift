@@ -29,6 +29,15 @@ final class CborRelaySwitchTests: XCTestCase {
                 "id": "test-cartridge",
                 "version": "0.0.0",
                 "sha256": String(repeating: "0", count: 64),
+                "runtime_stats": [
+                    "running": true,
+                    "handler_capacity": 0,
+                    "active_request_count": 0,
+                    "peer_request_count": 0,
+                    "memory_footprint_mb": 0,
+                    "memory_rss_mb": 0,
+                    "restart_count": 0,
+                ] as [String: Any],
                 "cap_groups": [[
                     "name": "test",
                     "caps": groupCaps,
@@ -1439,6 +1448,15 @@ final class CborRelaySwitchTests: XCTestCase {
                     "id": "test-cartridge",
                     "version": "0.0.0",
                     "sha256": String(repeating: "0", count: 64),
+                    "runtime_stats": [
+                        "running": true,
+                        "handler_capacity": 0,
+                        "active_request_count": 0,
+                        "peer_request_count": 0,
+                        "memory_footprint_mb": 0,
+                        "memory_rss_mb": 0,
+                        "restart_count": 0,
+                    ] as [String: Any],
                     "cap_groups": [[
                         "name": "test",
                         "caps": [[

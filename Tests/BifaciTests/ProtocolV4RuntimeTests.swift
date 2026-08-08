@@ -403,9 +403,13 @@ final class ProtocolV4RuntimeTests: XCTestCase {
         try output.start(isSequence: false)
 
         // Exhaust the window (1 chunk), then block trying to send another.
+        // write() coalesces (8 bytes is far under the batch threshold), so the
+        // explicit flush is what ships the batch: 2 chunks at maxChunk 4,
+        // blocking after the first consumes the whole window.
         let finished = LockedFlag()
         let writerTask = Task {
-            _ = try? await output.write(Data(repeating: 0, count: 8)) // 2 chunks; blocks after 1
+            _ = try? await output.write(Data(repeating: 0, count: 8))
+            _ = try? await output.flush() // blocks after chunk 1 (window = 1)
             finished.set()
         }
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -675,6 +679,15 @@ final class ProtocolV4SwitchTests: XCTestCase {
                 "id": "test-cartridge",
                 "version": "0.0.0",
                 "sha256": String(repeating: "0", count: 64),
+                "runtime_stats": [
+                    "running": true,
+                    "handler_capacity": 0,
+                    "active_request_count": 0,
+                    "peer_request_count": 0,
+                    "memory_footprint_mb": 0,
+                    "memory_rss_mb": 0,
+                    "restart_count": 0,
+                ] as [String: Any],
                 "cap_groups": [[
                     "name": "test",
                     "caps": groupCaps,
@@ -1044,7 +1057,7 @@ final class ProtocolV4SwitchTests: XCTestCase {
     // counted post_terminal, not no_route — the ordinary teardown race of
     // credit-based flow control must not pollute the routing-anomaly alarm.
     // A frame for a RID the table never knew stays no_route (TEST7025).
-    func test8114_stragglerForTerminatedRequestCountsPostTerminal() throws {
+    func test8114_stragglerForTerminatedRequestIsBenignNotADrop() throws {
         let switch_ = try RelaySwitch(sockets: [])
         defer { switch_.shutdown() }
 
@@ -1076,14 +1089,21 @@ final class ProtocolV4SwitchTests: XCTestCase {
         dupEnd.routingId = xid
         XCTAssertNil(try switch_.handleMasterFrame(sourceIdx: 0, frame: dupEnd))
 
+        // A straggler is NOT a drop: it is the expected teardown crossing, and
+        // it has its own counters. Counting it as a drop made a healthy
+        // shutdown read as data loss. Mirrors the reference's
+        // `test8114_straggler_for_terminated_request_is_benign_not_a_drop`.
         let stats = switch_.protocolStats()
         XCTAssertEqual(
-            stats.drops.byReason["post_terminal"], 3,
-            "all three stragglers classified post_terminal: \(stats.drops)"
+            stats.stragglers.total, 3,
+            "all three post-terminal frames counted as benign stragglers: \(stats.stragglers)"
         )
-        XCTAssertNil(
-            stats.drops.byReason["no_route"],
-            "a terminated request's stragglers must never read as routing anomalies: \(stats.drops)"
+        XCTAssertEqual(stats.stragglers.byFrameType["log"], 1)
+        XCTAssertEqual(stats.stragglers.byFrameType["chunk"], 1)
+        XCTAssertEqual(stats.stragglers.byFrameType["end"], 1)
+        XCTAssertEqual(
+            stats.drops.total, 0,
+            "nothing was dropped: \(stats.drops)"
         )
     }
 
@@ -1169,11 +1189,19 @@ final class ProtocolV4SwitchTests: XCTestCase {
         XCTAssertEqual(summary.rid, rid.description)
         XCTAssertEqual(summary.framesIn, 1, "ingress recording captured the terminal frame")
 
-        // A follow-up frame for the released key is a counted no_route drop.
+        // A follow-up frame for the released key is a BENIGN post-terminal
+        // straggler — the expected teardown race, counted separately and never
+        // as a drop; `no_route` stays reserved for RIDs the table never knew
+        // (TEST8114). Mirrors the reference's test7035.
         var late = Frame.progress(id: rid, progress: 1.0, message: "late")
         late.routingId = xid
         _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: late)
-        XCTAssertEqual(switch_.protocolStats().drops.byReason["no_route"], 1)
+        let lateStats = switch_.protocolStats()
+        XCTAssertEqual(lateStats.stragglers.byFrameType["log"], 1)
+        XCTAssertEqual(
+            lateStats.drops.total, 0,
+            "a just-terminated request's straggler is benign — never a drop"
+        )
         switch_.shutdown()
     }
 
