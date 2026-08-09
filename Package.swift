@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.398.3947
+// version: 1.399.3957
 import PackageDescription
 
 let package = Package(
@@ -15,6 +15,11 @@ let package = Package(
         .library(
             name: "Bifaci",
             targets: ["Bifaci"]),
+        // Every capdag mirror ships the CLI: `capdag new` is how a cartridge
+        // project comes into existence, and each mirror must create the same one.
+        .executable(
+            name: "capdag",
+            targets: ["capdag-cli"]),
     ],
     dependencies: [
         .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", from: "1.34.211"),
@@ -44,6 +49,11 @@ let package = Package(
                 .product(name: "Glob", package: "Glob"),
             ],
             path: "Sources/Bifaci"
+        ),
+        .executableTarget(
+            name: "capdag-cli",
+            dependencies: ["Bifaci", "CapDAG"],
+            path: "Sources/capdag-cli"
         ),
         .testTarget(
             name: "CapDAGTests",

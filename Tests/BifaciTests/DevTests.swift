@@ -59,7 +59,7 @@ final class DevTests: XCTestCase {
     // TEST7154: EVERY vendored language scaffolds a runnable-shaped project —
     // every declared file exists, no placeholder survives anywhere (contents or
     // paths), the manifest/alias/media URNs are seeded from the project name,
-    // and the files declared executable are.
+    // and the interpreted languages' entries are executable.
     //
     // Iterating the contract rather than testing one language is the point: a
     // newly vendored language is covered the moment it appears, instead of
@@ -182,7 +182,7 @@ final class DevTests: XCTestCase {
         return path
     }
 
-    // TEST7156: readEntryManifest + stageDevCartridge + findDevCapByAlias
+    // TEST7156: read_entry_manifest + stage_dev_cartridge + find_dev_cap_by_alias
     // round-trip: a stub project installs under dev/v{N}/nightly/<name>/<ver>/,
     // writes a cartridge.json, and its custom cap is resolvable by alias.
     func test7156_devInstallAndFindByAlias() throws {
@@ -258,11 +258,6 @@ final class DevTests: XCTestCase {
     // TEST7158: the fabric-conflict guard — a dev cap whose alias the fabric
     // maps to a DIFFERENT cap is rejected; a brand-new alias, and a dev cap that
     // matches an existing fabric cap exactly, are both accepted.
-    //
-    // The resolver stands in for the fabric's alias table. The reference passes
-    // a live FabricRegistry; this mirror takes the lookup as a closure, which is
-    // a documented object-level divergence — the guard's behavior is identical,
-    // and that is what the shared number asserts.
     func test7158_fabricConflictGuard() throws {
         let alphaURN = #"cap:alpha;in="media:enc=utf-8";out="media:enc=utf-8;alpha""#
         let alpha = CapDefinition(urn: alphaURN, title: "Alpha", aliases: ["alpha"])
@@ -326,13 +321,14 @@ final class DevTests: XCTestCase {
         }
     }
 
-    // TEST7160: the vendored stub contract is IDENTICAL to the reference's.
+    // TEST7160: the vendored stub contract is IDENTICAL to the canonical source.
     //
     // This is the whole promise of `capdag new`: the same command from any
-    // capdag binary writes the same project. The vendored copies are generated
-    // from one source, so a difference here means a mirror was vendored from a
-    // different commit — which would ship two capdags that disagree about what a
-    // cartridge looks like, silently.
+    // capdag binary writes the same project. Every mirror's copy is generated
+    // from this one source, so a difference here means the reference itself was
+    // vendored from a different commit than the stub repo currently holds —
+    // which would ship capdags that disagree about what a cartridge looks like,
+    // silently.
     func test7160_vendoredStubContractMatchesTheCanonicalSource() throws {
         // Locate the canonical stubs relative to this mirror inside the
         // workspace. Absent (a standalone checkout of capdag-objc), there is
