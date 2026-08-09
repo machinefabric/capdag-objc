@@ -109,6 +109,37 @@ public func validateRegistryURLScheme(_ url: String, devMode: Bool) -> RegistryU
     return .nonHTTPS(scheme: scheme)
 }
 
+// MARK: - Install timestamps
+
+/// Render `installedAt` for a cartridge being installed right now.
+///
+/// The field is declared RFC3339 and every reader (and every fixture) treats it
+/// as one, so every producer goes through this one function — a bare epoch count
+/// with a `Z` stuck on the end parses as neither a number nor a timestamp, and
+/// would leave the field readable only by a human who already knew what it was.
+///
+/// Mirrors `capdag::bifaci::cartridge_json::install_timestamp_now`.
+public func installTimestampNow() -> String {
+    formatRFC3339UTC(Int64(Date().timeIntervalSince1970))
+}
+
+/// Format Unix seconds as `YYYY-MM-DDTHH:MM:SSZ`.
+///
+/// Built on `DateComponents` in the Gregorian calendar rather than a
+/// `DateFormatter` template, so the result does not depend on the process
+/// locale or the user's 12/24-hour preference — both of which silently rewrite
+/// a format string.
+public func formatRFC3339UTC(_ secs: Int64) -> String {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let date = Date(timeIntervalSince1970: TimeInterval(secs))
+    let c = calendar.dateComponents(
+        [.year, .month, .day, .hour, .minute, .second], from: date)
+    return String(
+        format: "%04d-%02d-%02dT%02d:%02d:%02dZ",
+        c.year!, c.month!, c.day!, c.hour!, c.minute!, c.second!)
+}
+
 // MARK: - Install source
 
 /// Install-provenance hint stored in `cartridge.json`. **Not consulted for
@@ -128,6 +159,7 @@ public enum CartridgeInstallSource: String, Codable, Equatable, Sendable {
 public enum CartridgeJsonError: Error, CustomStringConvertible {
     case notFound(path: String)
     case readFailed(path: String, underlying: String)
+    case writeFailed(path: String, underlying: String)
     case invalidJSON(path: String, underlying: String)
     case entryPointMissing(path: String, entry: String)
     case entryPointNotExecutable(path: String, entry: String)
@@ -144,6 +176,8 @@ public enum CartridgeJsonError: Error, CustomStringConvertible {
             return "cartridge.json not found at \(path)"
         case .readFailed(let path, let underlying):
             return "failed to read cartridge.json at \(path): \(underlying)"
+        case .writeFailed(let path, let underlying):
+            return "failed to write cartridge.json at \(path): \(underlying)"
         case .invalidJSON(let path, let underlying):
             return "invalid cartridge.json at \(path): \(underlying)"
         case .entryPointMissing(let path, let entry):
@@ -362,6 +396,46 @@ public struct CartridgeJson: Equatable, Sendable {
     /// Resolve the absolute path to the entry point binary.
     public func resolveEntryPoint(_ versionDir: String) -> String {
         (versionDir as NSString).appendingPathComponent(entry)
+    }
+
+    /// Serialize to a JSON-compatible dictionary.
+    ///
+    /// `registry_url` is always emitted (as JSON null for dev installs), never
+    /// elided — the consumer's required-but-nullable check would reject an
+    /// absent key. The remaining optional fields are omitted when empty rather
+    /// than written as null or zero, mirroring the reference's
+    /// `skip_serializing_if`: a reader that treats absent and empty alike is
+    /// exactly the regime we want, and the smaller file is what every existing
+    /// dev install on disk already looks like.
+    public func toDictionary() -> [String: Any] {
+        var d: [String: Any] = [
+            "name": name,
+            "version": version,
+            "channel": channel.rawValue,
+            "registry_url": registryURL as Any? ?? NSNull(),
+            "entry": entry,
+            "installed_at": installedAt,
+        ]
+        if let installedFrom { d["installed_from"] = installedFrom.rawValue }
+        if !sourceURL.isEmpty { d["source_url"] = sourceURL }
+        if !packageSHA256.isEmpty { d["package_sha256"] = packageSHA256 }
+        if packageSize != 0 { d["package_size"] = packageSize }
+        if fabricManifestVersion != 0 { d["fabric_manifest_version"] = fabricManifestVersion }
+        return d
+    }
+
+    /// Write this `cartridge.json` into a version directory.
+    ///
+    /// Mirrors the reference's `write_to_dir`.
+    public func writeToDir(_ versionDir: String) throws {
+        let jsonPath = (versionDir as NSString).appendingPathComponent("cartridge.json")
+        do {
+            let data = try JSONSerialization.data(
+                withJSONObject: toDictionary(), options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: jsonPath))
+        } catch {
+            throw CartridgeJsonError.writeFailed(path: jsonPath, underlying: "\(error)")
+        }
     }
 }
 
