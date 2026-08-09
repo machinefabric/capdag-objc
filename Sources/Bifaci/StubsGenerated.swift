@@ -296,7 +296,7 @@ cartridge.json
         entry: #"target/release/__CARTRIDGE_NAME__"#,
         build: [#"cargo build --release"#],
         runtimePackage: #"capdag"#,
-        runtimeRegistry: #"crates.io"#,
+        runtimeRegistry: #"git tag"#,
         runtimeInstall: #"cargo build (the dependency is declared in Cargo.toml)"#,
         files: [
             StubFile(
@@ -517,7 +517,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-capdag = "1.639.6434"
+capdag = { git = "https://github.com/machinefabric/capdag", tag = "v1.644.6474" }
 ciborium = "0.2"
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
