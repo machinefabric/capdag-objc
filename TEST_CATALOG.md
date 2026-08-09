@@ -1,8 +1,8 @@
 # Swift/ObjC Test Catalog
 
-**Total Tests:** 930
+**Total Tests:** 941
 
-**Numbered Tests:** 930
+**Numbered Tests:** 941
 
 **Unnumbered Tests:** 0
 
@@ -916,6 +916,17 @@ This catalog lists all tests in the Swift/ObjC codebase.
 | test7114 | `test7114_transientUnavailabilityDoesNotFailQueuedWork` | TEST7114: a cartridge that disappears and comes back does NOT terminally fail the work queued behind it. This is 17.2's "queued bodies are not assigned terminal failure from another body's process loss; once a replacement instance advertises capacity, subsequent queued work is admitted to that live instance". The regression this pins: a single failed registry-manifest fetch retired three live cartridges for ~24s, and every queued ForEach body was failed with "became unavailable while waiting for capacity" — 195 bodies lost to an outage that had already healed. | Tests/BifaciTests/RequestStateTests.swift:448 |
 | test7117 | `test7117_logFrameArgUrnRoundtrip` | TEST7117: non-progress LOG carries the same source attribution tuple as ERR, including an optional argument URN, through the actual wire codec. | Tests/BifaciTests/FrameTests.swift:2144 |
 | test7118 | `test7118_collectBytesForwardingPreservesPeerSideChannels` | TEST7118: finite peer collection preserves source diagnostics instead of consuming them as data or dropping them. Progress is mapped into the caller's range and argument attribution survives byte-for-byte. | Tests/BifaciTests/StreamingAPITests.swift:1088 |
+| test7150 | `test7150_capOutputSurvivesSerializationRoundtrip` | TEST7150: a cap's OUTPUT survives a manifest round-trip, under the wire key names the other implementations read. | Tests/BifaciTests/ManifestTests.swift:340 |
+| test7151 | `test7151_isSequenceIsSerializedEvenWhenFalse` | TEST7151: `is_sequence` is serialized even when false, on both CapArg and CapOutput. It is not a `skip_serializing_if` field. Mirrors that omitted it produced a manifest for the identical cap that differed from this one's bytes, which is how a cross-language manifest comparison finds drift that every per-mirror test passes through. | Tests/BifaciTests/ManifestTests.swift:378 |
+| test7152 | `test7152_emptyAdapterUrnsIsOmitted` | TEST7152: an empty `adapter_urns` is omitted from a serialized cap group. Most cartridges claim no adapters, so a mirror that wrote `[]` put an extra key in nearly every manifest it produced — invisible to that mirror's own tests, and a difference the moment two languages' manifests for the same cartridge are compared. | Tests/BifaciTests/ManifestTests.swift:402 |
+| test7153 | `test7153_installTimestampIsRfc3339Utc` | TEST7153: `installed_at` is a real RFC3339 UTC timestamp, at known epoch instants and at the instants that break naive date arithmetic — a leap day, the day after one, and a century year that is NOT a leap year. Emitting a bare epoch count with a `Z` appended would satisfy "some string ending in Z" and satisfy nothing else; every reader and every fixture in the tree treats this field as a parseable timestamp. | Tests/BifaciTests/DevTests.swift:30 |
+| test7154 | `test7154_scaffoldWritesARunnableProjectInEveryLanguage` | TEST7154: EVERY vendored language scaffolds a runnable-shaped project — every declared file exists, no placeholder survives anywhere (contents or paths), the manifest/alias/media URNs are seeded from the project name, and the interpreted languages' entries are executable. Iterating the contract rather than testing one language is the point: a newly vendored language is covered the moment it appears, instead of whenever someone remembers to add a test for it. | Tests/BifaciTests/DevTests.swift:67 |
+| test7155 | `test7155_scaffoldGuards` | TEST7155: scaffolding rejects a bad name and refuses to overwrite. | Tests/BifaciTests/DevTests.swift:120 |
+| test7156 | `test7156_devInstallAndFindByAlias` | TEST7156: read_entry_manifest + stage_dev_cartridge + find_dev_cap_by_alias round-trip: a stub project installs under dev/v{N}/nightly/<name>/<ver>/, writes a cartridge.json, and its custom cap is resolvable by alias. | Tests/BifaciTests/DevTests.swift:188 |
+| test7157 | `test7157_devInstallRejectsPublishedManifest` | TEST7157: dev-install refuses a PUBLISHED manifest. `registry_url` non-null means the cartridge belongs to a registry, and staging it under the dev slug would put a published identity in a slot reserved for local work. | Tests/BifaciTests/DevTests.swift:230 |
+| test7158 | `test7158_fabricConflictGuard` | TEST7158: the fabric-conflict guard — a dev cap whose alias the fabric maps to a DIFFERENT cap is rejected; a brand-new alias, and a dev cap that matches an existing fabric cap exactly, are both accepted. | Tests/BifaciTests/DevTests.swift:261 |
+| test7159 | `test7159_twoEntriesIsAmbiguousNotACoinFlip` | TEST7159: a project with two languages' entries is REFUSED, not silently resolved. A project is one cartridge; installing whichever entry sorted first would be a coin flip the developer never sees. | Tests/BifaciTests/DevTests.swift:296 |
+| test7160 | `test7160_vendoredStubContractMatchesTheCanonicalSource` | TEST7160: the vendored stub contract is IDENTICAL to the canonical source. This is the whole promise of `capdag new`: the same command from any capdag binary writes the same project. Every mirror's copy is generated from this one source, so a difference here means the reference itself was vendored from a different commit than the stub repo currently holds — which would ship capdags that disagree about what a cartridge looks like, silently. | Tests/BifaciTests/DevTests.swift:332 |
 | test8064 | `test8064_sequenceConsumerNeverFollowsForEachDirectly` | TEST8064: a sequence-consuming cap is reached directly from sequence data, never through a dangling ForEach boundary. A ForEach followed by a SCALAR cap stays legal — that is the map half of the ordinary map-then-fold plan — so the invariant is about what may follow the boundary, not about ForEach appearing. | Tests/CapDAGTests/CSLiveCapFabTests.m:360 |
 | test8065 | `test8065_sequenceShapeUsesMainInputIdentityNotArgumentOrder` | TEST8065: cardinality follows the declared main input even when another stdin-capable argument appears first. | Tests/CapDAGTests/CSCapTests.m:1222 |
 | test8066 | `test8066_voidInputSequenceShapeIsScalarWithoutArguments` | TEST8066: a void-input cap has scalar input cardinality without inventing an arg. | Tests/CapDAGTests/CSCapTests.m:1248 |
@@ -949,8 +960,8 @@ This catalog lists all tests in the Swift/ObjC codebase.
 ---
 
 *Generated from Swift/ObjC source tree*
-*Total tests: 930*
-*Total numbered tests: 930*
+*Total tests: 941*
+*Total numbered tests: 941*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
 *Total numbering mismatches: 0*
