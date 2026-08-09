@@ -3293,6 +3293,56 @@ public func identityCapDefinition() -> CapDefinition {
     )
 }
 
+/// What a cap produces. Mirrors the reference `capdag::cap::definition::CapOutput`
+/// field for field, because this is a WIRE type: a cartridge's manifest is read
+/// by the Rust host, and a Swift cartridge that could not declare its output
+/// produced a manifest the other four implementations could not round-trip.
+public struct CapOutput: Codable, Sendable {
+    /// Media URN referencing a media definition, e.g. "media:enc=utf-8;tag".
+    public let mediaUrn: String
+    public let outputDescription: String
+    /// Whether this output produces a sequence of items (isSequence=true) or a
+    /// single item (isSequence=false, the default).
+    public let isSequence: Bool
+    /// Arbitrary metadata as a JSON object.
+    public let metadata: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case mediaUrn = "media_urn"
+        case outputDescription = "output_description"
+        case isSequence = "is_sequence"
+        case metadata
+    }
+
+    public init(mediaUrn: String, outputDescription: String, isSequence: Bool = false, metadata: JSONValue? = nil) {
+        self.mediaUrn = mediaUrn
+        self.outputDescription = outputDescription
+        self.isSequence = isSequence
+        self.metadata = metadata
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
+        outputDescription = try container.decode(String.self, forKey: .outputDescription)
+        isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
+        metadata = try container.decodeIfPresent(JSONValue.self, forKey: .metadata)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(mediaUrn, forKey: .mediaUrn)
+        try container.encode(outputDescription, forKey: .outputDescription)
+        // Absent ⇒ false, and absent ⇒ no metadata: the reference omits both
+        // rather than writing their defaults, and a manifest is compared byte
+        // for byte across implementations.
+        if isSequence {
+            try container.encode(true, forKey: .isSequence)
+        }
+        try container.encodeIfPresent(metadata, forKey: .metadata)
+    }
+}
+
 public struct CapDefinition: Codable, Sendable {
     public let urn: String
     public let title: String
@@ -3304,6 +3354,7 @@ public struct CapDefinition: Codable, Sendable {
     public let isAbstract: Bool
     public let capDescription: String?
     public let args: [CapArg]
+    public let output: CapOutput?
 
     enum CodingKeys: String, CodingKey {
         case urn
@@ -3312,6 +3363,7 @@ public struct CapDefinition: Codable, Sendable {
         case isAbstract = "abstract"
         case capDescription = "cap_description"
         case args
+        case output
     }
 
     /// The primary (first) alias — single-name display. A cap always has one.
@@ -3320,13 +3372,14 @@ public struct CapDefinition: Codable, Sendable {
     /// Whether `name` is one of this cap's aliases (exact match).
     public func hasAlias(_ name: String) -> Bool { aliases.contains(name) }
 
-    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = []) {
+    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], output: CapOutput? = nil) {
         self.urn = urn
         self.title = title
         self.aliases = aliases
         self.isAbstract = isAbstract
         self.capDescription = capDescription
         self.args = args
+        self.output = output
     }
 
     public init(from decoder: Decoder) throws {
@@ -3343,6 +3396,7 @@ public struct CapDefinition: Codable, Sendable {
         isAbstract = try container.decodeIfPresent(Bool.self, forKey: .isAbstract) ?? false
         capDescription = try container.decodeIfPresent(String.self, forKey: .capDescription)
         args = try container.decodeIfPresent([CapArg].self, forKey: .args) ?? []
+        output = try container.decodeIfPresent(CapOutput.self, forKey: .output)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -3358,6 +3412,7 @@ public struct CapDefinition: Codable, Sendable {
         if !args.isEmpty {
             try container.encode(args, forKey: .args)
         }
+        try container.encodeIfPresent(output, forKey: .output)
     }
 
     /// Check if this cap accepts stdin input.

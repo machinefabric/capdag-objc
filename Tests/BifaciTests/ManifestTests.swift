@@ -334,4 +334,72 @@ final class ManifestTests: XCTestCase {
             )
         }
     }
+
+    // TEST6423: a cap's OUTPUT survives a manifest round-trip.
+    //
+    // The Swift `CapDefinition` carried no `output` at all, so a Swift
+    // cartridge could not declare what its cap produces and any manifest that
+    // did declare one lost the block on the way through. This is a wire type —
+    // the Rust host reads exactly these bytes — and the other four
+    // implementations have carried `output` all along, so the omission made a
+    // Swift cartridge's manifest structurally different from every other
+    // language's for the same cap.
+    func test6423_capOutputSurvivesManifestRoundtrip() throws {
+        let cap = CapDefinition(
+            urn: "cap:in=\"media:enc=utf-8;sentiment-input\";out=\"media:enc=utf-8;sentiment-tag\";sentiment",
+            title: "sentiment",
+            aliases: ["sentiment"],
+            capDescription: "Classify a piece of text as positive, neutral, or negative.",
+            args: [
+                CapArg(
+                    mediaUrn: "media:enc=utf-8;sentiment-input",
+                    required: true,
+                    sources: [.stdin("media:enc=utf-8;sentiment-input"), .positional(0)],
+                    argDescription: "UTF-8 text to classify."
+                )
+            ],
+            output: CapOutput(
+                mediaUrn: "media:enc=utf-8;sentiment-tag",
+                outputDescription: "One of the literal strings 'positive', 'neutral', or 'negative'."
+            )
+        )
+        let manifest = Manifest(
+            name: "sentiment",
+            version: "0.1.0",
+            channel: "nightly",
+            registryURL: nil,
+            description: "Classify a piece of text as positive, neutral, or negative.",
+            capGroups: [CapGroup(name: "default", caps: [cap])]
+        )
+
+        let encoded = try JSONEncoder().encode(manifest)
+        let decoded = try JSONDecoder().decode(Manifest.self, from: encoded)
+        let roundTripped = try XCTUnwrap(decoded.capGroups.first?.caps.first?.output,
+                                         "the cap's output must survive encode -> decode")
+        XCTAssertEqual(roundTripped.mediaUrn, "media:enc=utf-8;sentiment-tag")
+        XCTAssertEqual(roundTripped.outputDescription,
+                       "One of the literal strings 'positive', 'neutral', or 'negative'.")
+        XCTAssertFalse(roundTripped.isSequence)
+
+        // The wire keys are the reference's, not Swift's property names — a
+        // manifest is read by the Rust host, which knows only snake_case.
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let groups = try XCTUnwrap(json["cap_groups"] as? [[String: Any]])
+        let caps = try XCTUnwrap(groups.first?["caps"] as? [[String: Any]])
+        let outputJson = try XCTUnwrap(caps.first?["output"] as? [String: Any])
+        XCTAssertEqual(outputJson["media_urn"] as? String, "media:enc=utf-8;sentiment-tag")
+        XCTAssertNotNil(outputJson["output_description"])
+        // `is_sequence` false and absent metadata are OMITTED, matching the
+        // reference's serde attributes — a manifest is compared byte for byte
+        // across implementations, so writing a default would be a difference.
+        XCTAssertNil(outputJson["is_sequence"], "is_sequence must be omitted when false")
+        XCTAssertNil(outputJson["metadata"], "metadata must be omitted when absent")
+
+        // A cap with no output must not emit the key at all.
+        let bare = CapDefinition(urn: "cap:effect=none", title: "Identity", aliases: ["identity"])
+        let bareJson = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try JSONEncoder().encode(bare)) as? [String: Any])
+        XCTAssertNil(bareJson["output"], "a cap without an output must omit the key")
+    }
 }
