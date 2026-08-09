@@ -3333,12 +3333,12 @@ public struct CapOutput: Codable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(mediaUrn, forKey: .mediaUrn)
         try container.encode(outputDescription, forKey: .outputDescription)
-        // Absent ⇒ false, and absent ⇒ no metadata: the reference omits both
-        // rather than writing their defaults, and a manifest is compared byte
-        // for byte across implementations.
-        if isSequence {
-            try container.encode(true, forKey: .isSequence)
-        }
+        // `is_sequence` is written even when false, because the reference does
+        // (`#[serde(default)]` with no skip_serializing_if). Metadata is
+        // omitted when absent, because the reference skips it. A manifest is
+        // compared across implementations, so each field follows Rust's
+        // serialization exactly rather than what looks tidier here.
+        try container.encode(isSequence, forKey: .isSequence)
         try container.encodeIfPresent(metadata, forKey: .metadata)
     }
 }
@@ -3452,6 +3452,20 @@ public struct CapGroup: Codable, Sendable {
         name = try container.decode(String.self, forKey: .name)
         caps = try container.decodeIfPresent([CapDefinition].self, forKey: .caps) ?? []
         adapterUrns = try container.decodeIfPresent([String].self, forKey: .adapterUrns) ?? []
+    }
+
+    /// Written by hand rather than synthesized: the synthesized encoder emits
+    /// `"adapter_urns": []` for a group that claims none, and the reference
+    /// omits the key entirely (`skip_serializing_if = "Vec::is_empty"`). Most
+    /// cartridges declare no adapters, so the synthesized form put an extra key
+    /// in nearly every Swift manifest.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(caps, forKey: .caps)
+        if !adapterUrns.isEmpty {
+            try container.encode(adapterUrns, forKey: .adapterUrns)
+        }
     }
 }
 
