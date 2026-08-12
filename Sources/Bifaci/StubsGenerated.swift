@@ -623,7 +623,7 @@ cartridge.json
         flag: #"--go"#,
         display: #"Go"#,
         entry: #"__CARTRIDGE_NAME__"#,
-        build: [#"go mod tidy"#, #"go build -o __CARTRIDGE_NAME__ ."#],
+        build: [#"go mod tidy"#, #"go build -buildvcs=false -o __CARTRIDGE_NAME__ ."#],
         runtimePackage: #"github.com/machinefabric/capdag-go"#,
         runtimeRegistry: #"git tag"#,
         runtimeInstall: #"go mod tidy"#,
@@ -645,7 +645,7 @@ cartridge.json
 //
 // Develop it with:
 //
-//	go build -o __CARTRIDGE_NAME__ .   # the entry the host launches
+//	go build -buildvcs=false -o __CARTRIDGE_NAME__ .   # the entry the host launches
 //	capdag dev-install .               # install/update under the local `dev` slug
 //	echo "I love this" | capdag __CARTRIDGE_NAME__
 //	# edit the labels or the peer cap, then rebuild + re-install to update
@@ -857,7 +857,7 @@ stdin and emits `positive`, `neutral`, or `negative`.
 ```bash
 # 1. Build the entry the host launches:
 go mod tidy
-go build -o __CARTRIDGE_NAME__ .
+go build -buildvcs=false -o __CARTRIDGE_NAME__ .
 
 # 2. Install this cartridge under the local `dev` slug:
 capdag dev-install .
@@ -867,7 +867,7 @@ echo "I love this" | capdag __CARTRIDGE_NAME__
 # => positive
 
 # 4. Edit the labels or the peer cap in cartridge.go, then re-run steps 1-2:
-go build -o __CARTRIDGE_NAME__ . && capdag dev-install .
+go build -buildvcs=false -o __CARTRIDGE_NAME__ . && capdag dev-install .
 ```
 
 Unlike the Python cartridge, the entry here is a COMPILED binary, so an edit
