@@ -93,7 +93,18 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
  * media-def cache: extensions become known as their owning specs
  * land — there is no compiled-in fallback table.
  */
-@interface CSFabricRegistry : NSObject
+/// What the planner needs of a fabric registry.
+///
+/// Declared beside the registry rather than beside its consumer so that the one
+/// real implementer is compiled against it: a protocol whose only implementer
+/// does not conform is not a contract, it is a crash waiting for the first
+/// caller. `CSFabricRegistry` below conforms.
+@protocol CSFabricRegistryProtocol <NSObject>
+- (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion;
+- (void)getMediaDef:(NSString *)urn completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
+@end
+
+@interface CSFabricRegistry : NSObject <CSFabricRegistryProtocol>
 
 /** The current registry configuration */
 @property (nonatomic, readonly) CSFabricRegistryConfig *config;
@@ -141,6 +152,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
 
 /// All currently cached caps (snapshot).
 - (NSArray<CSCap *> *)getCachedCaps;
+
+/// The cached caps, delivered to a completion block — the `CSFabricRegistryProtocol`
+/// form. The cache is already in memory, so this completes synchronously on the
+/// calling thread; the block exists because the protocol's other member genuinely
+/// needs one.
+- (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion;
 
 // MARK: Media-def surface
 

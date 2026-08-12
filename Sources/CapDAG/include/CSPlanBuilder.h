@@ -8,6 +8,7 @@
 
 #import <Foundation/Foundation.h>
 #import "CSCardinality.h"
+#import "CSFabricRegistry.h"
 
 @class CSCap;
 @class CSMachinePlan;
@@ -32,10 +33,6 @@ typedef NS_ENUM(NSInteger, CSPlannerErrorCode) {
 /// Protocol for the unified fabric registry. The merged registry
 /// holds both cap definitions and media defs in one cache; the
 /// plan builder consumes both surfaces here.
-@protocol CSFabricRegistryProtocol <NSObject>
-- (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion;
-- (void)getMediaDef:(NSString *)urn completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
-@end
 
 // MARK: - Step Type Enum
 
@@ -61,9 +58,63 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 @property (nonatomic, assign) NSInteger pathCount;
 @end
 
+/// Domain for `CSStepToken` failures.
+extern NSErrorDomain const CSStepTokenErrorDomain;
+
+/// The only way a `CSStepToken` can fail to exist.
+typedef NS_ERROR_ENUM(CSStepTokenErrorDomain, CSStepTokenErrorCode) {
+    /// The id was empty. A step without a token came from no plan and cannot be
+    /// addressed.
+    CSStepTokenErrorCodeEmpty = 1,
+};
+
+/// The stable identity of one step of a resolved strand — the ONLY address by
+/// which a step, or an argument value destined for it, is ever named.
+///
+/// The raw text is private so that an unidentified step is not a state the
+/// program can be in: there is exactly one way to make a token (`+mint`) and
+/// exactly one way to recover one that was already minted (`+parse:error:`,
+/// which refuses an empty id). Decoding goes through `+parse:error:`, so a
+/// persisted strand carrying `""` fails to load rather than loading into a
+/// strand whose steps cannot be addressed.
+///
+/// Nothing derives a token. Not from a position — a strand is a DAG, and
+/// parallel branches merging downstream have no ordinal, so two identical caps
+/// on separate branches differ only by token. Not from notation — a plan holds
+/// strictly more than the notation it was planned from, and reducing one back to
+/// the other discards exactly the identities this type exists to carry. A token
+/// comes from the plan that minted it or it does not exist.
+///
+/// Mirrors Rust: pub struct StepToken(String)
+@interface CSStepToken : NSObject <NSCopying>
+
+/// Mint a fresh identity. This is how every step in production is born.
++ (instancetype)mint;
+
+/// Recover an already-minted token — from decoding, from a protocol message,
+/// from a persisted run. An empty id is not a token: it names no step, so a
+/// value bound to it could never be delivered.
++ (nullable instancetype)parse:(NSString *)raw error:(NSError **)error;
+
+/// The token's text, for protocol encoding and diagnostics.
+@property (nonatomic, copy, readonly) NSString *string;
+
+/// Unavailable: a token is minted or parsed, never default-constructed.
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+
+@end
+
 /// Information about a step in a machine
 /// Mirrors Rust: StrandStep
 @interface CSStrandStep : NSObject
+/// Stable per-step identity, minted once when the step is created (the very
+/// source of a resolved strand). It is the single key that ties this element of
+/// the realized graph to every live update the run emits for it — so a repeated
+/// cap URN in one strand is never ambiguous. Alias-free and
+/// notation-independent; it travels verbatim through serialization, the run's
+/// persisted resolved strand, the render payload, and every progress message.
+@property (nonatomic, copy) CSStepToken *tokenId;
 /// Cap URN string (for Cap steps; nil for cardinality transitions)
 @property (nonatomic, copy, nullable) NSString *capUrn;
 @property (nonatomic, copy, nullable) NSString *preferredCap;
@@ -116,6 +167,12 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
 /// Argument requirements for a step
 @interface CSStepArgumentRequirements : NSObject
 @property (nonatomic, copy) NSString *capUrn;
+/// The planner-minted `CSStrandStep.tokenId` of the step these requirements
+/// describe — the ONLY address an argument value is ever bound to. A caller
+/// renders a form from this and binds the values it collects straight back under
+/// this token: no lookup, no strand to consult, and therefore no way for a value
+/// to end up addressed to a different plan's step.
+@property (nonatomic, copy) CSStepToken *tokenId;
 @property (nonatomic, strong) NSArray<CSArgumentInfo *> *arguments;
 @end
 
@@ -174,8 +231,13 @@ typedef NS_ENUM(NSInteger, CSStrandStepType) {
                     completion:(void (^)(NSArray<NSArray<NSString *> *> * _Nullable paths, NSError * _Nullable error))completion;
 
 /// Analyze argument requirements for a path
-- (void)analyzePathArgumentsForPath:(NSArray<NSString *> *)capUrns
-                         completion:(void (^)(CSPathArgumentRequirements * _Nullable requirements, NSError * _Nullable error))completion;
+/// Analyze argument requirements for a strand.
+///
+/// Takes the resolved `CSStrand` — not a list of cap URNs — because the
+/// requirements it produces are addressed by each step's `tokenId`, and only a
+/// plan carries those. Mirrors Rust: `MachinePlanBuilder::analyze_path_arguments`.
+- (void)analyzePathArgumentsForStrand:(CSStrand *)strand
+                           completion:(void (^)(CSPathArgumentRequirements * _Nullable requirements, NSError * _Nullable error))completion;
 
 @end
 

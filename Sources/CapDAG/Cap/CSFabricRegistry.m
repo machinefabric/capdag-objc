@@ -741,6 +741,10 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     return caps;
 }
 
+- (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion {
+    completion([self getCachedCaps], nil);
+}
+
 - (BOOL)capExists:(NSString *)urn {
     NSError *normError = nil;
     NSString *normalized = [self normalizeCapUrn:urn error:&normError];

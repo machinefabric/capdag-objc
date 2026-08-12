@@ -22,7 +22,79 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 @implementation CSReachableTargetInfo
 @end
 
+NSErrorDomain const CSStepTokenErrorDomain = @"com.machinefabric.capdag.StepToken";
+
+@implementation CSStepToken {
+    NSString *_raw;
+}
+
+- (instancetype)initWithRaw:(NSString *)raw {
+    self = [super init];
+    if (self) {
+        _raw = [raw copy];
+    }
+    return self;
+}
+
++ (instancetype)mint {
+    return [[CSStepToken alloc] initWithRaw:[[NSUUID UUID] UUIDString]];
+}
+
++ (nullable instancetype)parse:(NSString *)raw error:(NSError **)error {
+    if (raw.length == 0) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSStepTokenErrorDomain
+                                         code:CSStepTokenErrorCodeEmpty
+                                     userInfo:@{NSLocalizedDescriptionKey:
+                                                    @"a strand step token_id is empty; a step "
+                                                    @"without a token came from no plan and "
+                                                    @"cannot be addressed"}];
+        }
+        return nil;
+    }
+    return [[CSStepToken alloc] initWithRaw:raw];
+}
+
+- (NSString *)string {
+    return _raw;
+}
+
+- (id)copyWithZone:(NSZone *)zone {
+    // Immutable — a token has no mutable state to copy away from.
+    return self;
+}
+
+- (BOOL)isEqual:(id)other {
+    if (self == other) {
+        return YES;
+    }
+    if (![other isKindOfClass:[CSStepToken class]]) {
+        return NO;
+    }
+    return [_raw isEqualToString:((CSStepToken *)other).string];
+}
+
+- (NSUInteger)hash {
+    return _raw.hash;
+}
+
+- (NSString *)description {
+    return _raw;
+}
+
+@end
+
 @implementation CSStrandStep
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        // Every step is born with an identity. There is no window in which a
+        // step exists but cannot be addressed.
+        _tokenId = [CSStepToken mint];
+    }
+    return self;
+}
 
 - (NSString *)title {
     switch (self.stepType) {
@@ -886,8 +958,8 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 
 // MARK: - Analyze Path Arguments
 
-- (void)analyzePathArgumentsForPath:(NSArray<NSString *> *)capUrns
-                         completion:(void (^)(CSPathArgumentRequirements * _Nullable requirements, NSError * _Nullable error))completion {
+- (void)analyzePathArgumentsForStrand:(CSStrand *)strand
+                           completion:(void (^)(CSPathArgumentRequirements * _Nullable requirements, NSError * _Nullable error))completion {
 
     [self.fabricRegistry getCachedCaps:^(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error) {
         if (error) {
@@ -900,8 +972,20 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
         NSMutableArray<CSStepArgumentRequirements *> *stepRequirements = [NSMutableArray array];
         NSMutableArray<CSArgumentInfo *> *allSlots = [NSMutableArray array];
 
-        for (NSUInteger stepIndex = 0; stepIndex < capUrns.count; stepIndex++) {
-            NSString *capUrn = capUrns[stepIndex];
+        // Track the cap-step ordinal for first-cap detection only: whether an
+        // input arg is fed from the run's input file or from the previous cap's
+        // output is a question about POSITION IN THE CHAIN, not about identity.
+        // Nothing addressable is derived from it.
+        NSUInteger capStepIndex = 0;
+
+        for (CSStrandStep *step in strand.steps) {
+            // Only cap steps have arguments — cardinality transitions are shape
+            // changes with nothing to configure.
+            if (![step isCap]) {
+                continue;
+            }
+            NSString *capUrn = step.capUrn;
+            NSUInteger stepIndex = capStepIndex;
 
             CSCap *cap = nil;
             for (CSCap *c in caps) {
@@ -967,8 +1051,10 @@ NSString * const CSPlannerErrorDomain = @"CSPlannerError";
 
             CSStepArgumentRequirements *stepReq = [[CSStepArgumentRequirements alloc] init];
             stepReq.capUrn = capUrn;
+            stepReq.tokenId = step.tokenId;
             stepReq.arguments = arguments;
             [stepRequirements addObject:stepReq];
+            capStepIndex++;
         }
 
         CSPathArgumentRequirements *requirements = [[CSPathArgumentRequirements alloc] init];
