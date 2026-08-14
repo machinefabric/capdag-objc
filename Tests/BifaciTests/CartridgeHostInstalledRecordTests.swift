@@ -116,7 +116,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
 
     /// TEST1701: A cartridge whose `cartridge.json` has been
     /// deleted (e.g. the operator uninstalled, or the directory
-    /// got swept up by a `dx clear --cartridges`) returns nil from
+    /// got swept up by a a workspace clear of installed cartridges) returns nil from
     /// `buildInstalledCartridgeRecord`. There is no layout
     /// fallback — cartridge.json IS the identity, and a cartridge
     /// without a manifest is considered gone for this RelayNotify
@@ -132,7 +132,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let dir = try makeManagedCartridgeAnchor(name: "gonecart", version: "9.9.9")
         let root = slugRoot(of: dir)
         // Delete the cartridge anchor entirely. This mimics the
-        // operator running `dx clear --cartridges` or an installer
+        // operator running a workspace clear of installed cartridges or an installer
         // atomically renaming a `.installing-X` staging dir over
         // the previous version mid-discovery.
         try FileManager.default.removeItem(at: root)

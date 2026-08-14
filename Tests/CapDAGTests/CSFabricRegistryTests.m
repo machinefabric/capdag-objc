@@ -79,7 +79,7 @@ static NSString *buildRegistryURL(NSString *urn) {
     NSString *urn = @"media:enc=utf-8;ext=md";
     NSString *digest = [registry sha256HexForString:urn];
     // Assert against the registry's OWN configured base URL, not a hardcoded
-    // host: under `dx test --staging` the process env points the default config
+    // host: under a workspace test run against staging the process env points the default config
     // at fabric-staging.capdag.com, and the URL rule (versioned vs flat) is
     // independent of which origin is configured. Mirrors the Rust test, which
     // builds the expected URL from config.registry_base_url.

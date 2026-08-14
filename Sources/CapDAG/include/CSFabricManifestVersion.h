@@ -11,7 +11,7 @@
 //  v1).
 //
 //  The value lives in `CSFabricManifestVersion.m`, which is regenerated from
-//  `fabric/manifest-version.txt` by `scripts/lib/config.sh` on every dx build
+//  `fabric/manifest-version.txt` by `scripts/lib/config.sh` on every workspace build
 //  (idempotent — only rewritten when the version changes), so it can never
 //  silently drift from the registry the engine was built against.
 //

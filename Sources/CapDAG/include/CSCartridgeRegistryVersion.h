@@ -12,7 +12,7 @@
 //
 //  The value lives in `CSCartridgeRegistryVersion.m`, which is regenerated from
 //  `schemas/cartridge-registry/registry-version.txt` by `scripts/lib/config.sh`
-//  on every dx build (idempotent — only rewritten when the version changes), so
+//  on every workspace build (idempotent — only rewritten when the version changes), so
 //  it can never silently drift from the registry the engine was built against.
 //
 
