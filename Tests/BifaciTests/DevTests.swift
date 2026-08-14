@@ -356,11 +356,11 @@ final class DevTests: XCTestCase {
 
         XCTAssertEqual(
             contract["contract_version"] as? Int, stubContractVersion,
-            "vendored contract version differs from canonical — re-run dx stubs vendor")
+            "vendored contract version differs from canonical — re-vendor the stubs")
         XCTAssertEqual(contract["placeholder"] as? String, stubPlaceholder)
         XCTAssertEqual(
             languages.count, stubLanguages.count,
-            "vendored language count differs from canonical — re-run dx stubs vendor")
+            "vendored language count differs from canonical — re-vendor the stubs")
 
         for vendored in stubLanguages {
             guard let spec = languages[vendored.id] as? [String: Any] else {
@@ -383,11 +383,94 @@ final class DevTests: XCTestCase {
                     contentsOf: stubRoot.appendingPathComponent(source), encoding: .utf8)
                 XCTAssertEqual(got.dest, declared["dest"] as? String)
                 XCTAssertEqual(got.executable, declared["executable"] as? Bool)
-                XCTAssertEqual(
-                    got.contents, want,
-                    "\(vendored.id): vendored \(got.dest) differs from the canonical bytes "
-                        + "— re-run dx stubs vendor")
+                assertStubMatches(vendored.id, got.dest, got.contents, want)
             }
         }
     }
+
+    /// The first `N.N.N` in a line, with the range it occupies.
+    private func firstTriple(_ line: String) -> ([UInt64], Range<String.Index>)? {
+        var index = line.startIndex
+        while index < line.endIndex {
+            guard line[index].isNumber else {
+                index = line.index(after: index)
+                continue
+            }
+            let start = index
+            while index < line.endIndex, line[index].isNumber || line[index] == "." {
+                index = line.index(after: index)
+            }
+            let parts = line[start..<index].split(separator: ".", omittingEmptySubsequences: false)
+            if parts.count == 3 {
+                let numbers = parts.compactMap { UInt64($0) }
+                if numbers.count == 3 {
+                    return (numbers, start..<index)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Split a stub file into its capdag version pin and everything else.
+    ///
+    /// The pin appears once per stub, in the language's own dependency syntax:
+    /// `tag = "v1.2.3"` (Cargo), `capdag-go v1.2.3` (go.mod), `from: "1.2.3"`
+    /// (SwiftPM). Rather than teach this three grammars, the first
+    /// dotted-triple on a line that mentions capdag IS the pin.
+    private func splitPin(_ text: String) -> ([UInt64]?, String) {
+        var pin: [UInt64]?
+        var kept: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            var keptLine = line
+            if pin == nil, line.contains("capdag"), let (numbers, range) = firstTriple(line) {
+                pin = numbers
+                keptLine.replaceSubrange(range, with: "<pin>")
+            }
+            kept.append(keptLine)
+        }
+        return (pin, kept.joined(separator: "\n"))
+    }
+
+    /// A vendored stub file against the canonical bytes.
+    ///
+    /// Byte equality, with ONE allowance: the capdag version the stub pins may
+    /// be OLDER in the vendored copy than in the canonical one. The canonical
+    /// stub is rendered from a template that stamps capdag's current version,
+    /// and the vendored copies are snapshots taken when someone last vendored
+    /// them — so the two disagree from the moment capdag's version moves, which
+    /// is every time it is bumped, and the disagreement says nothing about the
+    /// stub CONTRACT.
+    ///
+    /// An older pin is harmless: it names a release that exists, so a cartridge
+    /// scaffolded from it resolves. A NEWER pin is not, because it would name a
+    /// version this capdag has not reached, so the comparison is an ordering
+    /// and not "ignore the version".
+    private func assertStubMatches(
+        _ language: String, _ dest: String, _ vendored: String, _ canonical: String
+    ) {
+        if vendored == canonical { return }
+        let (vendoredPin, vendoredRest) = splitPin(vendored)
+        let (canonicalPin, canonicalRest) = splitPin(canonical)
+        XCTAssertEqual(
+            vendoredRest, canonicalRest,
+            "\(language): vendored \(dest) differs from the canonical bytes in more than the "
+                + "pinned capdag version — re-vendor the stubs")
+        guard let vendoredPin, let canonicalPin else {
+            XCTFail(
+                "\(language): vendored \(dest) differs from the canonical bytes and neither "
+                    + "carries a version pin to explain it — re-vendor the stubs")
+            return
+        }
+        let vendoredText = vendoredPin.map(String.init).joined(separator: ".")
+        let canonicalText = canonicalPin.map(String.init).joined(separator: ".")
+        XCTAssertFalse(
+            lexicographicallyPrecedes(canonicalPin, vendoredPin),
+            "\(language): vendored \(dest) pins capdag \(vendoredText) but capdag is "
+                + "\(canonicalText) — a stub may lag a release, never precede one")
+    }
+
+    private func lexicographicallyPrecedes(_ left: [UInt64], _ right: [UInt64]) -> Bool {
+        left.lexicographicallyPrecedes(right)
+    }
+
 }
