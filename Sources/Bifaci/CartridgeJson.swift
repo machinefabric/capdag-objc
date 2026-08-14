@@ -142,14 +142,54 @@ public func formatRFC3339UTC(_ secs: Int64) -> String {
 
 // MARK: - Install source
 
-/// Install-provenance hint stored in `cartridge.json`. **Not consulted for
-/// any routing or attachment decision** — the dev-vs-not-dev signal the host
-/// actually uses is `registryURL` (nil ⇔ dev). Snake-cased on the wire.
-public enum CartridgeInstallSource: String, Codable, Equatable, Sendable {
+/// Install-provenance hint stored in `cartridge.json`. Exactly ONE value is
+/// semantic: `bundle` selects the bundled-cartridge integrity path at
+/// discovery. Every other value is provenance telemetry, and the vocabulary
+/// GROWS as installers do — so an unrecognized spelling is preserved
+/// verbatim (`other`) and round-trips, never failing the cartridge.json
+/// parse. A telemetry hint that could invalidate an otherwise-sound install
+/// would make every vocabulary addition brick older hosts against newer
+/// installers' records. The dev-vs-not-dev signal the host actually uses is
+/// `registryURL` (nil ⇔ dev). Snake-cased on the wire.
+public enum CartridgeInstallSource: Codable, Equatable, Sendable {
     case registry
     case dev
+    /// The ONE semantic value: selects the bundled-integrity check at discovery.
     case bundle
-    case appInstaller = "app_installer"
+    case appInstaller
+    /// A provenance spelling this build does not know. Preserved verbatim so
+    /// the record round-trips; carries no semantics.
+    case other(String)
+
+    /// The wire spelling (snake_case for named cases; `other` verbatim).
+    public var wireValue: String {
+        switch self {
+        case .registry: return "registry"
+        case .dev: return "dev"
+        case .bundle: return "bundle"
+        case .appInstaller: return "app_installer"
+        case .other(let raw): return raw
+        }
+    }
+
+    public init(wireValue: String) {
+        switch wireValue {
+        case "registry": self = .registry
+        case "dev": self = .dev
+        case "bundle": self = .bundle
+        case "app_installer": self = .appInstaller
+        default: self = .other(wireValue)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(wireValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(wireValue)
+    }
 }
 
 // MARK: - Errors
@@ -299,10 +339,11 @@ public struct CartridgeJson: Equatable, Sendable {
 
         var installedFrom: CartridgeInstallSource? = nil
         if let isf = obj["installed_from"] as? String {
-            guard let parsed = CartridgeInstallSource(rawValue: isf) else {
-                throw CartridgeJsonError.invalidJSON(path: path, underlying: "unknown installed_from '\(isf)'")
-            }
-            installedFrom = parsed
+            // Unknown spellings are preserved verbatim (`other`): the
+            // provenance vocabulary grows as installers do, and a telemetry
+            // hint must never fail the parse and take the cartridge down
+            // with it. Only `bundle` carries semantics.
+            installedFrom = CartridgeInstallSource(wireValue: isf)
         } else if obj["installed_from"] != nil && !(obj["installed_from"] is NSNull) {
             throw CartridgeJsonError.invalidJSON(path: path, underlying: "`installed_from` must be a string")
         }
@@ -416,7 +457,7 @@ public struct CartridgeJson: Equatable, Sendable {
             "entry": entry,
             "installed_at": installedAt,
         ]
-        if let installedFrom { d["installed_from"] = installedFrom.rawValue }
+        if let installedFrom { d["installed_from"] = installedFrom.wireValue }
         if !sourceURL.isEmpty { d["source_url"] = sourceURL }
         if !packageSHA256.isEmpty { d["package_sha256"] = packageSHA256 }
         if packageSize != 0 { d["package_size"] = packageSize }
