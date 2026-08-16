@@ -328,16 +328,25 @@ final class RequestStateTests: XCTestCase {
         )
     }
 
+    private func poolKey(_ install: AdmissionKey, _ pool: String) -> PoolKey {
+        PoolKey(install: install, pool: pool)
+    }
+
+    /// The minimal chain: a cap addressed through its install's `all` pool.
+    private func allChain(_ install: AdmissionKey) -> [PoolKey] {
+        [poolKey(install, "all")]
+    }
+
     /// Acquire on a background queue, recording the permit or the error.
     private func acquireAsync(
         _ controller: AdmissionController,
-        _ key: AdmissionKey,
+        _ chain: [PoolKey],
         isCancelled: (() -> Bool)? = nil,
         into box: AdmissionOutcomeBox
     ) {
         DispatchQueue.global().async {
             do {
-                box.set(permit: try controller.acquire(key, isCancelled: isCancelled))
+                box.set(permit: try controller.acquire(chain, isCancelled: isCancelled))
             } catch {
                 box.set(error: error)
             }
@@ -370,16 +379,16 @@ final class RequestStateTests: XCTestCase {
     func test7110_admissionFifoReleasesOneWaiter() throws {
         let controller = AdmissionController()
         let key = admissionTestKey()
-        controller.configure(key, capacity: 1)
-        let first = try controller.acquire(key)
+        controller.configurePools(key, pools: ["all": 1])
+        let first = try controller.acquire(allChain(key))
 
         let second = AdmissionOutcomeBox()
         let third = AdmissionOutcomeBox()
-        acquireAsync(controller, key, into: second)
+        acquireAsync(controller, allChain(key), into: second)
         // Let the second waiter take its ticket before the third queues, so the
         // FIFO order under test is deterministic.
         Thread.sleep(forTimeInterval: 0.05)
-        acquireAsync(controller, key, into: third)
+        acquireAsync(controller, allChain(key), into: third)
         Thread.sleep(forTimeInterval: 0.05)
         XCTAssertFalse(second.settled, "no waiter is admitted while the slot is held")
         XCTAssertFalse(third.settled, "no waiter is admitted while the slot is held")
@@ -399,13 +408,13 @@ final class RequestStateTests: XCTestCase {
     func test7111_cancelledAdmissionWaiterCannotBlockQueue() throws {
         let controller = AdmissionController()
         let key = admissionTestKey()
-        controller.configure(key, capacity: 1)
-        let active = try controller.acquire(key)
+        controller.configurePools(key, pools: ["all": 1])
+        let active = try controller.acquire(allChain(key))
 
         let cancelFlag = NSLock()
         var cancelled = false
         let waiter = AdmissionOutcomeBox()
-        acquireAsync(controller, key, isCancelled: {
+        acquireAsync(controller, allChain(key), isCancelled: {
             cancelFlag.lock(); defer { cancelFlag.unlock() }; return cancelled
         }, into: waiter)
         Thread.sleep(forTimeInterval: 0.05)
@@ -414,7 +423,7 @@ final class RequestStateTests: XCTestCase {
         XCTAssertNotNil(waiter.error, "a cancelled waiter must report why it stopped waiting")
 
         let next = AdmissionOutcomeBox()
-        acquireAsync(controller, key, into: next)
+        acquireAsync(controller, allChain(key), into: next)
         Thread.sleep(forTimeInterval: 0.05)
         active.release()
         XCTAssertTrue(waitUntil(2) { next.settled },
@@ -427,16 +436,16 @@ final class RequestStateTests: XCTestCase {
     func test7112_capacityReconfigurationWakesExistingWaiters() throws {
         let controller = AdmissionController()
         let key = admissionTestKey()
-        controller.configure(key, capacity: 1)
-        let active = try controller.acquire(key)
+        controller.configurePools(key, pools: ["all": 1])
+        let active = try controller.acquire(allChain(key))
 
         let waiting = AdmissionOutcomeBox()
-        acquireAsync(controller, key, into: waiting)
+        acquireAsync(controller, allChain(key), into: waiting)
         Thread.sleep(forTimeInterval: 0.05)
         XCTAssertFalse(waiting.settled,
                        "a waiter must not be admitted at capacity 1 while the slot is held")
 
-        controller.configure(key, capacity: 0) // unlimited
+        controller.configurePools(key, pools: ["all": 0]) // unlimited
         XCTAssertTrue(waitUntil(2) { waiting.settled },
                       "unlimited HELLO capacity must wake queued work")
         XCTAssertNotNil(waiting.permit)
@@ -448,11 +457,11 @@ final class RequestStateTests: XCTestCase {
     func test7114_transientUnavailabilityDoesNotFailQueuedWork() throws {
         let controller = AdmissionController()
         let key = admissionTestKey()
-        controller.configure(key, capacity: 1)
-        let active = try controller.acquire(key)
+        controller.configurePools(key, pools: ["all": 1])
+        let active = try controller.acquire(allChain(key))
 
         let waiting = AdmissionOutcomeBox()
-        acquireAsync(controller, key, into: waiting)
+        acquireAsync(controller, allChain(key), into: waiting)
         Thread.sleep(forTimeInterval: 0.05)
 
         // The target vanishes from its host's inventory...
@@ -462,7 +471,7 @@ final class RequestStateTests: XCTestCase {
                        "an outage inside the grace window must not fail queued work")
 
         // ...and comes back, which is what must release the queue.
-        controller.configure(key, capacity: 1)
+        controller.configurePools(key, pools: ["all": 1])
         active.release()
         XCTAssertTrue(waitUntil(2) { waiting.settled },
                       "a restored admission target must admit the work queued on it")
@@ -477,11 +486,11 @@ final class RequestStateTests: XCTestCase {
         // through a real minute. Production uses `admissionUnavailableGrace`.
         controller.grace = 0.15
         let key = admissionTestKey()
-        controller.configure(key, capacity: 1)
-        let active = try controller.acquire(key)
+        controller.configurePools(key, pools: ["all": 1])
+        let active = try controller.acquire(allChain(key))
 
         let waiting = AdmissionOutcomeBox()
-        acquireAsync(controller, key, into: waiting)
+        acquireAsync(controller, allChain(key), into: waiting)
         Thread.sleep(forTimeInterval: 0.05)
         XCTAssertFalse(waiting.settled, "the window must not expire early")
 
@@ -493,5 +502,61 @@ final class RequestStateTests: XCTestCase {
         XCTAssertTrue(error.reason.contains("unavailable for longer than"),
                       "the failure must name the outage, not a generic routing error")
         active.release()
+    }
+
+    // TEST1524: chain admission is ATOMIC — a request is admitted only when
+    // EVERY pool in its chain has room, and holds all of them until
+    // release. A free singleton behind a full shared pool waits; releasing
+    // the shared pool's holder admits it.
+    func test1524_chainAdmissionIsAtomicAcrossPools() throws {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configurePools(key, pools: ["cap:a": 0, "cap:b": 0, "gpu": 1, "all": 0])
+        let chainA = [poolKey(key, "cap:a"), poolKey(key, "gpu"), poolKey(key, "all")]
+        let chainB = [poolKey(key, "cap:b"), poolKey(key, "gpu"), poolKey(key, "all")]
+
+        let holder = try controller.acquire(chainA)
+
+        // cap:b's own singleton is free, but the shared "gpu" pool is full
+        // — the whole chain must wait.
+        let waiting = AdmissionOutcomeBox()
+        acquireAsync(controller, chainB, into: waiting)
+        Thread.sleep(forTimeInterval: 0.1)
+        XCTAssertFalse(waiting.settled, "a full shared pool must block the whole chain")
+
+        holder.release()
+        XCTAssertTrue(waitUntil(2) { waiting.settled },
+                      "releasing the shared pool must admit the queued chain")
+        XCTAssertNotNil(waiting.permit, "queued chain must acquire all its pools")
+        waiting.permit?.release()
+    }
+
+    // TEST1525: pools are ISOLATED — saturating one cap's singleton does
+    // not block a different cap whose chain shares only unlimited pools.
+    func test1525_disjointBoundedPoolsAdmitIndependently() throws {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configurePools(key, pools: ["cap:a": 1, "cap:b": 1, "all": 0])
+
+        let a = try controller.acquire([poolKey(key, "cap:a"), poolKey(key, "all")])
+        // cap:a is saturated; cap:b must admit immediately.
+        let b = try controller.acquire([poolKey(key, "cap:b"), poolKey(key, "all")])
+        b.release()
+        a.release()
+    }
+
+    // TEST1526: acquiring a chain naming a pool the install never
+    // advertised fails hard — an unknown pool is a protocol defect, never a
+    // free pass.
+    func test1526_unknownPoolInChainFailsHard() {
+        let controller = AdmissionController()
+        let key = admissionTestKey()
+        controller.configurePools(key, pools: ["all": 0])
+        XCTAssertThrowsError(
+            try controller.acquire([poolKey(key, "cap:ghost"), poolKey(key, "all")])
+        ) { error in
+            XCTAssertTrue("\(error)".contains("cap:ghost"),
+                          "the failure must name the unknown pool: \(error)")
+        }
     }
 }
