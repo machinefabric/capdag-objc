@@ -1269,9 +1269,16 @@ public final class RelaySwitch: @unchecked Sendable {
         _ stats: CartridgeRuntimeStats, cartridgeId: String
     ) throws -> [String: UInt64] {
         guard !stats.pools.isEmpty else {
-            throw RelaySwitchError.protocolError(
-                "cartridge '\(cartridgeId)' advertises no concurrency pools — the pool map is mandatory for operational records"
-            )
+            if stats.running {
+                throw RelaySwitchError.protocolError(
+                    "cartridge '\(cartridgeId)' is running but advertises no concurrency pools — the pool map is mandatory once HELLO has completed"
+                )
+            }
+            // A cold record before its first HELLO legitimately has no pool
+            // map yet (registered-dir cartridges spawn on first dispatch).
+            // Admit through the canary alone: `all` clamped to 1, so the
+            // first body proves the spawn before real capacities exist.
+            return [poolAll: 1]
         }
         var capacities: [String: UInt64] = [:]
         for (name, state) in stats.pools {
@@ -1295,6 +1302,17 @@ public final class RelaySwitch: @unchecked Sendable {
         registeredCap: String,
         cartridgeId: String
     ) throws -> [(key: PoolKey, capacity: UInt64)] {
+        if stats.pools.isEmpty {
+            if stats.running {
+                throw RelaySwitchError.protocolError(
+                    "cartridge '\(cartridgeId)' is running but advertises no concurrency pools — the pool map is mandatory once HELLO has completed"
+                )
+            }
+            // Cold record before its first HELLO: the whole dispatch is the
+            // canary — one body through the clamped `all` pool, which is
+            // what triggers the spawn and the real pool map.
+            return [(PoolKey(install: install, pool: poolAll), 1)]
+        }
         let canonical: String
         do {
             canonical = try CSCapUrn.fromString(registeredCap).toString()

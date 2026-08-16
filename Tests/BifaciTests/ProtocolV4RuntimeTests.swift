@@ -681,14 +681,9 @@ final class ProtocolV4SwitchTests: XCTestCase {
                 "sha256": String(repeating: "0", count: 64),
                 "runtime_stats": [
                     "running": true,
-                    "pools": [
-                        CSCapIdentity: [
-                            "declared": 0, "configured": 0, "active": 0, "queued": 0,
-                        ] as [String: Any],
-                        "all": [
-                            "declared": 0, "configured": 0, "active": 0, "queued": 0,
-                        ] as [String: Any],
-                    ] as [String: Any],
+                    // One at-rest singleton per advertised cap (canonical
+                    // URN) plus the mandatory `all` pool.
+                    "pools": CborRelaySwitchTests.testPoolStatesJSON(capUrns: capabilities),
                     "active_request_count": 0,
                     "peer_request_count": 0,
                     "memory_footprint_mb": 0,

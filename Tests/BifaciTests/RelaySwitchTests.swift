@@ -13,6 +13,23 @@ final class CborRelaySwitchTests: XCTestCase {
     // The wire schema embeds caps inside `installed_cartridges[*].cap_groups`, so the
     // helper wraps the test's flat cap-URN list in a single synthetic
     // installed-cartridge whose lone group declares all of them.
+    /// Roster pools map for test stats: one at-rest singleton per cap
+    /// (canonical URN) plus the mandatory `all` pool.
+    static func testPoolStatesJSON(capUrns: [String]) -> [String: Any] {
+        func atRest() -> [String: Any] {
+            ["declared": 0, "configured": 0, "active": 0, "queued": 0]
+        }
+        var pools: [String: Any] = [:]
+        for urn in capUrns {
+            guard let canonical = try? CSCapUrn.fromString(urn).toString() else {
+                fatalError("test cap URN must parse: \(urn)")
+            }
+            pools[canonical] = atRest()
+        }
+        pools["all"] = atRest()
+        return pools
+    }
+
     private func sendNotify(writer: FrameWriter, capabilities: [String], limits: Limits) throws {
         let groupCaps: [[String: Any]] = capabilities.map { urn in
             return [
@@ -31,14 +48,10 @@ final class CborRelaySwitchTests: XCTestCase {
                 "sha256": String(repeating: "0", count: 64),
                 "runtime_stats": [
                     "running": true,
-                    "pools": [
-                        CSCapIdentity: [
-                            "declared": 0, "configured": 0, "active": 0, "queued": 0,
-                        ] as [String: Any],
-                        "all": [
-                            "declared": 0, "configured": 0, "active": 0, "queued": 0,
-                        ] as [String: Any],
-                    ] as [String: Any],
+                    // One at-rest singleton per advertised cap (canonical
+                    // URN) plus the mandatory `all` pool — the pool-map
+                    // equivalent of the retired scalar handler_capacity.
+                    "pools": Self.testPoolStatesJSON(capUrns: capabilities),
                     "active_request_count": 0,
                     "peer_request_count": 0,
                     "memory_footprint_mb": 0,
@@ -1457,14 +1470,7 @@ final class CborRelaySwitchTests: XCTestCase {
                     "sha256": String(repeating: "0", count: 64),
                     "runtime_stats": [
                         "running": true,
-                        "pools": [
-                            CSCapIdentity: [
-                                "declared": 0, "configured": 0, "active": 0, "queued": 0,
-                            ] as [String: Any],
-                            "all": [
-                                "declared": 0, "configured": 0, "active": 0, "queued": 0,
-                            ] as [String: Any],
-                        ] as [String: Any],
+                        "pools": Self.testPoolStatesJSON(capUrns: [CSCapIdentity]),
                         "active_request_count": 0,
                         "peer_request_count": 0,
                         "memory_footprint_mb": 0,
