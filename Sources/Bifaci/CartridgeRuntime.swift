@@ -3782,6 +3782,19 @@ final class RuntimePools {
         return queues[queued.pattern]!.count
     }
 
+    /// Remove a queued (not-yet-admitted) request by its request id — the
+    /// Cancel path. A queued request holds no chain slots, so nothing is
+    /// released. Returns the removed request, or nil when the id is not
+    /// queued (it is running, or unknown).
+    func removeQueued(requestId: MessageId) -> PoolQueuedRequest? {
+        for pattern in queues.keys {
+            if let idx = queues[pattern]!.firstIndex(where: { $0.requestId == requestId }) {
+                return queues[pattern]!.remove(at: idx)
+            }
+        }
+        return nil
+    }
+
     /// Pop-and-admit the oldest queued request whose chain has room —
     /// arrival-ordered across all caps by the global ticket.
     func popAdmissible() -> PoolQueuedRequest? {
@@ -5290,9 +5303,12 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     }
                 }
 
-                // Case 1: Queued — remove from queue and send ERR
-                if let idx = requestQueue.firstIndex(where: { $0.requestId == targetRid }) {
-                    let queued = requestQueue.remove(at: idx)
+                // Case 1: Queued on its singleton pool — remove it (it
+                // holds no chain slots) and send ERR.
+                poolsCell.lock.lock()
+                let removedQueued = poolsCell.pools!.removeQueued(requestId: targetRid)
+                poolsCell.lock.unlock()
+                if let queued = removedQueued {
                     pendingIncomingLock.lock()
                     if let pending = pendingIncoming.removeValue(forKey: targetRid) {
                         pending.frames.finish()
