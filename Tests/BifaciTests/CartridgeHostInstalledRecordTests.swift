@@ -341,7 +341,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         var response = Frame.heartbeat(id: hbId)
         response.meta = [
             "drops_total": .unsignedInt(42),
-            "handler_capacity": .unsignedInt(0),
+            metaPools: .byteString([UInt8](encodePoolStates([:]))),
         ]
         host.handleCartridgeFrameForTest(cartridgeIdx: 0, frame: response)
 
@@ -357,7 +357,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         var response2 = Frame.heartbeat(id: hbId2)
         response2.meta = [
             "drops_total": .unsignedInt(45),
-            "handler_capacity": .unsignedInt(0),
+            metaPools: .byteString([UInt8](encodePoolStates([:]))),
         ]
         host.handleCartridgeFrameForTest(cartridgeIdx: 0, frame: response2)
 

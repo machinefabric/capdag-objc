@@ -180,7 +180,7 @@ final class CborFrameTests: XCTestCase {
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
-        let frame = Frame.helloWithManifest(limits: limits, manifest: manifestData, handlerCapacity: 0)
+        let frame = Frame.helloWithManifest(limits: limits, manifest: manifestData, poolStates: [:])
         XCTAssertEqual(frame.frameType, .hello)
         XCTAssertEqual(frame.helloMaxFrame, 1_000_000)
         XCTAssertEqual(frame.helloMaxChunk, 100_000)
@@ -461,7 +461,7 @@ final class CborFrameTests: XCTestCase {
             binaryManifest.append(i)
         }
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
-        let frame = Frame.helloWithManifest(limits: limits, manifest: binaryManifest, handlerCapacity: 0)
+        let frame = Frame.helloWithManifest(limits: limits, manifest: binaryManifest, poolStates: [:])
         XCTAssertEqual(frame.helloManifest, binaryManifest, "Binary manifest data must be preserved exactly")
     }
 
@@ -554,7 +554,7 @@ final class CborFrameTests: XCTestCase {
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 500_000, maxChunk: 50_000, maxReorderBuffer: 64)
-        let original = Frame.helloWithManifest(limits: limits, manifest: manifestData, handlerCapacity: 0)
+        let original = Frame.helloWithManifest(limits: limits, manifest: manifestData, poolStates: [:])
         let encoded = try encodeFrame(original)
         let decoded = try decodeFrame(encoded)
 

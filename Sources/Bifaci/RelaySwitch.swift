@@ -419,9 +419,10 @@ private final class ResponseChannel: @unchecked Sendable {
 @available(macOS 10.15.4, iOS 13.4, *)
 public final class RelaySwitch: @unchecked Sendable {
     private var masters: [MasterConnection] = []
-    /// Switch-side FIFO admission: a positive handler_capacity bounds how many
-    /// requests the switch dispatches to one cartridge install at a time.
-    /// Mirrors the reference `RelaySwitch.admission`.
+    /// Switch-side pool-chain admission (see Pools.swift): a dispatch is
+    /// held against its cap's whole pool chain; a bounded pool limits how
+    /// many requests the switch dispatches through it at a time. Mirrors
+    /// the reference `RelaySwitch.admission`.
     internal let admission = AdmissionController()
     private var capTable: [(capUrn: String, masterIdx: Int)] = []
 
@@ -1245,25 +1246,90 @@ public final class RelaySwitch: @unchecked Sendable {
                     "cartridge '\(record.id)' on master \(masterIdx) is missing mandatory v4 runtime_stats"
                 )
             }
-            let capacity = stats.running ? stats.handlerCapacity : 1
             let key = Self.admissionKey(masterIdx: masterIdx, record: record)
             // A host may expose several process instances of the same logical
             // install. They share one admission identity: preserve the first
             // host-ordered record, matching host dispatch.
             if available.insert(key).inserted {
-                admission.configure(key, capacity: capacity)
+                admission.configurePools(
+                    key, pools: try Self.poolCapacities(stats, cartridgeId: record.id))
             }
         }
         admission.reconcileMaster(masterIdx, available: available)
     }
 
-    /// Admission identity and capacity of the cartridge that owns
-    /// `registeredCap` on this master. Caller must hold `lock`. Mirrors
-    /// `cap_admission_target`.
+    /// One record's advertised pool map as the admission controller's
+    /// EFFECTIVE capacities. A NOT-RUNNING record's `all` pool is clamped
+    /// to 1 — the cold-start canary: the first dispatch to a cold cartridge
+    /// is a single body that proves the spawn before the advertised
+    /// capacities apply (failure containment, not missing information). An
+    /// EMPTY pool map on an operational record is a protocol error, never a
+    /// free pass. (matches Rust pool_capacities)
+    internal static func poolCapacities(
+        _ stats: CartridgeRuntimeStats, cartridgeId: String
+    ) throws -> [String: UInt64] {
+        guard !stats.pools.isEmpty else {
+            throw RelaySwitchError.protocolError(
+                "cartridge '\(cartridgeId)' advertises no concurrency pools — the pool map is mandatory for operational records"
+            )
+        }
+        var capacities: [String: UInt64] = [:]
+        for (name, state) in stats.pools {
+            if !stats.running && name == poolAll {
+                capacities[name] = 1
+            } else {
+                capacities[name] = state.effective()
+            }
+        }
+        return capacities
+    }
+
+    /// The cap's pool CHAIN over one record's advertised pool map — each
+    /// admission domain paired with its effective capacity (0 = unlimited,
+    /// with the not-running canary clamp on `all`). A cap the pool map does
+    /// not cover is a protocol error, never a free pass. (matches Rust
+    /// admission_chain)
+    internal static func admissionChain(
+        install: AdmissionKey,
+        stats: CartridgeRuntimeStats,
+        registeredCap: String,
+        cartridgeId: String
+    ) throws -> [(key: PoolKey, capacity: UInt64)] {
+        let canonical: String
+        do {
+            canonical = try CSCapUrn.fromString(registeredCap).toString()
+        } catch {
+            throw RelaySwitchError.protocolError(
+                "registered cap '\(registeredCap)' is not a valid cap URN: \(error)")
+        }
+        let names = chainFromStates(stats.pools, cap: canonical)
+        guard names.first == canonical, names.last == poolAll else {
+            throw RelaySwitchError.protocolError(
+                "cartridge '\(cartridgeId)' advertises cap '\(canonical)' with no pool coverage — its pool map is missing the cap's singleton or the '\(poolAll)' pool"
+            )
+        }
+        var chain: [(key: PoolKey, capacity: UInt64)] = []
+        for name in names {
+            let effective: UInt64
+            if !stats.running && name == poolAll {
+                // The cold-start canary clamp — see poolCapacities.
+                effective = 1
+            } else {
+                effective = stats.pools[name]!.effective()
+            }
+            chain.append((PoolKey(install: install, pool: name), effective))
+        }
+        return chain
+    }
+
+    /// The cap's admission CHAIN — each (install, pool) permit domain a
+    /// dispatch is held against, in order (singleton, declared pools,
+    /// `all`), paired with per-pool effective capacities — on this master.
+    /// Caller must hold `lock`. Mirrors `cap_admission_target`.
     internal func capAdmissionTargetLocked(
         _ masterIdx: Int,
         _ registeredCap: String
-    ) throws -> (AdmissionKey, UInt64) {
+    ) throws -> [(key: PoolKey, capacity: UInt64)] {
         guard masterIdx >= 0, masterIdx < masters.count else {
             throw RelaySwitchError.protocolError(
                 "selected master index \(masterIdx) no longer exists")
@@ -1294,7 +1360,10 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError(
                 "cartridge '\(cartridge.id)' on master \(masterIdx) is missing mandatory v4 runtime_stats")
         }
-        return (key, stats.running ? stats.handlerCapacity : 1)
+        admission.configurePools(
+            key, pools: try Self.poolCapacities(stats, cartridgeId: cartridge.id))
+        return try Self.admissionChain(
+            install: key, stats: stats, registeredCap: registeredCap, cartridgeId: cartridge.id)
     }
 
     /// The cap-table entry on this master that `capUrn` dispatches to. Caller
@@ -1312,11 +1381,11 @@ public final class RelaySwitch: @unchecked Sendable {
         throw RelaySwitchError.noHandler(capUrn)
     }
 
-    /// Authoritative handler capacity for the cartridge selected by normal cap
-    /// dispatch. A positive capacity is an execution boundary: callers must not
-    /// pre-acquire that request as part of a multi-cap live pipeline, because
-    /// the permit represents an actively owned process slot. Zero means
-    /// unlimited. Mirrors `admission_capacity_for_cap`.
+    /// Authoritative minimum effective capacity across the pool chain
+    /// serving a cap (0 = every pool unlimited). A positive capacity is an
+    /// execution boundary: callers must not pre-acquire that request as
+    /// part of a multi-cap live pipeline, because the permit represents
+    /// actively owned pool slots. Mirrors `admission_capacity_for_cap`.
     public func admissionCapacityForCap(_ capUrn: String) throws -> UInt64 {
         lock.lock()
         defer { lock.unlock() }
@@ -1324,7 +1393,9 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.noHandler(capUrn)
         }
         let registered = try registeredCapForLocked(destIdx, capUrn)
-        return try capAdmissionTargetLocked(destIdx, registered).1
+        let chain = try capAdmissionTargetLocked(destIdx, registered)
+        let bounded = chain.map(\.capacity).filter { $0 > 0 }
+        return bounded.min() ?? 0
     }
 
     /// Resolve the cartridge that will serve `capUrn` and take its admission
@@ -1336,7 +1407,7 @@ public final class RelaySwitch: @unchecked Sendable {
         preferredCap: String?
     ) throws -> AdmissionPermit {
         lock.lock()
-        let key: AdmissionKey
+        let chain: [PoolKey]
         do {
             guard let destIdx = findMasterForCap(capUrn, preferredCap: preferredCap) else {
                 // Thrown, not returned: the single `catch` below owns unlocking
@@ -1344,9 +1415,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 throw RelaySwitchError.noHandler(capUrn)
             }
             let registered = try registeredCapForLocked(destIdx, capUrn)
-            let (resolvedKey, capacity) = try capAdmissionTargetLocked(destIdx, registered)
-            admission.configure(resolvedKey, capacity: capacity)
-            key = resolvedKey
+            chain = try capAdmissionTargetLocked(destIdx, registered).map(\.key)
         } catch {
             lock.unlock()
             throw error
@@ -1354,7 +1423,7 @@ public final class RelaySwitch: @unchecked Sendable {
         lock.unlock()
 
         do {
-            return try admission.acquire(key)
+            return try admission.acquire(chain)
         } catch let error as AdmissionError {
             throw RelaySwitchError.cartridgeUnavailable(error.reason)
         }
@@ -2665,8 +2734,11 @@ public struct CartridgeAttachmentError: Codable, Hashable, Sendable {
 /// `capdag::CartridgeRuntimeStats` wire-for-wire over RelayNotify JSON.
 public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public let running: Bool
-    /// Maximum concurrent handlers. Zero means unlimited.
-    public let handlerCapacity: UInt64
+    /// The cartridge's full concurrency-pool state map (Pools.swift):
+    /// declared/configured/available/active/queued per pool — singleton
+    /// pools keyed by cap URN, declared shared pools, and `all`. This IS
+    /// the capacity surface; there is no scalar.
+    public let pools: PoolStates
     public let pid: UInt32?
     public let activeRequestCount: UInt64
     public let peerRequestCount: UInt64
@@ -2684,7 +2756,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case running
-        case handlerCapacity = "handler_capacity"
+        case pools
         case pid
         case activeRequestCount = "active_request_count"
         case peerRequestCount = "peer_request_count"
@@ -2697,7 +2769,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 
     public init(
         running: Bool,
-        handlerCapacity: UInt64,
+        pools: PoolStates,
         pid: UInt32? = nil,
         activeRequestCount: UInt64,
         peerRequestCount: UInt64,
@@ -2708,7 +2780,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
         protocolDropsTotal: UInt64? = nil
     ) {
         self.running = running
-        self.handlerCapacity = handlerCapacity
+        self.pools = pools
         self.pid = pid
         self.activeRequestCount = activeRequestCount
         self.peerRequestCount = peerRequestCount
@@ -2722,7 +2794,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.running = try c.decode(Bool.self, forKey: .running)
-        self.handlerCapacity = try c.decode(UInt64.self, forKey: .handlerCapacity)
+        self.pools = try c.decode(PoolStates.self, forKey: .pools)
         self.pid = try c.decodeIfPresent(UInt32.self, forKey: .pid)
         self.activeRequestCount = try c.decode(UInt64.self, forKey: .activeRequestCount)
         self.peerRequestCount = try c.decode(UInt64.self, forKey: .peerRequestCount)
@@ -2736,7 +2808,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(running, forKey: .running)
-        try c.encode(handlerCapacity, forKey: .handlerCapacity)
+        try c.encode(pools, forKey: .pools)
         try c.encodeIfPresent(pid, forKey: .pid)
         try c.encode(activeRequestCount, forKey: .activeRequestCount)
         try c.encode(peerRequestCount, forKey: .peerRequestCount)

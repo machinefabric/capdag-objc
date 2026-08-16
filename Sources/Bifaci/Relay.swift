@@ -36,6 +36,11 @@ public final class RelaySlave: @unchecked Sendable {
     /// Latest RelayState payload from master (thread-safe)
     private let resourceStateLock = NSLock()
     private var _resourceState: Data = Data()
+    /// Invoked on every RelayState received from the master, with the raw
+    /// payload — the master→slave CONTROL channel (e.g. the engine
+    /// delivering desired pool capacities; see Pools.swift). The stored
+    /// `resourceState` snapshot is kept regardless. Set before `run`.
+    private var onRelayState: ((Data) -> Void)?
 
     /// Create a relay slave with local I/O streams (to/from CartridgeHostRuntime).
     ///
@@ -52,6 +57,13 @@ public final class RelaySlave: @unchecked Sendable {
         resourceStateLock.lock()
         defer { resourceStateLock.unlock() }
         return _resourceState
+    }
+
+    /// Register a handler invoked with every RelayState payload received
+    /// from the master (the master→slave control channel). Call before
+    /// `run`.
+    public func setRelayStateHandler(_ handler: @escaping (Data) -> Void) {
+        onRelayState = handler
     }
 
     /// Run the relay. Blocks until one side closes or an error occurs.
@@ -142,6 +154,7 @@ public final class RelaySlave: @unchecked Sendable {
                                 resourceStateLock.lock()
                                 _resourceState = payload
                                 resourceStateLock.unlock()
+                                onRelayState?(payload)
                             }
                             return .keepGoing
                         }

@@ -352,6 +352,7 @@ public final class InProcessCartridgeHost {
                 }
             }
         }
+        let capUrnList = caps.map { $0.urn }
         let cartridge = InstalledCartridgeRecord(
             registryURL: identity.registryURL,
             id: identity.id,
@@ -361,7 +362,10 @@ public final class InProcessCartridgeHost {
             capGroups: [CapGroup(name: identity.id, caps: caps, adapterUrns: [])],
             runtimeStats: CartridgeRuntimeStats(
                 running: true,
-                handlerCapacity: 0,
+                // In-process handlers are task-backed and have no fixed
+                // concurrency ceiling: every pool is unlimited, at rest at
+                // manifest-build time (see Pools.swift).
+                pools: Self.inProcessPoolStates(capUrns: capUrnList, configured: [:]),
                 pid: UInt32(ProcessInfo.processInfo.processIdentifier),
                 activeRequestCount: 0,
                 peerRequestCount: 0,
@@ -377,6 +381,23 @@ public final class InProcessCartridgeHost {
         )
         let payload = RelayNotifyCapabilitiesPayload(installedCartridges: [cartridge])
         return try! JSONEncoder().encode(payload)
+    }
+
+    /// The host's full pool-state map: one at-rest singleton per advertised
+    /// cap plus the mandatory `all` pool. In-process handlers are
+    /// task-backed with no fixed concurrency ceiling, so every capacity is
+    /// 0 (unlimited) and nothing ever queues; `configured` carries the
+    /// operator overlay delivered via heartbeat probes (the ENGINE's
+    /// admission enforces it). (matches Rust pool_states_snapshot)
+    internal static func inProcessPoolStates(
+        capUrns: [String], configured: [String: UInt64]
+    ) -> PoolStates {
+        var states: PoolStates = [:]
+        for capUrn in capUrns {
+            states[capUrn] = PoolState(configured: configured[capUrn] ?? 0)
+        }
+        states[poolAll] = PoolState(configured: configured[poolAll] ?? 0, caps: capUrns)
+        return states
     }
 
     /// Build the cap table for routing: flat list of (cap_urn, handler_idx).
@@ -467,6 +488,20 @@ public final class InProcessCartridgeHost {
         // Build cap table
         let capTable = Self.buildCapTable(handlers: handlers)
 
+        // Advertised caps (canonical URNs) — the singleton pool roster —
+        // and the operator `configured` overlay delivered via heartbeat
+        // probes (see Pools.swift).
+        var advertisedCaps: [String] = [CSCapIdentity]
+        for entry in handlers {
+            for cap in entry.caps {
+                let capUrn = cap.capUrn.toString()
+                if !advertisedCaps.contains(capUrn) {
+                    advertisedCaps.append(capUrn)
+                }
+            }
+        }
+        var configuredOverlay: DesiredCapacities = [:]
+
         // Active request channels: request_id → AsyncStream.Continuation for forwarding frames to handler
         var active: [MessageId: AsyncStream<Frame>.Continuation] = [:]
 
@@ -540,8 +575,38 @@ public final class InProcessCartridgeHost {
                 }
 
             case .heartbeat:
+                // The heartbeat is the capacity CONFIG channel (see the
+                // cartridge runtime): a probe may carry the operator's
+                // desired `configured` values. Validate the whole batch
+                // against the pool roster first — an unknown pool refuses
+                // it all with an ERR naming it.
+                if let desiredBytes = frame.desiredCapacityBytes {
+                    do {
+                        let desired = try decodeDesired(desiredBytes)
+                        if let unknown = desired.keys.first(where: {
+                            $0 != poolAll && !advertisedCaps.contains($0)
+                        }) {
+                            throw PoolError.invalid("unknown pool '\(unknown)'")
+                        }
+                        for (name, value) in desired {
+                            configuredOverlay[name] = value
+                        }
+                    } catch {
+                        let errFrame = Frame.err(
+                            id: frame.id,
+                            code: "UNKNOWN_POOL",
+                            attributionClass: .internal,
+                            message: "desired capacities refused: \(error)"
+                        )
+                        writeContinuation.yield(errFrame)
+                        continue
+                    }
+                }
                 var response = Frame.heartbeat(id: frame.id)
-                response.meta = ["handler_capacity": .unsignedInt(0)]
+                response.meta = [
+                    metaPools: .byteString([UInt8](encodePoolStates(
+                        Self.inProcessPoolStates(capUrns: advertisedCaps, configured: configuredOverlay))))
+                ]
                 writeContinuation.yield(response)
 
             case .err:

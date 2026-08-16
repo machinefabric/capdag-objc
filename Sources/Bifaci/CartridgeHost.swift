@@ -695,9 +695,14 @@ private class ManagedCartridge {
     /// round-trip carries the counter. Survives across readings (each
     /// heartbeat carries the cartridge's running total).
     var protocolDropsTotal: UInt64?
-    /// Maximum concurrent handlers reported by HELLO and every heartbeat.
-    /// Zero means unlimited.
-    var handlerCapacity: UInt64
+    /// The cartridge's last-known concurrency-pool state map (see
+    /// Pools.swift): captured at HELLO and refreshed by every heartbeat
+    /// reply. This IS the capacity surface; there is no scalar.
+    var poolStates: PoolStates
+    /// Operator `configured` values queued for delivery on the next
+    /// heartbeat probe (the heartbeat is the config channel). Cleared when
+    /// a probe carries them.
+    var pendingDesired: DesiredCapacities
 
     init(path: String, cartridgeDir: String, capGroups: [CapGroup], lifecycle: CartridgeLifecycle = .discovered) {
         self.path = path
@@ -719,7 +724,8 @@ private class ManagedCartridge {
         self.lastHeartbeatUnixSeconds = nil
         self.restartCount = 0
         self.protocolDropsTotal = nil
-        self.handlerCapacity = 0
+        self.poolStates = [:]
+        self.pendingDesired = [:]
         self.attachmentError = nil
     }
 
@@ -821,15 +827,14 @@ private class ManagedCartridge {
         manifest: Data,
         limits: Limits,
         capGroups: [CapGroup],
-        handlerCapacity: Int
+        poolStates: PoolStates
     ) -> ManagedCartridge {
-        precondition(handlerCapacity >= 0, "handler capacity must be non-negative")
         let cartridge = ManagedCartridge(path: "", cartridgeDir: "", capGroups: capGroups)
         cartridge.manifest = manifest
         cartridge.limits = limits
         cartridge.running = true
         cartridge.generation = 1
-        cartridge.handlerCapacity = UInt64(handlerCapacity)
+        cartridge.poolStates = poolStates
         // Attached ⇒ HELLO + identity verification already succeeded ⇒
         // operational (and therefore dispatchable). Without this the
         // default `.discovered` lifecycle would hold the cartridge out of
@@ -1671,7 +1676,7 @@ public final class CartridgeHost: @unchecked Sendable {
             manifest: manifest,
             limits: negotiatedLimits,
             capGroups: capGroups,
-            handlerCapacity: handshake.handlerCapacity
+            poolStates: handshake.poolStates
         )
         cartridge.stdoutHandle = stdoutHandle
         cartridge.writerLock.lock()
@@ -2378,10 +2383,13 @@ public final class CartridgeHost: @unchecked Sendable {
 
             if wasOurs {
                 // Response to our health probe — cartridge is alive.
-                // Extract self-reported memory from heartbeat response meta.
+                // The pool-state map is MANDATORY on every heartbeat reply
+                // (see Pools.swift): a missing or malformed map is a
+                // protocol violation, never a default.
                 guard let meta = frame.meta,
-                      case .unsignedInt(let capacity) = meta["handler_capacity"] else {
-                    cartridge.lastDeathMessage = "Protocol violation: heartbeat missing handler_capacity"
+                      let poolBytes = frame.poolStateBytes,
+                      let replyPools = try? decodePoolStates(poolBytes) else {
+                    cartridge.lastDeathMessage = "Protocol violation: heartbeat reply missing or malformed concurrency-pool state map"
                     let generation = cartridge.generation
                     stateLock.unlock()
                     cartridge.killProcess()
@@ -2400,7 +2408,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 if case .unsignedInt(let v) = meta["drops_total"] {
                     cartridge.protocolDropsTotal = v
                 }
-                cartridge.handlerCapacity = capacity
+                cartridge.poolStates = replyPools
                 // Stamp the round-trip completion timestamp so runtime-stats
                 // snapshots can surface heartbeat age to the UI.
                 cartridge.lastHeartbeatUnixSeconds = Int64(Date().timeIntervalSince1970)
@@ -2530,13 +2538,22 @@ public final class CartridgeHost: @unchecked Sendable {
             let isCurrent = cartridges.indices.contains(entry.idx)
                 && cartridges[entry.idx].running
                 && cartridges[entry.idx].generation == entry.generation
+            var probeFrame = Frame.heartbeat(id: probeId)
             if isCurrent {
                 cartridges[entry.idx].pendingHeartbeats[probeId] = now
+                // The heartbeat is the capacity CONFIG channel (see
+                // Pools.swift): fold any queued operator `configured`
+                // values into this probe.
+                if !cartridges[entry.idx].pendingDesired.isEmpty {
+                    probeFrame = Frame.heartbeatWithDesired(
+                        id: probeId, desired: cartridges[entry.idx].pendingDesired)
+                    cartridges[entry.idx].pendingDesired = [:]
+                }
             }
             stateLock.unlock()
             guard isCurrent else { continue }
 
-            if !entry.cartridge.writeFrame(Frame.heartbeat(id: probeId)) {
+            if !entry.cartridge.writeFrame(probeFrame) {
                 os_log(.error, log: Self.log,
                        "Failed to write heartbeat probe to cartridge %{public}d",
                        entry.idx)
@@ -2959,7 +2976,7 @@ public final class CartridgeHost: @unchecked Sendable {
             let pid = cartridge.pid.map { UInt32($0) }
             let stats = CartridgeRuntimeStats(
                 running: cartridge.running,
-                handlerCapacity: cartridge.handlerCapacity,
+                pools: cartridge.poolStates,
                 pid: pid,
                 activeRequestCount: activeCounts[idx, default: 0],
                 peerRequestCount: peerCounts[idx, default: 0],
@@ -3391,7 +3408,7 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridge.writerLock.unlock()
         cartridge.manifest = handshakeResult.manifest
         cartridge.limits = handshakeResult.limits
-        cartridge.handlerCapacity = UInt64(handshakeResult.handlerCapacity)
+        cartridge.poolStates = handshakeResult.poolStates
         cartridge.capGroups = capGroups
         cartridge.advanceGeneration()
         let generation = cartridge.generation
@@ -3427,6 +3444,58 @@ public final class CartridgeHost: @unchecked Sendable {
         )
     }
 
+    /// Validate and deliver operator `configured` values for one
+    /// cartridge's pools. The heartbeat is the config channel: values are
+    /// queued on the cartridge and ride an IMMEDIATE out-of-cycle probe
+    /// when the process is running; a cold cartridge keeps them queued for
+    /// the next probe. Validated hard against the cartridge's last-known
+    /// pool map: an unknown cartridge or pool name is refused with the
+    /// offender named, and nothing is queued.
+    /// (matches Rust apply_desired_capacities)
+    public func applyDesiredCapacities(cartridgeId: String, desired: DesiredCapacities) throws {
+        stateLock.lock()
+        var foundIdx: Int? = nil
+        for (idx, cartridge) in cartridges.enumerated() {
+            if cartridge.isRemoved { continue }
+            guard let record = cartridge.installedCartridgeRecord(),
+                  record.id == cartridgeId else { continue }
+            if foundIdx != nil {
+                stateLock.unlock()
+                throw CartridgeHostError.protocolError(
+                    "cartridge id '\(cartridgeId)' is ambiguous on this host")
+            }
+            foundIdx = idx
+        }
+        guard let idx = foundIdx else {
+            stateLock.unlock()
+            throw CartridgeHostError.protocolError(
+                "desired capacities address cartridge '\(cartridgeId)', which this host does not carry")
+        }
+        let cartridge = cartridges[idx]
+        for pool in desired.keys where cartridge.poolStates[pool] == nil {
+            stateLock.unlock()
+            throw CartridgeHostError.protocolError(
+                "desired capacities name pool '\(pool)', which cartridge '\(cartridgeId)' does not declare")
+        }
+        for (pool, configured) in desired {
+            cartridge.pendingDesired[pool] = configured
+        }
+        // Immediate out-of-cycle probe when the process is up; a cold
+        // cartridge keeps the values queued for the next probe.
+        var probeFrame: Frame? = nil
+        if cartridge.running {
+            let probeId = MessageId.newUUID()
+            probeFrame = Frame.heartbeatWithDesired(id: probeId, desired: cartridge.pendingDesired)
+            cartridge.pendingDesired = [:]
+            cartridge.pendingHeartbeats[probeId] = Date()
+        }
+        stateLock.unlock()
+        if let probeFrame, !cartridge.writeFrame(probeFrame) {
+            throw CartridgeHostError.sendFailed(
+                "failed to write desired-capacities probe to cartridge '\(cartridgeId)'")
+        }
+    }
+
     // MARK: - Test-only Hooks
 
     /// Register a stub managed cartridge slot with no real
@@ -3445,7 +3514,7 @@ public final class CartridgeHost: @unchecked Sendable {
             manifest: Data(),
             limits: Limits(),
             capGroups: [],
-            handlerCapacity: 0
+            poolStates: [:]
         )
         stateLock.lock()
         let idx = cartridges.count

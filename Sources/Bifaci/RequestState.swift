@@ -594,7 +594,7 @@ public struct RequestTableSnapshot: Codable, Sendable {
 // Admission control (mirrors Rust src/bifaci/request_state.rs).
 //
 // FIFO admission per cartridge install identity behind one relay master. The
-// cartridge-side `handler_capacity` gate (CartridgeRuntime.swift) bounds what
+// cartridge-side pool-chain gate (CartridgeRuntime.swift) bounds what
 // one process runs at a time; THIS gate bounds what the switch dispatches to
 // it, so work queues in the switch instead of piling up unacknowledged on the
 // wire.
@@ -651,15 +651,38 @@ public struct AdmissionKey: Hashable, Sendable {
     }
 }
 
-private final class AdmissionSlot {
+/// One admission domain: a pool on one install. (matches Rust
+/// request_state::PoolKey)
+public struct PoolKey: Hashable, Sendable {
+    public let install: AdmissionKey
+    public let pool: String
+
+    public init(install: AdmissionKey, pool: String) {
+        self.install = install
+        self.pool = pool
+    }
+}
+
+/// One pool's admission state: EFFECTIVE capacity (0 = unlimited), active
+/// count, and — for singleton pools only, the head of every chain — the
+/// FIFO ticket queue. (matches Rust PoolSlot)
+private final class PoolSlot {
+    var capacity: UInt64 = 0
+    var active: UInt64 = 0
+    var queue: [UInt64] = []
+
+    var hasRoom: Bool { capacity == 0 || active < capacity }
+}
+
+/// One install's availability. Outages are an INSTALL-level fact — a
+/// process disappears whole, never one pool at a time.
+/// (matches Rust InstallState)
+private final class InstallState {
     /// `nil` while the target is available; the instant it went unavailable
     /// otherwise. Kept as an instant rather than a flag so the grace window
     /// measures the OUTAGE, not the arrival time of each waiter — a request
     /// that queues late into an outage does not get a fresh window.
     var unavailableSince: Date?
-    var capacity: UInt64 = 0
-    var active: UInt64 = 0
-    var queue: [UInt64] = []
 
     var available: Bool { unavailableSince == nil }
 
@@ -676,16 +699,17 @@ private final class AdmissionSlot {
     }
 }
 
-/// An actively owned process slot. Released exactly once.
+/// A set of actively owned pool slots — a dispatch's whole chain. Released
+/// exactly once.
 public final class AdmissionPermit {
     private weak var controller: AdmissionController?
-    private let key: AdmissionKey
+    private let chain: [PoolKey]
     private var released = false
     private let lock = NSLock()
 
-    fileprivate init(controller: AdmissionController, key: AdmissionKey) {
+    fileprivate init(controller: AdmissionController, chain: [PoolKey]) {
         self.controller = controller
-        self.key = key
+        self.chain = chain
     }
 
     public func release() {
@@ -694,14 +718,17 @@ public final class AdmissionPermit {
         released = true
         lock.unlock()
         if alreadyReleased { return }
-        controller?.releaseSlot(key)
+        controller?.releaseChain(chain)
     }
 }
 
-/// FIFO admission shared by every request path in a RelaySwitch.
+/// The engine-side pool admission gate (see Pools.swift): one slot per
+/// (install, pool), one availability state per install. A dispatch
+/// acquires its cap's whole pool CHAIN atomically.
 public final class AdmissionController: @unchecked Sendable {
     private let condition = NSCondition()
-    private var slots: [AdmissionKey: AdmissionSlot] = [:]
+    private var slots: [PoolKey: PoolSlot] = [:]
+    private var installs: [AdmissionKey: InstallState] = [:]
     private var tickets: UInt64 = 0
     /// `admissionUnavailableGrace` in production. Tests shorten it to drive the
     /// expiry path without sleeping through a real minute.
@@ -709,92 +736,115 @@ public final class AdmissionController: @unchecked Sendable {
 
     public init() {}
 
-    /// Register or update a target's capacity. A configure is the target
-    /// advertising itself: it ENDS any outage, which is what releases waiters
-    /// queued through a respawn or a roster round-trip.
-    public func configure(_ key: AdmissionKey, capacity: UInt64) {
+    /// Advertise one install's full pool map: EFFECTIVE capacity per pool.
+    /// A configure is the target advertising itself: it ENDS any outage,
+    /// which is what releases waiters queued through a respawn or a roster
+    /// round-trip. (matches Rust configure_pools)
+    public func configurePools(_ install: AdmissionKey, pools: [String: UInt64]) {
         condition.lock()
-        let slot = slots[key] ?? AdmissionSlot()
-        slots[key] = slot
-        slot.unavailableSince = nil
-        slot.capacity = capacity
+        let state = installs[install] ?? InstallState()
+        installs[install] = state
+        state.unavailableSince = nil
+        for (pool, capacity) in pools {
+            let key = PoolKey(install: install, pool: pool)
+            let slot = slots[key] ?? PoolSlot()
+            slots[key] = slot
+            slot.capacity = capacity
+        }
         condition.broadcast()
         condition.unlock()
     }
 
-    /// Mark every slot of this master absent from the advertised set
+    /// Mark every install of this master absent from the advertised set
     /// unavailable.
     public func reconcileMaster(_ masterIdx: Int, available: Set<AdmissionKey>) {
         let now = Date()
         condition.lock()
-        for (key, slot) in slots where key.masterIdx == masterIdx && !available.contains(key) {
-            slot.markUnavailable(now)
+        for (install, state) in installs where install.masterIdx == masterIdx && !available.contains(install) {
+            state.markUnavailable(now)
         }
         condition.broadcast()
         condition.unlock()
     }
 
-    /// Mark every slot of this master unavailable (the master died).
+    /// Mark every install of this master unavailable (the master died).
     public func disableMaster(_ masterIdx: Int) {
         let now = Date()
         condition.lock()
-        for (key, slot) in slots where key.masterIdx == masterIdx {
-            slot.markUnavailable(now)
+        for (install, state) in installs where install.masterIdx == masterIdx {
+            state.markUnavailable(now)
         }
         condition.broadcast()
         condition.unlock()
     }
 
-    /// Take a FIFO admission slot for `key`, waiting for capacity.
+    /// Take a FIFO admission slot across a cap's whole pool CHAIN, waiting
+    /// for capacity. The chain's FIRST key is the cap's singleton pool —
+    /// the queue the ticket waits in; admission requires EVERY chain pool
+    /// to have room, decided in one critical section (no half-admission).
     ///
-    /// An UNAVAILABLE target does not fail the caller immediately. The request
-    /// stays queued for `admissionUnavailableGrace` measured from the start of
-    /// the outage, so a cartridge that is respawning — or that a transient
-    /// registry outage briefly retired — resumes serving its queue instead of
-    /// terminally failing every body waiting on it (17.2: one body's process
-    /// loss must not terminate unrelated queued bodies). Only when the window
-    /// expires does the wait fail, and it fails hard.
+    /// An UNAVAILABLE target (an install-level fact) does not fail the
+    /// caller immediately. The request stays queued for
+    /// `admissionUnavailableGrace` measured from the start of the outage,
+    /// so a cartridge that is respawning — or that a transient registry
+    /// outage briefly retired — resumes serving its queue instead of
+    /// terminally failing every body waiting on it (17.2: one body's
+    /// process loss must not terminate unrelated queued bodies). Only when
+    /// the window expires does the wait fail, and it fails hard.
     ///
     /// `isCancelled`, when supplied, abandons the wait (the caller gave up);
-    /// the ticket is removed so it cannot strand the queue behind a dead head.
+    /// the ticket is removed so it cannot strand the queue behind a dead
+    /// head. (matches Rust acquire)
     public func acquire(
-        _ key: AdmissionKey,
+        _ chain: [PoolKey],
         isCancelled: (() -> Bool)? = nil
     ) throws -> AdmissionPermit {
+        guard let head = chain.first else {
+            throw AdmissionError(
+                "admission chain is empty — a dispatch always has at least its cap's own pool")
+        }
+        let install = head.install
         condition.lock()
         defer { condition.unlock() }
 
-        guard let slot = slots[key] else {
-            throw AdmissionError("cartridge '\(key.id)' has no configured admission target")
+        for key in chain where slots[key] == nil {
+            throw AdmissionError(
+                "cartridge '\(key.install.id)' has no configured admission pool '\(key.pool)'")
         }
         let ticket = tickets
         tickets += 1
         // Queue even while unavailable: the loop below owns the grace window,
         // so a request arriving mid-outage gets the same treatment as one that
         // was already waiting when the outage began.
-        slot.queue.append(ticket)
+        slots[head]!.queue.append(ticket)
 
         while true {
             if isCancelled?() == true {
-                removeTicketLocked(key, ticket)
-                throw AdmissionError("admission wait for '\(key.id)' was cancelled")
+                removeTicketLocked(head, ticket)
+                throw AdmissionError("admission wait for '\(install.id)' was cancelled")
             }
-            guard let slot = slots[key] else {
-                throw AdmissionError("admission slot for '\(key.id)' disappeared while queued")
+            guard let headSlot = slots[head] else {
+                throw AdmissionError("admission pool for '\(install.id)' disappeared while queued")
             }
-            let hasCapacity = slot.capacity == 0 || slot.active < slot.capacity
-            if slot.available, hasCapacity, slot.queue.first == ticket {
-                slot.queue.removeFirst()
-                slot.active += 1
+            guard let state = installs[install] else {
+                throw AdmissionError(
+                    "cartridge '\(install.id)' has admission pools but no install state — configurePools was bypassed")
+            }
+            let chainHasRoom = chain.allSatisfy { slots[$0]!.hasRoom }
+            if state.available, chainHasRoom, headSlot.queue.first == ticket {
+                headSlot.queue.removeFirst()
+                for key in chain {
+                    slots[key]!.active += 1
+                }
                 condition.broadcast()
-                return AdmissionPermit(controller: self, key: key)
+                return AdmissionPermit(controller: self, chain: chain)
             }
-            let remaining = slot.graceRemaining(Date(), grace: grace)
+            let remaining = state.graceRemaining(Date(), grace: grace)
             if let remaining, remaining <= 0 {
                 // Outage outlived the window — the target is gone, not slow.
-                removeTicketLocked(key, ticket)
+                removeTicketLocked(head, ticket)
                 throw AdmissionError(
-                    "cartridge '\(key.id)' was unavailable for longer than \(Int(grace))s "
+                    "cartridge '\(install.id)' was unavailable for longer than \(Int(grace))s "
                         + "while this request waited for capacity"
                 )
             }
@@ -812,9 +862,9 @@ public final class AdmissionController: @unchecked Sendable {
         }
     }
 
-    /// Drop a ticket so an abandoned waiter cannot strand the queue behind it.
-    /// Caller must hold `condition`.
-    private func removeTicketLocked(_ key: AdmissionKey, _ ticket: UInt64) {
+    /// Drop a ticket from its singleton queue so an abandoned waiter cannot
+    /// strand the queue behind it. Caller must hold `condition`.
+    private func removeTicketLocked(_ key: PoolKey, _ ticket: UInt64) {
         guard let slot = slots[key] else { return }
         if let idx = slot.queue.firstIndex(of: ticket) {
             slot.queue.remove(at: idx)
@@ -822,10 +872,12 @@ public final class AdmissionController: @unchecked Sendable {
         condition.broadcast()
     }
 
-    fileprivate func releaseSlot(_ key: AdmissionKey) {
+    fileprivate func releaseChain(_ chain: [PoolKey]) {
         condition.lock()
-        if let slot = slots[key], slot.active > 0 {
-            slot.active -= 1
+        for key in chain {
+            if let slot = slots[key], slot.active > 0 {
+                slot.active -= 1
+            }
         }
         condition.broadcast()
         condition.unlock()

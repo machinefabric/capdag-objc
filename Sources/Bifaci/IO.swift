@@ -680,8 +680,10 @@ public struct HandshakeResult: Sendable {
     public let limits: Limits
     /// Cartridge manifest JSON data (from cartridge's HELLO response)
     public let manifest: Data
-    /// Maximum concurrent handlers. Zero means unlimited.
-    public let handlerCapacity: Int
+    /// The cartridge's mandatory concurrency-pool state map (see
+    /// Pools.swift). A missing or malformed map is a protocol violation,
+    /// never a default.
+    public let poolStates: PoolStates
 }
 
 /// Perform HELLO handshake and extract cartridge manifest (host side - sends first)
@@ -714,8 +716,17 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     guard let manifest = theirFrame.helloManifest else {
         throw FrameError.handshakeFailed("Cartridge HELLO missing required manifest")
     }
-    guard let handlerCapacity = theirFrame.helloHandlerCapacity else {
-        throw FrameError.handshakeFailed("Cartridge HELLO missing required non-negative handler_capacity")
+    // The pool-state map is MANDATORY on a cartridge HELLO (see
+    // Pools.swift): a missing or malformed map is a protocol violation,
+    // never a default.
+    guard let poolBytes = theirFrame.poolStateBytes else {
+        throw FrameError.handshakeFailed("Cartridge HELLO missing required concurrency-pool state map")
+    }
+    let poolStates: PoolStates
+    do {
+        poolStates = try decodePoolStates(poolBytes)
+    } catch {
+        throw FrameError.handshakeFailed("Cartridge HELLO pool-state map: \(error)")
     }
 
     // Protocol v4: every negotiated field is required.
@@ -744,7 +755,7 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     reader.setLimits(limits)
     writer.setLimits(limits)
 
-    return HandshakeResult(limits: limits, manifest: manifest, handlerCapacity: handlerCapacity)
+    return HandshakeResult(limits: limits, manifest: manifest, poolStates: poolStates)
 }
 
 /// Accept HELLO handshake with manifest (cartridge side - receives first, sends manifest in response)
@@ -758,7 +769,7 @@ public func acceptHandshakeWithManifest(
     reader: FrameReader,
     writer: FrameWriter,
     manifest: Data,
-    handlerCapacity: Int
+    poolStates: PoolStates
 ) throws -> Limits {
     // Read their HELLO first (host initiates)
     guard let theirFrame = try reader.read() else {
@@ -804,7 +815,7 @@ public func acceptHandshakeWithManifest(
     let ourHello = Frame.helloWithManifest(
         limits: ourLimits,
         manifest: manifest,
-        handlerCapacity: handlerCapacity
+        poolStates: poolStates
     )
     try writer.write(ourHello)
 

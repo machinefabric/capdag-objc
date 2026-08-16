@@ -31,7 +31,14 @@ final class CborRelaySwitchTests: XCTestCase {
                 "sha256": String(repeating: "0", count: 64),
                 "runtime_stats": [
                     "running": true,
-                    "handler_capacity": 0,
+                    "pools": [
+                        CSCapIdentity: [
+                            "declared": 0, "configured": 0, "active": 0, "queued": 0,
+                        ] as [String: Any],
+                        "all": [
+                            "declared": 0, "configured": 0, "active": 0, "queued": 0,
+                        ] as [String: Any],
+                    ] as [String: Any],
                     "active_request_count": 0,
                     "peer_request_count": 0,
                     "memory_footprint_mb": 0,
@@ -1450,7 +1457,14 @@ final class CborRelaySwitchTests: XCTestCase {
                     "sha256": String(repeating: "0", count: 64),
                     "runtime_stats": [
                         "running": true,
-                        "handler_capacity": 0,
+                        "pools": [
+                            CSCapIdentity: [
+                                "declared": 0, "configured": 0, "active": 0, "queued": 0,
+                            ] as [String: Any],
+                            "all": [
+                                "declared": 0, "configured": 0, "active": 0, "queued": 0,
+                            ] as [String: Any],
+                        ] as [String: Any],
                         "active_request_count": 0,
                         "peer_request_count": 0,
                         "memory_footprint_mb": 0,

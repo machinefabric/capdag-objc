@@ -42,7 +42,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func helloWithManifest(maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
         let limits = Limits(maxFrame: maxFrame, maxChunk: maxChunk, maxReorderBuffer: DEFAULT_MAX_REORDER_BUFFER)
-        return Frame.helloWithManifest(limits: limits, manifest: testManifestData, handlerCapacity: 0)
+        return Frame.helloWithManifest(limits: limits, manifest: testManifestData, poolStates: [:])
     }
 
     nonisolated static func makeManifest(name: String, caps: [String]) -> Data {
@@ -63,7 +63,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func helloWith(manifest: Data, maxFrame: Int = DEFAULT_MAX_FRAME, maxChunk: Int = DEFAULT_MAX_CHUNK) -> Frame {
         let limits = Limits(maxFrame: maxFrame, maxChunk: maxChunk, maxReorderBuffer: DEFAULT_MAX_REORDER_BUFFER)
-        return Frame.helloWithManifest(limits: limits, manifest: manifest, handlerCapacity: 0)
+        return Frame.helloWithManifest(limits: limits, manifest: manifest, poolStates: [:])
     }
 
     /// Helper for mock cartridges to handle identity verification after HELLO exchange.

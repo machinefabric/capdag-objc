@@ -462,7 +462,7 @@ final class FlowOrderingTests: XCTestCase {
 
         // Write cartridge's HELLO with manifest to a pipe
         let pipe1 = Pipe()
-        let cartridgeHello = Frame.helloWithManifest(limits: cartridgeLimits, manifest: manifestData, handlerCapacity: 0)
+        let cartridgeHello = Frame.helloWithManifest(limits: cartridgeLimits, manifest: manifestData, poolStates: [:])
         var buffer1 = Data()
         try writeFrame(cartridgeHello, toFD: pipe1.fileHandleForWriting.fileDescriptor, limits: cartridgeLimits, buffer: &buffer1)
         pipe1.fileHandleForWriting.closeFile()

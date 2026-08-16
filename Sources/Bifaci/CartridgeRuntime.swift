@@ -3487,6 +3487,10 @@ public struct Manifest: Codable, Sendable {
     public let description: String
     /// All caps must be in cap groups. Groups without adapter URNs are valid.
     public let capGroups: [CapGroup]
+    /// Concurrency-pool declarations (see Pools.swift): shared-pool
+    /// memberships and declared capacities. `nil` = nothing declared
+    /// (every pool unlimited). (matches Rust CapManifest.pool_declarations)
+    public var poolDeclarations: PoolDeclarations?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -3495,15 +3499,17 @@ public struct Manifest: Codable, Sendable {
         case registryURL = "registry_url"
         case description
         case capGroups = "cap_groups"
+        case poolDeclarations = "pool_declarations"
     }
 
-    public init(name: String, version: String, channel: String, registryURL: String?, description: String, capGroups: [CapGroup]) {
+    public init(name: String, version: String, channel: String, registryURL: String?, description: String, capGroups: [CapGroup], poolDeclarations: PoolDeclarations? = nil) {
         self.name = name
         self.version = version
         self.channel = channel
         self.registryURL = registryURL
         self.description = description
         self.capGroups = capGroups
+        self.poolDeclarations = poolDeclarations
     }
 
     public init(from decoder: Decoder) throws {
@@ -3530,6 +3536,7 @@ public struct Manifest: Codable, Sendable {
         self.registryURL = try c.decode(String?.self, forKey: .registryURL)
         self.description = try c.decode(String.self, forKey: .description)
         self.capGroups = try c.decode([CapGroup].self, forKey: .capGroups)
+        self.poolDeclarations = try c.decodeIfPresent(PoolDeclarations.self, forKey: .poolDeclarations)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -3542,6 +3549,28 @@ public struct Manifest: Codable, Sendable {
         try c.encode(registryURL, forKey: .registryURL)
         try c.encode(description, forKey: .description)
         try c.encode(capGroups, forKey: .capGroups)
+        if let poolDeclarations, !poolDeclarations.isEmpty {
+            try c.encode(poolDeclarations, forKey: .poolDeclarations)
+        }
+    }
+
+    /// Validate the pool declarations against this manifest's caps,
+    /// canonicalize them, and attach them. Hard error on any illegal shape
+    /// (see `PoolDeclarations.validated`). (matches Rust
+    /// CapManifest::with_pool_declarations)
+    public func withPoolDeclarations(_ declarations: PoolDeclarations) throws -> Manifest {
+        var manifest = self
+        manifest.poolDeclarations = try declarations.validated(
+            declaredCaps: allCaps().map { $0.urn })
+        return manifest
+    }
+
+    /// Materialize the manifest's declared pool-state map: one singleton
+    /// pool per cap, every declared shared pool, and `all` (see
+    /// Pools.swift). (matches Rust declared_pool_states)
+    public func declaredPoolStates() -> PoolStates {
+        (poolDeclarations ?? PoolDeclarations()).declaredStates(
+            declaredCaps: allCaps().map { $0.urn })
     }
 
     /// Returns all caps from all cap groups.
@@ -3576,32 +3605,283 @@ public struct Manifest: Codable, Sendable {
 /// **This is the ONLY supported way for cartridges to communicate with the host.**
 /// The manifest MUST be provided - cartridges without a manifest will fail handshake.
 @available(macOS 10.15.4, iOS 13.4, *)
-/// Shared handle for dynamic concurrency capacity adjustment.
-///
-/// Cartridges receive this via `CartridgeRuntime.capacityHandle()` and can call
-/// `set(_:)` at any time to adjust how many concurrent requests the runtime
-/// will dispatch to handlers.
-public final class CapacityHandle: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _value: Int
+/// A request waiting on its cap's singleton-pool queue (see Pools.swift).
+struct PoolQueuedRequest {
+    let factory: OpFactory
+    let capUrn: String
+    /// The registered handler pattern (canonical) serving this request —
+    /// the singleton pool it queues on and the key of its pool chain.
+    let pattern: String
+    /// Global arrival ticket: cross-cap admission is FIFO by this.
+    /// Assigned by `RuntimePools.enqueue`.
+    var ticket: UInt64
+    let routingId: MessageId?
+    let requestId: MessageId
+    let outputMediaUrn: String
+    let frames: BlockingQueue<Frame>
+}
 
-    init(_ initial: Int) {
-        _value = initial
+/// One materialized concurrency pool (see Pools.swift).
+/// (matches Rust RuntimePool)
+final class RuntimePool {
+    var declared: UInt64
+    var configured: UInt64
+    /// Cartridge self-report; `nil` = static (the normal case). Written
+    /// only through `PoolHandle.set`.
+    var available: UInt64?
+    var active: UInt64 = 0
+    /// Member patterns (shared pools and `all`); singletons empty.
+    var members: [String]
+
+    init(declared: UInt64, members: [String] = []) {
+        self.declared = declared
+        self.configured = declared
+        self.members = members
     }
 
-    /// Set the concurrency capacity. 0 means unlimited.
-    public func set(_ n: Int) {
-        lock.lock()
-        _value = n
-        lock.unlock()
+    func effective() -> UInt64 {
+        effectiveCapacity(configured: configured, available: available)
     }
 
-    /// Get the current capacity. 0 means unlimited.
-    public func get() -> Int {
-        lock.lock()
-        let v = _value
-        lock.unlock()
-        return v
+    func hasRoom() -> Bool {
+        let effective = effective()
+        return effective == capacityUnlimited || active < effective
+    }
+}
+
+/// The runtime's materialized concurrency pools (see Pools.swift): one
+/// singleton pool per registered handler pattern, every declared shared
+/// pool from the manifest, and `all`. The owning `PoolsCell`'s lock guards
+/// capacities, active counts, and queues together so admission is one
+/// atomic decision. (matches Rust RuntimePools)
+final class RuntimePools {
+    var pools: [String: RuntimePool] = [:]
+    /// Registered handler pattern (canonical) → its pool chain in
+    /// admission order: singleton, declared pools containing it, `all`.
+    var chains: [String: [String]] = [:]
+    /// Singleton queues — queues lead to pools. Keyed by registered
+    /// pattern.
+    var queues: [String: [PoolQueuedRequest]] = [:]
+    /// Global FIFO ticket counter: cross-cap admission on a shared-pool
+    /// release is arrival-ordered, never cap-biased.
+    var nextTicket: UInt64 = 0
+
+    /// Materialize the pools from the registered handler patterns and the
+    /// manifest's declarations. Hard errors, never coercion: an invalid
+    /// registered pattern, or a declaration cap that matches no registered
+    /// pattern, is a cartridge-author bug named precisely.
+    /// (matches Rust RuntimePools::init)
+    init(handlerPatterns: [String], declarations: PoolDeclarations) throws {
+        var patterns: [String] = []
+        for raw in handlerPatterns {
+            let canon: String
+            do {
+                canon = try CSCapUrn.fromString(raw).toString()
+            } catch {
+                throw PoolError.invalid(
+                    "registered handler pattern '\(raw)' is not a valid cap URN: \(error)")
+            }
+            if patterns.contains(canon) {
+                throw PoolError.invalid("handler pattern '\(canon)' is registered twice")
+            }
+            patterns.append(canon)
+        }
+
+        func resolve(_ declaredCap: String) throws -> String {
+            let canon: String
+            do {
+                canon = try CSCapUrn.fromString(declaredCap).toString()
+            } catch {
+                throw PoolError.invalid(
+                    "pool declaration cap '\(declaredCap)' is not a valid cap URN: \(error)")
+            }
+            guard patterns.contains(canon) else {
+                throw PoolError.invalid(
+                    "pool declaration references cap '\(canon)' but no handler is registered under it — pool declarations bind to the caps the runtime actually serves"
+                )
+            }
+            return canon
+        }
+
+        for pattern in patterns {
+            let declared = declarations.capacities[pattern] ?? capacityUnlimited
+            pools[pattern] = RuntimePool(declared: declared)
+            queues[pattern] = []
+        }
+        for name in declarations.pools.keys.sorted() {
+            var resolved: [String] = []
+            for member in declarations.pools[name]! {
+                resolved.append(try resolve(member))
+            }
+            let declared = declarations.capacities[name] ?? capacityUnlimited
+            pools[name] = RuntimePool(declared: declared, members: resolved)
+        }
+        for key in declarations.capacities.keys {
+            if key == poolAll || pools[key] != nil { continue }
+            if let parsed = try? CSCapUrn.fromString(key), patterns.contains(parsed.toString()) {
+                continue
+            }
+            throw PoolError.invalid(
+                "declared capacity for '\(key)' names neither a registered cap, a declared pool, nor '\(poolAll)'"
+            )
+        }
+        let allDeclared = declarations.capacities[poolAll] ?? capacityUnlimited
+        pools[poolAll] = RuntimePool(declared: allDeclared, members: patterns)
+
+        for pattern in patterns {
+            var chain = [pattern]
+            for name in pools.keys.sorted() where name != poolAll && name != pattern {
+                if pools[name]!.members.contains(pattern) {
+                    chain.append(name)
+                }
+            }
+            chain.append(poolAll)
+            chains[pattern] = chain
+        }
+    }
+
+    func chain(_ pattern: String) -> [String] {
+        guard let chain = chains[pattern] else {
+            fatalError("no pool chain for registered pattern '\(pattern)'")
+        }
+        return chain
+    }
+
+    func chainHasRoom(_ pattern: String) -> Bool {
+        chain(pattern).allSatisfy { pools[$0]!.hasRoom() }
+    }
+
+    /// Admit one dispatch of `pattern` if its whole chain has room.
+    func tryAdmit(_ pattern: String) -> Bool {
+        guard chainHasRoom(pattern) else { return false }
+        for pool in chain(pattern) {
+            pools[pool]!.active += 1
+        }
+        return true
+    }
+
+    /// Release one dispatch of `pattern` across its chain.
+    func release(_ pattern: String) {
+        for pool in chain(pattern) {
+            let slot = pools[pool]!
+            precondition(slot.active > 0, "pool '\(pool)' released below zero active")
+            slot.active -= 1
+        }
+    }
+
+    /// Queue a request on its cap's singleton queue, returning its queue
+    /// position (1-based) for the "queued" LOG.
+    func enqueue(_ request: PoolQueuedRequest) -> Int {
+        var queued = request
+        queued.ticket = nextTicket
+        nextTicket += 1
+        guard queues[queued.pattern] != nil else {
+            fatalError("no singleton queue for pattern '\(queued.pattern)'")
+        }
+        queues[queued.pattern]!.append(queued)
+        return queues[queued.pattern]!.count
+    }
+
+    /// Pop-and-admit the oldest queued request whose chain has room —
+    /// arrival-ordered across all caps by the global ticket.
+    func popAdmissible() -> PoolQueuedRequest? {
+        var best: (ticket: UInt64, pattern: String)? = nil
+        for pattern in queues.keys.sorted() {
+            guard let front = queues[pattern]!.first else { continue }
+            if chainHasRoom(pattern), best == nil || front.ticket < best!.ticket {
+                best = (front.ticket, pattern)
+            }
+        }
+        guard let best else { return nil }
+        let request = queues[best.pattern]!.removeFirst()
+        for pool in chain(best.pattern) {
+            pools[pool]!.active += 1
+        }
+        return request
+    }
+
+    /// Apply an operator's desired `configured` values (heartbeat probe).
+    /// The whole batch is validated first — an unknown pool refuses it all.
+    func applyDesired(_ desired: DesiredCapacities) throws {
+        for name in desired.keys where pools[name] == nil {
+            throw PoolError.invalid("unknown pool '\(name)'")
+        }
+        for (name, configured) in desired {
+            pools[name]!.configured = configured
+        }
+    }
+
+    /// Cartridge self-report for one pool (see `PoolHandle`).
+    func setAvailable(pool: String, available: UInt64) throws {
+        guard let slot = pools[pool] else {
+            throw PoolError.invalid("unknown pool '\(pool)'")
+        }
+        slot.available = available
+    }
+
+    /// The full wire-shaped state map. `queued` counts each waiting
+    /// request on its own singleton pool and on every chain pool that
+    /// currently lacks room (its blockers) — so a shared pool's queued
+    /// figure is the number of waiters it is actually holding back.
+    func snapshot() -> PoolStates {
+        var states: PoolStates = [:]
+        for (name, pool) in pools {
+            states[name] = PoolState(
+                declared: pool.declared,
+                configured: pool.configured,
+                available: pool.available,
+                active: pool.active,
+                queued: 0,
+                caps: pool.members
+            )
+        }
+        for (pattern, queue) in queues {
+            let waiting = UInt64(queue.count)
+            if waiting == 0 { continue }
+            states[pattern]!.queued += waiting
+            for pool in chain(pattern) where pool != pattern && !pools[pool]!.hasRoom() {
+                states[pool]!.queued += waiting
+            }
+        }
+        return states
+    }
+}
+
+/// Owns the runtime's pools behind one lock — capacities, active counts,
+/// and queues change together so admission is one atomic decision. `pools`
+/// is nil until the run loop materializes it at startup.
+public final class PoolsCell: @unchecked Sendable {
+    let lock = NSLock()
+    var pools: RuntimePools?
+}
+
+/// Shared handle for a pool's cartridge SELF-REPORT (`available` — see
+/// Pools.swift). Obtained from `CartridgeRuntime.poolHandle(_:)` with a
+/// pool name (a registered cap URN for a single cap, a declared pool
+/// name, or `all`). `set(_:)` reports what the cartridge can serve right
+/// now from its OWN state (0 = unlimited); it never touches the
+/// operator's `configured` or the manifest's `declared`. A cartridge that
+/// never calls it is fully static — the normal case.
+/// (matches Rust PoolHandle)
+public final class PoolHandle: @unchecked Sendable {
+    private let cell: PoolsCell
+    private let name: String
+
+    init(cell: PoolsCell, name: String) {
+        self.cell = cell
+        self.name = name
+    }
+
+    /// Report the pool's current self-limit. Errors name the defect: an
+    /// unmaterialized runtime (`set` before `run`) or an unknown pool name.
+    public func set(_ available: UInt64) throws {
+        cell.lock.lock()
+        defer { cell.lock.unlock() }
+        guard let pools = cell.pools else {
+            throw PoolError.invalid(
+                "pool handle '\(name)' used before the runtime materialized its pools (call run first)")
+        }
+        try pools.setAvailable(pool: name, available: available)
     }
 }
 
@@ -3622,8 +3902,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// Contains cap definitions with command names and argument sources.
     let parsedManifest: Manifest?
 
-    /// Concurrency capacity: 0 = unlimited, N = max N concurrent handlers.
-    private let capacity = CapacityHandle(0)
+    /// The runtime's concurrency-pool state (see Pools.swift; nil inside
+    /// until the run loop materializes it). One lock guards admission
+    /// atomically.
+    private let poolsCell = PoolsCell()
 
     /// Routes inbound CREDIT frames to the gates of streams local senders are
     /// writing (protocol v4 flow control). Senders register a `CreditGate` per
@@ -3742,24 +4024,15 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
     }
 
-    // MARK: - Capacity
+    // MARK: - Concurrency pools
 
-    /// Set the maximum number of concurrent handler invocations.
-    ///
-    /// When set to N > 0, the runtime queues incoming requests beyond N active
-    /// handlers. Queued requests receive a LOG frame with `level="queued"` so the
-    /// pipeline's activity timeout pauses for that body.
-    ///
-    /// - `0` — unlimited (default)
-    /// - `1` — serial execution (e.g., mlxcartridge with single model loaded)
-    /// - `N` — up to N concurrent handlers
-    public func setCapacity(_ n: Int) {
-        capacity.set(n)
-    }
-
-    /// Get a handle to the concurrency capacity for dynamic adjustment.
-    public func capacityHandle() -> CapacityHandle {
-        return capacity
+    /// A self-report handle for one pool (a registered cap URN, a declared
+    /// pool name, or `all` — see Pools.swift). `set(_:)` on it writes the
+    /// pool's `available` only — for example, dropping a "gpu" pool to 1
+    /// during a model load, then clearing it (0) once resources allow.
+    /// (matches Rust CartridgeRuntime::pool_handle)
+    public func poolHandle(_ pool: String) -> PoolHandle {
+        PoolHandle(cell: poolsCell, name: pool)
     }
 
     // MARK: - Handler Registration
@@ -3789,6 +4062,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// 2. More specific candidates (positive distance) - refinements
     /// 3. More generic candidates (negative distance) - fallbacks
     func findHandler(capUrn: String) -> OpFactory? {
+        findHandlerWithPattern(capUrn: capUrn)?.factory
+    }
+
+    /// Find the best handler for a cap URN and return it together with the
+    /// CANONICAL registered pattern that won — the request's singleton pool
+    /// and pool-chain key. (matches Rust find_handler_with_pattern)
+    func findHandlerWithPattern(capUrn: String) -> (factory: OpFactory, pattern: String)? {
         handlersLock.lock()
         defer { handlersLock.unlock() }
 
@@ -3797,7 +4077,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
 
         let requestSpecificity = Int(requestUrn.specificity())
-        var best: (factory: OpFactory, signedDistance: Int)? = nil
+        var best: (factory: OpFactory, pattern: String, signedDistance: Int)? = nil
 
         for (registeredCapStr, factory) in handlers {
             guard let registeredUrn = try? CSCapUrn.fromString(registeredCapStr) else {
@@ -3825,12 +4105,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 }
 
                 if !dominated {
-                    best = (factory, signedDistance)
+                    best = (factory, registeredUrn.toString(), signedDistance)
                 }
             }
         }
 
-        return best?.factory
+        guard let best else { return nil }
+        return (best.factory, best.pattern)
     }
 
     // MARK: - Main Run Loop
@@ -4415,19 +4696,11 @@ public final class CartridgeRuntime: @unchecked Sendable {
         var pendingIncoming: [MessageId: PendingIncomingRequest] = [:]
         let pendingIncomingLock = NSLock()
 
-        // Queue for requests waiting for a handler slot.
-        struct QueuedRequest {
-            let factory: OpFactory
-            let capUrn: String
-            let routingId: MessageId?
-            let requestId: MessageId
-            let outputMediaUrn: String
-            let frames: BlockingQueue<Frame>
-        }
-        var requestQueue: [QueuedRequest] = []
-        var runningHandlerCount = 0
         var cancelledRequests = Set<MessageId>()
         var handlerRoutingIds: [MessageId: MessageId?] = [:]
+        // The registered pattern serving each running request — the pool
+        // chain released when its handler finishes (see Pools.swift).
+        var handlerPatterns: [MessageId: String] = [:]
 
         // Event queue: both incoming frames and handler-done signals arrive here.
         // This unblocks the main loop when a handler finishes even if no frames
@@ -4580,15 +4853,16 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
         // Main loop: dequeue events (frames or handler-done signals).
         mainLoop: while true {
-            // Reap finished handlers and drain the queue into freed slots.
-            runningHandlerCount = max(0, runningHandlerCount)
+            // Drain: admit the oldest queued request whose whole pool chain
+            // has room (global arrival order, see Pools.swift) into each
+            // freed slot.
+            while true {
+                poolsCell.lock.lock()
+                let queued = poolsCell.pools!.popAdmissible()
+                poolsCell.lock.unlock()
+                guard let queued else { break }
 
-            // Drain queue: spawn handlers for queued requests that now have capacity.
-            let cap = capacity.get()
-            while !requestQueue.isEmpty && (cap == 0 || runningHandlerCount < cap) {
-                let queued = requestQueue.removeFirst()
-
-                fputs("[CartridgeRuntime] dequeuing request: cap='\(queued.capUrn)' rid=\(queued.requestId) remaining_queue=\(requestQueue.count)\n", stderr)
+                fputs("[CartridgeRuntime] dequeuing request: cap='\(queued.capUrn)' rid=\(queued.requestId)\n", stderr)
 
                 // Notify the caller that this request has been dequeued and is
                 // starting. The "dequeued" level is the counterpart to "queued":
@@ -4620,7 +4894,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     feedHandles: queuedFeedHandles
                 )
                 handlerRoutingIds[queued.requestId] = queued.routingId
-                runningHandlerCount += 1
+                handlerPatterns[queued.requestId] = queued.pattern
             }
 
             guard let event = eventQueue.dequeue() else {
@@ -4630,7 +4904,14 @@ public final class CartridgeRuntime: @unchecked Sendable {
             let frame: Frame
             switch event {
             case .handlerDone(let rid):
-                runningHandlerCount -= 1
+                // Release the request's whole pool chain — the loop-top
+                // drain admits the oldest admissible queued request next
+                // iteration.
+                if let pattern = handlerPatterns.removeValue(forKey: rid) {
+                    poolsCell.lock.lock()
+                    poolsCell.pools!.release(pattern)
+                    poolsCell.lock.unlock()
+                }
                 // Release credit waiters for this request's output streams
                 // promptly (L13) — a sender blocked on credit must not hang.
                 creditRouter.closeRequest(rid: rid, reason: "END")
@@ -4684,8 +4965,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // Find Op factory (using pattern matching to support wildcards)
-                guard let factory = findHandler(capUrn: capUrn) else {
+                // Find Op factory (using pattern matching to support
+                // wildcards) and the registered pattern that won — the
+                // request's singleton pool and pool-chain key.
+                guard let (factory, pattern) = findHandlerWithPattern(capUrn: capUrn) else {
                     // A dispatched cap this binary doesn't handle is a
                     // deployment/manifest mismatch — Environment.
                     var err = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: "No handler registered for cap: \(capUrn)")
@@ -4733,31 +5016,40 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 let requestId = frame.id
                 let routingId = frame.routingId
 
-                let cap2 = capacity.get()
-                if cap2 > 0 && runningHandlerCount >= cap2 {
-                    // At capacity — queue the request, send "queued" LOG back to caller.
-                    let queuePos = requestQueue.count + 1
-                    var logFrame = Frame.log(
-                        id: requestId,
-                        level: "queued",
-                        attributionClass: .internal,
-                        message: "Request queued (position \(queuePos), \(runningHandlerCount) active)"
-                    )
-                    logFrame.routingId = routingId
-                    try? outputSender.send(logFrame)
-
-                    fputs("[CartridgeRuntime] request queued: cap='\(capUrn)' rid=\(requestId) queue_pos=\(queuePos)\n", stderr)
-
-                    requestQueue.append(QueuedRequest(
+                // Pool-chain admission (see Pools.swift): when every pool
+                // in the request's chain has room, its handler spawns
+                // immediately; otherwise it queues on its cap's singleton
+                // queue with a "queued" LOG frame — frames keep arriving
+                // into framesQueue regardless (L16).
+                poolsCell.lock.lock()
+                let admitted = poolsCell.pools!.tryAdmit(pattern)
+                var queuePos = 0
+                if !admitted {
+                    queuePos = poolsCell.pools!.enqueue(PoolQueuedRequest(
                         factory: factory,
                         capUrn: capUrn,
+                        pattern: pattern,
+                        ticket: 0, // assigned by enqueue
                         routingId: routingId,
                         requestId: requestId,
                         outputMediaUrn: outputMediaUrn,
                         frames: framesQueue
                     ))
+                }
+                poolsCell.lock.unlock()
+                if !admitted {
+                    var logFrame = Frame.log(
+                        id: requestId,
+                        level: "queued",
+                        attributionClass: .internal,
+                        message: "Request queued (position \(queuePos) on pool '\(pattern)')"
+                    )
+                    logFrame.routingId = routingId
+                    try? outputSender.send(logFrame)
+
+                    fputs("[CartridgeRuntime] request queued: cap='\(capUrn)' rid=\(requestId) queue_pos=\(queuePos) pool='\(pattern)'\n", stderr)
                 } else {
-                    // Under capacity — spawn handler immediately.
+                    // Chain has room — spawn handler immediately.
                     let feedHandles = LiveFeedHandles()
                     liveFeedHandlesByRid[requestId] = feedHandles
                     spawnHandler(
@@ -4775,7 +5067,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         feedHandles: feedHandles
                     )
                     handlerRoutingIds[requestId] = routingId
-                    runningHandlerCount += 1
+                    handlerPatterns[requestId] = pattern
                 }
                 continue
 
@@ -4791,6 +5083,30 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 if isOurProbe {
                     // Response to our health probe - host is alive, no action needed
                 } else {
+                    // The heartbeat is the capacity CONFIG channel: a probe
+                    // may carry the operator's desired `configured` values.
+                    // The whole batch is validated first — an unknown pool
+                    // refuses it all with an ERR naming it, and the probe
+                    // gets that ERR instead of a reply, so the host's
+                    // awaited apply fails precisely rather than silently.
+                    if let desiredBytes = frame.desiredCapacityBytes {
+                        do {
+                            let desired = try decodeDesired(desiredBytes)
+                            poolsCell.lock.lock()
+                            defer { poolsCell.lock.unlock() }
+                            try poolsCell.pools!.applyDesired(desired)
+                        } catch {
+                            var errFrame = Frame.err(
+                                id: frame.id,
+                                code: "UNKNOWN_POOL",
+                                attributionClass: .internal,
+                                message: "desired capacities refused: \(error)"
+                            )
+                            errFrame.routingId = frame.routingId
+                            try outputSender.send(errFrame)
+                            continue
+                        }
+                    }
                     // Host-initiated heartbeat — respond with
                     // self-reported memory. `proc_pid_rusage(getpid())`
                     // works under the cartridge sandbox (verified in
@@ -4820,7 +5136,12 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     // under their own name — an overrun is declared loss at
                     // the capture edge, never a dropped frame.
                     meta["overruns_total"] = .unsignedInt(self.liveFeedProviders.overrunsTotal)
-                    meta["handler_capacity"] = .unsignedInt(UInt64(capacity.get()))
+                    // Mandatory: the host hard-errors on a reply without it
+                    // (see Pools.swift).
+                    poolsCell.lock.lock()
+                    let poolSnapshot = poolsCell.pools!.snapshot()
+                    poolsCell.lock.unlock()
+                    meta[metaPools] = .byteString([UInt8](encodePoolStates(poolSnapshot)))
                     response.meta = meta
                     try outputSender.send(response)
                 }
@@ -5047,12 +5368,31 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // negotiates the element-wise minimum of every limit including
         // initial_credit (protocol v4). It also sends our HELLO with the
         // manifest — the ONLY way to communicate cartridge capabilities.
+        // Materialize the concurrency pools BEFORE the handshake — the
+        // HELLO carries the full pool-state map (see Pools.swift), and a
+        // declaration that does not resolve against the registered handlers
+        // is a cartridge-author bug surfaced right here, at startup.
+        handlersLock.lock()
+        let patterns = handlers.keys.sorted()
+        handlersLock.unlock()
+        let declarations = parsedManifest?.poolDeclarations ?? PoolDeclarations()
+        let materialized: RuntimePools
+        do {
+            materialized = try RuntimePools(handlerPatterns: patterns, declarations: declarations)
+        } catch {
+            throw CartridgeRuntimeError.handshakeFailed("concurrency pools: \(error)")
+        }
+        poolsCell.lock.lock()
+        poolsCell.pools = materialized
+        let poolSnapshot = materialized.snapshot()
+        poolsCell.lock.unlock()
+
         do {
             let negotiated = try acceptHandshakeWithManifest(
                 reader: reader,
                 writer: writer,
                 manifest: manifestData,
-                handlerCapacity: capacity.get()
+                poolStates: poolSnapshot
             )
             self.limits = negotiated
         } catch let error as FrameError {

@@ -251,17 +251,16 @@ public struct Frame: @unchecked Sendable {
             "max_chunk": .unsignedInt(UInt64(limits.maxChunk)),
             "max_reorder_buffer": .unsignedInt(UInt64(limits.maxReorderBuffer)),
             "initial_credit": .unsignedInt(limits.initialCredit),
-            "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
-            "handler_capacity": .unsignedInt(0)
+            "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
         ]
         return frame
     }
 
-    /// Create a HELLO frame for handshake with manifest (cartridge side)
-    /// The manifest is JSON-encoded cartridge metadata including name, version, and caps.
-    /// This is the ONLY way for cartridges to communicate their capabilities.
-    public static func helloWithManifest(limits: Limits, manifest: Data, handlerCapacity: Int) -> Frame {
-        precondition(handlerCapacity >= 0, "handler capacity must be non-negative")
+    /// Create a HELLO frame for handshake with manifest (cartridge side).
+    /// The manifest is JSON-encoded cartridge metadata including name,
+    /// version, and caps. `poolStates` is the cartridge's mandatory
+    /// concurrency-pool state map (see Pools.swift).
+    public static func helloWithManifest(limits: Limits, manifest: Data, poolStates: PoolStates) -> Frame {
         var frame = Frame(frameType: .hello, id: .uint(0))
         frame.meta = [
             "max_frame": .unsignedInt(UInt64(limits.maxFrame)),
@@ -270,7 +269,18 @@ public struct Frame: @unchecked Sendable {
             "initial_credit": .unsignedInt(limits.initialCredit),
             "version": .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
             "manifest": .byteString([UInt8](manifest)),
-            "handler_capacity": .unsignedInt(UInt64(handlerCapacity))
+            metaPools: .byteString([UInt8](encodePoolStates(poolStates)))
+        ]
+        return frame
+    }
+
+    /// A heartbeat PROBE carrying the operator's desired `configured`
+    /// values (host→cartridge). The plain probe is `Frame.heartbeat`.
+    /// (matches Rust Frame::heartbeat_with_desired)
+    public static func heartbeatWithDesired(id: MessageId, desired: DesiredCapacities) -> Frame {
+        var frame = Frame.heartbeat(id: id)
+        frame.meta = [
+            metaDesiredCapacities: .byteString([UInt8](encodeDesired(desired)))
         ]
         return frame
     }
@@ -783,12 +793,23 @@ public struct Frame: @unchecked Sendable {
         return n
     }
 
-    /// Maximum concurrent handlers advertised by a cartridge. Zero is unlimited.
-    public var helloHandlerCapacity: Int? {
-        guard frameType == .hello, let meta,
-              case .unsignedInt(let n) = meta["handler_capacity"],
-              n <= UInt64(Int.max) else { return nil }
-        return Int(n)
+    /// Extract the JSON-encoded pool-state map carried in this frame's
+    /// meta — present on the cartridge's HELLO and on every heartbeat
+    /// reply. `nil` when the frame carries no map; decoding is the
+    /// caller's boundary and fails hard there. (matches Rust
+    /// Frame::pool_state_bytes)
+    public var poolStateBytes: Data? {
+        guard let meta, case .byteString(let bytes) = meta[metaPools] else { return nil }
+        return Data(bytes)
+    }
+
+    /// Extract the JSON-encoded desired-capacities map from a heartbeat
+    /// PROBE's meta — the host delivering operator `configured` values.
+    /// (matches Rust Frame::desired_capacity_bytes)
+    public var desiredCapacityBytes: Data? {
+        guard frameType == .heartbeat, let meta,
+              case .byteString(let bytes) = meta[metaDesiredCapacities] else { return nil }
+        return Data(bytes)
     }
 
     /// Extract the protocol version declared in HELLO metadata.

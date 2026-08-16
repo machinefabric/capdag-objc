@@ -309,7 +309,11 @@ final class InProcessCartridgeHostTests: XCTestCase {
         XCTAssertEqual(payload.installedCartridges[0].id, "thumb-host")
         XCTAssertEqual(payload.installedCartridges[0].capGroups.count, 1)
         XCTAssertEqual(payload.installedCartridges[0].runtimeStats?.running, true)
-        XCTAssertEqual(payload.installedCartridges[0].runtimeStats?.handlerCapacity, 0)
+        // The pool map is the capacity surface: one at-rest unlimited
+        // singleton per advertised cap plus the mandatory `all` pool.
+        let pools = payload.installedCartridges[0].runtimeStats?.pools ?? [:]
+        XCTAssertEqual(pools[poolAll]?.configured, 0, "in-process hosts are unlimited")
+        XCTAssertNotNil(pools[CSCapIdentity])
     }
 
     // TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID
@@ -340,7 +344,13 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let resp = try! reader.read()!
         XCTAssertEqual(resp.frameType, .heartbeat)
         XCTAssertEqual(resp.id, hbId)
-        XCTAssertEqual(resp.meta?["handler_capacity"], .unsignedInt(0))
+        // The heartbeat reply's mandatory pool map replaces the retired
+        // scalar handler_capacity meta.
+        let poolBytes = resp.poolStateBytes
+        XCTAssertNotNil(poolBytes, "heartbeat reply must carry the pool map")
+        let states = try decodePoolStates(poolBytes!)
+        XCTAssertEqual(states[poolAll]?.configured, 0, "in-process hosts are unlimited")
+        XCTAssertEqual(states[poolAll]?.active, 0)
 
         testWrite.closeFile()
         testRead.closeFile()

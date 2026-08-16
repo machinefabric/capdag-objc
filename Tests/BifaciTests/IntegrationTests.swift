@@ -59,7 +59,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 cartridgeLimits = limits
                 XCTAssert(limits.maxFrame > 0)
@@ -98,7 +98,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let frame = try reader.read() else {
                     XCTFail("Expected frame")
@@ -148,7 +148,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let frame = try reader.read() else {
                     XCTFail("Expected frame")
@@ -214,7 +214,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let frame = try reader.read() else {
                     XCTFail("Expected frame")
@@ -223,7 +223,7 @@ final class CborIntegrationTests: XCTestCase {
                 XCTAssertEqual(frame.frameType, .heartbeat)
 
                 var response = Frame.heartbeat(id: frame.id)
-                response.meta = ["handler_capacity": .unsignedInt(0)]
+                response.meta = [metaPools: .byteString([UInt8](encodePoolStates([:])))]
                 try writer.write(response)
             } catch {
                 XCTFail("Cartridge thread failed: \(error)")
@@ -263,7 +263,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                cartridgeLimits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                cartridgeLimits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
             } catch {
                 XCTFail("Cartridge handshake failed: \(error)")
             }
@@ -299,7 +299,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let frame = try reader.read() else {
                     XCTFail("Expected frame")
@@ -357,7 +357,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 for _ in 0..<3 {
                     guard let frame = try reader.read() else {
@@ -409,7 +409,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let frame = try reader.read() else {
                     XCTFail("Expected frame")
@@ -466,7 +466,7 @@ final class CborIntegrationTests: XCTestCase {
                 reader.setLimits(smallLimits)
                 writer.setLimits(smallLimits)
 
-                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
                 cartridgeLimits = limits
             } catch {
                 XCTFail("Cartridge handshake failed: \(error)")
@@ -507,7 +507,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 // Read identity request
                 guard let req = try reader.read() else {
@@ -594,7 +594,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 // Read identity request
                 guard let req = try reader.read() else {
@@ -647,7 +647,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 // Read REQ
                 guard let req = try reader.read() else {
@@ -713,7 +713,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let req = try reader.read() else { return }
                 try writer.write(Frame.err(id: req.id, code: "CARTRIDGE_ERROR", attributionClass: .internal, message: "Something went wrong"))
@@ -762,7 +762,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let req = try reader.read() else { return }
                 let inputPayload = req.payload ?? Data()
@@ -813,7 +813,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 guard let req = try reader.read() else { return }
 
@@ -873,7 +873,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 // Handle two requests
                 for _ in 0..<2 {
@@ -937,7 +937,7 @@ final class CborIntegrationTests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
 
-                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, handlerCapacity: 0)
+                _ = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: testManifest, poolStates: [:])
 
                 // Close connection without responding to identity
                 cartridgeWrite.closeFile()

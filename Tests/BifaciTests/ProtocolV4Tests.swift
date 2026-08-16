@@ -92,7 +92,7 @@ final class ProtocolV4Tests: XCTestCase {
             do {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite, limits: cartridgeLimits)
-                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: v4TestManifest, handlerCapacity: 0)
+                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: v4TestManifest, poolStates: [:])
                 cartResult.set(.success(limits))
             } catch {
                 cartResult.set(.failure(error))
@@ -155,7 +155,7 @@ final class ProtocolV4Tests: XCTestCase {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
                 _ = try reader.read() // host HELLO
-                var hello = Frame.helloWithManifest(limits: Limits(), manifest: v4TestManifest, handlerCapacity: 0)
+                var hello = Frame.helloWithManifest(limits: Limits(), manifest: v4TestManifest, poolStates: [:])
                 hello.version = 2
                 hello.meta?["version"] = .unsignedInt(2)
                 try writer.write(hello)
