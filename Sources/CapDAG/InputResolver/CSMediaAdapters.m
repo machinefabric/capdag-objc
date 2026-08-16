@@ -32,6 +32,10 @@
 
 @implementation CSMediaAdapterRegistry
 
+- (NSUInteger)registeredAdapterCount {
+    return self.registeredAdapters.count;
+}
+
 - (instancetype)initWithFabricRegistry:(CSFabricRegistry *)fabricRegistry {
     self = [super init];
     if (self) {
@@ -63,8 +67,34 @@
         [newAdapters addObject:entry];
     }
 
-    // Check each new adapter against all existing registered adapters
+    // Exact re-registration is IDEMPOTENT: an adapter URN equivalent to one
+    // this same (cartridgeId, groupName) already registered is neither a
+    // conflict nor a second row — a cartridge attached through more than one
+    // hosting route (e.g. app-bundled and system-installed) is still one
+    // adapter provider, not an ambiguity with itself. The skip is logged.
+    NSMutableArray<CSRegisteredAdapter *> *freshAdapters = [[NSMutableArray alloc] init];
     for (CSRegisteredAdapter *newAdapter in newAdapters) {
+        BOOL alreadyRegistered = NO;
+        for (CSRegisteredAdapter *existing in self.registeredAdapters) {
+            if ([existing.cartridgeId isEqualToString:cartridgeId] &&
+                [existing.groupName isEqualToString:groupName] &&
+                [existing.mediaUrn isEquivalentTo:newAdapter.mediaUrn]) {
+                alreadyRegistered = YES;
+                break;
+            }
+        }
+        if (alreadyRegistered) {
+            NSLog(@"[WARN] Adapter URN '%@' of cap group '%@' is already registered by "
+                  @"cartridge '%@' — the cartridge is attached through more than one "
+                  @"hosting route; keeping the first registration and skipping this one",
+                  newAdapter.urnString, groupName, cartridgeId);
+        } else {
+            [freshAdapters addObject:newAdapter];
+        }
+    }
+
+    // Check each new adapter against all existing registered adapters
+    for (CSRegisteredAdapter *newAdapter in freshAdapters) {
         for (CSRegisteredAdapter *existing in self.registeredAdapters) {
             BOOL newConformsToExisting = [newAdapter.mediaUrn conformsTo:existing.mediaUrn];
             BOOL existingConformsToNew = [existing.mediaUrn conformsTo:newAdapter.mediaUrn];
@@ -109,8 +139,9 @@
         }
     }
 
-    // No conflicts — register atomically
-    [self.registeredAdapters addObjectsFromArray:newAdapters];
+    // No conflicts — register atomically (re-registered URNs already have
+    // their row).
+    [self.registeredAdapters addObjectsFromArray:freshAdapters];
     return YES;
 }
 

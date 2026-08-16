@@ -138,11 +138,19 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// Checks each new adapter URN against ALL existing registered URNs.
 /// If any pair has a conforms_to relationship in either direction,
 /// the entire group is rejected.
+/// Exact re-registration is IDEMPOTENT: an adapter URN equivalent to one
+/// this same (cartridgeId, groupName) already registered is neither a
+/// conflict nor a second row — a cartridge attached through more than one
+/// hosting route (e.g. app-bundled and system-installed) is still one
+/// adapter provider, not an ambiguity with itself. The skip is logged.
 /// @return YES on success, NO on conflict (error describes the conflict)
 - (BOOL)registerCapGroup:(NSString *)groupName
              adapterUrns:(NSArray<NSString *> *)adapterUrns
              cartridgeId:(NSString *)cartridgeId
                    error:(NSError **)error;
+
+/// The number of registered adapter rows (tests/diagnostics).
+@property (nonatomic, readonly) NSUInteger registeredAdapterCount;
 
 /// Find adapters that can handle candidate URNs for a given file extension.
 /// Returns array of cartridge IDs that have registered adapters matching.

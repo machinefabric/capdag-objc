@@ -530,4 +530,44 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertTrue([set isHomogeneous]);
 }
 
+// TEST1478: exact re-registration is idempotent — the SAME cartridge
+// re-registering the SAME group with the SAME adapter URNs (a cartridge
+// attached through two hosting routes, e.g. app-bundled AND
+// system-installed) is a no-op, not a self-conflict and not duplicate rows.
+// A DIFFERENT cartridge claiming the same URN stays rejected.
+- (void)test1478_exact_reregistration_is_idempotent {
+    CSMediaAdapterRegistry *adapters =
+        [[CSMediaAdapterRegistry alloc] initWithFabricRegistry:self.registry];
+
+    NSArray<NSString *> *urns = @[@"media:fmt=json", @"media:fmt=yaml"];
+    NSError *error = nil;
+    XCTAssertTrue([adapters registerCapGroup:@"text-formats"
+                                 adapterUrns:urns
+                                 cartridgeId:@"txtcartridge"
+                                       error:&error],
+                  @"first registration must succeed: %@", error);
+    XCTAssertTrue([adapters registerCapGroup:@"text-formats"
+                                 adapterUrns:urns
+                                 cartridgeId:@"txtcartridge"
+                                       error:&error],
+                  @"re-registering the identical group must be a no-op: %@", error);
+    XCTAssertEqual(adapters.registeredAdapterCount, (NSUInteger)2,
+                   @"re-registration must not duplicate adapter rows");
+
+    // A partially-new group from the same owner registers only the new URN.
+    XCTAssertTrue([adapters registerCapGroup:@"text-formats"
+                                 adapterUrns:@[@"media:fmt=json", @"media:fmt=toml"]
+                                 cartridgeId:@"txtcartridge"
+                                       error:&error],
+                  @"known URNs skip, new URNs register: %@", error);
+    XCTAssertEqual(adapters.registeredAdapterCount, (NSUInteger)3);
+
+    // Another cartridge claiming an identical URN is still ambiguity.
+    XCTAssertFalse([adapters registerCapGroup:@"text-formats"
+                                  adapterUrns:@[@"media:fmt=json"]
+                                  cartridgeId:@"other"
+                                        error:&error],
+                   @"an identical URN from a DIFFERENT cartridge must stay rejected");
+}
+
 @end
