@@ -329,16 +329,24 @@ internal func resolveLocalCartridgeRecord(cartridgeDir: String) -> LocalCartridg
 ///     contract; an unknown variant here means the function evolved
 ///     and this site didn't keep up — a programmer-broken
 ///     invariant we want to surface.
+/// `hash` is how the directory's content hash is obtained: by default the
+/// directory is hashed here, once per call; a host that advertises the record
+/// on every RelayNotify passes its per-cartridge memo instead (see
+/// `ManagedCartridge.directoryHash`), because hashing a gigabyte of model
+/// cartridge on every republish — under the host lock, on the host loop — was
+/// what starved the loop of death and frame events for tens of seconds at a
+/// time. The reference host (`host_runtime.rs`) hashes once at registration.
 internal func buildInstalledCartridgeRecord(
     cartridgeDir: String,
-    attachmentError: CartridgeAttachmentError?
+    attachmentError: CartridgeAttachmentError?,
+    hash: (String) throws -> String = { try computeCartridgeDirectoryHash(atPath: $0) }
 ) -> InstalledCartridgeRecord? {
     guard let identity = resolveLocalCartridgeRecord(cartridgeDir: cartridgeDir) else {
         return nil
     }
 
     if let error = attachmentError {
-        let sha256 = (try? computeCartridgeDirectoryHash(atPath: cartridgeDir)) ?? ""
+        let sha256 = (try? hash(cartridgeDir)) ?? ""
         return InstalledCartridgeRecord(
             registryURL: identity.registryURL,
             id: identity.id,
@@ -355,7 +363,7 @@ internal func buildInstalledCartridgeRecord(
 
     let sha256: String
     do {
-        sha256 = try computeCartridgeDirectoryHash(atPath: cartridgeDir)
+        sha256 = try hash(cartridgeDir)
     } catch let error as CartridgeDirectoryHashError {
         return InstalledCartridgeRecord(
             registryURL: identity.registryURL,
@@ -669,6 +677,37 @@ private class ManagedCartridge {
     /// verified / attached this cartridge).
     var lifecycle: CartridgeLifecycle
     var readerThread: Thread?
+    /// The cartridge's stderr, drained CONTINUOUSLY by `stderrThread` while
+    /// the process lives (the reference host forwards it line by line). A
+    /// pipe nobody reads fills its 64 KiB buffer and then blocks the
+    /// cartridge's next write — inside whatever it was doing, a capture
+    /// loop included — and a cartridge that only writes stderr at death
+    /// was the only case the old read-at-death ever covered. The tail is
+    /// what the death report quotes; each line is also logged as it arrives
+    /// so a living cartridge's complaints are visible at all.
+    let stderrTailLock = NSLock()
+    var stderrTail = ""
+    var stderrThread: Thread?
+
+    static let stderrTailLimit = 2000
+
+    func appendStderr(_ line: String) {
+        stderrTailLock.lock()
+        stderrTail += line
+        if !line.hasSuffix("\n") { stderrTail += "\n" }
+        if stderrTail.count > Self.stderrTailLimit {
+            stderrTail = String(stderrTail.suffix(Self.stderrTailLimit))
+        }
+        stderrTailLock.unlock()
+    }
+
+    func takeStderrTail() -> String {
+        stderrTailLock.lock()
+        let tail = stderrTail
+        stderrTail = ""
+        stderrTailLock.unlock()
+        return tail
+    }
     var pendingHeartbeats: [MessageId: Date]
     /// Last death error message (includes stderr if available). Used for ERR frames
     /// sent when attempting to write to a dead cartridge.
@@ -742,6 +781,22 @@ private class ManagedCartridge {
     /// `installedCartridgeRecord()` into RelayNotify.
     var attachmentError: CartridgeAttachmentError?
 
+    /// The install directory's content hash, computed ONCE per process
+    /// lifetime (cleared on spawn so a re-spawn re-reads the install it is
+    /// actually launching — the reference host hashes once at registration).
+    /// `installedCartridgeRecord()` runs on every RelayNotify rebuild, under
+    /// the host lock, on the host loop; re-hashing a model cartridge there
+    /// (a gigabyte on a real install) took tens of seconds per rebuild and
+    /// starved the loop of the death and frame events it exists to serve.
+    var directoryHash: String?
+
+    func directoryHashMemo(_ dir: String) throws -> String {
+        if let hash = directoryHash { return hash }
+        let hash = try computeCartridgeDirectoryHash(atPath: dir)
+        directoryHash = hash
+        return hash
+    }
+
     func installedCartridgeRecord() -> InstalledCartridgeRecord? {
         if isRemoved {
             return nil
@@ -775,7 +830,8 @@ private class ManagedCartridge {
         } else {
             guard let dirRecord = buildInstalledCartridgeRecord(
                 cartridgeDir: cartridgeDir,
-                attachmentError: attachmentError
+                attachmentError: attachmentError,
+                hash: { try directoryHashMemo($0) }
             ) else {
                 return nil
             }
@@ -2668,27 +2724,16 @@ public final class CartridgeHost: @unchecked Sendable {
         }
         cartridge.readerThread = nil
 
-        // Now that the process is dead, read stderr — readToEnd will get
-        // EOF immediately since the write end is closed.
-        var stderrContent = ""
+        // The stderr drain thread has been reading all along; its tail is
+        // the death report. No `readToEnd` here: it would block for as long
+        // as ANY holder of the pipe's write end lives (a grandchild the
+        // cartridge spawned, say), under the host lock.
+        let stderrContent = cartridge.takeStderrTail()
         if let stderrHandle = cartridge.stderrHandle {
-            var allData = Data()
-            if let data = try? stderrHandle.readToEnd(), !data.isEmpty {
-                allData = data
-            }
-            if !allData.isEmpty {
-                if let text = String(data: allData, encoding: .utf8) {
-                    let maxLen = 2000
-                    if text.count > maxLen {
-                        stderrContent = String(text.prefix(maxLen)) + "... [truncated]"
-                    } else {
-                        stderrContent = text
-                    }
-                }
-            }
             try? stderrHandle.close()
             cartridge.stderrHandle = nil
         }
+        cartridge.stderrThread = nil
 
         // stdin handle is owned by `cartridge.writer` and was already
         // closed in lockstep above when we transitioned the writer to
@@ -2886,6 +2931,43 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridges[cartridgeIdx].readerThread = thread
         stateLock.unlock()
 
+        thread.start()
+    }
+
+    /// Drain a cartridge's stderr for its whole life, line by line, into the
+    /// cartridge's bounded tail and the host log. Ends at EOF (the process
+    /// closed stderr — normally at death) or when the handle is closed by the
+    /// death path. Mirrors the reference host's stderr forwarding task.
+    private func startCartridgeStderrThread(cartridgeIdx: Int, cartridge: ManagedCartridge, handle: FileHandle) {
+        let name = (cartridge.path as NSString).lastPathComponent
+        let thread = Thread {
+            var pending = Data()
+            while true {
+                let chunk: Data = autoreleasepool {
+                    (try? handle.read(upToCount: 65_536)) ?? Data()
+                }
+                if chunk.isEmpty { break }
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: 0x0A) {
+                    let lineData = pending.subdata(in: pending.startIndex..<newline)
+                    pending.removeSubrange(pending.startIndex...newline)
+                    let line = String(decoding: lineData, as: UTF8.self)
+                    if !line.isEmpty {
+                        cartridge.appendStderr(line)
+                        os_log(.info, log: Self.log, "[cartridge stderr] %{public}@: %{public}@", name, line)
+                    }
+                }
+            }
+            if !pending.isEmpty {
+                let line = String(decoding: pending, as: UTF8.self)
+                cartridge.appendStderr(line)
+                os_log(.info, log: Self.log, "[cartridge stderr] %{public}@: %{public}@", name, line)
+            }
+        }
+        thread.name = "CartridgeHost.cartridge[\(cartridgeIdx)].stderr"
+        stateLock.lock()
+        cartridge.stderrThread = thread
+        stateLock.unlock()
         thread.start()
     }
 
@@ -3401,6 +3483,8 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.lock()
         let cartridge = cartridges[idx]
         cartridge.pid = pid
+        // A fresh process from the install directory: hash what was launched.
+        cartridge.directoryHash = nil
         cartridge.stdoutHandle = stdoutHandle
         cartridge.stderrHandle = stderrHandle
         cartridge.writerLock.lock()
@@ -3433,6 +3517,7 @@ public final class CartridgeHost: @unchecked Sendable {
 
         // Start reader thread
         startCartridgeReaderThread(cartridgeIdx: idx, generation: generation, reader: reader)
+        startCartridgeStderrThread(cartridgeIdx: idx, cartridge: cartridge, handle: stderrHandle)
 
         // Notify lifecycle observer (XPC reverse-callback bridge, etc.).
         // No-op when no observer is registered.

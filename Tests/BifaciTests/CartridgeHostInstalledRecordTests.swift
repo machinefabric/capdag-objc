@@ -453,4 +453,46 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         XCTAssertEqual(records.count, 1, "retired installs vanish from the inventory")
         XCTAssertEqual(records[0].id, "rejectedcart")
     }
+
+    // TEST1952: the record builder takes the directory hash from its caller
+    // instead of hashing on every call — `rebuildCapabilities` runs on every
+    // RelayNotify republish, under the host lock, on the host loop, and
+    // re-hashing a gigabyte of model cartridge there starved the loop of the
+    // death and frame events it exists to serve. The host's per-cartridge
+    // memo (`ManagedCartridge.directoryHashMemo`) feeds this parameter and
+    // hashes once per process lifetime, as the reference host hashes once at
+    // registration.
+    func test1952_installedRecordTakesTheHashFromItsCaller() throws {
+        let dir = try makeManagedCartridgeAnchor(name: "oncecart", version: "1.0.0")
+        defer { try? FileManager.default.removeItem(at: slugRoot(of: dir)) }
+
+        var hashCalls = 0
+        var memo: String?
+        let memoised: (String) throws -> String = { path in
+            if let memo { return memo }
+            hashCalls += 1
+            let hash = try computeCartridgeDirectoryHash(atPath: path)
+            memo = hash
+            return hash
+        }
+        let first = try XCTUnwrap(buildInstalledCartridgeRecord(cartridgeDir: dir.path, attachmentError: nil, hash: memoised))
+        let second = try XCTUnwrap(buildInstalledCartridgeRecord(cartridgeDir: dir.path, attachmentError: nil, hash: memoised))
+        let third = try XCTUnwrap(buildInstalledCartridgeRecord(
+            cartridgeDir: dir.path,
+            attachmentError: .now(kind: .handshakeFailed, message: "HELLO refused"),
+            hash: memoised
+        ))
+        XCTAssertEqual(hashCalls, 1, "three records, one hash")
+        XCTAssertFalse(first.sha256.isEmpty)
+        XCTAssertEqual(second.sha256, first.sha256)
+        XCTAssertEqual(third.sha256, first.sha256, "a rejected record quotes the same content hash")
+        XCTAssertEqual(third.attachmentError?.kind, .handshakeFailed)
+
+        // A hash the caller cannot produce is the same per-cartridge failure
+        // record it always was — never a process abort.
+        let failing: (String) throws -> String = { _ in throw CartridgeDirectoryHashError.directoryUnreadable(path: dir.path) }
+        let failed = try XCTUnwrap(buildInstalledCartridgeRecord(cartridgeDir: dir.path, attachmentError: nil, hash: failing))
+        XCTAssertEqual(failed.sha256, "")
+        XCTAssertEqual(failed.attachmentError?.kind, .entryPointMissing)
+    }
 }
