@@ -1,161 +1,86 @@
-# Cap URN - Objective-C Implementation
+# CapDAG for Swift and Objective-C
 
-Objective-C implementation of Cap URN (Capability Uniform Resource Names), built on [Tagged URN](https://github.com/machinefabric/tagged-urn-objc).
+This public Swift package is CapDAG's Apple-platform mirror. The `CapDAG`
+product exposes Objective-C-compatible URN, definition, dispatch, registry, and
+planning APIs. The `Bifaci` product supplies Swift protocol, stream, cartridge,
+host, and relay runtime components. The package also builds the `capdag` CLI.
 
-## Features
+Rust is the behavioral reference. Applicable shared numbered tests have the
+same meaning and assertions in the Apple mirror.
 
-- **Required Direction Specifiers** - `in`/`out` tags for input/output media types
-- **Media URN Validation** - Validates direction spec values are valid Media URNs
-- **Special Pattern Values** - `*` (must-have-any), `?` (unspecified), `!` (must-not-have)
-- **Graded Specificity** - Exact values score higher than wildcards
-- **Swift Compatible** - Full Swift interoperability via Objective-C bridge
-- **NSSecureCoding** - Secure serialization support
-- **Cap Definitions** - Full capability definitions with arguments, output, and metadata
-- **Cap Matrix** - Registry for capability lookup and matching
-- **Schema Validation** - JSON Schema validation for arguments and outputs
-
-## Installation
-
-### Swift Package Manager
+## Add the package
 
 ```swift
-// Package.swift
 dependencies: [
-    .package(url: "https://github.com/machinefabric/capdag-objc.git", from: "1.0.0")
+    .package(
+        url: "https://github.com/machinefabric/capdag-objc.git",
+        from: "1.426.15"
+    )
 ]
 ```
 
-### Manual
+The package supports macOS 13 or newer and iOS 16 or newer. Import `CapDAG` for
+the core APIs and `Bifaci` for runtime components.
 
-Add the `Sources/CapDAG` directory to your Xcode project.
-
-## Quick Start
-
-### Objective-C
-
-```objc
-#import <CapDAG/CSCapUrn.h>
-
-// Parse a Cap URN
-NSError *error = nil;
-CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=\"media:binary\";extract;out=\"media:object\"" error:&error];
-if (cap) {
-    NSLog(@"Input: %@", cap.inSpec);                                          // "media:binary"
-    NSLog(@"Output: %@", cap.outSpec);                                        // "media:object"
-    NSLog(@"Has extract marker: %@", [cap hasMarkerTag:@"extract"] ? @"YES" : @"NO");
-}
-
-// Build a Cap URN
-CSCapUrn *built = [[[[CSCapUrnBuilder builder]
-    inSpec:@"media:void"]
-    outSpec:@"media:object"]
-    marker:@"generate"]
-    build:&error];
-
-// Check matching
-CSCapUrn *pattern = [CSCapUrn fromString:@"cap:in=\"media:binary\";extract;out=\"media:object\"" error:&error];
-if ([cap accepts:pattern]) {
-    NSLog(@"Cap accepts pattern");
-}
-```
-
-### Swift
+## Parse and build Cap URNs
 
 ```swift
 import CapDAG
 
-// Parse a Cap URN
-do {
-    let cap = try CSCapUrn.fromString("cap:in=\"media:binary\";extract;out=\"media:object\"")
-    print("Input: \(cap.inSpec)")        // "media:binary"
-    print("Output: \(cap.outSpec)")      // "media:object"
-    print("Has extract marker: \(cap.hasMarkerTag("extract"))")
-} catch {
-    print("Parse error: \(error)")
-}
-
-// Build a Cap URN
-let built = try CSCapUrnBuilder.builder()
-    .inSpec("media:void")
-    .outSpec("media:object")
-    .marker("generate")
+let parsed = try CSCapUrn.fromString(
+    "cap:disbind;in=\"media:ext=pdf\";out=\"media:enc=utf-8;page\""
+)
+let built = try CSCapUrnBuilder()
+    .inSpec("media:ext=pdf")
+    .outSpec("media:enc=utf-8;page")
+    .marker("disbind")
     .build()
 
-// Check matching
-let pattern = try CSCapUrn.fromString("cap:in=\"media:binary\";extract;out=\"media:object\"")
-if cap.accepts(pattern) {
-    print("Cap accepts pattern")
-}
+precondition(parsed.toString() == built.toString())
 ```
 
-## API Reference
+The Objective-C surface provides the corresponding `fromString:error:`,
+builder, and predicate APIs. CapDAG objects support the Foundation coding and
+copying behavior declared by their public headers, including secure coding
+where the type declares it.
 
-### CSCapUrn
+Treat URNs as opaque parsed values. Use CapDAG predicates for equivalence,
+conformance, dispatch, and ranking rather than raw string comparison.
 
-| Method | Description |
-|--------|-------------|
-| `+fromString:error:` | Parse Cap URN from string |
-| `+fromTags:error:` | Create from tag dictionary (must include in/out) |
-| `-getInSpec` | Get input media URN |
-| `-getOutSpec` | Get output media URN |
-| `-getTag:` | Get value for a tag key |
-| `-withTag:value:` | Return new CapUrn with tag added/updated |
-| `-withInSpec:` | Return new CapUrn with changed input spec |
-| `-withOutSpec:` | Return new CapUrn with changed output spec |
-| `-accepts:` | Check if Cap (as pattern) accepts a request |
-| `-specificity` | Get graded specificity score |
-| `-toString` | Get canonical string representation |
+## Find the relevant API
 
-### CSCapUrnBuilder
+- `Sources/CapDAG/` and its public headers define the core Objective-C bridge.
+- `Sources/Bifaci/` defines frames, streams, flow control, runtimes, hosts, and
+  relay components in Swift.
+- `Sources/capdag-cli/` provides the command-line entry.
+- DocC and source comments beside public declarations are the language-specific
+  API reference.
 
-| Method | Description |
-|--------|-------------|
-| `+builder` | Create a new builder |
-| `-inSpec:` | Set input media URN (required) |
-| `-outSpec:` | Set output media URN (required) |
-| `-tag:value:` | Add or update a tag (chainable) |
-| `-build:` | Build the CapUrn (returns nil on error) |
+The normative shared rules live in the
+[CapDAG specification](https://github.com/machinefabric/capdag/blob/main/docs/01-overview.md).
 
-## Matching Semantics
+## Scaffold a Swift cartridge
 
-| Pattern | Instance Missing | Instance=v | Instance=x (x≠v) |
-|---------|------------------|------------|------------------|
-| (missing) or `?` | Match | Match | Match |
-| `K=!` | Match | No Match | No Match |
-| `K=*` | No Match | Match | Match |
-| `K=v` | No Match | Match | No Match |
+```bash
+capdag new sentiment-tagger --swift
+cd sentiment-tagger
+swift build -c release
+capdag dev-install .
+echo "I love this" | capdag sentiment-tagger
+```
 
-## Graded Specificity
+See [Build and Run a Cartridge](https://github.com/machinefabric/capdag/blob/main/docs/18.2-getting-started-cartridge-development.md)
+for the complete development loop.
 
-| Value Type | Score |
-|------------|-------|
-| Exact value (`K=v`) | 3 |
-| Must-have-any (`K=*`) | 2 |
-| Must-not-have (`K=!`) | 1 |
-| Unspecified (`K=?`) or missing | 0 |
-
-## Error Codes
-
-| Code | Name | Description |
-|------|------|-------------|
-| 10 | MissingInSpec | Missing required `in` tag |
-| 11 | MissingOutSpec | Missing required `out` tag |
-
-For base Tagged URN error codes, see [Tagged URN documentation](https://github.com/machinefabric/tagged-urn-objc).
-
-## Testing
+## Verify changes
 
 ```bash
 swift test
 ```
 
-## Cross-Language Compatibility
+Shared behavior changes require the applicable reference test with the same
+substantive number and assertions.
 
-This Objective-C implementation produces identical results to:
-- [Rust reference implementation](https://github.com/machinefabric/capdag)
-- [Go implementation](https://github.com/machinefabric/capdag-go)
-- [JavaScript implementation](https://github.com/machinefabric/capdag-js)
+## License
 
-All implementations follow the same rules. See:
-- [Cap URN RULES.md](https://github.com/machinefabric/capdag/blob/main/docs/RULES.md) - Cap-specific rules
-- [Tagged URN RULES.md](https://github.com/machinefabric/tagged-urn-rs/blob/main/docs/RULES.md) - Base format rules
+MIT

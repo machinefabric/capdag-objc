@@ -6,7 +6,7 @@ This document describes the comprehensive JSON Schema validation system implemen
 
 The JSON Schema validation system provides Draft-7 compliant validation for:
 - **Media validation**: Validates structured input arguments (objects and arrays) against JSON schemas
-- **Output validation**: Validates structured outputs against JSON schemas  
+- **Output validation**: Validates structured outputs against JSON schemas
 - **Schema references**: Supports both embedded schemas and external schema file references
 - **Integration**: Seamlessly integrates with the existing CSCapValidator system
 - **Performance**: Includes schema caching for improved validation performance
@@ -47,7 +47,7 @@ Extended `CSCapArgument` and `CSCapOutput` with schema support.
 @property (nonatomic, readonly, nullable) NSString *schemaRef;
 @property (nonatomic, readonly, nullable) NSDictionary *schema;
 
-// Enhanced CSCapOutput with schema fields  
+// Enhanced CSCapOutput with schema fields
 @property (nonatomic, readonly, nullable) NSString *schemaRef;
 @property (nonatomic, readonly, nullable) NSDictionary *schema;
 ```
@@ -71,7 +71,7 @@ NSDictionary *userSchema = @{
 // Create argument with embedded schema
 CSCapArgument *userArg = [CSCapArgument argumentWithName:@"user_data"
                                                  argType:CSArgumentTypeObject
-                                           argDescription:@"User data object" 
+                                           argDescription:@"User data object"
                                                  cliFlag:@"--user"
                                                   schema:userSchema];
 
@@ -173,7 +173,7 @@ BOOL isValid = [validator validateArgument:argument withValue:invalidData error:
 
 if (!isValid && [error isKindOfClass:[CSSchemaValidationError class]]) {
     CSSchemaValidationError *schemaError = (CSSchemaValidationError *)error;
-    
+
     NSLog(@"Schema validation failed:");
     NSLog(@"  Type: %ld", (long)schemaError.schemaErrorType);
     NSLog(@"  Argument: %@", schemaError.argumentName);
@@ -183,7 +183,7 @@ if (!isValid && [error isKindOfClass:[CSSchemaValidationError class]]) {
 
 Error types include:
 - `CSSchemaValidationErrorTypeMediaValidation`: Argument failed schema validation
-- `CSSchemaValidationErrorTypeOutputValidation`: Output failed schema validation  
+- `CSSchemaValidationErrorTypeOutputValidation`: Output failed schema validation
 - `CSSchemaValidationErrorTypeSchemaCompilation`: Schema parsing/compilation failed
 - `CSSchemaValidationErrorTypeSchemaRefNotResolved`: External schema reference not found
 - `CSSchemaValidationErrorTypeInvalidJson`: Invalid JSON format
@@ -240,7 +240,7 @@ NSDictionary *complexSchema = @{
     @"type": @"object",
     @"properties": @{
         @"metadata": @{
-            @"type": @"object", 
+            @"type": @"object",
             @"properties": @{
                 @"version": @{@"type": @"string", @"pattern": @"^\\d+\\.\\d+\\.\\d+$"}
             },
@@ -313,7 +313,7 @@ capdag-objc/
 
 - **JSON Schema Draft-7**: Full support for core validation keywords
 - **RFC 3339**: Date-time format validation
-- **RFC 3986**: URI format validation  
+- **RFC 3986**: URI format validation
 - **Unicode**: Full Unicode string support
 - **IEEE 754**: Numeric validation compliance
 

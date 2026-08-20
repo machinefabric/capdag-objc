@@ -2500,7 +2500,7 @@ public final class RelaySwitch: @unchecked Sendable {
         // Caps stay a Set<String> — strings are Hashable. Installed
         // cartridges, on the other hand, can no longer be Hashable
         // (their `capGroups` carry CapDefinitions whose URNs are
-        // 3D mixed-variance partial orders — see capdag/docs/02 §18.5
+        // 3D mixed-variance partial orders — see capdag/docs/02-formal-foundations.md §18.5
         // on why Cap URNs intentionally have no total/Hashable order).
         // We dedupe by identity tuple manually using a dictionary
         // keyed by `(registryURL, channel, id, version, sha256)`,
@@ -2878,7 +2878,7 @@ public enum CartridgeLifecycle: String, Codable, Hashable, Sendable {
 /// refinement). Cap URNs are intentionally NOT one-dimensional and
 /// have no canonical structural equality or hash beyond exact byte
 /// identity of the canonical form (which would conflate equivalent
-/// URNs that differ only in tag order). See `capdag/docs/02-FORMAL-FOUNDATIONS.md`
+/// URNs that differ only in tag order). See `capdag/docs/02-formal-foundations.md`
 /// §18.5 — "treating Cap URNs as one-dimensional" is a documented
 /// failure mode.
 ///
