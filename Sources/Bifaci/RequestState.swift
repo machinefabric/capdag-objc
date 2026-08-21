@@ -292,6 +292,52 @@ public struct TerminatedSummary: Codable, Sendable {
         case cancelClass = "cancel_class"
         case cancelReason = "cancel_reason"
     }
+
+    // Hand-written because `Ops.AttributionClass` is not Codable: its wire form
+    // is the raw token, exactly as the snapshot contract writes it on every
+    // other side. An unknown token is refused, never defaulted.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        xid = try c.decode(String.self, forKey: .xid)
+        rid = try c.decode(String.self, forKey: .rid)
+        kind = try c.decode(TerminalKind.self, forKey: .kind)
+        isPeer = try c.decode(Bool.self, forKey: .isPeer)
+        capUrn = try c.decodeIfPresent(String.self, forKey: .capUrn)
+        lifetimeMs = try c.decode(UInt64.self, forKey: .lifetimeMs)
+        framesIn = try c.decode(UInt64.self, forKey: .framesIn)
+        framesOut = try c.decode(UInt64.self, forKey: .framesOut)
+        bytesIn = try c.decode(UInt64.self, forKey: .bytesIn)
+        bytesOut = try c.decode(UInt64.self, forKey: .bytesOut)
+        cancelCode = try c.decodeIfPresent(String.self, forKey: .cancelCode)
+        if let token = try c.decodeIfPresent(String.self, forKey: .cancelClass) {
+            guard let klass = AttributionClass(rawValue: token) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .cancelClass, in: c,
+                    debugDescription: "unknown attribution_class \(token)")
+            }
+            cancelClass = klass
+        } else {
+            cancelClass = nil
+        }
+        cancelReason = try c.decodeIfPresent(String.self, forKey: .cancelReason)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(xid, forKey: .xid)
+        try c.encode(rid, forKey: .rid)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(isPeer, forKey: .isPeer)
+        try c.encodeIfPresent(capUrn, forKey: .capUrn)
+        try c.encode(lifetimeMs, forKey: .lifetimeMs)
+        try c.encode(framesIn, forKey: .framesIn)
+        try c.encode(framesOut, forKey: .framesOut)
+        try c.encode(bytesIn, forKey: .bytesIn)
+        try c.encode(bytesOut, forKey: .bytesOut)
+        try c.encodeIfPresent(cancelCode, forKey: .cancelCode)
+        try c.encodeIfPresent(cancelClass?.rawValue, forKey: .cancelClass)
+        try c.encodeIfPresent(cancelReason, forKey: .cancelReason)
+    }
 }
 
 // MARK: - RequestTable
@@ -618,7 +664,7 @@ public struct RequestSnapshot: Codable, Sendable {
         try c.encode(isPeer, forKey: .isPeer)
         // Rust serializes `Option::None` as an explicit null — keep the key
         // present so the field-name contract holds for unattributed requests.
-        try c.encode(capUrn, forKey: .capUrn)
+        try c.encodeIfPresent(capUrn, forKey: .capUrn)
         // Explicit null for the external-caller case — the key is part of
         // the field-name contract (mirrors serde's Option serialization).
         try c.encode(originMaster, forKey: .originMaster)
