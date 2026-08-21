@@ -327,7 +327,38 @@
     return arg;
 }
 
+/// The definition's keys — what every capdag mirror's CapArg / CapOutput
+/// carries. A key a dictionary carries that is not here is a fabric NEWER than
+/// this capdag — a contract this build cannot honour. Dropping it would let a
+/// cartridge advertise a contract the fabric never made (this is how a
+/// `streaming` argument once went out as bounded); it is refused, named.
+/// (matches Rust `deny_unknown_fields`)
+static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *known, NSString *what,
+                                NSString *domain, NSError **error) {
+    NSMutableArray<NSString *> *unknown = [NSMutableArray array];
+    for (NSString *key in dictionary) {
+        if (![known containsObject:key]) [unknown addObject:key];
+    }
+    if (unknown.count == 0) return YES;
+    [unknown sortUsingSelector:@selector(compare:)];
+    if (error) {
+        NSString *message = [NSString stringWithFormat:
+            @"%@ carries field(s) this capdag does not know: %@ — the definition comes from a fabric newer than this capdag; the contract is %@",
+            what, [unknown componentsJoinedByString:@", "],
+            [[known.allObjects sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@", "]];
+        *error = [NSError errorWithDomain:domain code:1099 userInfo:@{NSLocalizedDescriptionKey: message}];
+    }
+    return NO;
+}
+
 + (nullable instancetype)argWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
+    static NSSet<NSString *> *known;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        known = [NSSet setWithArray:@[@"media_urn", @"required", @"sources", @"arg_description",
+                                      @"default_value", @"metadata", @"is_sequence", @"streaming"]];
+    });
+    if (!CSRefuseUnknownKeys(dictionary, known, @"cap argument", @"CSCapArgError", error)) return nil;
     // Required: media_urn
     NSString *mediaUrn = dictionary[@"media_urn"];
     if (!mediaUrn) {
@@ -613,6 +644,12 @@
 }
 
 + (instancetype)outputWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
+    static NSSet<NSString *> *known;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        known = [NSSet setWithArray:@[@"media_urn", @"output_description", @"metadata", @"is_sequence", @"streaming"]];
+    });
+    if (!CSRefuseUnknownKeys(dictionary, known, @"cap output", @"CSCapOutputError", error)) return nil;
     NSString *mediaUrn = dictionary[@"media_urn"];
     NSString *outputDescription = dictionary[@"output_description"];
     NSNumber *isSequenceValue = dictionary[@"is_sequence"];

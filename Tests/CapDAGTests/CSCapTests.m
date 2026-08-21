@@ -1305,6 +1305,35 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertTrue([error.localizedDescription containsString:@"media:integer;numeric"], @"%@", error);
 }
 
+// TEST1964: a definition field this capdag does not know is a NEWER fabric,
+// not noise — parsing refuses it, naming the key, for arguments and outputs
+// alike. The field being dropped is how a cartridge built on an older capdag
+// once advertised a `streaming` input as bounded.
+- (void)test1964_unknownDefinitionFieldIsRefused {
+    NSError *error = nil;
+    CSCapArg *arg = [CSCapArg argWithDictionary:@{
+        @"media_urn": @"media:enc=utf-8", @"required": @YES,
+        @"sources": @[@{@"stdin": @"media:enc=utf-8"}], @"chunking": @"adaptive",
+    } error:&error];
+    XCTAssertNil(arg, @"an unknown arg field must be refused");
+    XCTAssertTrue([error.localizedDescription containsString:@"chunking"], @"%@", error);
+
+    error = nil;
+    CSCapArg *known = [CSCapArg argWithDictionary:@{
+        @"media_urn": @"media:enc=utf-8", @"required": @YES,
+        @"sources": @[@{@"stdin": @"media:enc=utf-8"}], @"streaming": @YES,
+    } error:&error];
+    XCTAssertNotNil(known, @"%@", error);
+    XCTAssertTrue(known.streaming);
+
+    error = nil;
+    CSCapOutput *output = [CSCapOutput outputWithDictionary:@{
+        @"media_urn": @"media:enc=utf-8", @"output_description": @"x", @"windowed": @YES,
+    } error:&error];
+    XCTAssertNil(output, @"an unknown output field must be refused");
+    XCTAssertTrue([error.localizedDescription containsString:@"windowed"], @"%@", error);
+}
+
 // TEST8066: a void-input cap has scalar input cardinality without inventing an arg.
 - (void)test8066_voidInputSequenceShapeIsScalarWithoutArguments {
     NSError *error = nil;
