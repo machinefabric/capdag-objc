@@ -555,19 +555,22 @@ static CSFabricRegistry *testFabricRegistry(void) {
                    @"re-registration must not duplicate adapter rows");
 
     // A partially-new group from the same owner registers only the new URN.
-    XCTAssertTrue([adapters registerCapGroup:@"text-formats"
-                                 adapterUrns:@[@"media:fmt=json", @"media:fmt=toml"]
-                                 cartridgeId:@"txtcartridge"
-                                       error:&error],
-                  @"known URNs skip, new URNs register: %@", error);
+    // (Array literals are hoisted: a comma inside a macro argument splits it.)
+    NSArray<NSString *> *partiallyNew = @[@"media:fmt=json", @"media:fmt=toml"];
+    BOOL partialOk = [adapters registerCapGroup:@"text-formats"
+                                    adapterUrns:partiallyNew
+                                    cartridgeId:@"txtcartridge"
+                                          error:&error];
+    XCTAssertTrue(partialOk, @"known URNs skip, new URNs register: %@", error);
     XCTAssertEqual(adapters.registeredAdapterCount, (NSUInteger)3);
 
     // Another cartridge claiming an identical URN is still ambiguity.
-    XCTAssertFalse([adapters registerCapGroup:@"text-formats"
-                                  adapterUrns:@[@"media:fmt=json"]
+    NSArray<NSString *> *claimed = @[@"media:fmt=json"];
+    BOOL otherOk = [adapters registerCapGroup:@"text-formats"
+                                  adapterUrns:claimed
                                   cartridgeId:@"other"
-                                        error:&error],
-                   @"an identical URN from a DIFFERENT cartridge must stay rejected");
+                                        error:&error];
+    XCTAssertFalse(otherOk, @"an identical URN from a DIFFERENT cartridge must stay rejected");
 }
 
 @end
