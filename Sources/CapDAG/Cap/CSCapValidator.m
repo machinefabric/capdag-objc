@@ -9,6 +9,7 @@
 #import "CSCapValidator.h"
 #import "CSSchemaValidator.h"
 #import "CSMediaDef.h"
+#import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 
 // Error domain
@@ -918,6 +919,25 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                 return NO;
             }
             [cliFlags addObject:argCliFlag];
+        }
+    }
+
+    // RULE14: Only the main input may stream. `streaming` declares that an
+    // argument is consumed without a length promise — a feed. Side arguments
+    // (options, model specs, prompts alongside the main input) are values the
+    // runtime demuxes whole; a feed there has no meaning and would let an
+    // unbounded stream reach a collector that must refuse it (L16).
+    NSError *inError = nil;
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:[cap.capUrn getInSpec] error:&inError];
+    if (inSpec) {
+        for (CSCapArg *arg in allArgs) {
+            if (arg.streaming && ![arg isMainInputForInSpec:inSpec]) {
+                if (error) {
+                    NSString *issue = [NSString stringWithFormat:@"RULE14: Argument '%@' declares streaming=true but is not the main input (no stdin source equivalent to in='%@') — only the main input may be consumed without a length promise", arg.mediaUrn, [cap.capUrn getInSpec]];
+                    *error = [CSValidationError invalidCapSchemaError:capUrn issue:issue];
+                }
+                return NO;
+            }
         }
     }
 

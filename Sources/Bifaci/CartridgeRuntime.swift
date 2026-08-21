@@ -2030,6 +2030,7 @@ internal func demuxMultiStream(
                     }
                     do {
                         let feedStream = try ctx.resolve(
+                            streamId: streamId,
                             referenceUrn: accumulated.referenceUrn,
                             selectorBytes: selectorBytes
                         )
@@ -4709,7 +4710,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         var pendingIncoming: [MessageId: PendingIncomingRequest] = [:]
         let pendingIncomingLock = NSLock()
 
-        var cancelledRequests = Set<MessageId>()
+        var cancelledRequests: [MessageId: CancelReason] = [:]
         var handlerRoutingIds: [MessageId: MessageId?] = [:]
         // The registered pattern serving each running request — the pool
         // chain released when its handler finishes (see Pools.swift).
@@ -4933,9 +4934,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 if let feeds = liveFeedHandlesByRid.removeValue(forKey: rid) {
                     feeds.closeAll()
                 }
-                if cancelledRequests.remove(rid) != nil {
+                if let reason = cancelledRequests.removeValue(forKey: rid) {
                     let routingId = handlerRoutingIds.removeValue(forKey: rid) ?? nil
-                    var err = Frame.err(id: rid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
+                    var err = Frame.err(id: rid, code: reason.terminalCode, attributionClass: reason.terminalClass, message: reason.terminalMessage)
                     err.routingId = routingId
                     try? outputSender.send(err)
                     fputs("[CartridgeRuntime] Cancelled handler finished, sent ERR: rid=\(rid)\n", stderr)
@@ -5279,28 +5280,41 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 }
                 pendingPeerRequestsLock.unlock()
 
+            case .closeStream:
+                // The tap-off (15.2 §Runs Stop): close the request's live
+                // feed taps — the feeds end, the handler drains its input,
+                // and the request ends NATURALLY with END and complete
+                // outputs. Nothing is cancelled; host-side request state is
+                // untouched. A CloseStream for a request holding no open feed
+                // is a caller's mistake, logged and ignored — it never turns
+                // into an abort. `streamId` names one feed; nil closes them all.
+                let targetRid = frame.id
+                let closed = liveFeedHandlesByRid[targetRid]?.close(streamId: frame.streamId) ?? 0
+                if closed == 0 {
+                    fputs("[CartridgeRuntime] CloseStream for a request with no matching open live feed — nothing to close, request continues: rid=\(targetRid) stream=\(frame.streamId ?? "*")\n", stderr)
+                } else {
+                    fputs("[CartridgeRuntime] CloseStream: closed \(closed) live feed(s) — the run drains and ends naturally: rid=\(targetRid)\n", stderr)
+                }
+
             case .cancel:
                 let targetRid = frame.id
-                fputs("[CartridgeRuntime] Cancel received: rid=\(targetRid) forceKill=\(frame.forceKill ?? false)\n", stderr)
+                // The attribution rides in meta like an ERR's; a Cancel with
+                // none is still a cancel (unattributed).
+                guard let reason = frame.cancelReason() else {
+                    preconditionFailure("a Cancel frame always yields a reason")
+                }
+                fputs("[CartridgeRuntime] Cancel received: rid=\(targetRid) code=\(reason.terminalCode) class=\(reason.terminalClass.rawValue) forceKill=\(reason.forceKill)\n", stderr)
 
                 // Skip if already cancelled
-                if cancelledRequests.contains(targetRid) {
+                if cancelledRequests[targetRid] != nil {
                     continue
                 }
 
-                // STOP, not cancel (15.2 §Runs Stop): a non-force Cancel for
-                // a request with OPEN live feeds closes the tap — the feeds
-                // end, the pipeline drains, and the request terminates
-                // naturally with complete outputs. The handles are forgotten
-                // here, so a SECOND Cancel falls through to the ordinary
-                // cooperative cancel (abort).
-                if !(frame.forceKill ?? false) {
-                    if let feeds = liveFeedHandlesByRid[targetRid], feeds.count > 0 {
-                        liveFeedHandlesByRid.removeValue(forKey: targetRid)
-                        feeds.closeAll()
-                        fputs("[CartridgeRuntime] stop: closed \(feeds.count) live feed(s) — the run drains and ends naturally (a second Cancel aborts): rid=\(targetRid)\n", stderr)
-                        continue
-                    }
+                // Close any live feeds the request holds so a capture source
+                // does not keep producing for a request that is ending with
+                // ERR.
+                if let feeds = liveFeedHandlesByRid.removeValue(forKey: targetRid) {
+                    feeds.closeAll()
                 }
 
                 // Case 1: Queued on its singleton pool — remove it (it
@@ -5314,7 +5328,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         pending.frames.finish()
                     }
                     pendingIncomingLock.unlock()
-                    var err = Frame.err(id: targetRid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled while queued")
+                    var err = Frame.err(id: targetRid, code: reason.terminalCode, attributionClass: reason.terminalClass, message: "\(reason.terminalMessage) (while queued)")
                     err.routingId = queued.routingId
                     try? outputSender.send(err)
                     fputs("[CartridgeRuntime] Cancelled queued request: rid=\(targetRid)\n", stderr)
@@ -5327,10 +5341,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     pendingIncomingLock.unlock()
                     // Finishing the queue ends the handler's frame iterator → handler exits
                     pending.frames.finish()
-                    cancelledRequests.insert(targetRid)
+                    cancelledRequests[targetRid] = reason
                     // Release any credit-blocked writers immediately (L13,
                     // L17) — a cancelled producer must not hang on credit.
-                    creditRouter.closeRequest(rid: targetRid, reason: "CANCELLED")
+                    creditRouter.closeRequest(rid: targetRid, reason: reason.terminalCode)
 
                     // Cancel peer calls originating from this request
                     pendingPeerRequestsLock.lock()
@@ -5345,8 +5359,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     }
                     for rid in peerRidsToCancel {
                         pendingPeerRequests.removeObject(forKey: rid)
-                        // Send Cancel for each peer call to the host
-                        let cancel = Frame.cancel(targetRid: rid, forceKill: frame.forceKill ?? false)
+                        // Peer calls end under the SAME reason — a peer of an
+                        // aborted request is collateral of the same failure.
+                        let cancel = Frame.cancel(targetRid: rid, reason: reason)
                         try? outputSender.send(cancel)
                     }
                     pendingPeerRequestsLock.unlock()

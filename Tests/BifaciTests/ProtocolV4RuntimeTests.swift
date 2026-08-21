@@ -797,7 +797,7 @@ final class ProtocolV4SwitchTests: XCTestCase {
         err.routingId = errKey.xid
         _ = try switch_.handleMasterFrame(sourceIdx: 0, frame: err)
 
-        switch_.cancelRequest(rid: cancelKey.rid, forceKill: false)
+        switch_.cancelRequest(rid: cancelKey.rid, reason: .user(forceKill: false))
 
         // Terminals must have been DELIVERED before release (L6) — a leak
         // test over a broken run proves nothing.
@@ -1293,7 +1293,7 @@ final class ProtocolV4SwitchTests: XCTestCase {
         ))
         switch_.requests.linkChild(parent: parentKey, child: childKey)
 
-        switch_.cancelRequest(rid: parentKey.rid, forceKill: false)
+        switch_.cancelRequest(rid: parentKey.rid, reason: .user(forceKill: false))
 
         // Parent's waiter observes ERR CANCELLED.
         let delivered = try XCTUnwrap(parentChannel.tryPop(timeout: 2), "parent channel gets ERR")
@@ -1313,6 +1313,144 @@ final class ProtocolV4SwitchTests: XCTestCase {
         XCTAssertEqual(got.count, 2, "parent + cascaded child Cancel frames")
         XCTAssertTrue(got.contains(parentKey.rid))
         XCTAssertTrue(got.contains(childKey.rid))
+        switch_.shutdown()
+    }
+
+    // TEST1958: a cancel carries its ATTRIBUTION end to end — a collateral
+    // cancel delivers ERR ABORTED_COLLATERAL (never CANCELLED) in the
+    // ORIGINATING failure's class, naming the failed step; the Cancel frame
+    // the destination receives carries the same attribution in its meta; the
+    // cascaded child is cancelled under the same reason; and the terminated
+    // ring records code, class and reason.
+    func test1958_cancelAttributionReachesErrFrameAndTerminatedRing() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let notified = DispatchSemaphore(value: 0)
+
+        final class CancelCollector: @unchecked Sendable {
+            private var frames: [Frame] = []
+            private let lock = NSLock()
+            let done = DispatchSemaphore(value: 0)
+            func add(_ frame: Frame) {
+                lock.lock()
+                frames.append(frame)
+                let count = frames.count
+                lock.unlock()
+                if count == 2 { done.signal() }
+            }
+            func get() -> [Frame] {
+                lock.lock(); defer { lock.unlock() }
+                return frames
+            }
+        }
+        let cancels = CancelCollector()
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read, limits: Limits())
+            let writer = FrameWriter(handle: pair1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            notified.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            while cancels.get().count < 2 {
+                guard let f = try? reader.read() else { return }
+                if f.frameType == .cancel { cancels.add(f) }
+            }
+        }
+        XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let parentKey = RequestKey(xid: .uint(1), rid: .newUUID())
+        let childKey = RequestKey(xid: .uint(2), rid: .newUUID())
+        let parentChannel = BlockingQueue<Frame>()
+        try switch_.requests.register(parentKey, RequestState(
+            routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
+            origin: nil,
+            externalChannel: { frame in parentChannel.push(frame); return true },
+            isPeer: false,
+            initialCredit: DEFAULT_INITIAL_CREDIT
+        ))
+        try switch_.requests.register(childKey, RequestState(
+            routing: RoutingEntry(sourceMasterIdx: 0, destinationMasterIdx: 0),
+            origin: 0,
+            externalChannel: nil,
+            isPeer: true,
+            initialCredit: DEFAULT_INITIAL_CREDIT
+        ))
+        switch_.requests.linkChild(parent: parentKey, child: childKey)
+
+        let reason = CancelReason.collateral(.resource, "step s2 (cap:gen) failed: GPU_OUT_OF_MEMORY")
+        switch_.cancelRequest(rid: parentKey.rid, reason: reason)
+
+        let delivered = try XCTUnwrap(parentChannel.tryPop(timeout: 2), "parent channel gets ERR")
+        XCTAssertEqual(delivered.errorCode, "ABORTED_COLLATERAL")
+        XCTAssertEqual(try delivered.attributionClass(), .resource)
+        let message = delivered.errorMessage ?? ""
+        XCTAssertTrue(message.contains("step s2 (cap:gen) failed"), "the ERR names the originating failure: \(message)")
+        XCTAssertFalse(message.lowercased().contains("cancelled"), message)
+
+        let stats = switch_.protocolStats()
+        XCTAssertTrue(stats.requests.active.isEmpty)
+        for rid in [parentKey.rid.description, childKey.rid.description] {
+            let summary = try XCTUnwrap(stats.requests.recentTerminated.first { $0.rid == rid }, "terminated ring holds the request")
+            XCTAssertEqual(summary.kind, .cancelled)
+            XCTAssertEqual(summary.cancelCode, "ABORTED_COLLATERAL")
+            XCTAssertEqual(summary.cancelClass, .resource)
+            XCTAssertEqual(summary.cancelReason, reason.message)
+        }
+
+        XCTAssertEqual(cancels.done.wait(timeout: .now() + 2), .success, "slave must see both Cancels")
+        for frame in cancels.get() {
+            XCTAssertEqual(frame.cancelReason(), reason)
+        }
+        switch_.shutdown()
+    }
+
+    // TEST1959: stopRequestFeeds sends a CloseStream frame — not a Cancel of
+    // any kind — and LEAVES the request live (it ends naturally after the
+    // drain), reports true for a live request and false for an unknown one; a
+    // request that does terminate afterwards is observable via
+    // recentTerminalOfRid — the evidence a stop verdict is built on.
+    func test1959_stopRequestFeedsIsACloseStreamWithEvidence() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let notified = DispatchSemaphore(value: 0)
+        let received = BlockingQueue<Frame>()
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read, limits: Limits())
+            let writer = FrameWriter(handle: pair1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            notified.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            while let f = try? reader.read() {
+                if f.frameType == .closeStream { received.push(f); return }
+                if f.frameType == .cancel { XCTFail("a stop must never be a Cancel frame"); return }
+            }
+        }
+        XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let key = RequestKey(xid: .uint(1), rid: .newUUID())
+        try switch_.requests.register(key, RequestState(
+            routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
+            origin: nil,
+            externalChannel: { _ in true },
+            isPeer: false,
+            initialCredit: DEFAULT_INITIAL_CREDIT
+        ))
+
+        XCTAssertFalse(switch_.stopRequestFeeds(rid: .newUUID()), "an unknown request is not stopped")
+        XCTAssertTrue(switch_.stopRequestFeeds(rid: key.rid), "a live request is stopped")
+        XCTAssertTrue(switch_.isRequestLive(rid: key.rid), "a stop leaves host-side request state live")
+        let frame = try XCTUnwrap(received.tryPop(timeout: 2), "destination receives the CloseStream")
+        XCTAssertEqual(frame.frameType, .closeStream)
+        XCTAssertEqual(frame.id, key.rid)
+        XCTAssertNil(frame.streamId, "a run stop closes every live feed of the request")
+        XCTAssertNil(switch_.recentTerminalOfRid(rid: key.rid), "no terminal yet — none is invented")
+
+        // The request ends naturally (END) — the evidence arrives.
+        XCTAssertNotNil(switch_.requests.terminate(key, kind: .end))
+        let summary = try XCTUnwrap(switch_.recentTerminalOfRid(rid: key.rid))
+        XCTAssertEqual(summary.kind, .end)
+        XCTAssertNil(summary.cancelCode)
         switch_.shutdown()
     }
 

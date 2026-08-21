@@ -615,14 +615,26 @@ public final class InProcessCartridgeHost {
                     continuation.finish()
                 }
 
+            case .closeStream:
+                // An in-process handler holds no live feed taps: a CloseStream
+                // has nothing to close and never aborts the request — it is
+                // logged and the request continues.
+                fputs("[InProcessHost] CloseStream for request \(frame.id) with no live feed — nothing to close, request continues\n", stderr)
+
             case .cancel:
-                // Cancel: close handler's input stream (cooperative cancel) and send ERR
                 let targetRid = frame.id
                 let xid = frame.routingId
+                // The attribution rides in meta like an ERR's; an unattributed
+                // Cancel is still a cancel.
+                guard let reason = frame.cancelReason() else {
+                    preconditionFailure("a Cancel frame always yields a reason")
+                }
+                // Cancel: close handler's input stream (cooperative cancel) and
+                // send the terminal ERR in the cancel's own attribution.
                 if let continuation = active.removeValue(forKey: targetRid) {
                     continuation.finish()
                 }
-                var err = Frame.err(id: targetRid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
+                var err = Frame.err(id: targetRid, code: reason.terminalCode, attributionClass: reason.terminalClass, message: reason.terminalMessage)
                 err.routingId = xid
                 writeContinuation.yield(err)
 

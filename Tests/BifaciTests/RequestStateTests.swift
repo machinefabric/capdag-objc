@@ -299,7 +299,7 @@ final class RequestStateTests: XCTestCase {
                 payload: payload, chunkIndex: 0, checksum: checksum
             )
             table.recordFrame(k, direction: .inbound, frame: chunk)
-            XCTAssertNotNil(table.terminate(k, kind: .cancelled))
+            XCTAssertNotNil(table.terminateCancelled(k, reason: .user(forceKill: false)))
         }
         let snap = table.snapshot()
         XCTAssertEqual(snap.recentTerminated.count, cap)
@@ -307,6 +307,8 @@ final class RequestStateTests: XCTestCase {
         XCTAssertEqual(snap.recentTerminated.first?.rid, MessageId.uint(3).description)
         let last = try XCTUnwrap(snap.recentTerminated.last)
         XCTAssertEqual(last.kind, .cancelled)
+        XCTAssertEqual(last.cancelCode, "CANCELLED")
+        XCTAssertEqual(last.cancelClass, .user)
         XCTAssertTrue(last.isPeer)
         XCTAssertEqual(last.framesIn, 1)
         XCTAssertEqual(last.bytesIn, 10)

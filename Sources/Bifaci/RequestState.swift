@@ -248,6 +248,34 @@ public struct TerminatedSummary: Codable, Sendable {
     public let framesOut: UInt64
     public let bytesIn: UInt64
     public let bytesOut: UInt64
+    /// WHY a `.cancelled` termination happened — the Cancel's attribution in
+    /// the ERR vocabulary: the terminal code (always present for a cancelled
+    /// kind), the class (absent for an unattributed cancel) and the reason.
+    /// Never present for any other kind. Surfaces read them to say "aborted
+    /// — step X failed" instead of the one word "cancelled".
+    public let cancelCode: String?
+    public let cancelClass: AttributionClass?
+    public let cancelReason: String?
+
+    public init(
+        xid: String, rid: String, kind: TerminalKind, isPeer: Bool, capUrn: String?,
+        lifetimeMs: UInt64, framesIn: UInt64, framesOut: UInt64, bytesIn: UInt64, bytesOut: UInt64,
+        cancelCode: String? = nil, cancelClass: AttributionClass? = nil, cancelReason: String? = nil
+    ) {
+        self.xid = xid
+        self.rid = rid
+        self.kind = kind
+        self.isPeer = isPeer
+        self.capUrn = capUrn
+        self.lifetimeMs = lifetimeMs
+        self.framesIn = framesIn
+        self.framesOut = framesOut
+        self.bytesIn = bytesIn
+        self.bytesOut = bytesOut
+        self.cancelCode = cancelCode
+        self.cancelClass = cancelClass
+        self.cancelReason = cancelReason
+    }
 
     enum CodingKeys: String, CodingKey {
         case xid
@@ -260,6 +288,9 @@ public struct TerminatedSummary: Codable, Sendable {
         case framesOut = "frames_out"
         case bytesIn = "bytes_in"
         case bytesOut = "bytes_out"
+        case cancelCode = "cancel_code"
+        case cancelClass = "cancel_class"
+        case cancelReason = "cancel_reason"
     }
 }
 
@@ -322,7 +353,29 @@ public final class RequestTable {
     /// zero state for the key remains (L7). Returns nil if the key is not
     /// live (already terminated — termination happens exactly once).
     @discardableResult
+    ///
+    /// `.cancelled` terminations go through `terminateCancelled` — a
+    /// cancellation records its attribution (at least its terminal code).
     public func terminate(_ key: RequestKey, kind: TerminalKind) -> RequestState? {
+        precondition(kind != .cancelled, "RequestTable.terminate: Cancelled terminations carry their attribution — use terminateCancelled")
+        return terminate(key, kind: kind, cancelCode: nil, cancelClass: nil, cancelReason: nil)
+    }
+
+    /// Terminate a request as cancelled, recording WHY (the Cancel frame's
+    /// attribution) on its summary. An unattributed reason records the
+    /// terminal code CANCELLED and no class. (matches Rust RequestTable::terminate_cancelled)
+    public func terminateCancelled(_ key: RequestKey, reason: CancelReason) -> RequestState? {
+        return terminate(key, kind: .cancelled, cancelCode: reason.terminalCode, cancelClass: reason.attributionClass, cancelReason: reason.message)
+    }
+
+    /// How a recently terminated RID ended (newest summary for the RID), or nil
+    /// when the RID is live or unknown within the ring's horizon.
+    public func recentTerminalOfRid(_ rid: MessageId) -> TerminatedSummary? {
+        let rid = rid.description
+        return recentTerminated.last { $0.rid == rid }
+    }
+
+    private func terminate(_ key: RequestKey, kind: TerminalKind, cancelCode: String?, cancelClass: AttributionClass?, cancelReason: String?) -> RequestState? {
         guard let state = entries.removeValue(forKey: key) else {
             return nil
         }
@@ -362,7 +415,10 @@ public final class RequestTable {
             framesIn: framesIn,
             framesOut: framesOut,
             bytesIn: bytesIn,
-            bytesOut: bytesOut
+            bytesOut: bytesOut,
+            cancelCode: cancelCode,
+            cancelClass: cancelClass,
+            cancelReason: cancelReason
         ))
         terminatedByKind[kind.rawValue, default: 0] += 1
         return state

@@ -449,12 +449,19 @@ final class DevTests: XCTestCase {
         _ language: String, _ dest: String, _ vendored: String, _ canonical: String
     ) {
         if vendored == canonical { return }
-        let (vendoredPin, vendoredRest) = splitPin(vendored)
-        let (canonicalPin, canonicalRest) = splitPin(canonical)
+        // HOW the stub reaches capdag is environment, not contract: the
+        // dependency line of a language manifest (tag / module version / SwiftPM
+        // `from:` — or a path, were one ever rendered) and the comment lines
+        // explaining it are stripped before comparing. The VERSION on that line
+        // is read first, and the ordering rule below still applies to it.
+        let (vendoredPin, vendoredRestRaw) = splitPin(vendored)
+        let (canonicalPin, canonicalRestRaw) = splitPin(canonical)
+        let vendoredRest = stripCapdagDependencySource(dest, vendoredRestRaw)
+        let canonicalRest = stripCapdagDependencySource(dest, canonicalRestRaw)
         XCTAssertEqual(
             vendoredRest, canonicalRest,
             "\(language): vendored \(dest) differs from the canonical bytes in more than the "
-                + "pinned capdag version — re-vendor the stubs")
+                + "capdag dependency source/version — re-vendor the stubs")
         guard let vendoredPin, let canonicalPin else {
             XCTFail(
                 "\(language): vendored \(dest) differs from the canonical bytes and neither "
@@ -467,6 +474,30 @@ final class DevTests: XCTestCase {
             lexicographicallyPrecedes(canonicalPin, vendoredPin),
             "\(language): vendored \(dest) pins capdag \(vendoredText) but capdag is "
                 + "\(canonicalText) — a stub may lag a release, never precede one")
+    }
+
+    /// A manifest line that is the capdag dependency SOURCE: a path, git tag,
+    /// module version or SwiftPM `from:` naming capdag.
+    private func isCapdagDependencySource(_ line: String) -> Bool {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        return t.contains("capdag") && (
+            t.contains("path") || t.contains("git =") || t.contains("tag =")
+                || t.contains("url:") || t.contains("from:")
+                || t.hasPrefix("require ") || t.hasPrefix("replace "))
+    }
+
+    /// Strip the capdag dependency source from a manifest: the dependency
+    /// line(s), the comment lines that explain them, and blank lines (the
+    /// templates' conditional blocks differ in spacing). Other files untouched.
+    private func stripCapdagDependencySource(_ dest: String, _ text: String) -> String {
+        guard dest.hasSuffix("Cargo.toml") || dest.hasSuffix("go.mod") || dest.hasSuffix("Package.swift") else {
+            return text
+        }
+        let kept = text.components(separatedBy: "\n").filter { line in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            return !(t.isEmpty || t.hasPrefix("#") || t.hasPrefix("//") || isCapdagDependencySource(t))
+        }
+        return kept.joined(separator: "\n") + "\n"
     }
 
     private func lexicographicallyPrecedes(_ left: [UInt64], _ right: [UInt64]) -> Bool {

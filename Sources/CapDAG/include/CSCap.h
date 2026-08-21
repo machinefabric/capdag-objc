@@ -154,6 +154,12 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Whether this argument carries a sequence of items (YES) or a single item (NO, default)
 @property (nonatomic, readonly) BOOL isSequence;
 
+/// Whether this argument is consumed WITHOUT a length promise (a feed): the cap
+/// processes items as they arrive and may be wired live to an unbounded
+/// producer. Orthogonal to isSequence (cardinality), not part of the URN. Only
+/// the main input may stream (validation RULE14). Default NO.
+@property (nonatomic, readonly) BOOL streaming;
+
 /// Array of sources for this argument
 @property (nonatomic, readonly) NSArray<CSArgSource *> *sources;
 
@@ -296,6 +302,11 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 @property (nonatomic, readonly) NSString *outputDescription;
 /// Whether this output produces a sequence of items (YES) or a single item (NO, default)
 @property (nonatomic, readonly) BOOL isSequence;
+/// Whether this output MAY be emitted without a length promise (unbounded). A
+/// non-streaming consumer downstream is fed the bounded whole after this cap
+/// ends; the runtime refuses an unbounded emission from an output that did not
+/// declare this. Default NO.
+@property (nonatomic, readonly) BOOL streaming;
 @property (nonatomic, readonly, nullable) id metadata;
 
 /**
@@ -585,6 +596,14 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 /** Cardinality of the declared main input. Void-input caps are scalar. */
 - (BOOL)primaryInputIsSequence;
+
+/** Whether the declared main input is consumed without a length promise
+ *  (CSCapArg.streaming). Void-input caps do not stream. */
+- (BOOL)primaryInputStreams;
+
+/** Whether the output may be emitted without a length promise
+ *  (CSCapOutput.streaming). Caps without an output do not stream. */
+- (BOOL)outputStreams;
 
 /**
  * Find an argument by media URN

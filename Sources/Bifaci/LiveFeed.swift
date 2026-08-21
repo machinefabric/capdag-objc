@@ -420,13 +420,22 @@ public final class LiveFeedSink: @unchecked Sendable {
 }
 
 /// A handle to one open feed, held by the runtime per request so a stop
-/// (non-force Cancel on a feed-bearing request) can close the tap and let
-/// the run drain (15.2 §Runs Stop).
+/// (a CloseStream frame to the feed-bearing request) can close the tap and
+/// let the run drain (15.2 §Runs Stop).
 public final class LiveFeedHandle: @unchecked Sendable {
     private let shared: FeedShared
+    /// The input stream (bifaci `stream_id`) this feed was resolved for, once
+    /// the runtime has bound it — what a CloseStream naming one stream is
+    /// matched against. nil for host-opened taps, which are not wire streams.
+    public private(set) var streamId: String?
 
     fileprivate init(shared: FeedShared) {
         self.shared = shared
+    }
+
+    /// Bind the handle to the input stream it was resolved for.
+    func bind(streamId: String) {
+        self.streamId = streamId
     }
 
     /// Close the tap: the provider's next `push` returns false, the feeder
@@ -475,6 +484,18 @@ public final class LiveFeedHandles: @unchecked Sendable {
         for handle in all() {
             handle.close()
         }
+    }
+
+    /// Close the taps a CloseStream names: the one bound to `streamId`, or
+    /// every tap when `streamId` is nil. Returns how many were closed.
+    @discardableResult
+    public func close(streamId: String?) -> Int {
+        var closed = 0
+        for handle in all() where streamId == nil || handle.streamId == streamId {
+            handle.close()
+            closed += 1
+        }
+        return closed
     }
 }
 
@@ -831,7 +852,7 @@ internal final class LiveFeedContext: @unchecked Sendable {
     /// `isSequence=false`, non-conforming provider content, an unparseable
     /// selector, or a provider/device failure. (matches Rust
     /// `LiveFeedContext::resolve`)
-    func resolve(referenceUrn: String, selectorBytes: Data) throws -> InputStream {
+    func resolve(streamId: String, referenceUrn: String, selectorBytes: Data) throws -> InputStream {
         guard let incoming = try? CSMediaUrn.fromString(referenceUrn) else {
             throw StreamError.protocolError("invalid live-feed reference URN: \(referenceUrn)")
         }
@@ -904,6 +925,7 @@ internal final class LiveFeedContext: @unchecked Sendable {
         } catch {
             throw StreamError.protocolError("\(error.localizedDescription)")
         }
+        opened.handle.bind(streamId: streamId)
         handles.add(opened.handle)
         return InputStream(
             mediaUrn: contentUrn,

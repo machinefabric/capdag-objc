@@ -48,18 +48,26 @@ public enum FrameType: UInt8, Sendable {
     case relayNotify = 10
     /// Relay host system resources + cap demands (master → slave). Carries opaque resource payload.
     case relayState = 11
-    /// Cancel a specific in-flight request by RID. Carries optional force_kill flag.
+    /// Cancel a specific in-flight request by RID. Carries the optional force_kill
+    /// flag and, like ERR, its attribution in `meta` (code / attribution_class /
+    /// message) — all optional; an unattributed Cancel still cancels.
     case cancel = 12
     /// Grant per-stream flow-control credit (in CHUNK units) to the sender of a
     /// stream. Non-flow: bypasses seq assignment and reorder buffers, and is
     /// forwarded end-to-end by intermediaries (never originated or absorbed).
     case credit = 13
+    /// Close a request's live input stream(s) — the tap-off (15.2 §Runs Stop).
+    /// The receiving runtime closes the request's open feed taps; the request
+    /// drains and ends NATURALLY with END and complete outputs. Not a cancel:
+    /// host-side request state is untouched. `streamId` names one stream;
+    /// absent means every live feed the request holds.
+    case closeStream = 14
 
     /// All variants, for counter arrays and snapshot serialization
     /// (matches Rust FrameType::ALL).
     public static let all: [FrameType] = [
         .hello, .req, .chunk, .end, .log, .err, .heartbeat,
-        .streamStart, .streamEnd, .relayNotify, .relayState, .cancel, .credit,
+        .streamStart, .streamEnd, .relayNotify, .relayState, .cancel, .credit, .closeStream,
     ]
 
     /// Stable snake_case name (the snapshot contract for mirrors and
@@ -79,6 +87,7 @@ public enum FrameType: UInt8, Sendable {
         case .relayState: return "relay_state"
         case .cancel: return "cancel"
         case .credit: return "credit"
+        case .closeStream: return "close_stream"
         }
     }
 }
@@ -575,15 +584,47 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
-    /// Create a CANCEL frame targeting a specific request by RID.
-    ///
-    /// - Parameters:
-    ///   - targetRid: The request ID to cancel
-    ///   - forceKill: If true, force-kill the cartridge process. If false, cooperative cancel.
-    public static func cancel(targetRid: MessageId, forceKill: Bool) -> Frame {
+    /// Create a CANCEL frame targeting a specific request by RID, for a stated
+    /// reason: the attribution (`meta.code` / `meta.attribution_class` /
+    /// `meta.message`, each written only when present) and the force-kill
+    /// flag. A Cancel built from `CancelReason.unattributed` carries no meta
+    /// and is still a cancel. (matches Rust Frame::cancel)
+    public static func cancel(targetRid: MessageId, reason: CancelReason) -> Frame {
         var frame = Frame(frameType: .cancel, id: targetRid)
-        frame.forceKill = forceKill
+        frame.forceKill = reason.forceKill
+        var meta: [String: CBOR] = [:]
+        if let code = reason.code { meta["code"] = .utf8String(code) }
+        if let klass = reason.attributionClass { meta["attribution_class"] = .utf8String(klass.rawValue) }
+        if let message = reason.message { meta["message"] = .utf8String(message) }
+        if !meta.isEmpty { frame.meta = meta }
         return frame
+    }
+
+    /// Create a CLOSE_STREAM frame — the tap-off for a request's live input
+    /// (15.2 §Runs Stop). `streamId` names one stream; nil closes every live
+    /// feed the request holds. The request is not cancelled: it drains and
+    /// ends naturally. (matches Rust Frame::close_stream)
+    public static func closeStream(targetRid: MessageId, streamId: String? = nil) -> Frame {
+        var frame = Frame(frameType: .closeStream, id: targetRid)
+        frame.streamId = streamId
+        return frame
+    }
+
+    /// The reason this Cancel frame carries (nil for a non-Cancel frame). Read
+    /// from `meta` exactly as an ERR's attribution is; a Cancel with no meta is
+    /// an unattributed cancel, never an error.
+    public func cancelReason() -> CancelReason? {
+        guard frameType == .cancel else { return nil }
+        func text(_ key: String) -> String? {
+            if case .utf8String(let s)? = meta?[key], !s.isEmpty { return s }
+            return nil
+        }
+        return CancelReason(
+            attributionClass: text("attribution_class").flatMap { AttributionClass(rawValue: $0) },
+            code: text("code"),
+            message: text("message"),
+            forceKill: forceKill ?? false
+        )
     }
 
     /// Create a CREDIT frame granting per-stream flow-control credit to the
@@ -852,7 +893,7 @@ public struct Frame: @unchecked Sendable {
     /// never queue behind the data it is flow-controlling.
     public func isFlowFrame() -> Bool {
         switch frameType {
-        case .hello, .heartbeat, .relayNotify, .relayState, .cancel, .credit:
+        case .hello, .heartbeat, .relayNotify, .relayState, .cancel, .credit, .closeStream:
             return false
         default:
             return true
@@ -914,6 +955,77 @@ public enum FrameKey: UInt64 {
     case forceKill = 18
     case credit = 19       // Flow-control credit grant in CHUNK units (Credit frames)
     case unbounded = 20    // Stream makes no length promise (STREAM_START frames)
+}
+
+// MARK: - Cancel Reason
+
+/// Terminal code of a cancel attributed to the operator.
+public let CANCEL_CODE_CANCELLED = "CANCELLED"
+/// Terminal code of a cancel that is collateral of a failure elsewhere in the run.
+public let CANCEL_CODE_ABORTED_COLLATERAL = "ABORTED_COLLATERAL"
+/// Terminal code of a cancel the host decided on its own.
+public let CANCEL_CODE_ABORTED = "ABORTED"
+
+/// WHY a request is being cancelled — the attribution a Cancel frame carries in
+/// its `meta`, in the SAME vocabulary as an ERR frame (`code`,
+/// `attribution_class`, `message`; docs/failure-taxonomy.md). Every part is
+/// optional: an unattributed Cancel still cancels. (matches Rust CancelReason)
+public struct CancelReason: Equatable, Sendable {
+    /// Whose decision/fault the cancellation is: `.user` for an operator's
+    /// cancel, the ORIGINATING failure's class for a collateral teardown,
+    /// `.environment`/`.resource` for a host's own abort. nil = unattributed.
+    public var attributionClass: AttributionClass?
+    /// The terminal code the request ends with. nil = CANCELLED.
+    public var code: String?
+    /// The human reason: the failed step, the host's reason.
+    public var message: String?
+    /// Kill the cartridge process instead of cancelling cooperatively.
+    public var forceKill: Bool
+
+    public init(attributionClass: AttributionClass? = nil, code: String? = nil, message: String? = nil, forceKill: Bool = false) {
+        self.attributionClass = attributionClass
+        self.code = code
+        self.message = message
+        self.forceKill = forceKill
+    }
+
+    /// An unattributed cancel: it cancels, and its terminal says only that.
+    public static func unattributed(forceKill: Bool = false) -> CancelReason {
+        CancelReason(forceKill: forceKill)
+    }
+    /// The operator cancelled the run — the one reason that reads "cancelled".
+    public static func user(forceKill: Bool = false) -> CancelReason {
+        CancelReason(attributionClass: .user, code: CANCEL_CODE_CANCELLED, message: "Cancelled by user", forceKill: forceKill)
+    }
+    /// Another step of the same run failed; the cancel carries THAT failure's
+    /// class and names it.
+    public static func collateral(_ attributionClass: AttributionClass, _ detail: String) -> CancelReason {
+        CancelReason(attributionClass: attributionClass, code: CANCEL_CODE_ABORTED_COLLATERAL, message: detail)
+    }
+    /// The host aborted the run for a reason of its own; the class is the
+    /// host's attribution of that reason.
+    public static func host(_ attributionClass: AttributionClass, _ detail: String, forceKill: Bool = false) -> CancelReason {
+        CancelReason(attributionClass: attributionClass, code: CANCEL_CODE_ABORTED, message: detail, forceKill: forceKill)
+    }
+
+    public var isUser: Bool { attributionClass == .user }
+    public var terminalCode: String { code ?? CANCEL_CODE_CANCELLED }
+    public var terminalClass: AttributionClass { attributionClass ?? .internal }
+
+    /// The terminal ERR message for a request cancelled under this reason.
+    public var terminalMessage: String {
+        switch (code, message) {
+        case (nil, let m?): return "Request cancelled: \(m)"
+        case (nil, nil): return "Request cancelled"
+        case (CANCEL_CODE_ABORTED_COLLATERAL?, let m?): return "Request aborted as collateral of a failure elsewhere in the run: \(m)"
+        case (CANCEL_CODE_ABORTED_COLLATERAL?, nil): return "Request aborted as collateral of a failure elsewhere in the run"
+        case (CANCEL_CODE_ABORTED?, let m?): return "Request aborted by the host: \(m)"
+        case (CANCEL_CODE_ABORTED?, nil): return "Request aborted by the host"
+        case (CANCEL_CODE_CANCELLED?, let m?): return m
+        case (let c?, let m?): return "\(c): \(m)"
+        case (let c?, nil): return "Request cancelled (\(c))"
+        }
+    }
 }
 
 // MARK: - Credit Direction

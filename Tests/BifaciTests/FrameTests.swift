@@ -30,7 +30,8 @@ final class CborFrameTests: XCTestCase {
 
     // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     func test172_invalidFrameType() {
-        XCTAssertNil(FrameType(rawValue: 14), "rawValue 14 is one past Credit")
+        XCTAssertEqual(FrameType(rawValue: 14), .closeStream, "rawValue 14 is CloseStream (the tap-off)")
+        XCTAssertNil(FrameType(rawValue: 15), "rawValue 15 is one past CloseStream")
         XCTAssertNil(FrameType(rawValue: 100), "rawValue 100 must be invalid")
         XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
     }
@@ -1299,7 +1300,8 @@ final class CborFrameTests: XCTestCase {
     func test403_invalidFrameTypePastCancel() {
         XCTAssertEqual(FrameType(rawValue: 12), .cancel, "12 is Cancel")
         XCTAssertEqual(FrameType(rawValue: 13), .credit, "13 is Credit")
-        XCTAssertNil(FrameType(rawValue: 14), "14 is past the last valid frame type")
+        XCTAssertEqual(FrameType(rawValue: 14), .closeStream, "14 is CloseStream")
+        XCTAssertNil(FrameType(rawValue: 15), "15 is past the last valid frame type")
         XCTAssertNil(FrameType(rawValue: 2), "2 (old Res) is still invalid")
     }
 
@@ -2177,5 +2179,62 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(decoded.errorCode, "OOM_KILLED")
         XCTAssertEqual(try decoded.attributionClass(), .resource)
         XCTAssertEqual(decoded.errorMessage, "out of memory")
+    }
+
+    // TEST1954: a Cancel frame is attributed through `meta` exactly like an
+    // ERR frame — code / attribution_class / message — and every attributed
+    // reason round-trips through the codec; the wire carries the class token
+    // under the meta key, never a numeric frame key.
+    func test1954_cancelAttributionRoundtripsInMeta() throws {
+        let reasons: [CancelReason] = [
+            .user(forceKill: true),
+            .collateral(.resource, "step s3 (cap:x) failed: GPU_OUT_OF_MEMORY"),
+            .host(.environment, "stale for 1800 s"),
+        ]
+        for reason in reasons {
+            let frame = Frame.cancel(targetRid: .uint(7), reason: reason)
+            let encoded = try encodeFrame(frame)
+            let decoded = try decodeFrame(encoded)
+            XCTAssertEqual(decoded.frameType, .cancel)
+            XCTAssertEqual(decoded.cancelReason(), reason, "\(reason)")
+            XCTAssertEqual(decoded.meta?["attribution_class"], .utf8String(reason.attributionClass!.rawValue))
+            XCTAssertEqual(decoded.meta?["code"], .utf8String(reason.code!))
+            let raw = try CBOR.decode([UInt8](encoded))
+            guard case .map(let map)? = raw else { return XCTFail("frame is a CBOR map") }
+            XCTAssertNil(map[.unsignedInt(21)], "attribution lives in meta, never in a new frame key")
+        }
+        XCTAssertTrue(CancelReason.user().isUser)
+        XCTAssertFalse(CancelReason.collateral(.input, "x").isUser)
+    }
+
+    // TEST1955: a Cancel WITHOUT attribution is still a cancel — it encodes
+    // with no meta, decodes as `.unattributed`, and its terminal reads
+    // CANCELLED / internal; an unknown class token in meta degrades to "no
+    // class", never to a rejected frame (a cancel must always act). A
+    // CloseStream frame is its own type and is never a cancel.
+    func test1955_unattributedCancelStillCancelsAndCloseStreamIsNotACancel() throws {
+        let bare = Frame.cancel(targetRid: .uint(1), reason: .unattributed())
+        XCTAssertNil(bare.meta, "an unattributed Cancel carries no meta")
+        let decoded = try decodeFrame(try encodeFrame(bare))
+        let reason = try XCTUnwrap(decoded.cancelReason())
+        XCTAssertEqual(reason, .unattributed())
+        XCTAssertEqual(reason.terminalCode, "CANCELLED")
+        XCTAssertEqual(reason.terminalClass, .internal)
+        XCTAssertEqual(reason.terminalMessage, "Request cancelled")
+
+        var odd = Frame(frameType: .cancel, id: .uint(2))
+        odd.meta = ["attribution_class": .utf8String("because"), "message": .utf8String("operator note")]
+        let oddDecoded = try decodeFrame(try encodeFrame(odd))
+        let oddReason = try XCTUnwrap(oddDecoded.cancelReason())
+        XCTAssertNil(oddReason.attributionClass)
+        XCTAssertEqual(oddReason.message, "operator note")
+        XCTAssertEqual(oddReason.terminalMessage, "Request cancelled: operator note")
+
+        let close = Frame.closeStream(targetRid: .uint(3), streamId: "mic")
+        let closeDecoded = try decodeFrame(try encodeFrame(close))
+        XCTAssertEqual(closeDecoded.frameType, .closeStream)
+        XCTAssertEqual(closeDecoded.streamId, "mic")
+        XCTAssertNil(closeDecoded.cancelReason())
+        XCTAssertFalse(closeDecoded.isFlowFrame())
     }
 }

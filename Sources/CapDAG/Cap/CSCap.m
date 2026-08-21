@@ -319,6 +319,7 @@
     arg->_mediaUrn = [mediaUrn copy];
     arg->_required = required;
     arg->_isSequence = NO;
+    arg->_streaming = NO;
     arg->_sources = [sources copy];
     arg->_argDescription = [argDescription copy];
     arg->_defaultValue = defaultValue;
@@ -378,11 +379,15 @@
     // Optional: is_sequence (defaults to NO)
     NSNumber *isSequenceValue = dictionary[@"is_sequence"];
     BOOL isSequence = isSequenceValue ? [isSequenceValue boolValue] : NO;
+    // Optional: streaming (defaults to NO) — consumed without a length promise
+    NSNumber *streamingValue = dictionary[@"streaming"];
+    BOOL streaming = streamingValue ? [streamingValue boolValue] : NO;
 
     CSCapArg *arg = [[CSCapArg alloc] init];
     arg->_mediaUrn = [mediaUrn copy];
     arg->_required = required;
     arg->_isSequence = isSequence;
+    arg->_streaming = streaming;
     arg->_sources = [sources copy];
     arg->_argDescription = [argDescription copy];
     arg->_defaultValue = defaultValue;
@@ -398,6 +403,9 @@
     dict[@"required"] = @(self.required);
     if (self.isSequence) {
         dict[@"is_sequence"] = @YES;
+    }
+    if (self.streaming) {
+        dict[@"streaming"] = @YES;
     }
 
     NSMutableArray *sourceDicts = [NSMutableArray array];
@@ -515,6 +523,7 @@
     copy->_mediaUrn = [self.mediaUrn copy];
     copy->_required = self.required;
     copy->_isSequence = self.isSequence;
+    copy->_streaming = self.streaming;
     copy->_sources = [[NSArray alloc] initWithArray:self.sources copyItems:YES];
     copy->_argDescription = [self.argDescription copy];
     copy->_defaultValue = self.defaultValue;
@@ -526,6 +535,7 @@
     [coder encodeObject:self.mediaUrn forKey:@"mediaUrn"];
     [coder encodeBool:self.required forKey:@"required"];
     [coder encodeBool:self.isSequence forKey:@"isSequence"];
+    [coder encodeBool:self.streaming forKey:@"streaming"];
     [coder encodeObject:self.sources forKey:@"sources"];
     [coder encodeObject:self.argDescription forKey:@"argDescription"];
     [coder encodeObject:self.defaultValue forKey:@"defaultValue"];
@@ -545,6 +555,7 @@
         _mediaUrn = mediaUrn;
         _required = [coder decodeBoolForKey:@"required"];
         _isSequence = [coder decodeBoolForKey:@"isSequence"];
+        _streaming = [coder decodeBoolForKey:@"streaming"];
         _sources = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSArgSource class], nil] forKey:@"sources"];
         _argDescription = [coder decodeObjectOfClass:[NSString class] forKey:@"argDescription"];
         _defaultValue = [coder decodeObjectForKey:@"defaultValue"];
@@ -596,6 +607,7 @@
     output->_mediaUrn = [mediaUrn copy];
     output->_outputDescription = [outputDescription copy];
     output->_isSequence = NO;
+    output->_streaming = NO;
     output->_metadata = nil;
     return output;
 }
@@ -604,6 +616,7 @@
     NSString *mediaUrn = dictionary[@"media_urn"];
     NSString *outputDescription = dictionary[@"output_description"];
     NSNumber *isSequenceValue = dictionary[@"is_sequence"];
+    NSNumber *streamingValue = dictionary[@"streaming"];
     id metadata = dictionary[@"metadata"];
 
     // FAIL HARD on missing required fields
@@ -629,6 +642,7 @@
     output->_mediaUrn = [mediaUrn copy];
     output->_outputDescription = [outputDescription copy];
     output->_isSequence = isSequenceValue ? [isSequenceValue boolValue] : NO;
+    output->_streaming = streamingValue ? [streamingValue boolValue] : NO;
     output->_metadata = [metadata copy];
 
     return output;
@@ -639,6 +653,7 @@
     copy->_mediaUrn = [self.mediaUrn copy];
     copy->_outputDescription = [self.outputDescription copy];
     copy->_isSequence = self.isSequence;
+    copy->_streaming = self.streaming;
     copy->_metadata = [self.metadata copy];
     return copy;
 }
@@ -647,6 +662,7 @@
     [coder encodeObject:self.mediaUrn forKey:@"mediaUrn"];
     [coder encodeObject:self.outputDescription forKey:@"outputDescription"];
     [coder encodeBool:self.isSequence forKey:@"isSequence"];
+    [coder encodeBool:self.streaming forKey:@"streaming"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
 }
 
@@ -664,6 +680,7 @@
         _mediaUrn = mediaUrn;
         _outputDescription = outputDescription;
         _isSequence = [coder decodeBoolForKey:@"isSequence"];
+        _streaming = [coder decodeBoolForKey:@"streaming"];
         _metadata = [coder decodeObjectForKey:@"metadata"];
     }
     return self;
@@ -674,6 +691,8 @@
 
     dict[@"media_urn"] = self.mediaUrn;
     dict[@"output_description"] = self.outputDescription;
+    if (self.isSequence) dict[@"is_sequence"] = @YES;
+    if (self.streaming) dict[@"streaming"] = @YES;
 
     if (self.metadata) dict[@"metadata"] = self.metadata;
 
@@ -1315,6 +1334,14 @@
 
 - (BOOL)primaryInputIsSequence {
     return [self mainInputArg].isSequence;
+}
+
+- (BOOL)primaryInputStreams {
+    return [self mainInputArg].streaming;
+}
+
+- (BOOL)outputStreams {
+    return self.output ? self.output.streaming : NO;
 }
 
 - (nullable CSCapArg *)findArgByMediaUrn:(NSString *)mediaUrn {

@@ -184,6 +184,92 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
+    // TEST1961: the in-process host answers a Cancel in the cancel's OWN
+    // attribution — ERR ABORTED/resource for a host abort (message carries
+    // the reason), ERR ABORTED_COLLATERAL with the originating failure's
+    // class for collateral, ERR CANCELLED/user for an operator's cancel, and
+    // ERR CANCELLED/internal for an UNATTRIBUTED cancel, which still cancels.
+    // A CloseStream is a no-op for a handler with no live feed: the request
+    // continues and completes normally with END.
+    func test1961_cancelTerminalCarriesItsAttribution() throws {
+        let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
+
+        func run(_ control: Frame) throws -> Frame {
+            let cap = makeTestCap(capUrn)
+            let host = InProcessCartridgeHost(
+                identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+                handlers: [("echo", [cap], EchoHandler())]
+            )
+            let (hostRead, testWrite) = Pipe.socketPair()
+            let (testRead, hostWrite) = Pipe.socketPair()
+            let hostThread = Thread {
+                try? host.run(localRead: hostRead, localWrite: hostWrite)
+            }
+            hostThread.start()
+            let reader = FrameReader(handle: testRead)
+            let writer = FrameWriter(handle: testWrite)
+            let notify = try XCTUnwrap(reader.read())
+            XCTAssertEqual(notify.frameType, .relayNotify)
+
+            // Open the request and its input stream, but do not END it — the
+            // handler is active when the control frame arrives.
+            let rid = MessageId.newUUID()
+            var req = Frame.req(id: rid, capUrn: capUrn, payload: Data(), contentType: "application/cbor")
+            req.routingId = MessageId.uint(1)
+            try writer.write(req)
+            try writer.write(Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:text"))
+
+            var control = control
+            control.id = rid
+            control.routingId = MessageId.uint(1)
+            try writer.write(control)
+
+            var outcome: Frame
+            if control.frameType == .closeStream {
+                // Finish the request: it was never cancelled.
+                let chunkPayload = cborBytesPayload("still here".data(using: .utf8)!)
+                try writer.write(Frame.chunk(reqId: rid, streamId: "arg0", seq: 0, payload: chunkPayload, chunkIndex: 0, checksum: Frame.computeChecksum(chunkPayload)))
+                try writer.write(Frame.streamEnd(reqId: rid, streamId: "arg0", chunkCount: 1))
+                try writer.write(Frame.end(id: rid))
+                while true {
+                    let frame = try XCTUnwrap(reader.read())
+                    XCTAssertEqual(frame.id, rid)
+                    XCTAssertNotEqual(frame.frameType, .err, "a CloseStream never aborts")
+                    outcome = frame
+                    if frame.frameType == .end { break }
+                }
+            } else {
+                outcome = try XCTUnwrap(reader.read())
+                XCTAssertEqual(outcome.id, rid)
+            }
+            testWrite.closeFile()
+            testRead.closeFile()
+            Thread.sleep(forTimeInterval: 0.1)
+            return outcome
+        }
+        func cancel(_ reason: CancelReason) -> Frame { Frame.cancel(targetRid: .uint(0), reason: reason) }
+
+        let hostAbort = try run(cancel(.host(.resource, "memory pressure relief")))
+        XCTAssertEqual(hostAbort.frameType, .err)
+        XCTAssertEqual(hostAbort.errorCode, "ABORTED")
+        XCTAssertEqual(try hostAbort.attributionClass(), .resource)
+        XCTAssertTrue((hostAbort.errorMessage ?? "").contains("memory pressure relief"), hostAbort.errorMessage ?? "")
+
+        let collateral = try run(cancel(.collateral(.input, "step s1 failed")))
+        XCTAssertEqual(collateral.errorCode, "ABORTED_COLLATERAL")
+        XCTAssertEqual(try collateral.attributionClass(), .input)
+
+        let user = try run(cancel(.user()))
+        XCTAssertEqual(user.errorCode, "CANCELLED")
+        XCTAssertEqual(try user.attributionClass(), .user)
+
+        let bare = try run(cancel(.unattributed()))
+        XCTAssertEqual(bare.errorCode, "CANCELLED", "an unattributed Cancel still cancels")
+        XCTAssertEqual(try bare.attributionClass(), .internal)
+
+        XCTAssertEqual(try run(Frame.closeStream(targetRid: .uint(0))).frameType, .end)
+    }
+
     // TEST6749: InProcessCartridgeHost handles identity verification (echo nonce)
     func test6749_identityVerification() throws {
         let host = InProcessCartridgeHost(

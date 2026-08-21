@@ -579,7 +579,7 @@ private let HEARTBEAT_TIMEOUT: TimeInterval = 10.0
 /// A managed cartridge binary.
 @available(macOS 10.15.4, iOS 13.4, *)
 /// Why a cartridge was killed. Determines whether pending requests get ERR frames.
-enum ShutdownReason {
+enum ShutdownReason: Equatable {
     /// App is exiting or cartridge binary removed. No ERR frames — relay connection
     /// is closing anyway and there are no callers left to notify.
     case appExit
@@ -587,8 +587,11 @@ enum ShutdownReason {
     /// Pending requests MUST get ERR frames with code "OOM_KILLED" so callers
     /// can fail fast instead of hanging forever.
     case oomKill
-    /// Request was cancelled. Pending requests get ERR frames with code "CANCELLED".
-    case cancelled
+    /// A force-kill Cancel ended the process. Pending requests get ERR frames
+    /// in the cancel's own attribution (CANCELLED/user for an operator's
+    /// cancel, ABORTED_COLLATERAL / ABORTED with their class otherwise) — the
+    /// kill is never reported as "cancelled" unless a human cancelled.
+    case cancelled(CancelReason)
     /// The host's health probe expired. The complete process generation is
     /// retired before on-demand dispatch may spawn its replacement.
     case heartbeatTimeout
@@ -2355,6 +2358,29 @@ public final class CartridgeHost: @unchecked Sendable {
             // These should never arrive from the engine through the relay
             fputs("[CartridgeHost] Protocol error: \(frame.frameType) from relay\n", stderr)
 
+        case .closeStream:
+            // CloseStream from relay — the tap-off (15.2 §Runs Stop). Forwarded
+            // to the cartridge handling the request so it can close the
+            // request's live feed(s); never cascaded (the tap is on the
+            // feed-bearing request alone — its peers drain naturally), never a
+            // kill, and no routing state changes: the request ends on its own,
+            // later, with END.
+            guard let xid = frame.routingId else {
+                fputs("[CartridgeHost] CloseStream frame missing XID — ignoring\n", stderr)
+                return
+            }
+            let key = RxidKey(xid: xid, rid: frame.id)
+            stateLock.lock()
+            guard let cartridgeIdx = incomingRxids[key] else {
+                stateLock.unlock()
+                fputs("[CartridgeHost] CloseStream for a request this host is not serving (\(xid), \(frame.id)) — ignoring\n", stderr)
+                return
+            }
+            touchIncomingRxidLocked(key)
+            let cartridge = cartridges[cartridgeIdx]
+            stateLock.unlock()
+            let _ = cartridge.writeFrame(frame)
+
         case .cancel:
             // Cancel from relay — route to the cartridge handling this request.
             guard let xid = frame.routingId else {
@@ -2363,7 +2389,12 @@ public final class CartridgeHost: @unchecked Sendable {
             }
             let rid = frame.id
             let key = RxidKey(xid: xid, rid: rid)
-            let forceKill = frame.forceKill ?? false
+            // The attribution rides in meta like an ERR's; an unattributed
+            // Cancel is still a cancel.
+            guard let reason = frame.cancelReason() else {
+                preconditionFailure("a Cancel frame always yields a reason")
+            }
+            let forceKill = reason.forceKill
 
             stateLock.lock()
             guard let cartridgeIdx = incomingRxids[key] else {
@@ -2380,7 +2411,7 @@ public final class CartridgeHost: @unchecked Sendable {
             if forceKill {
                 // Force kill: set shutdown reason and kill the process
                 fputs("[CartridgeHost] Cancel force_kill=true for cartridge \(cartridgeIdx) rid=\(rid)\n", stderr)
-                cartridges[cartridgeIdx].shutdownReason = .cancelled
+                cartridges[cartridgeIdx].shutdownReason = .cancelled(reason)
                 let pid = cartridges[cartridgeIdx].pid
                 stateLock.unlock()
                 if let pid = pid {
@@ -2393,14 +2424,17 @@ public final class CartridgeHost: @unchecked Sendable {
                 stateLock.unlock()
                 let _ = cartridge.writeFrame(frame)
 
-                // Also cascade: send Cancel to relay for each peer call spawned by this request
+                // Also cascade: send Cancel to relay for each peer call spawned
+                // by this request, under the same reason.
                 stateLock.lock()
                 if let peerRids = incomingToPeerRids[key] {
                     touchIncomingToPeerRidsLocked(key)
                     stateLock.unlock()
+                    var peerReason = reason
+                    peerReason.forceKill = false
                     for peerRid in peerRids {
-                        fputs("[CartridgeHost] Cascading Cancel to peer call rid=\(peerRid)\n", stderr)
-                        let cancel = Frame.cancel(targetRid: peerRid, forceKill: false)
+                        fputs("[CartridgeHost] Cascading Cancel (\(reason.terminalCode)) to peer call rid=\(peerRid)\n", stderr)
+                        let cancel = Frame.cancel(targetRid: peerRid, reason: peerReason)
                         sendToRelay(cancel)
                     }
                 } else {
@@ -2805,10 +2839,12 @@ public final class CartridgeHost: @unchecked Sendable {
                 : "Cartridge \(cartridgePath) killed by OOM watchdog\(exitSuffix). stderr:\n\(stderrContent)"
             errInfo = (code: "OOM_KILLED", attributionClass: .resource, message: msg)
             cartridge.lastDeathMessage = msg
-        case .cancelled:
-            // Cancel-triggered kill — ERR "CANCELLED" for all pending work
-            let msg = "Cartridge \(cartridgePath) killed by cancel request."
-            errInfo = (code: "CANCELLED", attributionClass: .internal, message: msg)
+        case .cancelled(let reason):
+            // Force-kill under a cancel — every pending request ends in the
+            // cancel's OWN attribution, so a collateral or host abort never
+            // reads as a user cancel.
+            let msg = "Cartridge \(cartridgePath) killed by a force-kill cancel: \(reason.terminalMessage)"
+            errInfo = (code: reason.terminalCode, attributionClass: reason.terminalClass, message: msg)
             cartridge.lastDeathMessage = msg
         case .heartbeatTimeout:
             let msg = "Cartridge stopped responding to heartbeats"

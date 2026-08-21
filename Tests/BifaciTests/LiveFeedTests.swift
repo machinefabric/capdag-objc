@@ -126,6 +126,7 @@ final class LiveFeedTests: XCTestCase {
             capUrn: #"cap:in="media:feed-frames";drain;out="media:fmt=json;record""#
         )
         let reorderedStream = try reordered.ctx.resolve(
+            streamId: "feed",
             referenceUrn: MEDIA_LIVE_SYNTHETIC,
             selectorBytes: Data(#"{"stop":{"max_items":1},"params":{"items":1,"interval_ms":0}}"#.utf8)
         )

@@ -1587,8 +1587,8 @@ public final class RelaySwitch: @unchecked Sendable {
             // Forward to destination
             try writeToMasterIdx(destIdx, &mutableFrame)
 
-        case .cancel:
-            // Cancel routes like a continuation frame — look up XID from RID
+        case .cancel, .closeStream:
+            // Cancel / CloseStream route like a continuation frame — look up XID from RID
             let xid: MessageId
             if let existingXid = frame.routingId {
                 xid = existingXid
@@ -1933,7 +1933,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         if !isTerminal {
                             let cancelRid = rid
                             DispatchQueue.global(qos: .utility).async { [weak self] in
-                                self?.cancelRequest(rid: cancelRid, forceKill: false)
+                                self?.cancelRequest(rid: cancelRid, reason: .host(.internal, "response channel receiver gone: the caller abandoned the request"))
                             }
                         }
                     }
@@ -2007,10 +2007,11 @@ public final class RelaySwitch: @unchecked Sendable {
             // Pass through to engine (for visibility)
             return frame
 
-        case .cancel:
-            // Cancel from cartridge — route to destination like a continuation frame.
-            // Cartridge is cancelling its own peer call. Unknown RID means
-            // the request already completed: a well-defined no-op.
+        case .cancel, .closeStream:
+            // Cancel / CloseStream from cartridge — route to destination like a
+            // continuation frame. Cartridge is cancelling (or closing the live
+            // input of) its own peer call. Unknown RID means the request already
+            // completed: a well-defined no-op.
             let rid = frame.id
             let xid: MessageId
             if let existingXid = frame.routingId {
@@ -2119,16 +2120,6 @@ public final class RelaySwitch: @unchecked Sendable {
         )
     }
 
-    /// Cancel a specific in-flight request by RID.
-    ///
-    /// 1. Looks up RID → XID → routing destination
-    /// 2. Terminates the request (cancelled) FIRST — one atomic removal
-    ///    yields the destination, the children for the cascade, and the
-    ///    external channel for the final ERR (L7). A concurrent terminal for
-    ///    the same key loses the race and becomes a counted no_route drop.
-    /// 3. Sends a Cancel frame to the destination master
-    /// 4. Recursively cancels the child peer calls recorded on the entry
-    /// 5. Sends ERR "CANCELLED" to the external response channel if present
     /// Account a flow frame that found no routing state, for the narrow case
     /// it actually is: when the terminated ledger vouches the request JUST
     /// terminated, the frame is a benign post-terminal straggler — the
@@ -2146,20 +2137,83 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    public func cancelRequest(rid: MessageId, forceKill: Bool) {
+    /// STOP a feed-bearing request's live inputs (15.2 §Runs Stop): send a
+    /// CloseStream FRAME to the request's destination WITHOUT touching
+    /// host-side request state. The cartridge runtime closes the request's
+    /// open taps and the request then ends NATURALLY — END after the drain.
+    /// Not a cancel in any form: contrast `cancelRequest`, which terminates
+    /// host state, cascades to children, and delivers a terminal ERR.
+    ///
+    /// Returns whether the request was live and the stop was sent. A request
+    /// the switch does not know (already terminated) is not stopped, and the
+    /// caller must not claim that it was. (matches Rust RelaySwitch::stop_request_feeds)
+    @discardableResult
+    public func stopRequestFeeds(rid: MessageId) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let xid = requests.xidForRid(rid),
+              let state = requests.get(RoutingKey(xid: xid, rid: rid)) else {
+            return false
+        }
+        var closeFrame = Frame.closeStream(targetRid: rid, streamId: nil)
+        closeFrame.routingId = xid
+        do {
+            try writeToMasterIdx(state.routing.destinationMasterIdx, &closeFrame)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Whether a RID is live in the request table.
+    public func isRequestLive(rid: MessageId) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests.xidForRid(rid) != nil
+    }
+
+    /// How a recently terminated RID ended, or nil while it is live or once it
+    /// has aged out of the terminated ring.
+    public func recentTerminalOfRid(rid: MessageId) -> TerminatedSummary? {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests.recentTerminalOfRid(rid)
+    }
+
+    /// Cancel a specific in-flight request by RID, for a stated reason.
+    ///
+    /// 1. Terminates the request as cancelled WITH the reason FIRST — one
+    ///    atomic removal yields the destination, the children for the cascade,
+    ///    and the external channel for the final ERR (L7), and records the
+    ///    attribution on the summary. A concurrent terminal for the same key
+    ///    loses the race and becomes a counted no_route drop.
+    /// 2. Sends the Cancel frame (attribution in meta, forceKill) to the
+    ///    destination master
+    /// 3. Recursively cancels the child peer calls recorded on the entry,
+    ///    under the same reason
+    /// 4. Sends the terminal ERR to the external response channel if present,
+    ///    in the reason's own words: CANCELLED/user for an operator's cancel,
+    ///    ABORTED_COLLATERAL with the originating failure's class for
+    ///    collateral, ABORTED with the host's class for a host abort — so
+    ///    "cancelled" is never said of an abort.
+    ///
+    /// The reason is optional attribution, never a precondition: an
+    /// unattributed reason cancels all the same. Closing a live input without
+    /// cancelling is `stopRequestFeeds`.
+    public func cancelRequest(rid: MessageId, reason: CancelReason) {
         lock.lock()
         guard let xid = requests.xidForRid(rid) else {
             lock.unlock()
             return
         }
         let key = RoutingKey(xid: xid, rid: rid)
-        guard let state = requests.terminate(key, kind: .cancelled) else {
+        guard let state = requests.terminateCancelled(key, reason: reason) else {
             lock.unlock()
             return
         }
 
         // Send Cancel frame to destination
-        var cancelFrame = Frame.cancel(targetRid: rid, forceKill: forceKill)
+        var cancelFrame = Frame.cancel(targetRid: rid, reason: reason)
         cancelFrame.routingId = xid
         try? writeToMasterIdx(state.routing.destinationMasterIdx, &cancelFrame)
 
@@ -2168,28 +2222,28 @@ public final class RelaySwitch: @unchecked Sendable {
         lock.unlock()
 
         // Recursively cancel children (outside the lock — each child cancel
-        // re-acquires it).
+        // re-acquires it), under the same reason.
         for child in children {
-            cancelRequest(rid: child.rid, forceKill: forceKill)
+            cancelRequest(rid: child.rid, reason: reason)
         }
 
-        // Send ERR "CANCELLED" to the external response channel if present
+        // Send the terminal ERR to the external response channel if present
         if let channel = externalChannel {
-            var errFrame = Frame.err(id: rid, code: "CANCELLED", attributionClass: .internal, message: "Request cancelled")
+            var errFrame = Frame.err(id: rid, code: reason.terminalCode, attributionClass: reason.terminalClass, message: reason.terminalMessage)
             errFrame.routingId = xid
             _ = channel(errFrame)
         }
     }
 
-    /// Cancel all external-origin (engine-initiated) in-flight requests.
-    /// Returns the list of cancelled RIDs.
+    /// Cancel all external-origin (engine-initiated) in-flight requests, for a
+    /// stated reason. Returns the list of cancelled RIDs.
     @discardableResult
-    public func cancelAllRequests(forceKill: Bool) -> [MessageId] {
+    public func cancelAllRequests(reason: CancelReason) -> [MessageId] {
         lock.lock()
         let rids = requests.keysWhere { $0.origin == nil }.map { $0.rid }
         lock.unlock()
         for rid in rids {
-            cancelRequest(rid: rid, forceKill: forceKill)
+            cancelRequest(rid: rid, reason: reason)
         }
         return rids
     }

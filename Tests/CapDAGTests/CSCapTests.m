@@ -14,6 +14,7 @@
 #import "CSMediaDef.h"
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
+#import "CSCapValidator.h"
 
 @interface CSCapTests : XCTestCase
 
@@ -1242,6 +1243,66 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     XCTAssertNotNil(cap, @"%@", error);
     XCTAssertTrue([cap primaryInputIsSequence]);
+}
+
+// TEST1953: RULE14 — `streaming` is accepted on the main input (the stdin arg
+// equivalent to `in=`), surfaces through primaryInputStreams/outputStreams,
+// round-trips the definition dictionary, and is refused on any other
+// argument: a side option has no wire stream, so it has nothing to consume
+// incrementally, and the rule keeps the executor's hop rule one-dimensional.
+- (void)test1953_rule14StreamingOnlyOnMainInput {
+    NSError *error = nil;
+    CSCap *ok = [CSCap capWithDictionary:@{
+        @"urn": @"cap:in=\"media:enc=utf-8\";feed;out=\"media:enc=utf-8;result\"",
+        @"title": @"Feed",
+        @"aliases": @[@"feed"],
+        @"args": @[
+            @{
+                @"media_urn": @"media:enc=utf-8",
+                @"required": @YES,
+                @"is_sequence": @YES,
+                @"streaming": @YES,
+                @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
+            },
+        ],
+        @"output": @{
+            @"media_urn": @"media:enc=utf-8;result",
+            @"output_description": @"result",
+            @"is_sequence": @YES,
+            @"streaming": @YES,
+        },
+    } error:&error];
+    XCTAssertNotNil(ok, @"%@", error);
+    XCTAssertTrue([CSCapValidator validateCap:ok error:&error], @"%@", error);
+    XCTAssertTrue([ok primaryInputStreams]);
+    XCTAssertTrue([ok outputStreams]);
+    XCTAssertEqualObjects([ok mainInputArg].toDictionary[@"streaming"], @YES);
+    XCTAssertEqualObjects(ok.output.toDictionary[@"streaming"], @YES);
+
+    CSCap *bad = [CSCap capWithDictionary:@{
+        @"urn": @"cap:in=\"media:enc=utf-8\";feed;out=\"media:enc=utf-8;result\"",
+        @"title": @"Feed",
+        @"aliases": @[@"feed"],
+        @"args": @[
+            @{
+                @"media_urn": @"media:enc=utf-8",
+                @"required": @YES,
+                @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
+            },
+            @{
+                @"media_urn": @"media:integer;numeric",
+                @"required": @NO,
+                @"streaming": @YES,
+                @"sources": @[@{@"cli_flag": @"--count"}],
+            },
+        ],
+    } error:&error];
+    XCTAssertNotNil(bad, @"%@", error);
+    error = nil;
+    XCTAssertFalse([CSCapValidator validateCap:bad error:&error], @"a streaming side option must be refused");
+    XCTAssertNotNil(error);
+    XCTAssertTrue([error.localizedDescription containsString:@"RULE14"], @"%@", error);
+    XCTAssertTrue([error.localizedDescription containsString:@"media:integer;numeric"], @"%@", error);
 }
 
 // TEST8066: a void-input cap has scalar input cardinality without inventing an arg.
