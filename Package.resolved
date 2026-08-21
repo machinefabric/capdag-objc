@@ -1,5 +1,5 @@
 {
-  "originHash" : "2541b991c35e03dad16ac3caaf6358b0c69934ec6febb36106acebb2a1686750",
+  "originHash" : "f6add0f9baddc88edd6043cb77191d176165aa10081334119bc278b30ab0d426",
   "pins" : [
     {
       "identity" : "glob",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/jowharshamshiri/ops-objc.git",
       "state" : {
-        "revision" : "0662041e6b9a36cbaba73bc5526626df0e2926ee",
+        "revision" : "628753f70f041efd9f2a87f247c96925e5eb6a23",
         "version" : "1.19.17"
       }
     },
