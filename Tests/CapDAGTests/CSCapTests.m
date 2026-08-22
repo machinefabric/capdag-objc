@@ -295,28 +295,22 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"urn": @"cap:in=media:void;transform;out=\"media:enc=utf-8;record\";format=json;data",
         @"title": @"Transform Data",
         @"aliases": @[@"transform-data"],
-        @"cap_description": @"Transform JSON data with validation",
+        @"cap_description": @"Transform JSON data",
         @"metadata": @{@"engine": @"jq", @"performance": @"high"},
-        @"media_defs": @[
-            @{
-                @"urn": @"media:output",
-                @"media_type": @"application/json",
-                @"profile_uri": @"https://capdag.com/schema/transform-output"
-            }
-        ],
+        // The definition contract only (validation rules live on media
+        // definitions, never on a cap's arguments; a cap carries no inline
+        // media_defs) — a key outside it is refused by name (TEST1964).
         @"args": @[
             @{
                 @"media_urn": CSMediaString,
                 @"required": @YES,
+                @"is_sequence": @NO,
+                @"streaming": @NO,
                 @"sources": @[
                     @{@"stdin": stdinMediaType},
                     @{@"position": @0}
                 ],
-                @"arg_description": @"JQ transformation expression",
-                @"validation": @{
-                    @"min_length": @1,
-                    @"max_length": @1000
-                }
+                @"arg_description": @"JQ transformation expression"
             },
             @{
                 @"media_urn": CSMediaString,
@@ -325,10 +319,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                     @{@"cli_flag": @"--ext"}
                 ],
                 @"arg_description": @"Output format",
-                @"default_value": @"json",
-                @"validation": @{
-                    @"allowed_values": @[@"json", @"yaml", @"xml"]
-                }
+                @"default_value": @"json"
             }
         ],
         @"output": @{
