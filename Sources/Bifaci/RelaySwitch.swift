@@ -246,6 +246,15 @@ private final class MasterConnection: @unchecked Sendable {
     /// parsed-and-discarded) so `protocolStats().hosts` can surface them.
     var hostProtocolStats: HostProtocolStats?
     var healthy: Bool
+    /// True once the slot's CONNECTION is gone — its reader exited
+    /// (EOF/error) or `handleMasterDeath` declared it dead — and false
+    /// while a socket is attached, healthy or not. Attachment is decided
+    /// by this, never by `healthy`: a slot with its identity probe
+    /// pending is unhealthy yet attached, and reattaching over it would
+    /// strand the host on the other end. Mirrors the Rust reference,
+    /// which decides by the reader task's liveness. Guarded by the
+    /// switch lock.
+    var detached: Bool = false
     /// Last error message (if unhealthy). Mirrors Rust
     /// `MasterConnection.last_error`. Populated when an identity
     /// probe (synchronous in `addMaster`, or the deferred runtime
@@ -767,6 +776,16 @@ public final class RelaySwitch: @unchecked Sendable {
 
     private func readerLoop(masterIdx: Int, reader: FrameReader) {
         var mutableReader = reader
+        // On exit the slot is detached: the connection is gone whether
+        // or not the pump has processed the error yet, so a reattach
+        // for this id is legitimate from this moment.
+        defer {
+            lock.lock()
+            if masterIdx < masters.count {
+                masters[masterIdx].detached = true
+            }
+            lock.unlock()
+        }
         while true {
             // Check shutdown flag before reading
             if isShutdown { return }
@@ -914,10 +933,11 @@ public final class RelaySwitch: @unchecked Sendable {
         var existingIdx: Int? = nil
         for (idx, m) in masters.enumerated() {
             if m.id == socket.id {
-                if m.healthy {
+                if !m.detached {
+                    let state = m.healthy ? "healthy" : "attached but unhealthy"
                     lock.unlock()
                     throw RelaySwitchError.protocolError(
-                        "addMaster: id '\(socket.id)' is already attached to a healthy slot at index \(idx) — " +
+                        "addMaster: id '\(socket.id)' is already attached to a \(state) slot at index \(idx) — " +
                         "cardinality violation (each id may only be attached once at a time)"
                     )
                 }
@@ -1119,6 +1139,7 @@ public final class RelaySwitch: @unchecked Sendable {
             slot.hostProtocolStats = notifyPayload.hostProtocolStats
             slot.healthy = healthyAtRegister
             slot.lastError = identityFailure
+            slot.detached = false
             try configureMasterAdmissionLocked(masterIdx, notifyPayload.installedCartridges)
         }
 
@@ -1165,6 +1186,31 @@ public final class RelaySwitch: @unchecked Sendable {
         return masters.enumerated().map { (idx, m) in
             MasterHealthStatus(index: idx, healthy: m.healthy, capCount: m.caps.count, lastError: m.lastError)
         }
+    }
+
+    /// Whether `addMaster(id)` is legitimate RIGHT NOW: no slot carries
+    /// this id, or the slot's connection is gone. A host that reconnects
+    /// on every control-plane event must ask this BEFORE dialling —
+    /// `addMaster` can only learn the answer after consuming a fresh
+    /// socket, and a socket dialled into an attached slot is a duplicate
+    /// connection the host side has to refuse. A slot that is merely
+    /// UNHEALTHY (identity probe pending or failed) with its socket open
+    /// is still attached. Mirrors Rust `slot_accepts_attach`.
+    public func slotAcceptsAttach(_ id: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let slot = masters.first(where: { $0.id == id }) else { return true }
+        return slot.detached
+    }
+
+    /// Test seam (internal): force a slot's health flag, to stage the
+    /// "unhealthy but attached" state (a pending identity probe) without
+    /// driving a RelayNotify transition. Mirrors the reference tests'
+    /// direct store into `masters[idx].healthy`.
+    internal func setMasterHealthyForTest(_ idx: Int, _ healthy: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        masters[idx].healthy = healthy
     }
 
     /// Count of healthy masters. Mirrors Rust `healthy_master_count`.
@@ -2047,6 +2093,14 @@ public final class RelaySwitch: @unchecked Sendable {
         admission.disableMaster(masterIdx)
         lock.lock()
         defer { lock.unlock() }
+
+        // The slot is DETACHED from here on, whatever the health flag
+        // said: the connection is declared dead, so the slot is
+        // reattachable to `addMaster` / `slotAcceptsAttach`. Before the
+        // already-handled short-circuit below — an unhealthy-but-attached
+        // slot (probe pending) whose socket then closes must detach too,
+        // or the host could never reconnect to it.
+        masters[masterIdx].detached = true
 
         guard masters[masterIdx].healthy else {
             return

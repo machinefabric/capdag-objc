@@ -2898,6 +2898,16 @@ public final class CartridgeHost: @unchecked Sendable {
 
         // Send ERR frames for all pending work (unexpected death and OOM kill).
         if let info = errInfo {
+            // Surface the death in the host log, as the reference does
+            // (`host_runtime.rs`): until now it travelled only as ERR
+            // frames to pending callers and as `lastDeathMessage`, so a
+            // cartridge killed for missing heartbeats, or by a signal,
+            // left no line in any saved log — only the engine's bare
+            // "stopped responding". `.error` so the unified log persists
+            // it (`.info` is not kept by default).
+            os_log(.error, log: Self.log,
+                   "Cartridge %{public}@ died: [%{public}@] %{public}@",
+                   observerName, info.code, info.message)
             for entry in failedOutgoing {
                 var err = Frame.err(id: entry.rid, code: info.code, attributionClass: info.attributionClass, message: info.message)
                 err.seq = entry.nextSeq
@@ -3402,16 +3412,26 @@ public final class CartridgeHost: @unchecked Sendable {
         posix_spawn_file_actions_adddup2(&fileActions, outputPipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         posix_spawn_file_actions_adddup2(&fileActions, errorPipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
 
-        // Close all pipe descriptors in child
-        posix_spawn_file_actions_addclose(&fileActions, inputPipe.fileHandleForReading.fileDescriptor)
-        posix_spawn_file_actions_addclose(&fileActions, inputPipe.fileHandleForWriting.fileDescriptor)
-        posix_spawn_file_actions_addclose(&fileActions, outputPipe.fileHandleForReading.fileDescriptor)
-        posix_spawn_file_actions_addclose(&fileActions, outputPipe.fileHandleForWriting.fileDescriptor)
-        posix_spawn_file_actions_addclose(&fileActions, errorPipe.fileHandleForReading.fileDescriptor)
-        posix_spawn_file_actions_addclose(&fileActions, errorPipe.fileHandleForWriting.fileDescriptor)
+        // The child inherits NOTHING but the three stdio descriptors
+        // dup2'd above. The Rust reference gets this for free — every
+        // descriptor Rust opens is close-on-exec — and the port must
+        // match: without it a cartridge inherits this process's whole
+        // descriptor table, which is the relay socket to the engine, the
+        // relay listener, and every sibling cartridge's pipes. The
+        // consequences are not theoretical (observed 2026-08-22): when
+        // the host process died, its orphaned cartridges kept the
+        // engine-facing socket open, so the engine never saw EOF, kept
+        // the dead host's slot "healthy", and refused every reconnect
+        // until the app was restarted; and a sibling holding the write
+        // end of another cartridge's stdin means that cartridge never
+        // sees EOF when its own host goes away.
+        var spawnAttr: posix_spawnattr_t?
+        posix_spawnattr_init(&spawnAttr)
+        defer { posix_spawnattr_destroy(&spawnAttr) }
+        posix_spawnattr_setflags(&spawnAttr, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT))
 
         // Spawn
-        let spawnResult = posix_spawn(&pid, path, &fileActions, nil, argv, nil)
+        let spawnResult = posix_spawn(&pid, path, &fileActions, &spawnAttr, argv, nil)
         guard spawnResult == 0 else {
             let desc = String(cString: strerror(spawnResult))
             let msg = "posix_spawn failed for \(path): \(desc)"

@@ -1017,6 +1017,88 @@ final class CborRelaySwitchTests: XCTestCase {
         switch_.shutdown()
     }
 
+    // TEST1965: attachment is decided by the SOCKET, not the health flag.
+    // A slot whose identity probe is pending is unhealthy yet attached —
+    // its socket is open — and reattaching over it would strand the
+    // host; slotAcceptsAttach says no and addMaster refuses, so a host
+    // that asks first never dials a slot it holds. Once the slave drops
+    // its socket (reader EOF → the slot detaches) the same id reattaches
+    // in place.
+    func test1965_AttachDecidedBySocketLivenessNotHealth() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let done = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            done.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            _ = release.wait(timeout: .now() + 10)
+            try? pair1.write.close()
+            try? pair2.read.close()
+        }
+        XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
+        let switch_ = try RelaySwitch(sockets: [
+            SocketPair(id: "xpc-service", read: pair1.read, write: pair2.write)
+        ])
+        XCTAssertFalse(switch_.slotAcceptsAttach("xpc-service"),
+            "a healthy attached slot must not accept a second attach")
+        XCTAssertTrue(switch_.slotAcceptsAttach("never-seen"),
+            "an id with no slot is always attachable")
+
+        // Unhealthy but attached (the identity-probe-pending state):
+        // the health flag alone must not open the slot.
+        switch_.setMasterHealthyForTest(0, false)
+        XCTAssertFalse(switch_.slotAcceptsAttach("xpc-service"),
+            "an unhealthy slot whose socket is still open is still attached")
+        let dummy1 = FileHandle.socketPair()
+        let dummy2 = FileHandle.socketPair()
+        XCTAssertThrowsError(try switch_.addMaster(SocketPair(
+            id: "xpc-service", read: dummy1.read, write: dummy2.write
+        ))) { error in
+            guard case let RelaySwitchError.protocolError(msg) = error else {
+                XCTFail("expected protocolError; got \(error)")
+                return
+            }
+            XCTAssertTrue(msg.contains("attached but unhealthy"),
+                "the refusal names the real state: \(msg)")
+        }
+        switch_.setMasterHealthyForTest(0, true)
+
+        // The slave drops its socket: the reader exits, the slot
+        // detaches — without the pump having to run.
+        release.signal()
+        let deadline = Date().addingTimeInterval(5)
+        while !switch_.slotAcceptsAttach("xpc-service") {
+            XCTAssertLessThan(Date(), deadline, "the slot must detach once its socket is gone")
+            if Date() >= deadline { break }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+
+        // Reattach in place.
+        let pair1b = FileHandle.socketPair()
+        let pair2b = FileHandle.socketPair()
+        let done2 = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2b.read)
+            let writer = FrameWriter(handle: pair1b.write)
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            done2.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            _ = try? reader.read()
+        }
+        XCTAssertEqual(done2.wait(timeout: .now() + 2), .success)
+        let idx = try switch_.addMaster(SocketPair(
+            id: "xpc-service", read: pair1b.read, write: pair2b.write
+        ))
+        XCTAssertEqual(idx, 0, "reattach must reuse slot 0")
+        XCTAssertFalse(switch_.slotAcceptsAttach("xpc-service"), "a reattached slot is attached again")
+
+        switch_.shutdown()
+    }
+
     // TEST6745: RelaySwitch::new rejects duplicate ids in its cardinality list.
     func test6745_RelaySwitchInitRejectsDuplicateIds() throws {
         let pair1 = FileHandle.socketPair()
