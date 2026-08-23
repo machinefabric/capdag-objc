@@ -411,24 +411,40 @@ final class DevTests: XCTestCase {
         return nil
     }
 
-    /// Split a stub file into its capdag version pin and everything else.
-    ///
-    /// The pin appears once per stub, in the language's own dependency syntax:
-    /// `tag = "v1.2.3"` (Cargo), `capdag-go v1.2.3` (go.mod), `from: "1.2.3"`
-    /// (SwiftPM). Rather than teach this three grammars, the first
-    /// dotted-triple on a line that mentions capdag IS the pin.
-    private func splitPin(_ text: String) -> ([UInt64]?, String) {
-        var pin: [UInt64]?
+    /// A line whose dotted triple is a STAMPED version, not contract: one
+    /// that names capdag (the dependency pin, in any language's syntax), or
+    /// the stub's own version — a manifest's `version = "…"` line, a
+    /// CapManifest `version: "…"` / `version="…"` argument, or a bare
+    /// positional `"N.N.N",` (the stub repo's release, stamped by the
+    /// templates so a scaffolded cartridge carries an accurate version). All
+    /// move on every release and none says anything about the stub.
+    private func isPinLine(_ line: String) -> Bool {
+        let stripped = line.trimmingCharacters(in: .whitespaces)
+        if line.contains("capdag") || stripped.hasPrefix("version") { return true }
+        var bare = Substring(stripped)
+        if bare.hasSuffix(",") { bare = bare.dropLast() }
+        let bareLine = String(bare).trimmingCharacters(in: .whitespaces)
+        guard bareLine.count >= 2, bareLine.hasPrefix("\""), bareLine.hasSuffix("\""),
+              let (_, range) = firstTriple(bareLine) else { return false }
+        return range.lowerBound == bareLine.index(after: bareLine.startIndex)
+            && range.upperBound == bareLine.index(before: bareLine.endIndex)
+    }
+
+    /// Split a stub file into its version pins (in order) and everything
+    /// else. Rather than teach this several grammars, the first dotted-triple
+    /// on every pin line (see `isPinLine`) IS a pin.
+    private func splitPins(_ text: String) -> ([[UInt64]], String) {
+        var pins: [[UInt64]] = []
         var kept: [String] = []
         for line in text.components(separatedBy: "\n") {
             var keptLine = line
-            if pin == nil, line.contains("capdag"), let (numbers, range) = firstTriple(line) {
-                pin = numbers
+            if isPinLine(line), let (numbers, range) = firstTriple(line) {
+                pins.append(numbers)
                 keptLine.replaceSubrange(range, with: "<pin>")
             }
             kept.append(keptLine)
         }
-        return (pin, kept.joined(separator: "\n"))
+        return (pins, kept.joined(separator: "\n"))
     }
 
     /// A vendored stub file against the canonical bytes.
@@ -454,26 +470,28 @@ final class DevTests: XCTestCase {
         // `from:` — or a path, were one ever rendered) and the comment lines
         // explaining it are stripped before comparing. The VERSION on that line
         // is read first, and the ordering rule below still applies to it.
-        let (vendoredPin, vendoredRestRaw) = splitPin(vendored)
-        let (canonicalPin, canonicalRestRaw) = splitPin(canonical)
+        let (vendoredPins, vendoredRestRaw) = splitPins(vendored)
+        let (canonicalPins, canonicalRestRaw) = splitPins(canonical)
         let vendoredRest = stripCapdagDependencySource(dest, vendoredRestRaw)
         let canonicalRest = stripCapdagDependencySource(dest, canonicalRestRaw)
         XCTAssertEqual(
             vendoredRest, canonicalRest,
             "\(language): vendored \(dest) differs from the canonical bytes in more than the "
-                + "capdag dependency source/version — re-vendor the stubs")
-        guard let vendoredPin, let canonicalPin else {
+                + "capdag dependency source and the stamped version pins — re-vendor the stubs")
+        guard !vendoredPins.isEmpty, vendoredPins.count == canonicalPins.count else {
             XCTFail(
-                "\(language): vendored \(dest) differs from the canonical bytes and neither "
-                    + "carries a version pin to explain it — re-vendor the stubs")
+                "\(language): vendored \(dest) differs from the canonical bytes and the two "
+                    + "sides do not carry the same version pins to explain it — re-vendor the stubs")
             return
         }
-        let vendoredText = vendoredPin.map(String.init).joined(separator: ".")
-        let canonicalText = canonicalPin.map(String.init).joined(separator: ".")
-        XCTAssertFalse(
-            lexicographicallyPrecedes(canonicalPin, vendoredPin),
-            "\(language): vendored \(dest) pins capdag \(vendoredText) but capdag is "
-                + "\(canonicalText) — a stub may lag a release, never precede one")
+        for (vendoredPin, canonicalPin) in zip(vendoredPins, canonicalPins) {
+            let vendoredText = vendoredPin.map(String.init).joined(separator: ".")
+            let canonicalText = canonicalPin.map(String.init).joined(separator: ".")
+            XCTAssertFalse(
+                lexicographicallyPrecedes(canonicalPin, vendoredPin),
+                "\(language): vendored \(dest) pins \(vendoredText) but the canonical stub is at "
+                    + "\(canonicalText) — a stub may lag a release, never precede one")
+        }
     }
 
     /// A manifest line that is the capdag dependency SOURCE: a path, git tag,
