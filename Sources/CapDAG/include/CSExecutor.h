@@ -20,7 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Protocol for executing caps
 /// Implemented by:
-/// - machfab: via CapService.execute_cap() through the relay
+/// - floom-engine: via CapService.execute_cap() through the relay
 /// - the standalone CapDAG CLI: by spawning cartridge binaries
 @protocol CSCapExecutorProtocol <NSObject>
 
