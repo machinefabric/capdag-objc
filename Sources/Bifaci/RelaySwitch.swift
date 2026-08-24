@@ -2799,7 +2799,7 @@ public enum CartridgeAttachmentErrorKind: String, Codable, Hashable, Sendable {
     /// UI. The cartridge is on disk and would otherwise have
     /// attached cleanly; the host treats it as if the binary were
     /// yanked out of the system. Re-enabling is a UI-driven
-    /// operator action. Enforced at the host level (machfab-mac's
+    /// operator action. Enforced at the host level (macfloom's
     /// XPC service); the engine doesn't act on it differently from
     /// any other failed attachment, but preserves the kind so
     /// consumers can render the right reason and offer the right
@@ -2957,7 +2957,7 @@ public struct CartridgeRuntimeStats: Codable, Hashable, Sendable {
 /// cartridge is in one of the in-progress phases or has reached
 /// `.operational`; only `.operational` cartridges are dispatchable.
 ///
-/// See `machfab-mac/docs/cartridge state machine.md` for the
+/// See `macfloom/docs/cartridge state machine.md` for the
 /// canonical state diagram.
 public enum CartridgeLifecycle: String, Codable, Hashable, Sendable {
     /// Discovery scan has found the version directory and is about
