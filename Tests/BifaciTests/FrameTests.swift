@@ -1904,7 +1904,7 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - FrameWriter close-vs-write safety
     //
-    // These tests pin down the bug that took down CartridgeXPCService
+    // These tests pin down the bug that took down CartridgeDaemon
     // when a cartridge subprocess OOM-died: `FrameWriter.write` used to
     // call `handle.fileDescriptor` on every write, which raises
     // `NSFileHandleOperationException` on a closed handle. That
@@ -1977,7 +1977,7 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST6723: Concurrent close() + write() must not raise an Objective-C NSException. This is the regression test for the CartridgeXPCService crash on cartridge OOM: the old writer accessed `handle.fileDescriptor` on every write, so a close() racing a write() called the accessor on a closed handle and aborted the process. The cached-fd writer keeps the descriptor in the writer's own state, so the worst outcome of the race is a clean FrameError thrown from write().
+    // TEST6723: Concurrent close() + write() must not raise an Objective-C NSException. This is the regression test for the CartridgeDaemon crash on cartridge OOM: the old writer accessed `handle.fileDescriptor` on every write, so a close() racing a write() called the accessor on a closed handle and aborted the process. The cached-fd writer keeps the descriptor in the writer's own state, so the worst outcome of the race is a clean FrameError thrown from write().
     func test6723_concurrentCloseAndWriteDoesNotCrash() throws {
         // Run the race many times to exercise both orderings — close-wins
         // and write-wins. Either outcome is acceptable; what is NOT

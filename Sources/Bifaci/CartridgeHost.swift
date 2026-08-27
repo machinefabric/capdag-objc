@@ -49,7 +49,7 @@ import CapDAG
 /// during the call, but the call still runs on the run loop / reader
 /// thread that produced the event.
 ///
-/// Used by `CartridgeXPCService` to forward lifecycle into reverse-XPC
+/// Used by `CartridgeDaemon` to forward lifecycle into reverse-XPC
 /// callbacks; not used by the engine or in-process tests (they leave
 /// the observer unset).
 public protocol CartridgeHostObserver: AnyObject {
@@ -1350,7 +1350,7 @@ public final class CartridgeHost: @unchecked Sendable {
 
     /// Lifecycle observer. Set by callers that want to be notified
     /// when a cartridge transitions in/out of the running state
-    /// (typically `CartridgeXPCService` to forward to its Mac-app
+    /// (typically `CartridgeDaemon` to forward to its Mac-app
     /// client via reverse-XPC). Held weakly so the observer's
     /// lifecycle is owned by its real holder. Mirrors
     /// `CartridgeHostRuntime::observer` in the Rust reference.
@@ -1959,7 +1959,7 @@ public final class CartridgeHost: @unchecked Sendable {
         //
         // Per-iteration `autoreleasepool` is essential here: this loop
         // runs on a bare `Thread { }` started from
-        // `CartridgeXPCServiceImplementation.handleEngineConnection`,
+        // `CartridgeDaemonImplementation.handleEngineConnection`,
         // and the dispatch into handleRelayFrame / handleCartridgeFrame
         // / sendToRelay touches Foundation calls (FileHandle writes,
         // CBOR encode allocations) that emit autoreleased objects.
