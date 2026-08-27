@@ -145,22 +145,22 @@ BOOL outputValid = [CSOutputValidator validateOutput:resultData cap:cap error:&e
 
 ## Cartridge SDK Integration
 
-The MachineFabric Cartridge SDK provides convenience methods for common document processing schemas:
+The CapDAG Cartridge SDK provides convenience methods for common document processing schemas:
 
 ```objc
 // Standard document metadata schema
 CSCapArgument *metadataArg = [CSCapArgument documentMetadataArgumentWithName:@"metadata"
                                                                   description:@"Document metadata"
                                                                       cliFlag:@"--metadata"
-                                                                       schema:[MachFabSchemaValidationHelper standardDocumentMetadataSchema]];
+                                                                       schema:[CapDAGSchemaValidationHelper standardDocumentMetadataSchema]];
 
 // Standard file chips schema
-CSCapOutput *pagesOutput = [CSCapOutput disboundPagesOutputWithSchema:[MachFabSchemaValidationHelper standardDisboundPagesSchema]
+CSCapOutput *pagesOutput = [CSCapOutput disboundPagesOutputWithSchema:[CapDAGSchemaValidationHelper standardDisboundPagesSchema]
                                                           description:@"Extracted file chips"];
 
 // Validate cartridge manifest schemas
 NSError *error = nil;
-BOOL manifestValid = [MachFabSchemaValidationHelper validatePluginManifest:manifest error:&error];
+BOOL manifestValid = [CapDAGSchemaValidationHelper validatePluginManifest:manifest error:&error];
 ```
 
 ## Error Handling

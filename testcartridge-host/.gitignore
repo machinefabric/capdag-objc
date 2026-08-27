@@ -1,4 +1,4 @@
-# MachineFabric Project .gitignore
+# CapDAG project .gitignore
 # Comprehensive gitignore for Xcode Swift + npm + AsyncAPI project
 
 # =============================================================================
@@ -289,7 +289,7 @@ dist
 # =============================================================================
 # Project Specific
 # =============================================================================
-# MachineFabric Engine logs
+# CapDAG host logs
 engine.log
 *.log
 
@@ -578,7 +578,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 tui.yaml.lock
-MacFabricLoomSDK/Tests/data
 .swiftpm
 
 /engine
