@@ -419,4 +419,23 @@ public struct RegistryVerdict: Codable, Hashable, Sendable {
 
     /// Whether a cartridge from this registry may attach.
     public var permitsAttachment: Bool { state.permitsAttachment }
+
+    /// WHETHER TWO VERDICTS SAY THE SAME THING ABOUT THE REGISTRY.
+    ///
+    /// Not `==`. A verdict carries `checkedAtUnixSeconds`, which is provenance
+    /// about the CHECK and not about the registry — so a consumer asking "did
+    /// this change?" with equality is told yes on every re-check, forever. Both
+    /// desktop clients asked exactly that to decide whether to re-run cartridge
+    /// discovery, and both wrote a comment saying they were doing it to avoid a
+    /// feedback loop. The comparison they used could not: discovery finished,
+    /// the verifier re-checked, the identical answer came back with a newer
+    /// timestamp, "the verdicts changed" re-ran discovery, and the engine never
+    /// reached ready. This is the comparison that question wants.
+    public func statesTheSame(as other: RegistryVerdict) -> Bool {
+        registryURL == other.registryURL
+            && state == other.state
+            && detail == other.detail
+            && httpStatus == other.httpStatus
+            && chainFailure == other.chainFailure
+    }
 }

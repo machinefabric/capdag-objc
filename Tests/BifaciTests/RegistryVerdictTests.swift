@@ -194,4 +194,32 @@ final class RegistryVerdictTests: XCTestCase {
         XCTAssertEqual(CSManifestSigFormat, "machinefabric-manifest-sig/1")
         XCTAssertEqual(CSReleaseKeyCertFormat, "machinefabric-release-key-cert/1")
     }
+
+    /// TEST8162: WHEN IS A VERDICT NEWS? Both desktop clients re-verify their
+    /// registries after every discovery round and re-run discovery when the
+    /// verdicts "changed". Change had to mean "the registry said something
+    /// different", and `==` cannot mean that: it includes the moment of the
+    /// check, so the same answer taken a second later is a different value.
+    /// That is the loop that left an engine discovering cartridges forever.
+    func test8162AVerdictSaysTheSameThingAtADifferentTime() throws {
+        let earlier = try RegistryVerdict.verified(registryURL: "https://r.example", checkedAtUnixSeconds: 1_756_000_000)
+        let later = try RegistryVerdict.verified(registryURL: "https://r.example", checkedAtUnixSeconds: 1_756_000_931)
+        XCTAssertNotEqual(earlier, later, "they are not the same value — one is a later check")
+        XCTAssertTrue(earlier.statesTheSame(as: later), "but they say the same thing about the registry")
+
+        let differing = [
+            try RegistryVerdict.stated(registryURL: "https://r.example", state: .unreachable, detail: "connection timed out", checkedAtUnixSeconds: 1_756_000_000),
+            try RegistryVerdict.httpError(registryURL: "https://r.example", status: 503, detail: "the registry answered HTTP 503", checkedAtUnixSeconds: 1_756_000_000),
+            try RegistryVerdict.chainFailed(registryURL: "https://r.example", reason: .manifestSignatureInvalid, detail: "signature does not verify", checkedAtUnixSeconds: 1_756_000_000),
+            try RegistryVerdict.verified(registryURL: "https://other.example/manifest", checkedAtUnixSeconds: 1_756_000_000),
+        ]
+        for verdict in differing {
+            XCTAssertFalse(earlier.statesTheSame(as: verdict), "\(verdict.state.rawValue) is a different statement about the registry")
+        }
+
+        // 404 and 503 are different situations with different remedies.
+        let notFound = try RegistryVerdict.httpError(registryURL: "https://r.example", status: 404, detail: "the registry answered HTTP 404", checkedAtUnixSeconds: 1_756_000_000)
+        let unavailable = try RegistryVerdict.httpError(registryURL: "https://r.example", status: 503, detail: "the registry answered HTTP 503", checkedAtUnixSeconds: 1_756_000_000)
+        XCTAssertFalse(notFound.statesTheSame(as: unavailable))
+    }
 }
