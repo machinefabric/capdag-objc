@@ -137,7 +137,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
         try installFixture(root: root, slug: wrongSlug, channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
 
         let out = try discoverCartridges(root, identity: nightlyDevIdentity())
-        expectIncompatible(out, .badInstallation)
+        expectIncompatible(out, .misplaced)
     }
 
     // MARK: - TEST1878
@@ -160,7 +160,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
         try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
 
         let out = try discoverCartridges(root, identity: nightlyDevIdentity())
-        expectIncompatible(out, .badInstallation)
+        expectIncompatible(out, .misplaced)
         guard case let .incompatible(_, _, _, _, _, error) = out.first else {
             return XCTFail("expected Incompatible, got \(String(describing: out.first))")
         }

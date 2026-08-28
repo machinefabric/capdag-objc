@@ -13,7 +13,7 @@ final class RegistryVerdictTests: XCTestCase {
     func test8150_stateWireNamesMatchTheMirrors() {
         let expected = [
             "verified", "pending", "offline", "unreachable",
-            "http_error", "malformed", "unsigned", "untrusted", "unverifiable",
+            "http_error", "malformed", "unsigned", "untrusted", "unverifiable", "unenforced",
         ]
         XCTAssertEqual(RegistryVerdictState.allCases.map(\.rawValue), expected)
         let reasons = [
@@ -54,8 +54,18 @@ final class RegistryVerdictTests: XCTestCase {
     /// included, which must never read as permission.
     func test8152_onlyVerifiedPermitsAttachment() {
         for state in RegistryVerdictState.allCases {
-            XCTAssertEqual(state.permitsAttachment, state == .verified, state.rawValue)
+            XCTAssertEqual(
+                state.permitsAttachment,
+                state == .verified || state == .unenforced,
+                state.rawValue
+            )
         }
+        // A DEV BUILD HAS TO WORK, and it says which of the two it is: "we
+        // checked and it passed" and "we did not check" are different facts.
+        XCTAssertTrue(RegistryVerdictState.unenforced.permitsAttachment)
+        XCTAssertFalse(RegistryVerdictState.unenforced.isTrustFailure)
+        XCTAssertFalse(RegistryVerdictState.unenforced.isTransient)
+        XCTAssertEqual(RegistryVerdictState.unenforced.remedy, .none)
     }
 
     /// TEST8153: a refusal never resolves itself, so nothing may present it as

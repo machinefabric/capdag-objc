@@ -69,18 +69,28 @@ public enum RegistryVerdictState: String, Codable, Hashable, Sendable, CaseItera
     /// parsing. This build's problem — most often a client older or newer than
     /// the publisher.
     case unverifiable
+    /// This build bakes no trust anchors, so there is no regime to verify
+    /// against and the manifest was accepted without proof. A development
+    /// build, and only ever that.
+    ///
+    /// It permits attachment — a dev build has to work — and is a SEPARATE
+    /// state rather than being reported as `.verified`, because "we checked and
+    /// it passed" and "we did not check" are different facts, and a consumer
+    /// that cannot tell them apart will one day ship the second believing the
+    /// first.
+    case unenforced
 
     /// Whether a cartridge claiming provenance from a registry in this state
     /// may attach. True for `.verified` alone: every other state, the hopeful
     /// ones included, means the claim is unconfirmed.
-    public var permitsAttachment: Bool { self == .verified }
+    public var permitsAttachment: Bool { self == .verified || self == .unenforced }
 
     /// Whether this state is a refusal of an answer we DID get, as opposed to
     /// not having got one. A refusal will not change on retry.
     public var isTrustFailure: Bool {
         switch self {
         case .unsigned, .untrusted, .unverifiable: return true
-        case .verified, .pending, .offline, .unreachable, .httpError, .malformed: return false
+        case .verified, .pending, .offline, .unreachable, .httpError, .malformed, .unenforced: return false
         }
     }
 
@@ -90,7 +100,7 @@ public enum RegistryVerdictState: String, Codable, Hashable, Sendable, CaseItera
     public var isTransient: Bool {
         switch self {
         case .pending, .unreachable, .httpError, .malformed: return true
-        case .verified, .offline, .unsigned, .untrusted, .unverifiable: return false
+        case .verified, .offline, .unsigned, .untrusted, .unverifiable, .unenforced: return false
         }
     }
 }
@@ -133,7 +143,7 @@ extension RegistryVerdictState {
     /// would get whatever sentence was nearest.
     public var remedy: RegistryRemedy {
         switch self {
-        case .verified: return .none
+        case .verified, .unenforced: return .none
         case .pending: return .wait
         case .offline: return .changeNetworkPolicy
         case .unreachable: return .checkNetwork
@@ -277,6 +287,17 @@ public struct RegistryVerdict: Codable, Hashable, Sendable {
         return verdict
     }
 
+    /// This build bakes no trust anchors: the manifest was accepted without
+    /// proof, and says so rather than claiming it verified.
+    public static func unenforced(registryURL: String, checkedAtUnixSeconds: Int64) throws -> RegistryVerdict {
+        let verdict = RegistryVerdict(
+            registryURL: registryURL, state: .unenforced, detail: "",
+            httpStatus: nil, chainFailure: nil, checkedAtUnixSeconds: checkedAtUnixSeconds
+        )
+        try verdict.validate()
+        return verdict
+    }
+
     /// No verdict yet. Carries no time, because nothing has been checked.
     public static func pending(registryURL: String) throws -> RegistryVerdict {
         let verdict = RegistryVerdict(
@@ -300,7 +321,7 @@ public struct RegistryVerdict: Codable, Hashable, Sendable {
         switch state {
         case .offline, .unreachable, .malformed, .unsigned:
             break
-        case .verified, .pending:
+        case .verified, .pending, .unenforced:
             throw RegistryVerdictError.statesNoFailureButCarriesDetail(state, detail)
         case .httpError:
             throw RegistryVerdictError.missingHTTPStatus
@@ -356,7 +377,7 @@ public struct RegistryVerdict: Codable, Hashable, Sendable {
     public func validate() throws {
         if registryURL.isEmpty { throw RegistryVerdictError.missingRegistryURL }
         switch state {
-        case .verified, .pending:
+        case .verified, .pending, .unenforced:
             if !detail.isEmpty {
                 throw RegistryVerdictError.statesNoFailureButCarriesDetail(state, detail)
             }
