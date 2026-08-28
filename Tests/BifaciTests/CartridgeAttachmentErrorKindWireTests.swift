@@ -36,9 +36,10 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
             (.identityRejected,    "identity_rejected"),
             (.entryPointMissing,   "entry_point_missing"),
             (.quarantined,         "quarantined"),
-            (.badInstallation,     "bad_installation"),
+            (.misplaced,           "misplaced"),
+            (.notListed,           "not_listed"),
             (.disabled,            "disabled"),
-            (.registryUnreachable, "registry_unreachable"),
+            (.registryUnverified,  "registry_unverified"),
             (.fabricManifestVersionMismatch, "fabric_manifest_version_mismatch"),
         ]
         for (kind, expectedRaw) in expected {
@@ -61,7 +62,7 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
         let cases: [CartridgeAttachmentErrorKind] = [
             .incompatible, .manifestInvalid, .handshakeFailed,
             .identityRejected, .entryPointMissing, .quarantined,
-            .badInstallation, .disabled, .registryUnreachable,
+            .misplaced, .notListed, .disabled, .registryUnverified,
             .fabricManifestVersionMismatch,
         ]
         let encoder = JSONEncoder()
@@ -85,8 +86,8 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
     /// TEST1712: An on-the-wire JSON payload using the snake_case
     /// raw values decodes into the right Swift variant. This is
     /// the engine → Swift path: the engine emits
-    /// `{"kind":"bad_installation",...}` and the Swift side must
-    /// resolve it to `.badInstallation`. Asserts the lookup table
+    /// `{"kind":"misplaced",...}` and the Swift side must
+    /// resolve it to `.misplaced`. Asserts the lookup table
     /// the decoder synthesises for `String`-backed enums actually
     /// covers the new variants.
     func test1712_decodesWireFormatJSONIntoExpectedVariants() throws {
@@ -97,9 +98,10 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
             ("identity_rejected",   .identityRejected),
             ("entry_point_missing", .entryPointMissing),
             ("quarantined",         .quarantined),
-            ("bad_installation",    .badInstallation),
+            ("misplaced",           .misplaced),
+            ("not_listed",          .notListed),
             ("disabled",            .disabled),
-            ("registry_unreachable",.registryUnreachable),
+            ("registry_unverified", .registryUnverified),
             ("fabric_manifest_version_mismatch", .fabricManifestVersionMismatch),
         ]
         let decoder = JSONDecoder()
@@ -118,12 +120,11 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
         }
     }
 
-    /// TEST1713: An unknown wire kind FAILS to decode. The two
-    /// new variants are wire-additive — older Swift binaries that
-    /// don't know `bad_installation` or `disabled` will see those
-    /// strings and reject them, which is correct: silently
-    /// coercing an unknown variant to a fallback would hide the
-    /// version-skew bug. The fatalError sites in
+    /// TEST1713: An unknown wire kind FAILS to decode. A binary that does
+    /// not know a kind sees its string and rejects it, which is correct:
+    /// silently coercing an unknown variant to a fallback would hide the
+    /// version-skew bug — and the retired `bad_installation` and
+    /// `registry_unreachable` are exactly such strings now. The fatalError sites in
     /// CartridgeGRPCAdapter and InstalledCartridgesStore rely on
     /// this — they expect decode to throw / produce a known
     /// variant, never silently pick a default.
@@ -141,5 +142,22 @@ final class CartridgeAttachmentErrorKindWireTests: XCTestCase {
             try decoder.decode(CartridgeAttachmentError.self, from: data),
             "unknown wire kind must throw, not silently coerce"
         )
+        // THE RETIRED KINDS ARE UNKNOWN KINDS. `bad_installation` meant two
+        // situations with different remedies and `registry_unreachable`
+        // claimed a cause it could not know; a producer still emitting either
+        // is out of step with this build and must be refused, not guessed at.
+        for retired in ["bad_installation", "registry_unreachable"] {
+            let retiredJSON = """
+            {
+                "kind": "\(retired)",
+                "message": "a producer that has not been updated",
+                "detected_at_unix_seconds": 1700000000
+            }
+            """
+            XCTAssertThrowsError(
+                try decoder.decode(CartridgeAttachmentError.self, from: Data(retiredJSON.utf8)),
+                "the retired kind '\(retired)' must not decode into anything"
+            )
+        }
     }
 }

@@ -288,7 +288,7 @@ private func scanChannelRoot(
         do {
             cj = try CartridgeJson.readFromDir(versionDir, expectedSlug: expectedSlug)
         } catch let e as CartridgeJsonError {
-            let kind: CartridgeAttachmentErrorKind = e.isRegistrySlugMismatch ? .badInstallation : .manifestInvalid
+            let kind: CartridgeAttachmentErrorKind = e.isRegistrySlugMismatch ? .misplaced : .manifestInvalid
             discovered.append(.incompatible(
                 versionDir: versionDir,
                 id: pathDerivedName,
@@ -312,7 +312,7 @@ private func scanChannelRoot(
                 registryURL: cj.registryURL,
                 version: cj.version,
                 error: CartridgeAttachmentError(
-                    kind: .badInstallation,
+                    kind: .misplaced,
                     message: "Channel mismatch: cartridge declares '\(cj.channel.asString)' but host is pinned to '\(identity.channel.asString)'. Release and nightly artefacts must not mix.",
                     detectedAtUnixSeconds: detectedAt
                 )
@@ -389,7 +389,7 @@ private func scanChannelRoot(
                     registryURL: cj.registryURL,
                     version: cj.version,
                     error: CartridgeAttachmentError(
-                        kind: .badInstallation,
+                        kind: .misplaced,
                         message: "bundled cartridge integrity check failed: \(reason)",
                         detectedAtUnixSeconds: detectedAt
                     )

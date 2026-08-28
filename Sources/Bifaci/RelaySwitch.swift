@@ -2794,7 +2794,20 @@ public enum CartridgeAttachmentErrorKind: String, Codable, Hashable, Sendable {
     /// disappears. Distinct from `quarantined` (host decided after a
     /// crash) and from `manifestInvalid` (cartridge.json itself is
     /// unreadable or schema-broken).
-    case badInstallation = "bad_installation"
+    /// Recovery is "reinstall".
+    ///
+    /// This was `badInstallation` and meant two unrelated things: this one,
+    /// and "the registry does not list this version" — now `.notListed`. One
+    /// kind covering two situations with different remedies cannot state
+    /// either of them.
+    case misplaced
+    /// The cartridge's registry verified, and does not list this
+    /// (channel, id, version): the artefact says it came from somewhere that
+    /// has never heard of it. Distinct from `.registryUnverified`, where the
+    /// registry's answer could not be obtained or could not be trusted —
+    /// there we do not know, here we do. Recovery is "wait for the publish,
+    /// or rebuild as a dev cartridge".
+    case notListed = "not_listed"
     /// Operator explicitly disabled this cartridge through the host
     /// UI. The cartridge is on disk and would otherwise have
     /// attached cleanly; the host treats it as if the binary were
@@ -2805,18 +2818,22 @@ public enum CartridgeAttachmentErrorKind: String, Codable, Hashable, Sendable {
     /// consumers can render the right reason and offer the right
     /// recovery action.
     case disabled
-    /// The cartridge declares a non-null `registry_url`, but the
-    /// host could not reach that registry to verify the cartridge
-    /// is listed. Distinct from `.badInstallation` (= registry
-    /// confirmed the version is missing) — `.registryUnreachable`
-    /// means we don't know. Recovery is "check network + retry"
-    /// rather than "rebuild as dev". The cartridge is held back
-    /// from attaching until verification succeeds. Network fetch
-    /// is performed by the main app (which has outbound network
-    /// entitlement) and pushed to the XPC service as a verdict
-    /// map; the XPC service is sandboxed and cannot fetch
-    /// registries directly.
-    case registryUnreachable = "registry_unreachable"
+    /// The cartridge declares a non-null `registry_url` and that registry's
+    /// verdict is not `.verified`, so its provenance claim is unconfirmed and
+    /// it is held back.
+    ///
+    /// WHY it is unconfirmed belongs to the REGISTRY, not to the cartridge: a
+    /// `RegistryVerdict` is one fact per registry URL, shared by every
+    /// cartridge from it, and consumers join on `registry_url` to state it
+    /// once. This kind deliberately carries no reason of its own — the kind it
+    /// replaces did, called itself `registryUnreachable`, and so reported a
+    /// signature this build could not read as a network outage with "check
+    /// your connection" as the remedy.
+    ///
+    /// Network fetch is performed by the main app (which has outbound network
+    /// entitlement) and pushed to the XPC service as a verdict map; the XPC
+    /// service is sandboxed and cannot fetch registries directly.
+    case registryUnverified = "registry_unverified"
     /// The cartridge was built against a different fabric registry
     /// manifest version than this host is pinned to. Both host and
     /// cartridge bake their fabric manifest version at build time from

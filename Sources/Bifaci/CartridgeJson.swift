@@ -232,7 +232,7 @@ public enum CartridgeJsonError: Error, CustomStringConvertible {
     }
 
     /// True for the slug-mismatch case (used by discovery to choose the
-    /// `badInstallation` attachment-error kind vs `manifestInvalid`).
+    /// `misplaced` attachment-error kind vs `manifestInvalid`).
     public var isRegistrySlugMismatch: Bool {
         if case .registrySlugMismatch = self { return true }
         return false
