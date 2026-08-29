@@ -18,8 +18,24 @@ final class CartridgeDiscoveryTests: XCTestCase {
     // MARK: - Helpers
 
     private func nightlyDevIdentity() -> DiscoveryIdentity {
+        // A root that ships no bundle. Every test that is not ABOUT the bundle
+        // scans a tree nothing built, so a cartridge claiming to be bundled
+        // there is in the wrong place — which is what this says.
         DiscoveryIdentity(channel: .nightly, registryURL: nil, fabricManifestVersion: 1,
-                          cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion)
+                          cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion,
+                          bundle: .none("this directory is not a build's bundle"))
+    }
+
+    /// An identity whose bundled cartridges are proven by `manifest`.
+    ///
+    /// Built here rather than verified, because what is under test is what
+    /// discovery DOES with a proof. This mirror carries no chain verification
+    /// at all — the Rust library is the only implementation of it — which is
+    /// exactly why the proof is a parameter.
+    private func bundledIdentity(_ manifest: BundleManifest) -> DiscoveryIdentity {
+        DiscoveryIdentity(channel: .nightly, registryURL: nil, fabricManifestVersion: 1,
+                          cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion,
+                          bundle: .proven(manifest))
     }
 
     /// Lay down `{root}/{slug}/v{CSBakedCartridgeRegistryVersion}/{channelFolder}/{name}/{version}/`
@@ -96,7 +112,8 @@ final class CartridgeDiscoveryTests: XCTestCase {
             channel: .nightly,
             registryURL: "https://other.example.com/manifest",
             fabricManifestVersion: 1,
-            cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion
+            cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion,
+            bundle: .none("this directory is not a build's bundle")
         )
         try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "devcart", version: "1.0.0", cartridgeJSON: devCartridgeJSON("nightly", 1), entry: "cart")
         try installFixture(root: root, slug: rslug, channelFolder: "nightly", name: "regcart", version: "1.0.0", cartridgeJSON: registryCartridgeJSON(url, "nightly", 1), entry: "cart")
@@ -140,24 +157,29 @@ final class CartridgeDiscoveryTests: XCTestCase {
         expectIncompatible(out, .misplaced)
     }
 
-    // MARK: - TEST1878
+    // MARK: - TEST1878 / TEST1928
 
-    #if !os(macOS)
-    // TEST1878: a cartridge marked `installed_from: bundle` with no baked hash
-    // is rejected as BadInstallation — the bundled-integrity gate fires before
-    // the probe. Non-macOS only: on macOS the baked-hash path is intentionally
-    // absent (OS code-signature is the guard), so a bundled cartridge is accepted
-    // there and would instead end at the probe.
-    func test1878_bundledCartridgeWithoutBakedHashIsRejected() throws {
-        let root = try makeTempRoot()
-        defer { try? FileManager.default.removeItem(atPath: root) }
-        // Dev slug (null registry) but installed_from=bundle — placement is
-        // self-consistent (null→dev), so it passes readFromDir and reaches the
-        // bundled-hash gate, which has no baked entry → BadInstallation.
-        let json = """
+    /// The cartridge.json of a bundled cartridge in the dev slot: placement is
+    /// self-consistent (null registry → dev slug), so it passes every earlier
+    /// check and reaches the bundled-integrity gate.
+    private func bundledCartridgeJSON() -> String {
+        """
         {"name":"cart","version":"1.0.0","channel":"nightly","registry_url":null,"entry":"cart","installed_at":"2024-01-01T00:00:00Z","installed_from":"bundle","fabric_manifest_version":1}
         """
-        try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
+    }
+
+    // TEST1878: a bundled cartridge in a root that proves nothing is refused —
+    // on every platform.
+    //
+    // This is the check macOS did not have. The old rule was platform-split:
+    // Linux and Windows verified a baked content hash and macOS verified
+    // nothing of ours, trusting Gatekeeper instead — so this test was
+    // `#if !os(macOS)`. It runs everywhere now because the guard does.
+    func test1878_aBundledCartridgeIsRefusedWhereNothingProvesIt() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "cart",
+                           version: "1.0.0", cartridgeJSON: bundledCartridgeJSON(), entry: "cart")
 
         let out = try discoverCartridges(root, identity: nightlyDevIdentity())
         expectIncompatible(out, .misplaced)
@@ -167,5 +189,53 @@ final class CartridgeDiscoveryTests: XCTestCase {
         XCTAssertTrue(error.message.contains("bundled cartridge integrity"),
                       "message should name the bundled-integrity failure: \(error.message)")
     }
-    #endif
+
+    // TEST1928: a bundled cartridge the manifest records passes, and one it
+    // records differently does not.
+    //
+    // The other half of TEST1878, and the one that proves the gate is a real
+    // check rather than a refusal of everything: the same tree, the same
+    // cartridge, and the only difference is what the build recorded about it.
+    // A gate that always said no would pass TEST1878 alone.
+    func test1928_aBundledCartridgePassesExactlyWhenTheManifestRecordsIt() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "cart",
+                           version: "1.0.0", cartridgeJSON: bundledCartridgeJSON(), entry: "cart")
+
+        let versionDir = ((((root as NSString)
+            .appendingPathComponent("dev") as NSString)
+            .appendingPathComponent("v\(CSBakedCartridgeRegistryVersion)") as NSString)
+            .appendingPathComponent("nightly") as NSString)
+            .appendingPathComponent("cart") as NSString
+        let cartridgeDir = versionDir.appendingPathComponent("1.0.0")
+        let recorded = try hashCartridgeDirectory(cartridgeDir)
+
+        func listed(_ sha256: String) -> DiscoveryIdentity {
+            bundledIdentity(BundleManifest(environment: "dev", cartridges: [
+                BundledCartridge(name: "cart", version: "1.0.0", channel: "nightly", sha256: sha256)
+            ]))
+        }
+
+        // Recorded as it is on disk: past the gate. It still ends at the HELLO
+        // probe, because the fixture's entry point is not a cartridge — what
+        // matters is that the failure is no longer the integrity one.
+        let passed = try discoverCartridges(root, identity: listed(recorded))
+        XCTAssertEqual(passed.count, 1)
+        guard case let .incompatible(_, _, _, _, _, error) = passed.first else {
+            return XCTFail("expected the probe to be reached, got \(String(describing: passed.first))")
+        }
+        XCTAssertFalse(error.message.contains("bundled cartridge integrity"),
+                       "a cartridge the manifest records must get past the integrity gate: \(error.message)")
+
+        // Recorded as something else — the cartridge was changed after the
+        // build recorded it.
+        let refused = try discoverCartridges(root, identity: listed(String(repeating: "f", count: 64)))
+        expectIncompatible(refused, .misplaced)
+        guard case let .incompatible(_, _, _, _, _, other) = refused.first else {
+            return XCTFail("expected Incompatible, got \(String(describing: refused.first))")
+        }
+        XCTAssertTrue(other.message.contains("bundled cartridge integrity"),
+                      "a cartridge that differs from the manifest must be refused: \(other.message)")
+    }
 }

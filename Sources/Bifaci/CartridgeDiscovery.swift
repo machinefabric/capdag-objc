@@ -29,12 +29,29 @@ public struct DiscoveryIdentity {
     /// level: cartridges live under `{slug}/v{cartridgeRegistryVersion}/
     /// {channel}/…`, pinned like the channel so a v1 host never scans a v2 tree.
     public let cartridgeRegistryVersion: UInt32
+    /// What proves the bundled cartridges under the root being scanned.
+    ///
+    /// Carried rather than looked up, because verification is one act per
+    /// discovery and because the caller is the only thing that knows what this
+    /// root IS: a build's own bundled-cartridges tree carries a verified
+    /// manifest, and the operator's installed-cartridges directory carries
+    /// `.none` — so a cartridge claiming to be bundled while sitting there is
+    /// refused for exactly that reason instead of being hosted because nobody
+    /// asked.
+    public let bundle: BundleProof
 
-    public init(channel: CartridgeChannel, registryURL: String?, fabricManifestVersion: UInt32, cartridgeRegistryVersion: UInt32) {
+    public init(
+        channel: CartridgeChannel,
+        registryURL: String?,
+        fabricManifestVersion: UInt32,
+        cartridgeRegistryVersion: UInt32,
+        bundle: BundleProof
+    ) {
         self.channel = channel
         self.registryURL = registryURL
         self.fabricManifestVersion = fabricManifestVersion
         self.cartridgeRegistryVersion = cartridgeRegistryVersion
+        self.bundle = bundle
     }
 
     /// On-disk top-level slug for THIS host's own baked registry (`dev` when
@@ -144,39 +161,6 @@ public func probeCartridgeCapGroups(path: String) throws -> [CapGroup] {
         throw CartridgeDiscoveryError.readDirFailed(path: path, underlying: "cartridge \(path) invalid manifest (\(error)): \(preview)")
     }
 }
-
-// MARK: - Bundled-cartridge integrity (non-macOS)
-
-#if !os(macOS)
-/// Baked content hashes for bundled cartridges. Empty in the plain test build
-/// (no cartridges bundled); a real bundle build codegens entries. Mirrors the
-/// Rust `BUNDLED_CARTRIDGE_HASHES` const.
-let bundledCartridgeHashes: [(name: String, version: String, hash: String)] = []
-
-/// Look up the baked expected directory hash for a bundled cartridge, or nil
-/// if `(name, version)` was not recorded at build time.
-func bundledCartridgeExpectedHash(name: String, version: String) -> String? {
-    bundledCartridgeHashes.first(where: { $0.name == name && $0.version == version })?.hash
-}
-
-/// Verify a bundled cartridge's on-disk content against the baked hash.
-/// `nil` return ⇔ ok; a non-nil string is the failure reason.
-func verifyBundledCartridgeHash(name: String, version: String, versionDir: String) -> String? {
-    guard let expected = bundledCartridgeExpectedHash(name: name, version: version) else {
-        return "no baked hash for bundled cartridge \(name) \(version) — this build did not record it (MFR_BUNDLED_CARTRIDGE_HASHES)"
-    }
-    let actual: String
-    do {
-        actual = try hashCartridgeDirectory(versionDir)
-    } catch {
-        return "failed to hash bundled cartridge directory: \(error)"
-    }
-    if actual == expected {
-        return nil
-    }
-    return "content hash mismatch — baked \(expected), on-disk \(actual); the shipped cartridge differs from what this build was compiled to ship"
-}
-#endif
 
 // MARK: - Discovery
 
@@ -375,13 +359,19 @@ private func scanChannelRoot(
         // Bundled-cartridge integrity. A cartridge marked `installed_from:
         // bundle` is shipped INSIDE this build and has no upstream registry to
         // verify against — so it needs its own integrity proof.
-        // - macOS: the OS code-signature IS the guard (notarized .app); no
-        //   baked-hash verification (Apple's re-signing would re-break a content
-        //   hash). We trust the signature — an explicit, visible rule.
-        // - Linux/Windows: integrity is a content hash baked at build time.
+        //
+        // ONE mechanism, on every platform: the build's signed bundle manifest.
+        // The proof was established when this discovery started (see
+        // `BundleProof`); here it is applied to the cartridge in hand.
+        //
+        // This used to be platform-split, and macOS had no check of ours at
+        // all. The manifest is produced at the END of a build, after every
+        // platform signing step, which is what removed the ordering problem
+        // that split existed for. Apple's signature still matters, and it is
+        // what stops the operating system warning a user; it is not what
+        // decides whether code runs here.
         if cj.installedFrom == .bundle {
-            #if !os(macOS)
-            if let reason = verifyBundledCartridgeHash(name: cj.name, version: cj.version, versionDir: versionDir) {
+            if let reason = identity.bundle.check(name: cj.name, version: cj.version, versionDir: versionDir) {
                 discovered.append(.incompatible(
                     versionDir: versionDir,
                     id: cj.name,
@@ -396,7 +386,6 @@ private func scanChannelRoot(
                 ))
                 continue
             }
-            #endif
         }
 
         let entryPoint = cj.resolveEntryPoint(versionDir)
