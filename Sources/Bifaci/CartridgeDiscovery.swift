@@ -120,8 +120,9 @@ private func unixSecondsNow() -> Int64 {
 /// error — the caller surfaces it as `handshakeFailed`.
 @available(macOS 10.15.4, iOS 13.4, *)
 public func probeCartridgeCapGroups(path: String) throws -> [CapGroup] {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: path)
+    // Through the launcher, because a dev cartridge's entry may be a script.
+    // See `Launch`.
+    let process = Launch.process(path)
 
     let stdinPipe = Pipe()
     let stdoutPipe = Pipe()

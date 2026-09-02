@@ -117,6 +117,21 @@ public func stubEntry(_ language: StubLanguage, _ name: String) -> String {
     renderStub(language.entry, name)
 }
 
+/// The same entry, as it is spelled ON DISK for this platform.
+///
+/// The declaration is one string for every platform — it is vendored into four
+/// mirrors and must not carry one platform's spelling — so the platform's part
+/// of the answer is added here. An entry with an extension already has one and
+/// is left alone; an entry with none is a compiled binary and gains the
+/// platform's suffix.
+public func stubEntryFile(_ language: StubLanguage, _ name: String) -> String {
+    let entry = stubEntry(language, name)
+    if !(entry as NSString).pathExtension.isEmpty {
+        return entry
+    }
+    return entry + Launch.executableSuffix
+}
+
 /// Whether a name is safe as a directory, a cap alias and a media-URN fragment
 /// all at once.
 public func validCartridgeName(_ name: String) -> Bool {
@@ -207,7 +222,8 @@ public func projectEntry(_ projectDir: String) throws -> String {
     let name = projectName(projectDir)
     var found: [String] = []
     for language in stubLanguages {
-        let candidate = (projectDir as NSString).appendingPathComponent(stubEntry(language, name))
+        let candidate = (projectDir as NSString).appendingPathComponent(
+            stubEntryFile(language, name))
         var isDirectory: ObjCBool = false
         if fm.fileExists(atPath: candidate, isDirectory: &isDirectory), !isDirectory.boolValue {
             found.append(candidate)
@@ -231,9 +247,9 @@ public func projectEntry(_ projectDir: String) throws -> String {
 /// lets capdag read a Go project's manifest from Swift without knowing or caring
 /// which language wrote it.
 public func readEntryManifest(_ entry: String) throws -> Manifest {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: entry)
-    process.arguments = ["manifest"]
+    // Through the launcher: a scaffolded Python cartridge is a `.py`. See
+    // `Launch`.
+    let process = Launch.process(entry, arguments: ["manifest"])
     let stdout = Pipe()
     let stderr = Pipe()
     process.standardOutput = stdout
