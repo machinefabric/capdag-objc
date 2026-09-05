@@ -161,13 +161,31 @@ final class DevTests: XCTestCase {
             {"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},\
             {"urn":"\(urnJSON)","title":"\(name)","aliases":["\(alias)"]}]}]}
             """
+        // A PYTHON stand-in, not a bash one. It used to be a bash script named
+        // `cartridge.py`, which worked only because the shebang decided what
+        // ran it — and the shebang is precisely the mechanism that does not
+        // exist on Windows, where such an entry is refused with `%1 is not a
+        // valid Win32 application`. The launcher resolves the interpreter from
+        // the EXTENSION now, so a file claiming to be Python is run as Python
+        // everywhere: this one was handed to python3, which read `if [ "$1" =
+        // manifest ]` and answered `SyntaxError: cannot assign to literal`.
+        //
+        // A stand-in that lied about its language would be testing a path no
+        // real cartridge takes.
+        //
+        // The manifest goes in as a Python string literal. It is JSON, so the
+        // only characters needing an escape are the quote and the backslash,
+        // and escaping both is what makes this a literal rather than a heredoc
+        // the shell would have owned.
+        let quoted = manifest
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
-            #!/usr/bin/env bash
-            if [ "$1" = manifest ]; then
-              cat <<'EOF'
-            \(manifest)
-            EOF
-            fi
+            #!/usr/bin/env python3
+            import sys
+            MANIFEST = "\(quoted)"
+            if len(sys.argv) > 1 and sys.argv[1] == "manifest":
+                sys.stdout.write(MANIFEST)
 
             """
         let projectName = (directory as NSString).lastPathComponent
@@ -301,8 +319,14 @@ final class DevTests: XCTestCase {
 
         var written = 0
         for language in stubLanguages {
+            // stubEntryFile, not stubEntry: a compiled entry is spelled with
+            // the platform's executable suffix on disk, and that is the
+            // spelling projectEntry looks for. Writing the declared spelling
+            // leaves the candidate missing wherever the two differ, so only one
+            // of the two entries is found and the ambiguity this test exists to
+            // prove never arises.
             let entry = (project as NSString)
-                .appendingPathComponent(stubEntry(language, "twoheaded"))
+                .appendingPathComponent(stubEntryFile(language, "twoheaded"))
             try FileManager.default.createDirectory(
                 atPath: (entry as NSString).deletingLastPathComponent,
                 withIntermediateDirectories: true)
