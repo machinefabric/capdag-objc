@@ -432,12 +432,12 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
     dict[@"media_urn"] = self.mediaUrn;
     dict[@"required"] = @(self.required);
-    if (self.isSequence) {
-        dict[@"is_sequence"] = @YES;
-    }
-    if (self.streaming) {
-        dict[@"streaming"] = @YES;
-    }
+    // Emitted even when NO, as the reference does. Both are plain `bool` there
+    // with `#[serde(default)]`, so they always serialize; omitting them here
+    // made this mirror's manifest bytes differ from Rust's and Python's for
+    // the identical cap, and the stub suite compares them across languages.
+    dict[@"is_sequence"] = @(self.isSequence);
+    dict[@"streaming"] = @(self.streaming);
 
     NSMutableArray *sourceDicts = [NSMutableArray array];
     for (CSArgSource *source in self.sources) {
@@ -728,8 +728,11 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
     dict[@"media_urn"] = self.mediaUrn;
     dict[@"output_description"] = self.outputDescription;
-    if (self.isSequence) dict[@"is_sequence"] = @YES;
-    if (self.streaming) dict[@"streaming"] = @YES;
+    // Emitted even when NO, for the same reason as CSCapArg above: the
+    // reference serializes both unconditionally, and the stub suite compares
+    // one cap's manifest across every mirror byte for byte.
+    dict[@"is_sequence"] = @(self.isSequence);
+    dict[@"streaming"] = @(self.streaming);
 
     if (self.metadata) dict[@"metadata"] = self.metadata;
 
