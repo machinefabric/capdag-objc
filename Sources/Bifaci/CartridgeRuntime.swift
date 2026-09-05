@@ -3198,6 +3198,16 @@ public struct CapArg: Codable, Sendable {
     /// file-path expansion cardinality: scalar args see one file per
     /// invocation; sequence args see a CBOR array of file bytes.
     public let isSequence: Bool
+    /// Whether the Op consumes this argument as it arrives — item by item or
+    /// chunk by chunk (streaming=true) — or only as a complete value
+    /// (streaming=false, the default).
+    ///
+    /// Part of the manifest every mirror emits, and it was missing here: this
+    /// type simply had no such field, so a manifest encoded from Swift left
+    /// the key out entirely while Rust and Python wrote `false`. The stub
+    /// suite compares one cap's manifest across every language and reported
+    /// `python=False swift=None` for exactly that reason.
+    public let streaming: Bool
     public let sources: [ArgSource]
     public let argDescription: String?
     public let defaultValue: JSONValue?
@@ -3206,15 +3216,17 @@ public struct CapArg: Codable, Sendable {
         case mediaUrn = "media_urn"
         case required
         case isSequence = "is_sequence"
+        case streaming
         case sources
         case argDescription = "arg_description"
         case defaultValue = "default_value"
     }
 
-    public init(mediaUrn: String, required: Bool, isSequence: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil) {
+    public init(mediaUrn: String, required: Bool, isSequence: Bool = false, streaming: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil) {
         self.mediaUrn = mediaUrn
         self.required = required
         self.isSequence = isSequence
+        self.streaming = streaming
         self.sources = sources
         self.argDescription = argDescription
         self.defaultValue = defaultValue
@@ -3225,6 +3237,7 @@ public struct CapArg: Codable, Sendable {
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
         required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
         isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
+        streaming = try container.decodeIfPresent(Bool.self, forKey: .streaming) ?? false
         sources = try container.decodeIfPresent([ArgSource].self, forKey: .sources) ?? []
         argDescription = try container.decodeIfPresent(String.self, forKey: .argDescription)
         defaultValue = try container.decodeIfPresent(JSONValue.self, forKey: .defaultValue)
@@ -3305,6 +3318,14 @@ public struct CapOutput: Codable, Sendable {
     /// Whether this output produces a sequence of items (isSequence=true) or a
     /// single item (isSequence=false, the default).
     public let isSequence: Bool
+    /// Whether a consumer may read this output as it is produced
+    /// (streaming=true) or only once complete (streaming=false, the default).
+    ///
+    /// Missing from this type entirely, which is what made a Swift-encoded
+    /// manifest differ from every other mirror's for the identical cap — the
+    /// key was absent where Rust and Python wrote `false`. The docstring above
+    /// says this type mirrors the reference field for field; now it does.
+    public let streaming: Bool
     /// Arbitrary metadata as a JSON object.
     public let metadata: JSONValue?
 
@@ -3312,13 +3333,15 @@ public struct CapOutput: Codable, Sendable {
         case mediaUrn = "media_urn"
         case outputDescription = "output_description"
         case isSequence = "is_sequence"
+        case streaming
         case metadata
     }
 
-    public init(mediaUrn: String, outputDescription: String, isSequence: Bool = false, metadata: JSONValue? = nil) {
+    public init(mediaUrn: String, outputDescription: String, isSequence: Bool = false, streaming: Bool = false, metadata: JSONValue? = nil) {
         self.mediaUrn = mediaUrn
         self.outputDescription = outputDescription
         self.isSequence = isSequence
+        self.streaming = streaming
         self.metadata = metadata
     }
 
@@ -3327,6 +3350,7 @@ public struct CapOutput: Codable, Sendable {
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
         outputDescription = try container.decode(String.self, forKey: .outputDescription)
         isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
+        streaming = try container.decodeIfPresent(Bool.self, forKey: .streaming) ?? false
         metadata = try container.decodeIfPresent(JSONValue.self, forKey: .metadata)
     }
 
@@ -3340,6 +3364,7 @@ public struct CapOutput: Codable, Sendable {
         // compared across implementations, so each field follows Rust's
         // serialization exactly rather than what looks tidier here.
         try container.encode(isSequence, forKey: .isSequence)
+        try container.encode(streaming, forKey: .streaming)
         try container.encodeIfPresent(metadata, forKey: .metadata)
     }
 }
