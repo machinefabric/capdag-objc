@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.493.0
+// version: 1.494.16
 import PackageDescription
 
 let package = Package(
@@ -15,6 +15,9 @@ let package = Package(
         .library(
             name: "Bifaci",
             targets: ["Bifaci"]),
+        .library(
+            name: "LLM",
+            targets: ["LLM"]),
         // Every capdag mirror ships the CLI: `capdag new` is how a cartridge
         // project comes into existence, and each mirror must create the same one.
         .executable(
@@ -50,6 +53,18 @@ let package = Package(
             ],
             path: "Sources/Bifaci"
         ),
+        // Talking to a language model. Prompt preparation lives here because
+        // it is decided from the dim profile `cap:download-model` returns, and
+        // that profile is capdag's own — so the two cannot version apart.
+        //
+        // This was `capdag-cartridge-sdk-objc`, a separate package. Its cap
+        // collection was never about language models and did not come here:
+        // `CSCartridgeCaps` sits beside `CSCap` in the CapDAG target.
+        .target(
+            name: "LLM",
+            dependencies: ["CapDAG"],
+            path: "Sources/LLM"
+        ),
         .executableTarget(
             name: "capdag-cli",
             dependencies: ["Bifaci", "CapDAG"],
@@ -58,6 +73,14 @@ let package = Package(
         .testTarget(
             name: "CapDAGTests",
             dependencies: ["CapDAG"]),
+        // Swift tests for the ObjC CapDAG target, in their own target because
+        // SwiftPM will not mix languages in one: CapDAGTests is `.m` files.
+        .testTarget(
+            name: "CapDAGSwiftTests",
+            dependencies: ["CapDAG"]),
+        .testTarget(
+            name: "LLMTests",
+            dependencies: ["LLM"]),
         .testTarget(
             name: "BifaciTests",
             dependencies: [
