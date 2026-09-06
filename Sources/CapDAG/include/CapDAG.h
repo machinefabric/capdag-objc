@@ -30,6 +30,7 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 #import "CSStdinSource.h"
 #import "CSResponseWrapper.h"
 #import "CSCapManifest.h"
+#import "CSCartridgeCaps.h"
 #import "CSCapMatcher.h"
 #import "CSCapValidator.h"
 #import "CSSchemaValidator.h"
