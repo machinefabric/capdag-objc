@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.535.93
+// version: 1.536.141
 import PackageDescription
 
 let package = Package(
@@ -25,15 +25,39 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", from: "1.34.211"),
+        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.34.211"),
+        // The runtime the code generated from ../formal runs on, at exactly the lungo release
+        // that generated it.
+        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "0.27.1270"),
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),
     ],
     targets: [
+        // Dispatch, acceptance, equivalence and specificity are decided by the program generated
+        // from the proved model in ../formal (see ../lungo.toml): its C API, which the
+        // Objective-C calls, and its Swift API. Its URNs are tagged-urn's model values, so
+        // tagged-urn-objc is pinned exactly: its model must have the layout this program was
+        // generated against.
+        .target(
+            name: "CapDAGFormalProgram",
+            dependencies: [.product(name: "LungoKit", package: "lungo-swift")],
+            path: "Formal/CapDAGFormalProgram",
+            cSettings: [.headerSearchPath("program")]
+        ),
+        .target(
+            name: "CapDAGFormal",
+            dependencies: [
+                "CapDAGFormalProgram",
+                .product(name: "LungoKit", package: "lungo-swift"),
+                .product(name: "TaggedUrnFormal", package: "tagged-urn-objc"),
+            ],
+            path: "Formal/CapDAGFormal"
+        ),
         .target(
             name: "CapDAG",
             dependencies: [
+                "CapDAGFormalProgram",
                 .product(name: "TaggedUrn", package: "tagged-urn-objc"),
             ],
             path: "Sources/CapDAG",

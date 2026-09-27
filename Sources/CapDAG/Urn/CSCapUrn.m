@@ -8,16 +8,12 @@
 #import "CSCapUrn.h"
 #import "CSMediaUrn.h"
 @import TaggedUrn;
+// Dispatch, acceptance, equivalence and specificity are decided by the program generated from
+// the proved model in ../formal (see ../lungo.toml), through its C API. Its URNs are
+// tagged-urn's model values, which pass to it as they are.
+#import "capdagFormal.h"
 
 NSErrorDomain const CSCapUrnErrorDomain = @"CSCapUrnErrorDomain";
-
-// Per-tag truth-table specificity scoring is owned by the TaggedUrn
-// module — the same scorer applies uniformly to media-URN tags,
-// cap-tag y-axis, and any other Tagged URN dimension. Local alias
-// kept for readability inside this file.
-static NSUInteger CSCapUrnScoreTagValue(NSString *value) {
-    return CSTaggedUrnScoreTagValue(value);
-}
 
 static NSString *CSCapEffectToString(CSCapEffect effect) {
     switch (effect) {
@@ -37,10 +33,6 @@ static CSCapEffect CSCapEffectFromString(NSString *effectValue) {
     if ([effectValue isEqualToString:@"?"]) return CSCapEffectAny;
     NSCAssert(NO, @"CSCapUrn invariant violation: invalid effect '%@'", effectValue);
     return CSCapEffectDeclared;
-}
-
-static BOOL CSCapEffectIsUnconstrained(CSCapEffect effect) {
-    return effect == CSCapEffectAny;
 }
 
 static NSString * _Nullable CSCapNormalizeEffectValue(NSString * _Nullable rawValue, NSError **error) {
@@ -72,28 +64,66 @@ static NSString * _Nullable CSCapNormalizeEffectValue(NSString * _Nullable rawVa
     return nil;
 }
 
-/// Check if a media URN instance conforms to a media URN pattern using TaggedUrn matching.
-/// Delegates directly to [CSTaggedUrn conformsTo:error:] — all tag semantics (*, !, ?, exact, missing) apply.
-static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pattern) {
-    NSError *error = nil;
-    CSTaggedUrn *instUrn = [CSTaggedUrn fromString:instance error:&error];
-    NSCAssert(instUrn != nil, @"CU2: Failed to parse media URN instance '%@': %@", instance, error.localizedDescription);
+#pragma mark - The model
 
-    error = nil;
-    CSTaggedUrn *pattUrn = [CSTaggedUrn fromString:pattern error:&error];
-    NSCAssert(pattUrn != nil, @"CU2: Failed to parse media URN pattern '%@': %@", pattern, error.localizedDescription);
-
-    error = nil;
-    BOOL result = [instUrn conformsTo:pattUrn error:&error];
-    NSCAssert(error == nil, @"CU2: media URN prefix mismatch in direction spec matching: %@", error.localizedDescription);
-    return result;
+/// A model call that fails is a broken invariant — a cap this class built that the model cannot
+/// take, or a runtime that is not working — and there is no answer to give instead.
+static void CSCapModelFailed(NSString *what, lungo_error *error) {
+    NSString *reason = [NSString stringWithFormat:@"capdag: the model could not %@: %s", what,
+                        error ? lungo_error_message(error) : "no error was reported"];
+    if (error) lungo_error_free(error);
+    @throw [NSException exceptionWithName:NSInternalInconsistencyException reason:reason userInfo:nil];
 }
 
-@interface CSCapUrn ()
+/// A direction's media URN as the model's value; owned. The spec was validated before a cap is
+/// assembled, so one that does not parse is a broken invariant.
+static lungo_value *CSCapModelMedia(NSString *spec) {
+    NSError *error = nil;
+    CSMediaUrn *media = [CSMediaUrn fromString:spec error:&error];
+    if (!media) {
+        @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                       reason:[NSString stringWithFormat:@"capdag: the validated media URN '%@' does not parse: %@", spec, error.localizedDescription]
+                                     userInfo:nil];
+    }
+    return lungo_value_clone(media.inner.formalValue);
+}
+
+/// A stored effect as the model's value; owned.
+static lungo_value *CSCapModelEffect(NSString *effectSpec) {
+    switch (CSCapEffectFromString(effectSpec)) {
+        case CSCapEffectDeclared: return capdagFormal_effect_declared();
+        case CSCapEffectNone: return capdagFormal_effect_none();
+        case CSCapEffectPatch: return capdagFormal_effect_patch();
+        case CSCapEffectAny: return capdagFormal_effect_unspecified();
+    }
+}
+
+/// Runs a model relation of two caps.
+static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lungo_value *, lungo_value **, lungo_error **),
+                               const lungo_value *a, const lungo_value *b, NSString *what) {
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    if (relation(a, b, &result, &error) != LUNGO_OK) CSCapModelFailed(what, error);
+    BOOL answer = lungo_value_get_bool(result);
+    lungo_value_free(result);
+    return answer;
+}
+
+@interface CSCapUrn () {
+    // The same cap on the proved model's side: its three URNs and its effect (a
+    // CapDAG.Exec.WfCap, owned). Dispatch, acceptance, equivalence and specificity are asked of
+    // it. Made by the designated initializer from the same fields, which nothing changes
+    // afterwards, so the two cannot describe different caps.
+    lungo_value *_formal;
+}
 @property (nonatomic, strong) NSString *inSpec;
 @property (nonatomic, strong) NSString *outSpec;
 @property (nonatomic, strong) NSString *effectSpec;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *mutableTags;
+- (instancetype)initWithInSpec:(NSString *)inSpec
+                       outSpec:(NSString *)outSpec
+                    effectSpec:(NSString *)effectSpec
+                        tagUrn:(CSTaggedUrn *)tagUrn NS_DESIGNATED_INITIALIZER;
 @end
 
 @implementation CSCapUrn
@@ -552,23 +582,31 @@ static BOOL CSMediaUrnInstanceConformsToPattern(NSString *instance, NSString *pa
         return nil;
     }
 
-    CSCapUrn *instance = [[CSCapUrn alloc] init];
-    instance.inSpec = processedInSpec;
-    instance.outSpec = processedOutSpec;
-    instance.effectSpec = normalizedEffect;
-    instance.mutableTags = [validatedTags.tags mutableCopy];
-    if (![self validateAdmissibleInSpec:instance.inSpec outSpec:instance.outSpec effect:instance.effectSpec tags:instance.mutableTags error:error]) {
+    if (![self validateAdmissibleInSpec:processedInSpec outSpec:processedOutSpec effect:normalizedEffect tags:validatedTags.tags error:error]) {
         return nil;
     }
-    return instance;
+    return [[CSCapUrn alloc] initWithInSpec:processedInSpec outSpec:processedOutSpec effectSpec:normalizedEffect tagUrn:validatedTags];
 }
 
-- (instancetype)init {
+/// The one way a cap is made: the fields, and the model's value built from exactly them. Every
+/// caller has validated and canonicalized them.
+- (instancetype)initWithInSpec:(NSString *)inSpec
+                       outSpec:(NSString *)outSpec
+                    effectSpec:(NSString *)effectSpec
+                        tagUrn:(CSTaggedUrn *)tagUrn {
     if (self = [super init]) {
-        _effectSpec = @"declared";
-        _mutableTags = [NSMutableDictionary dictionary];
+        _inSpec = [inSpec copy];
+        _outSpec = [outSpec copy];
+        _effectSpec = [effectSpec copy];
+        _mutableTags = [tagUrn.tags mutableCopy];
+        _formal = capdagFormal_wf_cap_mk(CSCapModelMedia(_inSpec), CSCapModelMedia(_outSpec),
+                                         lungo_value_clone(tagUrn.formalValue), CSCapModelEffect(_effectSpec));
     }
     return self;
+}
+
+- (void)dealloc {
+    lungo_value_free(_formal);
 }
 
 - (NSString *)getInSpec {
@@ -735,74 +773,15 @@ NSString *CSCapKindToString(CSCapKind kind) {
                                       context:@"CSCapUrn.withoutTag"];
 }
 
+/// Whether this cap, as a PATTERN, accepts `request` as an instance: the request's input refines
+/// this cap's, this cap's output refines the request's, the effect matches (this cap's ?effect
+/// matching any), and the request's cap-tags refine this cap's. Decided by the proved model
+/// (CapDAG.Exec.accepts); the cap-tag axis runs opposite to dispatch's.
 - (BOOL)accepts:(CSCapUrn *)request {
     if (!request) {
         return YES;
     }
-
-    // Input direction: self.in_urn is pattern, request.in_urn is instance
-    // "media:" on the PATTERN side means "I accept any input" — skip check.
-    // "media:" on the INSTANCE side is just the least specific — still check.
-    if (![self.inSpec isEqualToString:@"media:"]) {
-        NSError *error = nil;
-        CSMediaUrn *capIn = [CSMediaUrn fromString:self.inSpec error:&error];
-        if (!capIn) {
-            NSAssert(NO, @"CU2: cap in_spec '%@' is not a valid MediaUrn: %@", self.inSpec, error.localizedDescription);
-            return NO;
-        }
-        CSMediaUrn *requestIn = [CSMediaUrn fromString:request.inSpec error:&error];
-        if (!requestIn) {
-            NSAssert(NO, @"CU2: request in_spec '%@' is not a valid MediaUrn: %@", request.inSpec, error.localizedDescription);
-            return NO;
-        }
-        if (![capIn accepts:requestIn error:&error]) {
-            NSAssert(error == nil, @"CU2: media URN prefix mismatch in direction spec matching");
-            return NO;
-        }
-    }
-
-    // Output direction: the handler's output must refine the request's. No
-    // case for `media:` here: a handler whose output is `media:` promises no
-    // particular output, as in dispatch. Skipping the axis for it made
-    // acceptance non-transitive (capdag/formal,
-    // Legacy.accepts_skipping_top_output_not_transitive).
-    {
-        NSError *error = nil;
-        CSMediaUrn *capOut = [CSMediaUrn fromString:self.outSpec error:&error];
-        if (!capOut) {
-            NSAssert(NO, @"CU2: cap out_spec '%@' is not a valid MediaUrn: %@", self.outSpec, error.localizedDescription);
-            return NO;
-        }
-        CSMediaUrn *requestOut = [CSMediaUrn fromString:request.outSpec error:&error];
-        if (!requestOut) {
-            NSAssert(NO, @"CU2: request out_spec '%@' is not a valid MediaUrn: %@", request.outSpec, error.localizedDescription);
-            return NO;
-        }
-        if (![capOut conformsTo:requestOut error:&error]) {
-            NSAssert(error == nil, @"CU2: media URN prefix mismatch in direction spec matching");
-            return NO;
-        }
-    }
-
-    if (![self.effectSpec isEqualToString:@"?"] && ![self.effectSpec isEqualToString:request.effectSpec]) {
-        return NO;
-    }
-
-    // Y-axis: every tag's per-key match runs through the six-form
-    // truth table (CSTaggedUrn valuesMatchInst:patt:). Walk the union
-    // of all keys appearing on either side so missing-on-pattern and
-    // missing-on-instance cells both get evaluated.
-    NSMutableSet<NSString *> *allKeys = [NSMutableSet set];
-    [allKeys addObjectsFromArray:self.mutableTags.allKeys];
-    [allKeys addObjectsFromArray:request.mutableTags.allKeys];
-    for (NSString *key in allKeys) {
-        NSString *patt = self.mutableTags[key];   // self is the pattern
-        NSString *inst = request.mutableTags[key]; // request is the instance
-        if (![CSTaggedUrn valuesMatchInst:inst patt:patt]) {
-            return NO;
-        }
-    }
-    return YES;
+    return CSCapModelRelation(capdagFormal_accepts, _formal, request->_formal, @"decide acceptance");
 }
 
 - (BOOL)conformsTo:(CSCapUrn *)pattern {
@@ -811,79 +790,14 @@ NSString *CSCapKindToString(CSCapKind kind) {
 
 #pragma mark - Dispatch predicates
 
+/// Whether this candidate can serve `request`, decided by the proved model
+/// (CapDAG.Exec.dispatch): every axis is a type. The request's input refines the candidate's,
+/// the candidate's output refines the request's, the effect matches unless the request says
+/// ?effect, and the candidate's cap-tags refine the request's. `media:` on a request's input is
+/// a type — "may send anything" — so only a candidate that accepts anything serves it, which is
+/// what makes dispatch compose.
 - (BOOL)isDispatchable:(CSCapUrn *)request {
-    // Axis 1: Input - candidate must handle at least what request specifies (contravariant)
-    if (![self inputDispatchable:request]) {
-        return NO;
-    }
-
-    // Axis 2: Output - candidate must produce at least what request needs (covariant)
-    if (![self outputDispatchable:request]) {
-        return NO;
-    }
-
-    if (![self effectDispatchable:request]) {
-        return NO;
-    }
-
-    // Axis 3: Cap-tags - candidate must satisfy explicit request constraints
-    if (![self capTagsDispatchable:request]) {
-        return NO;
-    }
-
-    return YES;
-}
-
-- (BOOL)effectDispatchable:(CSCapUrn *)request {
-    return CSCapEffectIsUnconstrained([request effect]) || [self.effectSpec isEqualToString:request.effectSpec];
-}
-
-// Both directional axes are TYPES, compared by refinement and nothing else
-// (capdag/formal, `dispatch`). A request whose input is `media:` may send
-// anything, so only a candidate that accepts anything serves it: reading it
-// as "don't care" served it with a PDF-only cap, and dispatch stopped
-// composing — a cap could serve a request that could serve another, and not
-// serve that one. And top-ness is a meaning, not a spelling: `media:?ext`
-// constrains nothing exactly as `media:` does, and a comparison against the
-// string "media:" answered differently for the two.
-
-/// Input is CONTRAVARIANT: the request's input must refine the candidate's.
-- (BOOL)inputDispatchable:(CSCapUrn *)request {
-    NSError *error = nil;
-    CSMediaUrn *reqIn = [CSMediaUrn fromString:request.inSpec error:&error];
-    if (!reqIn) return NO;
-    CSMediaUrn *candIn = [CSMediaUrn fromString:self.inSpec error:&error];
-    if (!candIn) return NO;
-
-    return [reqIn conformsTo:candIn error:&error];
-}
-
-/// Output is COVARIANT: the candidate's output must refine the request's.
-- (BOOL)outputDispatchable:(CSCapUrn *)request {
-    NSError *error = nil;
-    CSMediaUrn *reqOut = [CSMediaUrn fromString:request.outSpec error:&error];
-    if (!reqOut) return NO;
-    CSMediaUrn *candOut = [CSMediaUrn fromString:self.outSpec error:&error];
-    if (!candOut) return NO;
-
-    return [candOut conformsTo:reqOut error:&error];
-}
-
-/// Every explicit request tag must be satisfied by candidate.
-/// Candidate may have extra tags (refinement is OK).
-/// Wildcard (*) in request means any value acceptable, but tag must still be present in candidate.
-- (BOOL)capTagsDispatchable:(CSCapUrn *)request {
-    NSMutableSet<NSString *> *allKeys = [NSMutableSet set];
-    [allKeys addObjectsFromArray:self.mutableTags.allKeys];
-    [allKeys addObjectsFromArray:request.mutableTags.allKeys];
-    for (NSString *key in allKeys) {
-        NSString *patt = request.mutableTags[key];
-        NSString *inst = self.mutableTags[key];
-        if (![CSTaggedUrn valuesMatchInst:inst patt:patt]) {
-            return NO;
-        }
-    }
-    return YES;
+    return CSCapModelRelation(capdagFormal_dispatch, _formal, request->_formal, @"decide dispatch");
 }
 
 - (nullable CSMediaUrn *)inferRuntimeOutputMedia:(CSMediaUrn *)runtimeInput error:(NSError **)error {
@@ -1045,11 +959,11 @@ NSString *CSCapKindToString(CSCapKind kind) {
 }
 
 - (BOOL)isComparable:(CSCapUrn *)other {
-    return [self accepts:other] || [other accepts:self];
+    return CSCapModelRelation(capdagFormal_comparable, _formal, other->_formal, @"decide comparability");
 }
 
 - (BOOL)isEquivalent:(CSCapUrn *)other {
-    return [self accepts:other] && [other accepts:self];
+    return CSCapModelRelation(capdagFormal_equivalent, _formal, other->_formal, @"decide equivalence");
 }
 
 - (NSUInteger)specificity {
@@ -1075,21 +989,20 @@ NSString *CSCapKindToString(CSCapKind kind) {
     // difference between two caps; consuming different things is
     // next; descriptive y-axis metadata is last.
 
-    NSError *error = nil;
-    CSTaggedUrn *inUrn = [CSTaggedUrn fromString:self.inSpec error:&error];
-    NSAssert(inUrn != nil, @"CU2: Failed to parse in media URN '%@': %@",
-             self.inSpec, error.localizedDescription);
-    CSTaggedUrn *outUrn = [CSTaggedUrn fromString:self.outSpec error:&error];
-    NSAssert(outUrn != nil, @"CU2: Failed to parse out media URN '%@': %@",
-             self.outSpec, error.localizedDescription);
-
-    NSUInteger yScore = 0;
-    for (NSString *value in self.mutableTags.allValues) {
-        yScore += CSCapUrnScoreTagValue(value);
+    //
+    // Computed by the proved model (CapDAG.Exec.specificity).
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    if (capdagFormal_specificity(_formal, &result, &error) != LUNGO_OK) CSCapModelFailed(@"score a cap", error);
+    uint64_t score = 0;
+    BOOL fits = lungo_value_get_nat(result, &score);
+    lungo_value_free(result);
+    if (!fits) {
+        @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                       reason:[NSString stringWithFormat:@"capdag: the specificity of %@ does not fit", [self toString]]
+                                     userInfo:nil];
     }
-    return CSCapUrnWeightOut * [outUrn specificity]
-         + CSCapUrnWeightIn  * [inUrn specificity]
-         + yScore;
+    return (NSUInteger)score;
 }
 
 - (BOOL)isMoreSpecificThan:(CSCapUrn *)other {
@@ -1230,20 +1143,17 @@ NSString *CSCapKindToString(CSCapKind kind) {
 }
 
 - (instancetype)initWithCoder:(NSCoder *)coder {
-    if (self = [super init]) {
-        _inSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"inSpec"];
-        _outSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"outSpec"];
-        _effectSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"effectSpec"] ?: @"declared";
-        _mutableTags = [[coder decodeObjectOfClass:[NSMutableDictionary class] forKey:@"tags"] mutableCopy];
-        if (!_mutableTags) {
-            _mutableTags = [NSMutableDictionary dictionary];
-        }
-        NSError *validationError = nil;
-        if (![[self class] validateAdmissibleInSpec:_inSpec outSpec:_outSpec effect:_effectSpec tags:_mutableTags error:&validationError]) {
-            return nil;
-        }
+    NSString *inSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"inSpec"];
+    NSString *outSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"outSpec"];
+    NSString *effectSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"effectSpec"] ?: @"declared";
+    NSDictionary<NSString *, NSString *> *tags = [coder decodeObjectOfClass:[NSMutableDictionary class] forKey:@"tags"] ?: @{};
+    // Decoded as it is made: through the constructor that validates and assembles it.
+    CSCapUrn *decoded = [[self class] fromInSpec:inSpec outSpec:outSpec effect:effectSpec tags:tags error:nil];
+    if (!decoded) {
+        return nil;
     }
-    return self;
+    return [self initWithInSpec:decoded.inSpec outSpec:decoded.outSpec effectSpec:decoded.effectSpec
+                         tagUrn:[CSTaggedUrn fromPrefix:@"cap" tags:decoded.tags error:nil]];
 }
 
 @end

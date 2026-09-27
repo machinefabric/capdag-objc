@@ -90,6 +90,10 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  */
 @interface CSCapUrn : NSObject <NSCopying, NSSecureCoding>
 
+/// A cap is made by parsing or by the constructors below, which validate it; there is no empty one.
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+
 /// The input media URN (required) - e.g., "media:void", "media:string", or "*"
 @property (nonatomic, readonly) NSString *inSpec;
 

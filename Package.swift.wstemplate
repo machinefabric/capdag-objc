@@ -30,16 +30,46 @@ let package = Package(
         // published tag. Re-render without it before committing or releasing.
         .package(path: "{{ projects.tagged_urn_objc.path_from_here }}"),
         {%- else %}
-        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", from: "{{ projects.tagged_urn_objc.latest_remote_version }}"),
+        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "{{ projects.tagged_urn_objc.latest_remote_version }}"),
+        {%- endif %}
+        // The runtime the code generated from ../formal runs on, at exactly the lungo release
+        // that generated it.
+        {%- if env.MFR_LOCAL_LIBS %}
+        // MFR_LOCAL_LIBS: lungo-swift from the local distribution built from the working copy
+        // of lungo. Re-render without it before committing or releasing.
+        .package(path: "{{ build.root_from_here }}/lungo/distribution/lungo-swift"),
+        {%- else %}
+        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "{{ projects.lungo.latest_remote_version }}"),
         {%- endif %}
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),
     ],
     targets: [
+        // Dispatch, acceptance, equivalence and specificity are decided by the program generated
+        // from the proved model in ../formal (see ../lungo.toml): its C API, which the
+        // Objective-C calls, and its Swift API. Its URNs are tagged-urn's model values, so
+        // tagged-urn-objc is pinned exactly: its model must have the layout this program was
+        // generated against.
+        .target(
+            name: "CapDAGFormalProgram",
+            dependencies: [.product(name: "LungoKit", package: "lungo-swift")],
+            path: "Formal/CapDAGFormalProgram",
+            cSettings: [.headerSearchPath("program")]
+        ),
+        .target(
+            name: "CapDAGFormal",
+            dependencies: [
+                "CapDAGFormalProgram",
+                .product(name: "LungoKit", package: "lungo-swift"),
+                .product(name: "TaggedUrnFormal", package: "tagged-urn-objc"),
+            ],
+            path: "Formal/CapDAGFormal"
+        ),
         .target(
             name: "CapDAG",
             dependencies: [
+                "CapDAGFormalProgram",
                 .product(name: "TaggedUrn", package: "tagged-urn-objc"),
             ],
             path: "Sources/CapDAG",
