@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.532.86
+// version: 1.533.89
 import PackageDescription
 
 let package = Package(
@@ -25,9 +25,7 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        // MFR_LOCAL_LIBS: the working copy in this workspace rather than a
-        // published tag. Re-render without it before committing or releasing.
-        .package(path: "../../tagged-urn/tagged-urn-objc"),
+        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", from: "1.34.211"),
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),
