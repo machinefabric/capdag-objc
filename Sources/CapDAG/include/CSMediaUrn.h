@@ -188,7 +188,8 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 
 // MARK: - Specificity
 
-/// Get the specificity score (number of tags).
+/// Get the specificity score: the sum of each tag's graded score
+/// (?x=0, x?=v=1, x=2, x!=v=3, x=v=4, !x=5), as CSTaggedUrn scores it.
 /// Higher specificity means more specific matching.
 /// Mirrors Rust: pub fn specificity(&self) -> usize
 - (NSInteger)specificity;

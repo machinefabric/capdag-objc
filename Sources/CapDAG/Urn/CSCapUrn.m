@@ -761,10 +761,12 @@ NSString *CSCapKindToString(CSCapKind kind) {
         }
     }
 
-    // Output direction: self.out_urn is pattern, request.out_urn is instance
-    // "media:" on the PATTERN side means "I accept any output" — skip check.
-    // "media:" on the INSTANCE side is just the least specific — still check.
-    if (![self.outSpec isEqualToString:@"media:"]) {
+    // Output direction: the handler's output must refine the request's. No
+    // case for `media:` here: a handler whose output is `media:` promises no
+    // particular output, as in dispatch. Skipping the axis for it made
+    // acceptance non-transitive (capdag/formal,
+    // Legacy.accepts_skipping_top_output_not_transitive).
+    {
         NSError *error = nil;
         CSMediaUrn *capOut = [CSMediaUrn fromString:self.outSpec error:&error];
         if (!capOut) {
@@ -836,21 +838,17 @@ NSString *CSCapKindToString(CSCapKind kind) {
     return CSCapEffectIsUnconstrained([request effect]) || [self.effectSpec isEqualToString:request.effectSpec];
 }
 
-/// Input is CONTRAVARIANT: candidate with looser input constraint can handle
-/// request with stricter input. media: is the identity (top) and means
-/// "unconstrained" — vacuously true on either side.
+// Both directional axes are TYPES, compared by refinement and nothing else
+// (capdag/formal, `dispatch`). A request whose input is `media:` may send
+// anything, so only a candidate that accepts anything serves it: reading it
+// as "don't care" served it with a PDF-only cap, and dispatch stopped
+// composing — a cap could serve a request that could serve another, and not
+// serve that one. And top-ness is a meaning, not a spelling: `media:?ext`
+// constrains nothing exactly as `media:` does, and a comparison against the
+// string "media:" answered differently for the two.
+
+/// Input is CONTRAVARIANT: the request's input must refine the candidate's.
 - (BOOL)inputDispatchable:(CSCapUrn *)request {
-    // Request unconstrained: no input constraint, any candidate is fine
-    if ([request.inSpec isEqualToString:@"media:"]) {
-        return YES;
-    }
-
-    // Candidate wildcard: candidate accepts any input, including request's specific input
-    if ([self.inSpec isEqualToString:@"media:"]) {
-        return YES;
-    }
-
-    // Both specific: request input must conform to candidate's input requirement
     NSError *error = nil;
     CSMediaUrn *reqIn = [CSMediaUrn fromString:request.inSpec error:&error];
     if (!reqIn) return NO;
@@ -860,20 +858,8 @@ NSString *CSCapKindToString(CSCapKind kind) {
     return [reqIn conformsTo:candIn error:&error];
 }
 
-/// Output is COVARIANT: candidate output must conform to request output requirement.
-/// ASYMMETRIC with input: generic candidate output does NOT satisfy specific request.
+/// Output is COVARIANT: the candidate's output must refine the request's.
 - (BOOL)outputDispatchable:(CSCapUrn *)request {
-    // Request wildcard: any candidate output is fine
-    if ([request.outSpec isEqualToString:@"media:"]) {
-        return YES;
-    }
-
-    // Candidate wildcard: cannot guarantee specific output request needs
-    if ([self.outSpec isEqualToString:@"media:"]) {
-        return NO;
-    }
-
-    // Both specific: candidate output must conform to request output
     NSError *error = nil;
     CSMediaUrn *reqOut = [CSMediaUrn fromString:request.outSpec error:&error];
     if (!reqOut) return NO;

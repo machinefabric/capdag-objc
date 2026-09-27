@@ -238,7 +238,10 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 // MARK: - Specificity
 
 - (NSInteger)specificity {
-    return [[self tags] count];
+    // The graded per-tag score (?x=0 … !x=5), not the tag count: a count
+    // ranked `media:x` level with `media:!x` and disagreed with the cap
+    // score, which grades its in and out axes this way.
+    return (NSInteger)[self.inner specificity];
 }
 
 // MARK: - List type queries (semantic, not shape)
