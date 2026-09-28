@@ -39,7 +39,7 @@ let package = Package(
         // of lungo. Re-render without it before committing or releasing.
         .package(path: "{{ build.root_from_here }}/lungo/distribution/lungo-swift"),
         {%- else %}
-        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "{{ projects.lungo.latest_remote_version }}"),
+        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "{{ projects.lungo.version }}"),
         {%- endif %}
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
