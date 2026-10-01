@@ -107,6 +107,18 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return [self.inner accepts:instance.inner error:error];
 }
 
+- (BOOL)meets:(CSMediaUrn *)other error:(NSError **)error {
+    return [self.inner meets:other.inner error:error];
+}
+
+- (BOOL)satisfies:(CSMediaUrn *)pattern error:(NSError **)error {
+    return [self.inner satisfies:pattern.inner error:error];
+}
+
+- (BOOL)maySatisfy:(CSMediaUrn *)pattern error:(NSError **)error {
+    return [self.inner maySatisfy:pattern.inner error:error];
+}
+
 - (BOOL)isEquivalentTo:(CSMediaUrn *)other {
     NSError *err = nil;
     BOOL forward = [self accepts:other error:&err];
@@ -291,6 +303,36 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     if (error) {
         [NSException raise:NSInternalInconsistencyException
                     format:@"MediaUrn conformsTo failed: %@", error.localizedDescription];
+    }
+    return result;
+}
+
+- (BOOL)meets:(CSMediaUrn *)other {
+    NSError *error = nil;
+    BOOL result = [self meets:other error:&error];
+    if (error) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"MediaUrn meets failed: %@", error.localizedDescription];
+    }
+    return result;
+}
+
+- (BOOL)satisfies:(CSMediaUrn *)pattern {
+    NSError *error = nil;
+    BOOL result = [self satisfies:pattern error:&error];
+    if (error) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"MediaUrn satisfies failed: %@", error.localizedDescription];
+    }
+    return result;
+}
+
+- (BOOL)maySatisfy:(CSMediaUrn *)pattern {
+    NSError *error = nil;
+    BOOL result = [self maySatisfy:pattern error:&error];
+    if (error) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"MediaUrn maySatisfy failed: %@", error.localizedDescription];
     }
     return result;
 }

@@ -497,9 +497,10 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 
 
 /**
- * Check if this cap accepts a request string
+ * Whether this cap, as a candidate, can serve the request
+ * (-[CSCapUrn isDispatchable:]).
  * @param request The request string
- * @return YES if this cap accepts the request
+ * @return YES if this cap serves the request
  */
 - (BOOL)acceptsRequest:(NSString * _Nonnull)request;
 

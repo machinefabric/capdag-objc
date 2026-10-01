@@ -2380,8 +2380,8 @@ public func extractEffectivePayload(payload: Data, contentType: String?, cap: Ca
         } catch {
             throw CartridgeRuntimeError.handlerError("Invalid argument media URN '\(urnStr)': \(error.localizedDescription)")
         }
-        // file_path_base.accepts(argUrn) == argUrn.conforms(to: file_path_base).
-        if !argUrn.conforms(to: filePathBase) { continue }
+        // An arg that arrived is a value: it satisfies the file-path type, or not.
+        if !argUrn.satisfies(filePathBase) { continue }
 
         // Look up the cap's arg definition by URN equivalence (NOT string compare).
         var matched: ArgDefInfo? = nil
@@ -2611,7 +2611,7 @@ public func buildCliForeachIterations(rawPayload: Data, cap: CapDefinition) thro
         } catch {
             throw CartridgeRuntimeError.handlerError("Invalid argument media URN '\(urnStr)': \(error.localizedDescription)")
         }
-        if !argUrn.conforms(to: filePathBase) { continue }
+        if !argUrn.satisfies(filePathBase) { continue }
 
         var isSeq = false
         for ad in argDefs {

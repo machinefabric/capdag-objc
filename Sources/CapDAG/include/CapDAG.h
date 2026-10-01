@@ -24,6 +24,7 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 
 // Core cap URN system
 #import "CSCapUrn.h"
+#import "CSCapQuery.h"
 #import "CSCap.h"
 #import "CSMediaDef.h"
 #import "CSStandardCaps.h"

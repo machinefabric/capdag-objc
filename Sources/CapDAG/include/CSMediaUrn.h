@@ -70,6 +70,28 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: pub fn accepts(&self, instance: &MediaUrn) -> Result<bool, MediaUrnError>
 - (BOOL)accepts:(CSMediaUrn *)instance error:(NSError **)error;
 
+/// Whether this media type and `other` COULD describe the same value: not a guarantee
+/// (conformsTo), and not excluded. `media:ext` meets `media:ext=pdf`; `media:ext=pdf` does
+/// not meet `media:ext=png`.
+- (BOOL)meets:(CSMediaUrn *)other error:(NSError **)error;
+/// The same, without an error out-parameter; a comparison that cannot be made raises.
+- (BOOL)meets:(CSMediaUrn *)other;
+
+/// Whether a VALUE whose media this is satisfies the type `pattern`.
+///
+/// conformsTo compares two types, and a type that does not mention a key says nothing about
+/// it. A value that exists is complete: the tags it does not have, it does not have. Use this
+/// where the receiver is the media of actual data — a stream that arrived, an output that was
+/// produced.
+- (BOOL)satisfies:(CSMediaUrn *)pattern error:(NSError **)error;
+/// The same, without an error out-parameter; a comparison that cannot be made raises.
+- (BOOL)satisfies:(CSMediaUrn *)pattern;
+
+/// Whether a value whose media this is COULD satisfy `pattern`.
+- (BOOL)maySatisfy:(CSMediaUrn *)pattern error:(NSError **)error;
+/// The same, without an error out-parameter; a comparison that cannot be made raises.
+- (BOOL)maySatisfy:(CSMediaUrn *)pattern;
+
 /// Check if two media URNs have the exact same tag set (order-independent).
 /// Equivalent to `self.accepts(other) && other.accepts(self)`.
 /// Returns NO if either direction fails (including on parse errors).

@@ -1061,8 +1061,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     NSError *error;
     CSCapUrn *requestId = [CSCapUrn fromString:request error:&error];
     if (!requestId) return NO;
-    // Request is pattern, self.capUrn (cap) is instance
-    return [requestId accepts:self.capUrn];
+    // This cap, as a candidate, serves the request.
+    return [self.capUrn isDispatchable:requestId];
 }
 
 - (BOOL)conformsToRequest:(CSCapUrn *)request {

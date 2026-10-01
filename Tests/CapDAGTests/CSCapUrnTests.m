@@ -236,13 +236,14 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([cap3 accepts:cap4]);
 }
 
-// TEST1401: A wildcard input accepts any concrete input; a wildcard output
-// promises none (mirror-local variant of TEST003's wildcard branch)
+// TEST1401: A pattern's open side asks nothing; a candidate's open output
+// promises nothing (mirror-local variant of TEST003's wildcard branch)
 //
-// A handler whose output is `media:` guarantees no particular output, so it
-// does not accept a request that needs binary — the rule dispatch applies.
-// Skipping the output axis for it made acceptance non-transitive
-// (capdag/formal, Legacy.accepts_skipping_top_output_not_transitive).
+// Read as a PATTERN, `out=*` is not established, so it fits a cap that gives
+// binary. Read as a CANDIDATE, the same URN gives `media:`, which guarantees
+// no binary: it does not serve a request that needs it. The two questions
+// differ, and one relation cannot answer both (capdag/formal, Query.ofPattern,
+// Query.ofRequest).
 - (void)test1401_directionWildcardMatches {
     NSError *error = nil;
     // Wildcard inSpec matches any
@@ -252,13 +253,13 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNotNil(specificIn);
     XCTAssertTrue([wildcardIn accepts:specificIn]);
 
-    // Wildcard outSpec promises no particular output
     CSCapUrn *wildcardOut = [CSCapUrn fromString:@"cap:in=media:void;test;out=*" error:&error];
     XCTAssertNotNil(wildcardOut);
     CSCapUrn *specificOut = [CSCapUrn fromString:@"cap:in=media:void;test;out=media:binary" error:&error];
     XCTAssertNotNil(specificOut);
-    XCTAssertFalse([wildcardOut accepts:specificOut], @"a media:-output handler does not promise binary out");
-    XCTAssertTrue([specificOut accepts:wildcardOut], @"a binary-producing handler satisfies a request that asks for no particular output");
+    XCTAssertTrue([wildcardOut accepts:specificOut], @"an open output in a pattern asks nothing of the cap's output");
+    XCTAssertFalse([wildcardOut isDispatchable:specificOut], @"a media:-output candidate does not promise binary out");
+    XCTAssertTrue([specificOut accepts:wildcardOut], @"a pattern asking for binary out is covered by a cap that gives anything");
 }
 
 #pragma mark - Tag Matching Tests
@@ -922,13 +923,13 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([cap accepts:request], @"Test 7: Fallback pattern should match");
 }
 
-// TEST048: A handler whose output is `media:` promises no particular output
+// TEST048: A pattern that leaves a side open asks nothing of it
 //
-// A generic INPUT accepts any request input; a generic OUTPUT guarantees
-// nothing, so it does not satisfy a request that needs a record — the same
-// rule dispatch applies. Skipping the output axis for a `media:` handler
-// made acceptance non-transitive (capdag/formal,
-// Legacy.accepts_skipping_top_output_not_transitive).
+// `cap:generate` as a pattern says nothing of what a cap takes or gives: both
+// are unknown, not the type "anything", so it fits a cap whatever its sides.
+// Read as a type, its open output would be covered only by a cap that gives
+// `media:` — which is how a pattern search came to find nothing (capdag/formal,
+// Query.ofPattern and Legacy.skipping_top_output_is_fits).
 - (void)test048_matchingSemantics_wildcardDirectionMatchesAnything {
     NSError *error = nil;
     CSCapUrn *wildcardCap = [CSCapUrn fromString:@"cap:generate" error:&error];
@@ -937,11 +938,15 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *request = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
     XCTAssertNotNil(request);
 
-    XCTAssertFalse([wildcardCap accepts:request], @"a media:-output handler does not promise the record the request needs");
+    XCTAssertTrue([wildcardCap accepts:request], @"a pattern with open sides fits a cap whatever it takes and gives");
+    // As descriptions the two are not the same cap, and a cap that gives
+    // `media:` does not SERVE a request that needs a particular output.
+    XCTAssertFalse([wildcardCap isEquivalent:request]);
+    XCTAssertFalse([wildcardCap isDispatchable:request], @"media: out guarantees no particular output");
 
     CSCapUrn *anyOutputRequest = [CSCapUrn fromString:@"cap:in=\"media:void\";generate;ext=pdf" error:&error];
     XCTAssertNotNil(anyOutputRequest);
-    XCTAssertTrue([wildcardCap accepts:anyOutputRequest], @"a generic handler accepts a more specific request that asks for no particular output");
+    XCTAssertTrue([wildcardCap accepts:anyOutputRequest]);
 }
 
 // TEST049: Non-overlapping tags — neither direction accepts
@@ -1116,25 +1121,24 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorInvalidOutSpec);
 }
 
-// TEST648: A generic handler accepts a more specific request only where it
-// promises enough
+// TEST648: An open pattern fits specific caps; fitting is not serving
 //
-// `cap:raw` takes any input and promises no particular output. It accepts a
-// request that sends something specific; it does not accept one that needs
-// `media:text` out, since a `media:` output guarantees nothing (the rule
-// dispatch applies). Skipping the output axis for a `media:` handler made
-// acceptance non-transitive (capdag/formal,
-// Legacy.accepts_skipping_top_output_not_transitive).
+// `cap:raw` as a pattern leaves both sides open, so it fits a cap that gives
+// text and one that takes text. Whether `cap:raw`, as a CANDIDATE, serves a
+// request that needs text out is a different question with a different
+// answer: a `media:` output guarantees nothing.
 - (void)test648_Wildcard010WildcardAcceptsSpecific {
     NSError *error = nil;
     CSCapUrn *wildcard = [CSCapUrn fromString:@"cap:raw" error:&error];
     CSCapUrn *specificOut = [CSCapUrn fromString:@"cap:out=media:text;raw" error:&error];
     CSCapUrn *specificIn = [CSCapUrn fromString:@"cap:in=media:text;raw" error:&error];
 
-    XCTAssertFalse([wildcard accepts:specificOut], @"a media:-output handler does not promise text out");
-    XCTAssertTrue([specificOut accepts:wildcard], @"a handler producing text satisfies a request that asks for no particular output");
-    XCTAssertTrue([wildcard accepts:specificIn], @"a handler taking any input accepts a request that sends text");
-    XCTAssertTrue([specificIn conformsTo:wildcard], @"the text-sending request conforms to the generic handler");
+    XCTAssertTrue([wildcard accepts:specificOut], @"an open pattern fits a cap that gives text");
+    XCTAssertTrue([specificOut conformsTo:wildcard], @"the same, asked from the cap's side");
+    XCTAssertFalse([wildcard isDispatchable:specificOut], @"a media:-output candidate does not serve a request that needs text");
+    XCTAssertTrue([specificOut accepts:wildcard], @"a pattern asking for text out is covered by a cap that gives anything");
+    XCTAssertTrue([wildcard accepts:specificIn], @"an open pattern fits a cap that takes text");
+    XCTAssertTrue([specificIn conformsTo:wildcard]);
 }
 
 // TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count
@@ -1179,14 +1183,14 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([candidate isDispatchable:request], @"Candidate accepting any input should dispatch request with specific pdf input");
 }
 
-// TEST825: a request that may send anything is served only by a candidate
-// that accepts anything
+// TEST825: a request that leaves its input open has not said what it will
+// send, and is served whatever the candidate takes
 //
-// `media:` on a request's input is a type — "any A" — not a wildcard that
-// switches the axis off. Read as "don't care", a PDF-only candidate served
-// it, and dispatch stopped composing: the PDF-only cap served that request,
-// which served an image request, which the PDF-only cap did not serve
-// (capdag/formal, Legacy.wildcard_input_not_transitive).
+// The open input is unknown — "some input" — not the type "anything": the
+// request is served by exactly the candidates that serve SOME typed call it
+// could become (capdag/formal, serves_unknown_iff). What a candidate cannot do
+// is stand in for the request AS A DESCRIPTION — that relation is typed and
+// composes (Legacy.wildcard_input_not_transitive is why the two were never one).
 - (void)test825_isDispatchable_unconstrainedInput {
     NSError *error;
     CSCapUrn *pdfOnly = [CSCapUrn fromString:@"cap:in=\"media:ext=pdf\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
@@ -1195,8 +1199,14 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNotNil(pdfOnly);
     XCTAssertNotNil(acceptsAnything);
     XCTAssertNotNil(request);
-    XCTAssertFalse([pdfOnly isDispatchable:request], @"a PDF-only candidate cannot take whatever the request may send");
+    XCTAssertTrue([pdfOnly isDispatchable:request], @"the request has not said what it sends: a PDF-only candidate serves it");
     XCTAssertTrue([acceptsAnything isDispatchable:request]);
+    // A request that DOES say what it sends is held to it.
+    CSCapUrn *pngRequest = [CSCapUrn fromString:@"cap:in=\"media:ext=png\";analyze;out=\"media:enc=utf-8;record\"" error:&error];
+    XCTAssertNotNil(pngRequest);
+    XCTAssertFalse([pdfOnly isDispatchable:pngRequest]);
+    XCTAssertTrue([acceptsAnything isDispatchable:pngRequest]);
+    XCTAssertFalse([pdfOnly isEquivalent:request], @"serving a request is not being it");
 }
 
 // TEST826: is_dispatchable — candidate output must satisfy request output (covariance)
@@ -1925,11 +1935,13 @@ static NSString* testUrn(NSString *tags) {
     NSError *error = nil;
     NSArray *forms = @[@"", @"?x", @"x?=v", @"x", @"x!=v", @"x=v", @"!x"];
     BOOL expected[7][7] = {
-        // Each form means the set of states it allows, on either side; an
-        // instance is accepted when its set lies inside the pattern's
-        // (tagged-urn formal, `tagMatch_iff_allows`).
+        // Each form means the set of states it allows; the cap fits when, key
+        // by key, its set lies inside the pattern's (tagged-urn formal,
+        // `tagMatch_iff_allows`). The cap's own tags are complete, so a key it
+        // does not mention it does not have: its "missing" row is the row of
+        // `!x` (`Constraint.closed`), not of "anything".
         // miss   ?x    x?=v   x      x!=v   x=v    !x
-        {YES,  YES,  NO,   NO,    NO,    NO,    NO},    // missing
+        {YES,  YES,  YES,  NO,    NO,    NO,    YES},   // missing
         {YES,  YES,  NO,   NO,    NO,    NO,    NO},    // ?x
         {YES,  YES,  YES,  NO,    NO,    NO,    NO},    // x?=v
         {YES,  YES,  NO,   YES,   NO,    NO,    NO},    // x

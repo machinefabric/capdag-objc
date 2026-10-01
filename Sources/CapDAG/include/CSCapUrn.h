@@ -277,61 +277,81 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (CSCapUrn * _Nonnull)withoutTag:(NSString * _Nonnull)key;
 
 /**
- * Check if this cap (as a handler/pattern) accepts the given request (instance).
+ * Whether `cap` fits this cap read as a PATTERN over caps — what a search asks:
+ * `cap`'s input is within this pattern's, its output covers the pattern's, its
+ * effect is the pattern's (a pattern's `?effect` fits any), and its cap-tags —
+ * complete: a cap has the tags it has — satisfy the pattern's.
  *
- * Direction matching:
- *   Input:  request's inSpec (instance) must conformTo cap's inSpec (pattern)
- *   Output: cap's outSpec (instance) must conformTo request's outSpec (pattern)
- *   Effect: exact match unless the cap's effect is explicit unconstrained (`?effect`)
+ * A side the pattern leaves open is not asked about. `cap:candle` fits every cap
+ * tagged `candle`, whatever it takes and gives: its open output is "not
+ * established", not the type "anything".
  *
- * Tag matching:
- *   Per-key matching uses the tagged-URN six-form truth table
- *   (`K=v`, `K=*`, `K=!`, `K=?`, missing, qualified exact-value forms)
- *   over the union of keys present on either side.
+ * Decided by the proved model (CapDAG.Exec.accepts, which is CapDAG.fits). For a
+ * question no cap URN can spell — "what gives this, whatever it takes" — ask a
+ * CSCapQuery.
  *
- * @param request The request cap to check against
- * @return YES if this cap accepts the request
+ * @param cap The cap to test against this pattern
+ * @return YES if the cap fits
  */
-- (BOOL)accepts:(CSCapUrn * _Nonnull)request;
+- (BOOL)accepts:(CSCapUrn * _Nonnull)cap;
 
 /**
- * Check if this cap (as an instance/request) conforms to the given pattern.
- * Equivalent to [pattern accepts:self].
+ * Whether this cap fits `pattern`: [pattern accepts:self].
  *
  * @param pattern The pattern cap to check against
- * @return YES if this cap conforms to the pattern
+ * @return YES if this cap fits the pattern
  */
 - (BOOL)conformsTo:(CSCapUrn * _Nonnull)pattern;
 
 /**
- * Check if this candidate can dispatch (handle) the given request.
+ * Whether this candidate SERVES `request` — the predicate routing and dispatch
+ * act on.
  *
- * This is the PRIMARY predicate for routing/dispatch decisions.
- * NOT symmetric: candidate.isDispatchable(request) may differ from request.isDispatchable(candidate).
+ * The candidate takes at least what the request sends, gives at least what the
+ * request needs, has the effect asked for unless the request says `?effect`,
+ * and has the cap-tags asked for — its own tags being complete, so a request
+ * for `!x` is served by a candidate that does not mention `x`, and a candidate
+ * may carry tags the request does not ask about.
  *
- * A candidate is dispatchable for a request iff:
- * 1. Input axis (contravariant): candidate can handle request's input
- *    - Candidate with looser input handles stricter request input
- *    - request.inSpec conforms to candidate.inSpec
- * 2. Output axis (covariant): candidate meets request's output needs
- *    - Candidate output must satisfy request's output requirement
- *    - candidate.outSpec conforms to request.outSpec
- * 3. Effect axis: exact match unless the request explicitly uses `?effect`
- * 4. Cap-tags: candidate satisfies all explicit request tag constraints
- *    - Candidate missing a tag that request specifies → reject (even if request tag is wildcard)
+ * An input the request leaves open is not established: the caller has not said
+ * what it will send, and every candidate passes that side. That is "some
+ * input", not "any input" — `media:` on a CANDIDATE's input does mean it takes
+ * anything.
  *
- * @param request The request cap to check dispatchability against
- * @return YES if this candidate can handle the request
+ * This is a guarantee. What only could serve does not; see mayDispatch: and
+ * -[CSCapQuery grade:]. Decided by the proved model (CapDAG.Exec.dispatch,
+ * which is CapDAG.serves). Not symmetric.
+ *
+ * @param request The request cap
+ * @return YES if this candidate serves the request
  */
 - (BOOL)isDispatchable:(CSCapUrn * _Nonnull)request;
 
 /**
- * Check if two cap URNs are comparable in the order-theoretic sense.
- * Two URNs are comparable if either one accepts (subsumes) the other.
- * This is the symmetric closure of the accepts relation.
- *
- * Use for routing when you want to find any handler that could
- * potentially satisfy a request, regardless of which is more specific.
+ * Whether this candidate COULD serve `request`: not guaranteed, not excluded.
+ * For exploring what the fabric might do — never for routing a call, which must
+ * be served.
+ */
+- (BOOL)mayDispatch:(CSCapUrn * _Nonnull)request;
+
+/** Whether what this cap gives, `next` takes: the edge of a route. */
+- (BOOL)flowsInto:(CSCapUrn * _Nonnull)next;
+
+/**
+ * Whether what this cap gives COULD be something `next` takes: an edge a search
+ * may explore and a run has to check.
+ */
+- (BOOL)mayFlowInto:(CSCapUrn * _Nonnull)next;
+
+/**
+ * This cap on the proved model's side (a CapDAG.Exec.WfCap on lungo's runtime),
+ * owned by this cap and alive as long as it is.
+ */
+@property (nonatomic, readonly) const struct lungo_value *formalValue NS_RETURNS_INNER_POINTER;
+
+/**
+ * Whether the two caps are on one chain: one stands in for the other on every
+ * side. Both are read as descriptions — nothing is unknown.
  *
  * @param other The other cap to compare with
  * @return YES if the two caps are comparable
@@ -339,11 +359,10 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)isComparable:(CSCapUrn * _Nonnull)other;
 
 /**
- * Check if two cap URNs are equivalent in the order-theoretic sense.
- * Two URNs are equivalent if each accepts (subsumes) the other.
- * They have the same position in the specificity lattice.
- *
- * Use for exact matching where you need URNs to be interchangeable.
+ * Whether the two are the SAME cap: equivalent on every side, the effects
+ * agreeing. What resolving a name to its cap asks. Nothing is read as unknown:
+ * a cap that promises no particular output is not the same cap as one that
+ * promises pages, though as a pattern it fits it.
  *
  * @param other The other cap to compare with
  * @return YES if the two caps are equivalent

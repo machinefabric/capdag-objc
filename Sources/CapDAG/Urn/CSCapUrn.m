@@ -773,31 +773,50 @@ NSString *CSCapKindToString(CSCapKind kind) {
                                       context:@"CSCapUrn.withoutTag"];
 }
 
-/// Whether this cap, as a PATTERN, accepts `request` as an instance: the request's input refines
-/// this cap's, this cap's output refines the request's, the effect matches (this cap's ?effect
-/// matching any), and the request's cap-tags refine this cap's. Decided by the proved model
-/// (CapDAG.Exec.accepts); the cap-tag axis runs opposite to dispatch's.
-- (BOOL)accepts:(CSCapUrn *)request {
-    if (!request) {
+/// Whether `cap` fits this cap read as a PATTERN over caps — what a search asks: `cap`'s input
+/// is within this pattern's, its output covers the pattern's, its effect is the pattern's (a
+/// pattern's ?effect fits any), and its cap-tags — complete: a cap has the tags it has — satisfy
+/// the pattern's. A side the pattern leaves open is not asked about. Decided by the proved
+/// model (CapDAG.Exec.accepts, which is CapDAG.fits).
+- (BOOL)accepts:(CSCapUrn *)cap {
+    if (!cap) {
         return YES;
     }
-    return CSCapModelRelation(capdagFormal_accepts, _formal, request->_formal, @"decide acceptance");
+    return CSCapModelRelation(capdagFormal_accepts, _formal, cap->_formal, @"decide acceptance");
 }
 
 - (BOOL)conformsTo:(CSCapUrn *)pattern {
     return [pattern accepts:self];
 }
 
+- (const lungo_value *)formalValue {
+    return _formal;
+}
+
 #pragma mark - Dispatch predicates
 
-/// Whether this candidate can serve `request`, decided by the proved model
-/// (CapDAG.Exec.dispatch): every axis is a type. The request's input refines the candidate's,
-/// the candidate's output refines the request's, the effect matches unless the request says
-/// ?effect, and the candidate's cap-tags refine the request's. `media:` on a request's input is
-/// a type — "may send anything" — so only a candidate that accepts anything serves it, which is
-/// what makes dispatch compose.
+/// Whether this candidate SERVES `request`, decided by the proved model (CapDAG.Exec.dispatch,
+/// which is CapDAG.serves). The candidate takes at least what the request sends, gives at
+/// least what it needs, has the effect asked for unless the request says ?effect, and has the
+/// cap-tags asked for, its own tags being complete. An input the request leaves open is not
+/// established — "some input", not "any input" — and every candidate passes that side.
 - (BOOL)isDispatchable:(CSCapUrn *)request {
     return CSCapModelRelation(capdagFormal_dispatch, _formal, request->_formal, @"decide dispatch");
+}
+
+/// Whether this candidate COULD serve `request`: not guaranteed, not excluded.
+- (BOOL)mayDispatch:(CSCapUrn *)request {
+    return CSCapModelRelation(capdagFormal_may_dispatch, _formal, request->_formal, @"decide possible dispatch");
+}
+
+/// Whether what this cap gives, `next` takes: the edge of a route.
+- (BOOL)flowsInto:(CSCapUrn *)next {
+    return CSCapModelRelation(capdagFormal_flows, _formal, next->_formal, @"decide a flow");
+}
+
+/// Whether what this cap gives COULD be something `next` takes.
+- (BOOL)mayFlowInto:(CSCapUrn *)next {
+    return CSCapModelRelation(capdagFormal_may_flow, _formal, next->_formal, @"decide a possible flow");
 }
 
 - (nullable CSMediaUrn *)inferRuntimeOutputMedia:(CSMediaUrn *)runtimeInput error:(NSError **)error {
@@ -823,7 +842,9 @@ NSString *CSCapKindToString(CSCapKind kind) {
     }
 
     parseError = nil;
-    BOOL inputConforms = [runtimeInput conformsTo:declaredIn error:&parseError];
+    // A runtime media URN is the media of a value that exists, so it is read complete: it
+    // SATISFIES the declared type, or does not.
+    BOOL inputConforms = [runtimeInput satisfies:declaredIn error:&parseError];
     if (!inputConforms) {
         if (error) {
             NSString *message = parseError
@@ -848,7 +869,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
 
     if (effect == CSCapEffectNone) {
         parseError = nil;
-        BOOL outputConforms = [runtimeInput conformsTo:declaredOut error:&parseError];
+        BOOL outputConforms = [runtimeInput satisfies:declaredOut error:&parseError];
         if (!outputConforms) {
             if (error) {
                 NSString *message = parseError
@@ -887,7 +908,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
     }
 
     parseError = nil;
-    BOOL outputConforms = [result conformsTo:declaredOut error:&parseError];
+    BOOL outputConforms = [result satisfies:declaredOut error:&parseError];
     if (!outputConforms) {
         if (error) {
             NSString *message = parseError
@@ -938,7 +959,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
     }
     if (effect == CSCapEffectDeclared) {
         NSError *compareError = nil;
-        BOOL conforms = [runtimeOutput conformsTo:inferred error:&compareError];
+        BOOL conforms = [runtimeOutput satisfies:inferred error:&compareError];
         if (!conforms && compareError) {
             if (error) {
                 *error = compareError;
