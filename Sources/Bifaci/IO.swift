@@ -744,12 +744,12 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     }
 
     // Negotiate minimum of both sides
-    let limits = Limits(
-        maxFrame: min(ourLimits.maxFrame, theirMaxFrame),
-        maxChunk: min(ourLimits.maxChunk, theirMaxChunk),
-        maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer),
-        initialCredit: min(ourLimits.initialCredit, theirInitialCredit)
-    )
+    let limits = try ourLimits.negotiate(with: Limits(
+        maxFrame: theirMaxFrame,
+        maxChunk: theirMaxChunk,
+        maxReorderBuffer: theirMaxReorderBuffer,
+        initialCredit: theirInitialCredit
+    ))
 
     // Update both reader and writer with negotiated limits
     reader.setLimits(limits)
@@ -804,12 +804,12 @@ public func acceptHandshakeWithManifest(
 
     // Negotiate minimum of both sides
     let ourLimits = writer.getLimits()
-    let limits = Limits(
-        maxFrame: min(ourLimits.maxFrame, theirMaxFrame),
-        maxChunk: min(ourLimits.maxChunk, theirMaxChunk),
-        maxReorderBuffer: min(ourLimits.maxReorderBuffer, theirMaxReorderBuffer),
-        initialCredit: min(ourLimits.initialCredit, theirInitialCredit)
-    )
+    let limits = try ourLimits.negotiate(with: Limits(
+        maxFrame: theirMaxFrame,
+        maxChunk: theirMaxChunk,
+        maxReorderBuffer: theirMaxReorderBuffer,
+        initialCredit: theirInitialCredit
+    ))
 
     // Send our HELLO with manifest and negotiated limits
     let ourHello = Frame.helloWithManifest(

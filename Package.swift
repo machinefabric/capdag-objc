@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.551.73
+// version: 1.552.0
 import PackageDescription
 
 let package = Package(
@@ -25,7 +25,7 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.53.54"),
+        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.54.0"),
         // The runtime the code generated from ../formal runs on, at exactly the lungo release
         // that generated it.
         .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "1.78.3254"),
@@ -67,10 +67,15 @@ let package = Package(
                 .linkedFramework("Security")
             ]
         ),
+        // The wire protocol's state machines — flow control, frame order, a
+        // request's lifecycle, pool admission — are decided by the same
+        // generated program, through its Swift API.
         .target(
             name: "Bifaci",
             dependencies: [
                 "CapDAG",
+                "CapDAGFormal",
+                .product(name: "LungoKit", package: "lungo-swift"),
                 .product(name: "Ops", package: "ops-objc"),
                 .product(name: "SwiftCBOR", package: "SwiftCBOR"),
                 .product(name: "Glob", package: "Glob"),

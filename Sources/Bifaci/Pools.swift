@@ -50,18 +50,20 @@ public let metaDesiredCapacities = "desired_capacities"
 /// "no limit" — never "zero slots".
 public let capacityUnlimited: UInt64 = 0
 
-/// `min(configured, available)` under the 0-as-unlimited convention.
+/// `min(configured, available)` under the 0-as-unlimited convention — the
+/// proved model's `effective` (`formal/CapDAG/Bifaci/Pools.lean`).
 /// (matches Rust effective_capacity)
 public func effectiveCapacity(configured: UInt64, available: UInt64?) -> UInt64 {
-    let c = configured == capacityUnlimited ? UInt64.max : configured
-    let a: UInt64
-    if let available, available != capacityUnlimited {
-        a = available
-    } else {
-        a = UInt64.max
-    }
-    let effective = min(c, a)
-    return effective == UInt64.max ? capacityUnlimited : effective
+    ProtocolModel.effective(configured: configured, available: available)
+}
+
+/// The limit a relay switch admits against for one pool of a cartridge. A
+/// cartridge that is not running yet is given ONE request, through `all` — the
+/// cold-start canary: the first body proves the spawn before the capacities
+/// the process will advertise are believed. (matches Rust advertised_capacity)
+public func advertisedCapacity(running: Bool, pool: String, state: PoolState) -> UInt64 {
+    ProtocolModel.advertised(
+        running: running, pool: pool, configured: state.configured, available: state.available)
 }
 
 /// One pool's full state. The same shape everywhere: manifest-derived
@@ -303,33 +305,25 @@ public struct PoolDeclarations: Codable, Equatable, Sendable {
     /// every declared pool containing it, then `all`. `cap` must be the
     /// canonical URN string. (matches Rust chain_for)
     public func chainFor(cap: String) -> [String] {
-        var chain = [cap]
-        for name in pools.keys.sorted() where pools[name]!.contains(cap) {
-            chain.append(name)
-        }
-        chain.append(poolAll)
-        return chain
+        ProtocolModel.chain(cap: cap, shared: pools.keys.sorted().map { ($0, pools[$0]!) })
     }
 }
 
 /// The chain of one cap over a MATERIALIZED state map (roster / heartbeat
-/// truth): the singleton pool, every pool listing the cap as a member,
-/// then `all`. Order: singleton, declared pools in sorted order, `all`.
-/// (matches Rust chain_from_states)
-public func chainFromStates(_ states: PoolStates, cap: String) -> [String] {
-    var chain: [String] = []
-    if states[cap] != nil {
-        chain.append(cap)
+/// truth): the singleton pool, every pool listing the cap as a member (in
+/// sorted order), then `all`. Throws naming the first pool of the chain the
+/// map does not have: a cap its cartridge's pool map does not cover is
+/// refused, never admitted through whatever part of its chain happens to be
+/// there. (matches Rust chain_from_states)
+public func chainFromStates(_ states: PoolStates, cap: String) throws -> [String] {
+    let shared = states.keys.sorted()
+        .filter { $0 != poolAll && $0 != cap }
+        .map { ($0, states[$0]!.caps) }
+    let names = ProtocolModel.chain(cap: cap, shared: shared)
+    if let missing = names.first(where: { states[$0] == nil }) {
+        throw PoolError.invalid("its pool map has no '\(missing)' pool")
     }
-    for name in states.keys.sorted() where name != poolAll && name != cap {
-        if states[name]!.caps.contains(cap) {
-            chain.append(name)
-        }
-    }
-    if states[poolAll] != nil {
-        chain.append(poolAll)
-    }
-    return chain
+    return names
 }
 
 /// Encode a pool-state map for frame meta (JSON bytes — the manifest's own

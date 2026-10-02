@@ -2260,19 +2260,22 @@ public final class CartridgeHost: @unchecked Sendable {
                 // (L6/L8) — and never conflated.
                 let recentlyReleased = recentlyReleasedRidLocked(frame.id)
                 stateLock.unlock()
-                if recentlyReleased {
+                switch Disposition.of(live: false, endedLately: recentlyReleased) {
+                case .straggler:
                     let total = stragglers.record(frame.frameType)
                     fputs("[CartridgeHost] benign post-terminal straggler — frame crossed its request's terminal in flight (expected teardown race). type=\(frame.frameType.asString) rid=\(frame.id) straggler_total=\(total)\n", stderr)
-                } else {
+                case .noRoute:
                     let total = drops.record(.noRoute, frame.frameType)
                     fputs("[CartridgeHost] dropped continuation frame — no routing entry (no_route, total=\(total)) type=\(frame.frameType.asString) rid=\(frame.id)\n", stderr)
+                case .route:
+                    fatalError("BUG: a frame with no routing entry cannot be routed")
                 }
                 return
             }
             let cartridge = cartridges[resolvedIdx]
             stateLock.unlock()
 
-            let isTerminal = frame.frameType == .end || frame.frameType == .err
+            let isTerminal = frame.frameType.isTerminal
 
             // If the cartridge is dead, send ERR to engine with XID and clean up
             if !cartridge.writeFrame(frame) {
@@ -2345,12 +2348,15 @@ public final class CartridgeHost: @unchecked Sendable {
                 stateLock.lock()
                 let recentlyReleased = recentlyReleasedRidLocked(frame.id)
                 stateLock.unlock()
-                if recentlyReleased {
+                switch Disposition.of(live: false, endedLately: recentlyReleased) {
+                case .straggler:
                     let total = stragglers.record(frame.frameType)
                     fputs("[CartridgeHost] benign post-terminal straggler LOG — crossed its peer request's terminal (expected teardown race). rid=\(frame.id) straggler_total=\(total)\n", stderr)
-                } else {
+                case .noRoute:
                     let total = drops.record(.noRoute, frame.frameType)
                     fputs("[CartridgeHost] dropped LOG with no routing entry (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
+                case .route:
+                    fatalError("BUG: a frame with no routing entry cannot be routed")
                 }
             }
 
@@ -2556,7 +2562,7 @@ public final class CartridgeHost: @unchecked Sendable {
             if frame.isFlowFrame() {
                 let flowKey = FlowKey.fromFrame(frame)
                 stateLock.lock()
-                let isTerminal = frame.frameType == .end || frame.frameType == .err
+                let isTerminal = frame.frameType.isTerminal
                 if isTerminal {
                     outgoingMaxSeq.removeValue(forKey: flowKey)
                     outgoingMaxSeqTouched.removeValue(forKey: flowKey)

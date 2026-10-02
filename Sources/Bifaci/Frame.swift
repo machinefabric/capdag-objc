@@ -182,13 +182,21 @@ public struct Limits: Sendable {
         self.initialCredit = initialCredit
     }
 
-    /// Negotiate minimum of both limits
-    public func negotiate(with other: Limits) -> Limits {
+    /// The limits two ends share: the smaller of each proposal. The credit
+    /// window is the proved model's decision (`negotiateInitialCredit`): a
+    /// window that negotiates to zero is refused, because no stream could ever
+    /// move under it.
+    public func negotiate(with other: Limits) throws -> Limits {
+        guard let window = negotiateInitialCredit(ours: self.initialCredit, theirs: other.initialCredit) else {
+            throw FrameError.handshakeFailed(
+                "Protocol violation: initial_credit negotiates to zero (ours \(self.initialCredit), theirs \(other.initialCredit)) — a stream needs a window of at least one chunk"
+            )
+        }
         return Limits(
             maxFrame: min(self.maxFrame, other.maxFrame),
             maxChunk: min(self.maxChunk, other.maxChunk),
             maxReorderBuffer: min(self.maxReorderBuffer, other.maxReorderBuffer),
-            initialCredit: min(self.initialCredit, other.initialCredit)
+            initialCredit: window
         )
     }
 }
@@ -892,12 +900,7 @@ public struct Frame: @unchecked Sendable {
     /// bypass seq assignment and reorder buffers entirely — Credit in particular must
     /// never queue behind the data it is flow-controlling.
     public func isFlowFrame() -> Bool {
-        switch frameType {
-        case .hello, .heartbeat, .relayNotify, .relayState, .cancel, .credit, .closeStream:
-            return false
-        default:
-            return true
-        }
+        return frameType.isFlow
     }
 }
 

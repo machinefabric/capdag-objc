@@ -79,10 +79,15 @@ let package = Package(
                 .linkedFramework("Security")
             ]
         ),
+        // The wire protocol's state machines — flow control, frame order, a
+        // request's lifecycle, pool admission — are decided by the same
+        // generated program, through its Swift API.
         .target(
             name: "Bifaci",
             dependencies: [
                 "CapDAG",
+                "CapDAGFormal",
+                .product(name: "LungoKit", package: "lungo-swift"),
                 .product(name: "Ops", package: "ops-objc"),
                 .product(name: "SwiftCBOR", package: "SwiftCBOR"),
                 .product(name: "Glob", package: "Glob"),

@@ -72,6 +72,33 @@ public enum TerminalKind: String, Codable, Sendable {
     case err = "err"
     case cancelled = "cancelled"
     case masterDied = "master_died"
+
+    /// The end a frame of this type is, if it is one: END or ERR.
+    /// Cancellation and a dead master end a request without a frame of its
+    /// flow. The proved model's decision (`formal/CapDAG/Bifaci/Request.lean`).
+    public static func of(frame frameType: FrameType) -> TerminalKind? {
+        ProtocolModel.terminalKind(of: frameType)
+    }
+}
+
+// MARK: - Disposition
+
+/// Where a routing runtime sends a frame (L6): to its request; nowhere,
+/// because it crossed its request's end in flight; or nowhere, because no such
+/// request is known — which is the one that means something went wrong.
+/// (matches Rust Disposition)
+public enum Disposition: String, Sendable {
+    case route = "route"
+    /// A benign post-terminal straggler: counted, never a drop.
+    case straggler = "straggler"
+    /// A routing anomaly: a counted `no_route` drop.
+    case noRoute = "no_route"
+
+    /// The model's decision, given whether the frame's request is live here
+    /// and whether it ended lately.
+    public static func of(live: Bool, endedLately: Bool) -> Disposition {
+        ProtocolModel.disposition(live: live, endedLately: endedLately)
+    }
 }
 
 // MARK: - RequestPhase
@@ -185,9 +212,7 @@ public final class RequestState {
 
     func record(direction: FrameDirection, frame: Frame) {
         lastActivityNanos = DispatchTime.now().uptimeNanoseconds
-        if frame.isFlowFrame() {
-            phase = .streaming
-        }
+        phase = ProtocolModel.phase(after: phase, frame: frame.frameType)
         // A fresh stream starts with the NEGOTIATED initial window (L10): the
         // producer may send that many chunks before any CREDIT frame arrives,
         // so a ledger that starts at zero reads every healthy stream as
@@ -214,17 +239,19 @@ public final class RequestState {
         }
         // A chunk consumes one credit from ITS stream's window regardless of
         // which way it flows past this runtime — a stream's chunks all flow
-        // one direction, and its grants flow the other.
-        if frame.frameType == .chunk {
-            stats.creditOutstanding -= 1
-        }
+        // one direction, and its grants flow the other. What a frame does to
+        // the ledger is the model's decision: one less for a chunk, more by a
+        // grant, and nothing otherwise.
+        stats.creditOutstanding = ProtocolModel.ledger(
+            remaining: stats.creditOutstanding,
+            frame: frame.frameType,
+            granted: frame.frameType == .credit ? (frame.creditCount ?? 0) : 0
+        )
         switch frame.frameType {
         case .streamStart where frame.isUnbounded:
             stats.unbounded = true
         case .streamEnd:
             stats.ended = true
-        case .credit:
-            stats.creditOutstanding += Int64(frame.creditCount ?? 0)
         default:
             break
         }
@@ -355,10 +382,22 @@ public final class RequestTable {
     private var entries: [RequestKey: RequestState] = [:]
     private var ridIndex: [MessageId: MessageId] = [:]
     private var recentTerminated: [TerminatedSummary] = []
-    private var totalRegistered: UInt64 = 0
+    /// How many ended requests the ring keeps: `recentTerminatedCap`, except
+    /// in the model's scripts, which fill a small ring to see the oldest
+    /// forgotten.
+    private let recentCapacity: Int
+    public private(set) var totalRegistered: UInt64 = 0
     private var terminatedByKind: [String: UInt64] = [:]
 
-    public init() {}
+    public init() {
+        self.recentCapacity = Self.recentTerminatedCap
+    }
+
+    /// A table whose ring of ended requests keeps this many.
+    /// (matches Rust RequestTable::with_recent_capacity)
+    internal init(recentCapacity: Int) {
+        self.recentCapacity = recentCapacity
+    }
 
     /// Register a request. A request is registered exactly once (L7):
     /// re-registering a live key, or a RID already indexed to a different
@@ -446,7 +485,7 @@ public final class RequestTable {
             bytesIn += stats.bytesIn
             bytesOut += stats.bytesOut
         }
-        if recentTerminated.count == Self.recentTerminatedCap {
+        if recentTerminated.count >= recentCapacity {
             recentTerminated.removeFirst()
         }
         let nowNanos = DispatchTime.now().uptimeNanoseconds
@@ -495,6 +534,13 @@ public final class RequestTable {
     public func recentlyTerminatedRid(_ rid: MessageId) -> Bool {
         let rid = rid.description
         return recentTerminated.contains { $0.rid == rid }
+    }
+
+    /// Where a frame for `rid` goes: to its live request, nowhere as a benign
+    /// straggler of a request that ended lately, or nowhere as a `no_route`
+    /// anomaly. (matches Rust RequestTable::disposition)
+    public func disposition(_ rid: MessageId) -> Disposition {
+        Disposition.of(live: ridIndex[rid] != nil, endedLately: recentlyTerminatedRid(rid))
     }
 
     /// Register a child peer call under its parent (cancel cascade).
@@ -765,39 +811,29 @@ public struct PoolKey: Hashable, Sendable {
     }
 }
 
-/// One pool's admission state: EFFECTIVE capacity (0 = unlimited), active
-/// count, and — for singleton pools only, the head of every chain — the
-/// FIFO ticket queue. (matches Rust PoolSlot)
-private final class PoolSlot {
-    var capacity: UInt64 = 0
-    var active: UInt64 = 0
-    var queue: [UInt64] = []
-
-    var hasRoom: Bool { capacity == 0 || active < capacity }
-}
-
-/// One install's availability. Outages are an INSTALL-level fact — a
-/// process disappears whole, never one pool at a time.
+/// One install's admission state: the model's picture of its pools — each
+/// pool's limit, how many requests hold a slot in it, and the line of waiters
+/// in order of arrival — and its availability. Outages are an INSTALL-level
+/// fact — a process disappears whole, never one pool at a time.
 /// (matches Rust InstallState)
 private final class InstallState {
+    var pools = ProtocolModel.poolsEmpty()
     /// `nil` while the target is available; the instant it went unavailable
     /// otherwise. Kept as an instant rather than a flag so the grace window
     /// measures the OUTAGE, not the arrival time of each waiter — a request
     /// that queues late into an outage does not get a fresh window.
     var unavailableSince: Date?
 
-    var available: Bool { unavailableSince == nil }
-
     /// Mark unavailable, preserving the start of an outage already in progress.
     func markUnavailable(_ now: Date) {
         if unavailableSince == nil { unavailableSince = now }
     }
 
-    /// Remaining grace for an outage, or `nil` when available. Zero means the
-    /// window has expired.
-    func graceRemaining(_ now: Date, grace: TimeInterval) -> TimeInterval? {
+    /// How long the install has been unavailable, in milliseconds; `nil`
+    /// while it is available.
+    func unavailableFor(_ now: Date) -> UInt64? {
         guard let since = unavailableSince else { return nil }
-        return max(0, grace - now.timeIntervalSince(since))
+        return UInt64(max(0, now.timeIntervalSince(since)) * 1000)
     }
 }
 
@@ -805,12 +841,14 @@ private final class InstallState {
 /// exactly once.
 public final class AdmissionPermit {
     private weak var controller: AdmissionController?
-    private let chain: [PoolKey]
+    private let install: AdmissionKey
+    private let chain: [String]
     private var released = false
     private let lock = NSLock()
 
-    fileprivate init(controller: AdmissionController, chain: [PoolKey]) {
+    fileprivate init(controller: AdmissionController, install: AdmissionKey, chain: [String]) {
         self.controller = controller
+        self.install = install
         self.chain = chain
     }
 
@@ -820,18 +858,22 @@ public final class AdmissionPermit {
         released = true
         lock.unlock()
         if alreadyReleased { return }
-        controller?.releaseChain(chain)
+        controller?.releaseChain(install, chain)
     }
 }
 
-/// The engine-side pool admission gate (see Pools.swift): one slot per
-/// (install, pool), one availability state per install. A dispatch
-/// acquires its cap's whole pool CHAIN atomically.
+/// The engine-side pool admission gate (see Pools.swift): one availability
+/// state and one line per install. A dispatch acquires its cap's whole pool
+/// CHAIN atomically.
+///
+/// Who is admitted, and when, is the proved model's decision
+/// (`formal/CapDAG/Bifaci/Pools.lean`): the request that has waited longest
+/// among those whose whole chain has room, in order of arrival across all of
+/// the install's caps. The controller keeps the installs, the outage clock,
+/// and the waiting and waking.
 public final class AdmissionController: @unchecked Sendable {
     private let condition = NSCondition()
-    private var slots: [PoolKey: PoolSlot] = [:]
     private var installs: [AdmissionKey: InstallState] = [:]
-    private var tickets: UInt64 = 0
     /// `admissionUnavailableGrace` in production. Tests shorten it to drive the
     /// expiry path without sleeping through a real minute.
     internal var grace: TimeInterval = admissionUnavailableGrace
@@ -847,11 +889,8 @@ public final class AdmissionController: @unchecked Sendable {
         let state = installs[install] ?? InstallState()
         installs[install] = state
         state.unavailableSince = nil
-        for (pool, capacity) in pools {
-            let key = PoolKey(install: install, pool: pool)
-            let slot = slots[key] ?? PoolSlot()
-            slots[key] = slot
-            slot.capacity = capacity
+        for pool in pools.keys.sorted() {
+            state.pools = ProtocolModel.setCapacity(state.pools, pool, pools[pool]!)
         }
         condition.broadcast()
         condition.unlock()
@@ -880,10 +919,33 @@ public final class AdmissionController: @unchecked Sendable {
         condition.unlock()
     }
 
-    /// Take a FIFO admission slot across a cap's whole pool CHAIN, waiting
-    /// for capacity. The chain's FIRST key is the cap's singleton pool —
-    /// the queue the ticket waits in; admission requires EVERY chain pool
-    /// to have room, decided in one critical section (no half-admission).
+    /// Per pool of an install: how many requests hold a slot in it (tests and
+    /// diagnostics).
+    public func active(_ install: AdmissionKey) -> [String: UInt64] {
+        condition.lock()
+        defer { condition.unlock() }
+        guard let state = installs[install] else { return [:] }
+        var active: [String: UInt64] = [:]
+        for pool in ProtocolModel.active(state.pools) {
+            active[pool.name] = pool.active
+        }
+        return active
+    }
+
+    /// The tickets in an install's line, in order of arrival (tests and
+    /// diagnostics).
+    public func waiting(_ install: AdmissionKey) -> [UInt64] {
+        condition.lock()
+        defer { condition.unlock() }
+        guard let state = installs[install] else { return [] }
+        return ProtocolModel.waiting(state.pools)
+    }
+
+    /// Take an admission slot across a cap's whole pool CHAIN, waiting for
+    /// capacity. The chain's FIRST key is the cap's singleton pool; admission
+    /// requires EVERY chain pool to have room, decided in one critical
+    /// section (no half-admission), and goes to the request that has waited
+    /// longest among those whose chain has room.
     ///
     /// An UNAVAILABLE target (an install-level fact) does not fail the
     /// caller immediately. The request stays queued for
@@ -895,8 +957,8 @@ public final class AdmissionController: @unchecked Sendable {
     /// the window expires does the wait fail, and it fails hard.
     ///
     /// `isCancelled`, when supplied, abandons the wait (the caller gave up);
-    /// the ticket is removed so it cannot strand the queue behind a dead
-    /// head. (matches Rust acquire)
+    /// the waiter leaves the line so it cannot strand the requests behind
+    /// it. (matches Rust acquire)
     public func acquire(
         _ chain: [PoolKey],
         isCancelled: (() -> Bool)? = nil
@@ -906,55 +968,70 @@ public final class AdmissionController: @unchecked Sendable {
                 "admission chain is empty — a dispatch always has at least its cap's own pool")
         }
         let install = head.install
+        if let other = chain.first(where: { $0.install != install }) {
+            throw AdmissionError(
+                "admission chain spans two installs ('\(install.id)' and '\(other.install.id)') — a dispatch is admitted through one cartridge's pools")
+        }
+        let names = chain.map { $0.pool }
         condition.lock()
         defer { condition.unlock() }
 
-        for key in chain where slots[key] == nil {
+        guard let state = installs[install] else {
             throw AdmissionError(
-                "cartridge '\(key.install.id)' has no configured admission pool '\(key.pool)'")
+                "cartridge '\(install.id)' has no configured admission pool '\(names[0])'")
         }
-        let ticket = tickets
-        tickets += 1
-        // Queue even while unavailable: the loop below owns the grace window,
-        // so a request arriving mid-outage gets the same treatment as one that
-        // was already waiting when the outage began.
-        slots[head]!.queue.append(ticket)
+        // Join the line even while unavailable: the loop below owns the grace
+        // window, so a request arriving mid-outage gets the same treatment as
+        // one that was already waiting when the outage began.
+        let ticket: UInt64
+        switch ProtocolModel.join(state.pools, chain: names) {
+        case .queued(let joined, let given, _):
+            state.pools = joined
+            ticket = given
+        case .unknownPool(let name):
+            throw AdmissionError(
+                "cartridge '\(install.id)' has no configured admission pool '\(name)'")
+        case .admitted:
+            fatalError("BUG: joining the line admitted: admission is a turn taken from it")
+        }
+
+        /// Give up this request's place in line. Caller holds `condition`.
+        func leave() {
+            state.pools = ProtocolModel.leave(state.pools, ticket: ticket)
+            condition.broadcast()
+        }
 
         while true {
             if isCancelled?() == true {
-                removeTicketLocked(head, ticket)
+                leave()
                 throw AdmissionError("admission wait for '\(install.id)' was cancelled")
             }
-            guard let headSlot = slots[head] else {
-                throw AdmissionError("admission pool for '\(install.id)' disappeared while queued")
-            }
-            guard let state = installs[install] else {
-                throw AdmissionError(
-                    "cartridge '\(install.id)' has admission pools but no install state — configurePools was bypassed")
-            }
-            let chainHasRoom = chain.allSatisfy { slots[$0]!.hasRoom }
-            if state.available, chainHasRoom, headSlot.queue.first == ticket {
-                headSlot.queue.removeFirst()
-                for key in chain {
-                    slots[key]!.active += 1
-                }
+            let unavailableFor = state.unavailableFor(Date())
+            if unavailableFor == nil, let admitted = ProtocolModel.admit(state.pools, ticket: ticket) {
+                state.pools = admitted
                 condition.broadcast()
-                return AdmissionPermit(controller: self, chain: chain)
+                return AdmissionPermit(controller: self, install: install, chain: names)
             }
-            let remaining = state.graceRemaining(Date(), grace: grace)
-            if let remaining, remaining <= 0 {
+            var budget: TimeInterval
+            switch ProtocolModel.patience(unavailableFor: unavailableFor, grace: UInt64(grace * 1000)) {
+            case .unbounded:
+                // The target is there: wait for this request's turn.
+                budget = .greatestFiniteMagnitude
+            case .atMost(let milliseconds):
+                // Outage still inside its window: wait, but no longer than
+                // what is left of it — a timeout there is not an error, the
+                // next iteration asks again and decides.
+                budget = TimeInterval(milliseconds) / 1000
+            case .exhausted:
                 // Outage outlived the window — the target is gone, not slow.
-                removeTicketLocked(head, ticket)
+                leave()
                 throw AdmissionError(
                     "cartridge '\(install.id)' was unavailable for longer than \(Int(grace))s "
                         + "while this request waited for capacity"
                 )
             }
-            // Available: wait for capacity. Mid-outage: wait no longer than
-            // what is left of the window — a timeout there is not an error, the
-            // next iteration re-reads the slot and decides. A cancellable wait
-            // polls, because NSCondition cannot select on a cancel flag.
-            var budget = remaining ?? .greatestFiniteMagnitude
+            // A cancellable wait polls, because NSCondition cannot select on a
+            // cancel flag.
             if isCancelled != nil { budget = min(budget, 0.02) }
             if budget == .greatestFiniteMagnitude {
                 condition.wait()
@@ -964,23 +1041,13 @@ public final class AdmissionController: @unchecked Sendable {
         }
     }
 
-    /// Drop a ticket from its singleton queue so an abandoned waiter cannot
-    /// strand the queue behind it. Caller must hold `condition`.
-    private func removeTicketLocked(_ key: PoolKey, _ ticket: UInt64) {
-        guard let slot = slots[key] else { return }
-        if let idx = slot.queue.firstIndex(of: ticket) {
-            slot.queue.remove(at: idx)
-        }
-        condition.broadcast()
-    }
-
-    fileprivate func releaseChain(_ chain: [PoolKey]) {
+    fileprivate func releaseChain(_ install: AdmissionKey, _ chain: [String]) {
         condition.lock()
-        for key in chain {
-            if let slot = slots[key], slot.active > 0 {
-                slot.active -= 1
-            }
+        guard let state = installs[install] else {
+            condition.unlock()
+            fatalError("BUG: admission permit references an unknown install '\(install.id)'")
         }
+        state.pools = ProtocolModel.release(state.pools, chain: chain)
         condition.broadcast()
         condition.unlock()
     }

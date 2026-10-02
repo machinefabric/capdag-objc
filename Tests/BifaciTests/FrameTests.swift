@@ -423,10 +423,10 @@ final class CborFrameTests: XCTestCase {
     }
 
     // TEST198 (continued): Limits negotiation picks minimum of both sides
-    func test6229_b_limitsNegotiation() {
+    func test6229_b_limitsNegotiation() throws {
         let local = Limits(maxFrame: 1_000_000, maxChunk: 100_000)
         let remote = Limits(maxFrame: 500_000, maxChunk: 200_000)
-        let negotiated = local.negotiate(with: remote)
+        let negotiated = try local.negotiate(with: remote)
 
         XCTAssertEqual(negotiated.maxFrame, 500_000)   // min(1_000_000, 500_000)
         XCTAssertEqual(negotiated.maxChunk, 100_000)   // min(100_000, 200_000)

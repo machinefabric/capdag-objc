@@ -833,7 +833,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 let readyFrames = try buffer.accept(frame)
 
                 for readyFrame in readyFrames {
-                    if readyFrame.frameType == .end || readyFrame.frameType == .err {
+                    if readyFrame.frameType.isTerminal {
                         let key = FlowKey.fromFrame(readyFrame)
                         buffer.cleanupFlow(key)
                     }
@@ -894,7 +894,7 @@ public final class RelaySwitch: @unchecked Sendable {
         let master = masters[masterIdx]
         master.seqAssigner.assign(&frame)
         try master.socketWriter.write(frame)
-        if frame.frameType == .end || frame.frameType == .err {
+        if frame.frameType.isTerminal {
             master.seqAssigner.remove(FlowKey.fromFrame(frame))
         }
     }
@@ -1328,11 +1328,7 @@ public final class RelaySwitch: @unchecked Sendable {
         }
         var capacities: [String: UInt64] = [:]
         for (name, state) in stats.pools {
-            if !stats.running && name == poolAll {
-                capacities[name] = 1
-            } else {
-                capacities[name] = state.effective()
-            }
+            capacities[name] = advertisedCapacity(running: stats.running, pool: name, state: state)
         }
         return capacities
     }
@@ -1366,24 +1362,21 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError(
                 "registered cap '\(registeredCap)' is not a valid cap URN: \(error)")
         }
-        let names = chainFromStates(stats.pools, cap: canonical)
-        guard names.first == canonical, names.last == poolAll else {
+        let names: [String]
+        do {
+            names = try chainFromStates(stats.pools, cap: canonical)
+        } catch {
             throw RelaySwitchError.protocolError(
-                "cartridge '\(cartridgeId)' advertises cap '\(canonical)' with no pool coverage — its pool map is missing the cap's singleton or the '\(poolAll)' pool"
+                "cartridge '\(cartridgeId)' advertises cap '\(canonical)' with no pool coverage — \(error)"
             )
         }
-        var chain: [(key: PoolKey, capacity: UInt64)] = []
-        for name in names {
-            let effective: UInt64
-            if !stats.running && name == poolAll {
-                // The cold-start canary clamp — see poolCapacities.
-                effective = 1
-            } else {
-                effective = stats.pools[name]!.effective()
-            }
-            chain.append((PoolKey(install: install, pool: name), effective))
+        // The cold-start canary included — see poolCapacities.
+        return names.map { name in
+            (
+                PoolKey(install: install, pool: name),
+                advertisedCapacity(running: stats.running, pool: name, state: stats.pools[name]!)
+            )
         }
-        return chain
     }
 
     /// The cap's admission CHAIN — each (install, pool) permit domain a
@@ -1911,7 +1904,8 @@ public final class RelaySwitch: @unchecked Sendable {
                 let rid = frame.id
                 let key = RoutingKey(xid: xid, rid: rid)
 
-                let isTerminal = frame.frameType == .end || frame.frameType == .err
+                let terminalKind = TerminalKind.of(frame: frame.frameType)
+                let isTerminal = terminalKind != nil
 
                 /// Where a response frame must go next.
                 enum RouteBack {
@@ -1929,8 +1923,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 requests.recordFrame(key, direction: .inbound, frame: frame)
                 let route: RouteBack
                 var capForLog: String? = nil
-                if isTerminal {
-                    let kind: TerminalKind = frame.frameType == .end ? .end : .err
+                if let kind = terminalKind {
                     guard let state = requests.terminate(key, kind: kind) else {
                         // Classify by the terminated ring: a frame for a
                         // request that JUST terminated is a benign
@@ -2182,12 +2175,15 @@ public final class RelaySwitch: @unchecked Sendable {
     /// knew: a genuine routing anomaly, counted as a `no_route` drop.
     /// (matches Rust RelaySwitch::account_unrouted_frame)
     private func accountUnroutedFrame(recentlyTerminated: Bool, frame: Frame, context: String) {
-        if recentlyTerminated {
+        switch Disposition.of(live: false, endedLately: recentlyTerminated) {
+        case .straggler:
             let total = stragglers.record(frame.frameType)
             fputs("[RelaySwitch] benign post-terminal straggler (\(context)): frame crossed its request's terminal in flight — expected teardown race, nothing lost. type=\(frame.frameType.asString) rid=\(frame.id) straggler_total=\(total)\n", stderr)
-        } else {
+        case .noRoute:
             let total = drops.record(.noRoute, frame.frameType)
             fputs("[RelaySwitch] dropped \(context) — RID has no routing state and never terminated here (no_route). type=\(frame.frameType.asString) rid=\(frame.id) no_route_total=\(total)\n", stderr)
+        case .route:
+            fatalError("BUG: a frame with no routing state cannot be routed")
         }
     }
 

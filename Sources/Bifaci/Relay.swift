@@ -168,7 +168,7 @@ public final class RelaySlave: @unchecked Sendable {
                         let readyFrames = try reorderBuffer.accept(frame)
                         for readyFrame in readyFrames {
                             // Cleanup flow state after terminal frames
-                            if readyFrame.frameType == .end || readyFrame.frameType == .err {
+                            if readyFrame.frameType.isTerminal {
                                 let key = FlowKey.fromFrame(readyFrame)
                                 reorderBuffer.cleanupFlow(key)
                             }
@@ -236,7 +236,7 @@ public final class RelaySlave: @unchecked Sendable {
                         let readyFrames = try reorderBuffer.accept(frame)
                         for readyFrame in readyFrames {
                             // Cleanup flow state after terminal frames
-                            if readyFrame.frameType == .end || readyFrame.frameType == .err {
+                            if readyFrame.frameType.isTerminal {
                                 let key = FlowKey.fromFrame(readyFrame)
                                 reorderBuffer.cleanupFlow(key)
                             }
@@ -412,7 +412,7 @@ public final class RelayMaster: @unchecked Sendable {
             // Process all ready frames
             for readyFrame in readyFrames {
                 // Cleanup flow state after terminal frames
-                if readyFrame.frameType == .end || readyFrame.frameType == .err {
+                if readyFrame.frameType.isTerminal {
                     let key = FlowKey.fromFrame(readyFrame)
                     reorderBuffer.cleanupFlow(key)
                 }

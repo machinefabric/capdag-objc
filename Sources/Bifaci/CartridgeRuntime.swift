@@ -105,35 +105,10 @@ protocol FrameSender: Sendable {
     func send(_ frame: Frame) throws
 }
 
-/// Shared per-stream credit window used for receive-side violation
-/// accounting (L12). The demux decrements it per arriving chunk; the
-/// handler's consumption grants (via `InputGrantEmitter`) extend it.
-final class WindowCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: Int64
-
-    init(_ initial: Int64) {
-        self.value = initial
-    }
-
-    func add(_ n: Int64) {
-        lock.lock()
-        value += n
-        lock.unlock()
-    }
-
-    /// Decrement by one and return the value BEFORE the decrement.
-    func fetchSub() -> Int64 {
-        lock.lock()
-        defer { lock.unlock() }
-        let before = value
-        value -= 1
-        return before
-    }
-}
-
 /// Emits CREDIT grants for one input stream as the handler consumes it (L10).
-/// Grants are batched: one CREDIT per `batch` consumed chunks.
+/// Grants are batched: one CREDIT once half the window has been consumed, at
+/// least 1. When a grant is due, and for how much, is the proved model's
+/// decision (`CreditWindow`).
 final class InputGrantEmitter: @unchecked Sendable {
     private let sender: any FrameSender
     private let rid: MessageId
@@ -145,32 +120,31 @@ final class InputGrantEmitter: @unchecked Sendable {
     /// `.request` for handler-input consumption, `.response` for peer-response
     /// consumption.
     private let direction: CreditDirection
-    private let batch: UInt64
-    private var consumedSinceGrant: UInt64 = 0
     /// Shared with the demux's violation accounting: granting extends the
     /// window the demux checks arriving chunks against.
-    private let window: WindowCounter
-    private let lock = NSLock()
+    private let window: CreditWindow
 
-    init(sender: any FrameSender, rid: MessageId, xid: MessageId?, streamId: String?, direction: CreditDirection, batch: UInt64, window: WindowCounter) {
+    init(sender: any FrameSender, rid: MessageId, xid: MessageId?, streamId: String?, direction: CreditDirection, window: CreditWindow) {
         self.sender = sender
         self.rid = rid
         self.xid = xid
         self.streamId = streamId
         self.direction = direction
-        self.batch = max(batch, 1)
         self.window = window
     }
 
     /// Record one consumed chunk; emit a batched CREDIT grant when due.
     func consumed() {
-        lock.lock()
-        consumedSinceGrant += 1
-        let due = consumedSinceGrant >= batch
-        lock.unlock()
-        if due {
-            flush()
-        }
+        send(window.consumed())
+    }
+
+    /// Record a chunk that only continues an item, and grant it back at once.
+    /// Immediate granting is load-bearing: the demux only runs when frames
+    /// arrive, so a batched (held) grant while the producer is stalled on
+    /// exactly that credit would deadlock the stream mid-item (L10 has no
+    /// other flush point inside the demux).
+    func continued() {
+        send(window.continued())
     }
 
     /// Emit any pending (sub-batch) grant immediately.
@@ -182,39 +156,17 @@ final class InputGrantEmitter: @unchecked Sendable {
     /// receiver's batch threshold. Flushing at the block point guarantees
     /// progress under any window/batch mismatch.
     func flush() {
-        lock.lock()
-        guard consumedSinceGrant > 0 else {
-            lock.unlock()
-            return
-        }
-        let n = consumedSinceGrant
-        consumedSinceGrant = 0
-        lock.unlock()
-        window.add(Int64(n))
+        send(window.flush())
+    }
+
+    private func send(_ n: UInt64) {
+        guard n > 0 else { return }
         var frame = Frame.credit(targetRid: rid, streamId: streamId, credits: n, direction: direction)
         frame.routingId = xid
         // A failed grant send means the runtime is shutting down; the
         // sender-side gate will be closed by the terminal path (counted
         // at the ChannelFrameSender).
         try? sender.send(frame)
-    }
-
-    /// Build a second emitter over the SAME window/sender for the demux's
-    /// fragment crediting on sequence streams, with `batch = 1` so every
-    /// grant flushes immediately. Immediate flushing is load-bearing: the
-    /// demux only runs when frames arrive, so a batched (held) grant while
-    /// the producer is stalled on exactly that credit would deadlock the
-    /// stream mid-item (L10 has no other flush point inside the demux).
-    func fragmentSibling() -> InputGrantEmitter {
-        return InputGrantEmitter(
-            sender: sender,
-            rid: rid,
-            xid: xid,
-            streamId: streamId,
-            direction: direction,
-            batch: 1,
-            window: window
-        )
     }
 }
 
@@ -1687,7 +1639,7 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
     // Fragment crediting for sequence-mode responses (same scheme as
     // `demuxMultiStream`): the caller grants one frame per consumed ITEM,
     // so continuation fragments are credited back on arrival here.
-    let fragmentGrants = grants?.fragmentSibling()
+    let fragmentGrants = grants
     // Sequence reassembly for the single response stream (nil until a
     // STREAM_START with isSequence=true arrives). Sequence frame payloads
     // are RFC 8742 fragments — decode at item granularity.
@@ -1730,7 +1682,7 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                         // metadata (emitListItem contract).
                         seq.itemMeta = frame.meta
                     } else {
-                        seq.fragmentGrants?.consumed()
+                        seq.fragmentGrants?.continued()
                     }
                     seq.buf.append(contentsOf: payload)
                     decodeLoop: while true {
@@ -1842,7 +1794,7 @@ internal func demuxMultiStream(
         // it; a chunk arriving with the window at zero is a fatal
         // CREDIT_VIOLATION. The demux itself never blocks — accounting keeps
         // control frames flowing regardless of data pressure.
-        var streamWindows: [String: WindowCounter] = [:]
+        var streamWindows: [String: CreditWindow] = [:]
         // Sequence-mode streams: streamId → item reassembly state (see
         // `SeqReassembly` — frame payloads are RFC 8742 fragments, decoded
         // at item granularity).
@@ -1875,7 +1827,7 @@ internal func demuxMultiStream(
 
                 var grants: InputGrantEmitter? = nil
                 if let ctx = credit {
-                    let window = WindowCounter(Int64(ctx.initialCredit))
+                    let window = CreditWindow(initialCredit: ctx.initialCredit)
                     streamWindows[streamId] = window
                     grants = InputGrantEmitter(
                         sender: ctx.sender,
@@ -1883,14 +1835,11 @@ internal func demuxMultiStream(
                         xid: ctx.xid,
                         streamId: streamId,
                         direction: .request,
-                        batch: max(ctx.initialCredit / 2, 1),
                         window: window
                     )
                 }
                 if frame.isSequence == true {
-                    seqReassembly[streamId] = SeqReassembly(
-                        fragmentGrants: grants?.fragmentSibling()
-                    )
+                    seqReassembly[streamId] = SeqReassembly(fragmentGrants: grants)
                 }
 
                 // Try-then-flush-then-block (L10 deadlock-freedom rule): a
@@ -1933,14 +1882,11 @@ internal func demuxMultiStream(
 
                 // Credit-violation check (L12): a chunk beyond the granted
                 // window is a fatal protocol error for this request.
-                if let window = streamWindows[streamId] {
-                    let before = window.fetchSub()
-                    if before <= 0 {
-                        queue.push(.failure(.protocolError(
-                            "CREDIT_VIOLATION: chunk received beyond the granted window on stream \(streamId) (L12)"
-                        )))
-                        continue
-                    }
+                if let window = streamWindows[streamId], !window.arrive() {
+                    queue.push(.failure(.protocolError(
+                        "CREDIT_VIOLATION: chunk received beyond the granted window on stream \(streamId) (L12)"
+                    )))
+                    continue
                 }
 
                 // Verify checksum (MANDATORY)
@@ -1967,7 +1913,7 @@ internal func demuxMultiStream(
                         // the handler grants one frame per consumed ITEM, so
                         // without this an item spanning more frames than the
                         // credit window could never finish arriving.
-                        seq.fragmentGrants?.consumed()
+                        seq.fragmentGrants?.continued()
                     }
                     seq.buf.append(contentsOf: payload)
                     decodeLoop: while true {
@@ -2870,8 +2816,15 @@ final class ChannelFrameSender: FrameSender, @unchecked Sendable {
         // is already on the wire is a BENIGN straggler — suppressed and
         // counted as such (never a drop, nothing went wrong); it never
         // reaches the wire. Non-flow frames (heartbeat, credit) always pass.
+        //
+        // Whether the frame is written, and whether writing it ends the flow,
+        // is the proved model's decision (formal/CapDAG/Bifaci/Request.lean).
         let key = FlowKey.fromFrame(mutableFrame)
-        if mutableFrame.isFlowFrame() && terminated.contains(key) {
+        let ends: Bool
+        switch ProtocolModel.write(over: terminated.contains(key), mutableFrame.frameType) {
+        case .send(let endsFlow):
+            ends = endsFlow
+        case .suppress:
             let total = stragglers.record(mutableFrame.frameType)
             fputs("[CartridgeRuntime] writer: suppressed benign post-terminal straggler — END/ERR already written for this flow, the frame is moot (L4) type=\(mutableFrame.frameType.asString) rid=\(mutableFrame.id) straggler_total=\(total)\n", stderr)
             return
@@ -2887,7 +2840,7 @@ final class ChannelFrameSender: FrameSender, @unchecked Sendable {
             fputs("[CartridgeRuntime] frame dropped: output channel closed (channel_closed_total=\(total)) type=\(mutableFrame.frameType) rid=\(mutableFrame.id)\n", stderr)
             throw CartridgeRuntimeError.handlerError("Output channel closed")
         }
-        if mutableFrame.frameType == .end || mutableFrame.frameType == .err {
+        if ends {
             seqAssigner.remove(key)
             terminated.insert(key)
         }
@@ -3034,14 +2987,15 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
         // Consumption grants for the responding peer's output window
         // (L10/L14). Single-stream response → stream-less grants; direction
         // `.response` (we are crediting the handler's output stream, L11).
+        // The window batches grants only — arrivals are not checked here,
+        // because the responder's window was negotiated on another link.
         let responseGrants = InputGrantEmitter(
             sender: sender,
             rid: requestId,
             xid: nil,
             streamId: nil,
             direction: .response,
-            batch: max(initialCredit / 2, 1),
-            window: WindowCounter(0)
+            window: CreditWindow(initialCredit: initialCredit)
         )
 
         // Try-then-flush-then-block (L10 deadlock-freedom rule): before
@@ -3638,8 +3592,8 @@ struct PoolQueuedRequest {
     /// The registered handler pattern (canonical) serving this request —
     /// the singleton pool it queues on and the key of its pool chain.
     let pattern: String
-    /// Global arrival ticket: cross-cap admission is FIFO by this.
-    /// Assigned by `RuntimePools.enqueue`.
+    /// The request's place in the order of arrival, given by the model when
+    /// it joins the line.
     var ticket: UInt64
     let routingId: MessageId?
     let requestId: MessageId
@@ -3647,15 +3601,13 @@ struct PoolQueuedRequest {
     let frames: BlockingQueue<Frame>
 }
 
-/// One materialized concurrency pool (see Pools.swift).
-/// (matches Rust RuntimePool)
-final class RuntimePool {
+/// The three numbers a pool carries on the wire, and its members.
+final class PoolMeta {
     var declared: UInt64
     var configured: UInt64
     /// Cartridge self-report; `nil` = static (the normal case). Written
     /// only through `PoolHandle.set`.
     var available: UInt64?
-    var active: UInt64 = 0
     /// Member patterns (shared pools and `all`); singletons empty.
     var members: [String]
 
@@ -3668,29 +3620,40 @@ final class RuntimePool {
     func effective() -> UInt64 {
         effectiveCapacity(configured: configured, available: available)
     }
+}
 
-    func hasRoom() -> Bool {
-        let effective = effective()
-        return effective == capacityUnlimited || active < effective
-    }
+/// What became of a request that arrived.
+enum PoolArrived {
+    /// Its chain had room: it holds its slots, and is handed back to be run.
+    case admitted(PoolQueuedRequest)
+    /// It is in line, at this position (from 1) among the requests waiting
+    /// on its own cap.
+    case queued(position: Int)
 }
 
 /// The runtime's materialized concurrency pools (see Pools.swift): one
 /// singleton pool per registered handler pattern, every declared shared
-/// pool from the manifest, and `all`. The owning `PoolsCell`'s lock guards
-/// capacities, active counts, and queues together so admission is one
-/// atomic decision. (matches Rust RuntimePools)
+/// pool from the manifest, and `all`.
+///
+/// Who is admitted, and when, is the proved model's decision
+/// (`formal/CapDAG/Bifaci/Pools.lean`): `state` is its picture of this
+/// cartridge — each pool's limit and how many requests hold a slot in it, and
+/// the line of waiters in order of arrival. A request is admitted through
+/// EVERY pool in its chain or it waits, never half-admitted; and whenever
+/// anything changes, the first waiter whose whole chain has room goes next.
+/// This class keeps what the model has no use for: the three numbers each
+/// pool carries on the wire, and the queued requests themselves. The owning
+/// `PoolsCell`'s lock guards it all, so admission is one atomic decision.
+/// (matches Rust RuntimePools)
 final class RuntimePools {
-    var pools: [String: RuntimePool] = [:]
+    private(set) var state: ProtocolModel.Pools
+    /// Each pool's wire numbers and members, by pool name.
+    var meta: [String: PoolMeta] = [:]
     /// Registered handler pattern (canonical) → its pool chain in
     /// admission order: singleton, declared pools containing it, `all`.
     var chains: [String: [String]] = [:]
-    /// Singleton queues — queues lead to pools. Keyed by registered
-    /// pattern.
-    var queues: [String: [PoolQueuedRequest]] = [:]
-    /// Global FIFO ticket counter: cross-cap admission on a shared-pool
-    /// release is arrival-ordered, never cap-biased.
-    var nextTicket: UInt64 = 0
+    /// The requests in line, by the ticket the model gave each.
+    private(set) var waiting: [UInt64: PoolQueuedRequest] = [:]
 
     /// Materialize the pools from the registered handler patterns and the
     /// manifest's declarations. Hard errors, never coercion: an invalid
@@ -3729,21 +3692,27 @@ final class RuntimePools {
             return canon
         }
 
+        // Singletons in registration order, declared pools in name order,
+        // then `all`: the order the pools are listed in everywhere after.
+        var order: [String] = []
         for pattern in patterns {
             let declared = declarations.capacities[pattern] ?? capacityUnlimited
-            pools[pattern] = RuntimePool(declared: declared)
-            queues[pattern] = []
+            meta[pattern] = PoolMeta(declared: declared)
+            order.append(pattern)
         }
+        var shared: [(String, [String])] = []
         for name in declarations.pools.keys.sorted() {
             var resolved: [String] = []
             for member in declarations.pools[name]! {
                 resolved.append(try resolve(member))
             }
             let declared = declarations.capacities[name] ?? capacityUnlimited
-            pools[name] = RuntimePool(declared: declared, members: resolved)
+            meta[name] = PoolMeta(declared: declared, members: resolved)
+            order.append(name)
+            shared.append((name, resolved))
         }
         for key in declarations.capacities.keys {
-            if key == poolAll || pools[key] != nil { continue }
+            if key == poolAll || meta[key] != nil { continue }
             if let parsed = try? CSCapUrn.fromString(key), patterns.contains(parsed.toString()) {
                 continue
             }
@@ -3752,17 +3721,17 @@ final class RuntimePools {
             )
         }
         let allDeclared = declarations.capacities[poolAll] ?? capacityUnlimited
-        pools[poolAll] = RuntimePool(declared: allDeclared, members: patterns)
+        meta[poolAll] = PoolMeta(declared: allDeclared, members: patterns)
+        order.append(poolAll)
+
+        var pools = ProtocolModel.poolsEmpty()
+        for name in order {
+            pools = ProtocolModel.setCapacity(pools, name, meta[name]!.effective())
+        }
+        state = pools
 
         for pattern in patterns {
-            var chain = [pattern]
-            for name in pools.keys.sorted() where name != poolAll && name != pattern {
-                if pools[name]!.members.contains(pattern) {
-                    chain.append(name)
-                }
-            }
-            chain.append(poolAll)
-            chains[pattern] = chain
+            chains[pattern] = ProtocolModel.chain(cap: pattern, shared: shared)
         }
     }
 
@@ -3773,39 +3742,33 @@ final class RuntimePools {
         return chain
     }
 
-    func chainHasRoom(_ pattern: String) -> Bool {
-        chain(pattern).allSatisfy { pools[$0]!.hasRoom() }
-    }
-
-    /// Admit one dispatch of `pattern` if its whole chain has room.
-    func tryAdmit(_ pattern: String) -> Bool {
-        guard chainHasRoom(pattern) else { return false }
-        for pool in chain(pattern) {
-            pools[pool]!.active += 1
+    /// A request arrives: admitted at once through its cap's whole chain
+    /// when every pool of it has room and nobody in line could go instead,
+    /// and otherwise in line.
+    func arrive(_ request: PoolQueuedRequest) -> PoolArrived {
+        switch ProtocolModel.arrive(state, chain: chain(request.pattern)) {
+        case .admitted(let pools):
+            state = pools
+            return .admitted(request)
+        case .queued(let pools, let ticket, let position):
+            state = pools
+            var queued = request
+            queued.ticket = ticket
+            waiting[ticket] = queued
+            return .queued(position: position)
+        case .unknownPool(let name):
+            fatalError("BUG: a registered pattern's chain names only this runtime's pools, not '\(name)'")
         }
-        return true
     }
 
     /// Release one dispatch of `pattern` across its chain.
     func release(_ pattern: String) {
-        for pool in chain(pattern) {
-            let slot = pools[pool]!
-            precondition(slot.active > 0, "pool '\(pool)' released below zero active")
-            slot.active -= 1
+        let chain = chain(pattern)
+        let active = Dictionary(uniqueKeysWithValues: ProtocolModel.active(state).map { ($0.name, $0.active) })
+        for pool in chain {
+            precondition(active[pool]! > 0, "pool '\(pool)' released below zero active")
         }
-    }
-
-    /// Queue a request on its cap's singleton queue, returning its queue
-    /// position (1-based) for the "queued" LOG.
-    func enqueue(_ request: PoolQueuedRequest) -> Int {
-        var queued = request
-        queued.ticket = nextTicket
-        nextTicket += 1
-        guard queues[queued.pattern] != nil else {
-            fatalError("no singleton queue for pattern '\(queued.pattern)'")
-        }
-        queues[queued.pattern]!.append(queued)
-        return queues[queued.pattern]!.count
+        state = ProtocolModel.release(state, chain: chain)
     }
 
     /// Remove a queued (not-yet-admitted) request by its request id — the
@@ -3813,28 +3776,21 @@ final class RuntimePools {
     /// released. Returns the removed request, or nil when the id is not
     /// queued (it is running, or unknown).
     func removeQueued(requestId: MessageId) -> PoolQueuedRequest? {
-        for pattern in queues.keys {
-            if let idx = queues[pattern]!.firstIndex(where: { $0.requestId == requestId }) {
-                return queues[pattern]!.remove(at: idx)
-            }
+        guard let ticket = waiting.first(where: { $0.value.requestId == requestId })?.key else {
+            return nil
         }
-        return nil
+        state = ProtocolModel.leave(state, ticket: ticket)
+        return waiting.removeValue(forKey: ticket)
     }
 
-    /// Pop-and-admit the oldest queued request whose chain has room —
-    /// arrival-ordered across all caps by the global ticket.
-    func popAdmissible() -> PoolQueuedRequest? {
-        var best: (ticket: UInt64, pattern: String)? = nil
-        for pattern in queues.keys.sorted() {
-            guard let front = queues[pattern]!.first else { continue }
-            if chainHasRoom(pattern), best == nil || front.ticket < best!.ticket {
-                best = (front.ticket, pattern)
-            }
-        }
-        guard let best else { return nil }
-        let request = queues[best.pattern]!.removeFirst()
-        for pool in chain(best.pattern) {
-            pools[pool]!.active += 1
+    /// Admit whoever is next: the request that has waited longest among
+    /// those whose whole chain has room — in order of arrival across all
+    /// caps, never cap-biased. nil when nobody in line can be admitted.
+    func admitNext() -> PoolQueuedRequest? {
+        guard let next = ProtocolModel.admitNext(state) else { return nil }
+        state = next.pools
+        guard let request = waiting.removeValue(forKey: next.ticket) else {
+            fatalError("BUG: ticket \(next.ticket) is in line but its request is not held")
         }
         return request
     }
@@ -3842,20 +3798,27 @@ final class RuntimePools {
     /// Apply an operator's desired `configured` values (heartbeat probe).
     /// The whole batch is validated first — an unknown pool refuses it all.
     func applyDesired(_ desired: DesiredCapacities) throws {
-        for name in desired.keys where pools[name] == nil {
+        for name in desired.keys where meta[name] == nil {
             throw PoolError.invalid("unknown pool '\(name)'")
         }
-        for (name, configured) in desired {
-            pools[name]!.configured = configured
+        for name in desired.keys.sorted() {
+            meta[name]!.configured = desired[name]!
+            limitChanged(name)
         }
     }
 
     /// Cartridge self-report for one pool (see `PoolHandle`).
     func setAvailable(pool: String, available: UInt64) throws {
-        guard let slot = pools[pool] else {
+        guard let slot = meta[pool] else {
             throw PoolError.invalid("unknown pool '\(pool)'")
         }
         slot.available = available
+        limitChanged(pool)
+    }
+
+    /// One of a pool's numbers changed: tell the model its new limit.
+    private func limitChanged(_ pool: String) {
+        state = ProtocolModel.setCapacity(state, pool, meta[pool]!.effective())
     }
 
     /// The full wire-shaped state map. `queued` counts each waiting
@@ -3864,34 +3827,30 @@ final class RuntimePools {
     /// figure is the number of waiters it is actually holding back.
     func snapshot() -> PoolStates {
         var states: PoolStates = [:]
-        for (name, pool) in pools {
-            states[name] = PoolState(
-                declared: pool.declared,
-                configured: pool.configured,
-                available: pool.available,
+        for pool in ProtocolModel.active(state) {
+            let meta = meta[pool.name]!
+            states[pool.name] = PoolState(
+                declared: meta.declared,
+                configured: meta.configured,
+                available: meta.available,
                 active: pool.active,
-                queued: 0,
-                caps: pool.members
+                queued: ProtocolModel.heldBack(state, pool.name),
+                caps: meta.members
             )
-        }
-        for (pattern, queue) in queues {
-            let waiting = UInt64(queue.count)
-            if waiting == 0 { continue }
-            states[pattern]!.queued += waiting
-            for pool in chain(pattern) where pool != pattern && !pools[pool]!.hasRoom() {
-                states[pool]!.queued += waiting
-            }
         }
         return states
     }
 }
 
-/// Owns the runtime's pools behind one lock — capacities, active counts,
-/// and queues change together so admission is one atomic decision. `pools`
-/// is nil until the run loop materializes it at startup.
+/// Owns the runtime's pools behind one lock — limits, active counts, and the
+/// line change together so admission is one atomic decision. `pools` is nil
+/// until the run loop materializes it at startup.
 public final class PoolsCell: @unchecked Sendable {
     let lock = NSLock()
     var pools: RuntimePools?
+    /// Wakes the run loop, which starts whoever in line can now go. Set by
+    /// the running runtime; nil before `run`. Called WITHOUT `lock` held.
+    var changed: (() -> Void)?
 }
 
 /// Shared handle for a pool's cartridge SELF-REPORT (`available` — see
@@ -3913,14 +3872,24 @@ public final class PoolHandle: @unchecked Sendable {
 
     /// Report the pool's current self-limit. Errors name the defect: an
     /// unmaterialized runtime (`set` before `run`) or an unknown pool name.
+    /// A limit that rises may let a request in line go: the run loop is
+    /// woken to start it, rather than at the host's next frame.
     public func set(_ available: UInt64) throws {
         cell.lock.lock()
-        defer { cell.lock.unlock() }
         guard let pools = cell.pools else {
+            cell.lock.unlock()
             throw PoolError.invalid(
                 "pool handle '\(name)' used before the runtime materialized its pools (call run first)")
         }
-        try pools.setAvailable(pool: name, available: available)
+        do {
+            try pools.setAvailable(pool: name, available: available)
+        } catch {
+            cell.lock.unlock()
+            throw error
+        }
+        let changed = cell.changed
+        cell.lock.unlock()
+        changed?()
     }
 }
 
@@ -4750,8 +4719,19 @@ public final class CartridgeRuntime: @unchecked Sendable {
             case readError(Error)
             case eof
             case handlerDone(MessageId)
+            /// A handler changed what one of its pools can serve: look at
+            /// the line again (the top of the loop admits whoever can go).
+            case poolsChanged
         }
         let eventQueue = BlockingQueue<LoopEvent>()
+        poolsCell.lock.lock()
+        poolsCell.changed = { eventQueue.push(.poolsChanged) }
+        poolsCell.lock.unlock()
+        defer {
+            poolsCell.lock.lock()
+            poolsCell.changed = nil
+            poolsCell.lock.unlock()
+        }
 
         // Spawn reader thread: reads frames from stdin and pushes to eventQueue.
         let readerEventQueue = eventQueue
@@ -4897,7 +4877,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
             // freed slot.
             while true {
                 poolsCell.lock.lock()
-                let queued = poolsCell.pools!.popAdmissible()
+                let queued = poolsCell.pools!.admitNext()
                 poolsCell.lock.unlock()
                 guard let queued else { break }
 
@@ -4968,6 +4948,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 } else {
                     handlerRoutingIds.removeValue(forKey: rid)
                 }
+                continue
+            case .poolsChanged:
                 continue
             case .frame(let f):
                 frame = f
@@ -5061,22 +5043,18 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // queue with a "queued" LOG frame — frames keep arriving
                 // into framesQueue regardless (L16).
                 poolsCell.lock.lock()
-                let admitted = poolsCell.pools!.tryAdmit(pattern)
-                var queuePos = 0
-                if !admitted {
-                    queuePos = poolsCell.pools!.enqueue(PoolQueuedRequest(
-                        factory: factory,
-                        capUrn: capUrn,
-                        pattern: pattern,
-                        ticket: 0, // assigned by enqueue
-                        routingId: routingId,
-                        requestId: requestId,
-                        outputMediaUrn: outputMediaUrn,
-                        frames: framesQueue
-                    ))
-                }
+                let arrived = poolsCell.pools!.arrive(PoolQueuedRequest(
+                    factory: factory,
+                    capUrn: capUrn,
+                    pattern: pattern,
+                    ticket: 0, // the model's, once in line
+                    routingId: routingId,
+                    requestId: requestId,
+                    outputMediaUrn: outputMediaUrn,
+                    frames: framesQueue
+                ))
                 poolsCell.lock.unlock()
-                if !admitted {
+                if case .queued(let queuePos) = arrived {
                     var logFrame = Frame.log(
                         id: requestId,
                         level: "queued",

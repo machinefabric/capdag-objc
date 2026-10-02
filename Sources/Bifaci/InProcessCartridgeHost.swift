@@ -474,7 +474,7 @@ public final class InProcessCartridgeHost {
             for await var frame in writeStream {
                 seqAssigner.assign(&frame)
                 try? writer.write(frame)
-                if frame.frameType == .end || frame.frameType == .err {
+                if frame.frameType.isTerminal {
                     seqAssigner.remove(FlowKey.fromFrame(frame))
                 }
             }

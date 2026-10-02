@@ -62,15 +62,21 @@ public final class SeqAssigner: @unchecked Sendable {
 
 // MARK: - ReorderBuffer
 
-/// Per-flow state for the reorder buffer.
+/// Per-flow state for the reorder buffer: the model's picture of the flow —
+/// the number expected next and the numbers held — and the held frames
+/// themselves.
 private class FlowState {
-    var expectedSeq: UInt64 = 0
+    var order = ProtocolModel.reorderStart()
     var buffer: [UInt64: Frame] = [:]
 }
 
 /// Reorder buffer for validating and reordering frames at relay boundaries.
 /// Keyed by FlowKey (RID + optional XID). Each flow tracks expected seq
 /// and buffers out-of-order frames until gaps are filled.
+///
+/// What an arriving frame does — delivered with those it releases, held, or
+/// refused — is the proved model's decision (`formal/CapDAG/Bifaci/Flow.lean`):
+/// frames are handed on in the order they were written, and none is lost.
 ///
 /// Protocol errors:
 /// - Stale/duplicate seq (frame.seq < expected_seq)
@@ -102,43 +108,40 @@ public final class ReorderBuffer: @unchecked Sendable {
             flows[key] = state
         }
 
-        if frame.seq == state.expectedSeq {
-            // In-order: deliver this frame + drain consecutive buffered frames
-            var ready = [frame]
-            state.expectedSeq += 1
-
-            // Drain buffered frames in sequence
-            while let buffered = state.buffer.removeValue(forKey: state.expectedSeq) {
-                ready.append(buffered)
-                state.expectedSeq += 1
+        let expected = ProtocolModel.expected(state.order)
+        switch ProtocolModel.accept(state.order, seq: frame.seq, limit: maxBufferPerFlow) {
+        case .deliver(let order, let seqs):
+            // In order: this frame, then every held frame it releases.
+            state.buffer[frame.seq] = frame
+            var ready: [Frame] = []
+            for seq in seqs {
+                guard let held = state.buffer.removeValue(forKey: seq) else {
+                    fatalError("BUG: seq \(seq) is delivered but not held")
+                }
+                ready.append(held)
             }
-
+            state.order = order
             return ready
 
-        } else if frame.seq > state.expectedSeq {
-            // Out-of-order: buffer it
-            // Check if this seq is already buffered (duplicate)
-            if state.buffer[frame.seq] != nil {
-                throw FrameError.protocolError(
-                    "Stale/duplicate seq: seq \(frame.seq) already buffered (expected >= \(state.expectedSeq))"
-                )
-            }
-
-            // Check buffer overflow
-            if state.buffer.count >= maxBufferPerFlow {
-                throw FrameError.protocolError(
-                    "Reorder buffer overflow: flow has \(state.buffer.count) buffered frames (max \(maxBufferPerFlow)), " +
-                    "expected seq \(state.expectedSeq) but got seq \(frame.seq)"
-                )
-            }
-
+        case .hold(let order):
             state.buffer[frame.seq] = frame
+            state.order = order
             return []
 
-        } else {
-            // Stale or duplicate
+        case .duplicate:
             throw FrameError.protocolError(
-                "Stale/duplicate seq: expected >= \(state.expectedSeq) but got \(frame.seq)"
+                "Stale/duplicate seq: seq \(frame.seq) already buffered (expected >= \(expected))"
+            )
+
+        case .overflow:
+            throw FrameError.protocolError(
+                "Reorder buffer overflow: flow has \(state.buffer.count) buffered frames (max \(maxBufferPerFlow)), " +
+                "expected seq \(expected) but got seq \(frame.seq)"
+            )
+
+        case .stale:
+            throw FrameError.protocolError(
+                "Stale/duplicate seq: expected >= \(expected) but got \(frame.seq)"
             )
         }
     }

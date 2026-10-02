@@ -53,7 +53,15 @@ final class PoolsTests: XCTestCase {
         // The chain: singleton, declared pools containing the cap, all.
         XCTAssertEqual(declarations.chainFor(cap: generate), [generate, "gpu", poolAll])
         // And the same chain derived from the materialized states.
-        XCTAssertEqual(chainFromStates(states, cap: generate), [generate, "gpu", poolAll])
+        XCTAssertEqual(try chainFromStates(states, cap: generate), [generate, "gpu", poolAll])
+        // A map that does not cover the cap is refused naming what is
+        // missing, not answered with the part of the chain that happens to
+        // be there.
+        var uncovered = states
+        uncovered.removeValue(forKey: poolAll)
+        XCTAssertThrowsError(try chainFromStates(uncovered, cap: generate)) { error in
+            XCTAssertTrue("\(error)".contains(poolAll), "\(error)")
+        }
     }
 
     // TEST1522: pool declarations are validated hard — reserved name, a
