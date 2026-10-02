@@ -583,10 +583,11 @@ final class ProtocolV4RuntimeTests: XCTestCase {
             credit: InputCreditContext(sender: grantSink, rid: rid, xid: nil, initialCredit: 2)
         )
         let inputStream = try XCTUnwrap(package.nextStream()).get()
-        // Let the demux drain all three pre-queued chunks before anything is
-        // consumed — no grant can extend the window, so the third chunk is
-        // deterministically a violation.
-        Thread.sleep(forTimeInterval: 0.1)
+        // The demux has seen all three chunks once the request has ended, and
+        // only then is anything consumed — so no grant can extend the window
+        // and the third chunk is a violation by construction, not by a sleep
+        // that a loaded machine outlasts.
+        XCTAssertNil(package.nextStream(), "the request has one stream and then ends")
         var iterator = inputStream.makeIterator()
         // First two chunks are within the window.
         XCTAssertNoThrow(try XCTUnwrap(iterator.next()).get())
