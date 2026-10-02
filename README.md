@@ -57,7 +57,7 @@ conformance, dispatch, and ranking rather than raw string comparison.
   API reference.
 
 The normative shared rules live in the
-[CapDAG specification](https://capdag.com/docs/01-overview/).
+[CapDAG specification](https://machinefabric.com/capdag/docs/01-overview/).
 
 ## Scaffold a Swift cartridge
 
@@ -69,7 +69,7 @@ capdag dev-install .
 echo "I love this" | capdag sentiment-tagger
 ```
 
-See [Build and Run a Cartridge](https://capdag.com/docs/18.2-getting-started-cartridge-development/)
+See [Build and Run a Cartridge](https://machinefabric.com/capdag/docs/18.2-getting-started-cartridge-development/)
 for the complete development loop.
 
 ## Verify changes
