@@ -141,6 +141,89 @@ fileprivate func makeTestCap(urn: String, args: [CapArg]) -> CapDefinition {
 @available(macOS 10.15.4, iOS 13.4, *)
 final class CartridgeRuntimeTests: XCTestCase {
 
+    // TEST351: frames cut short before their END are an error, not a stream
+    // that finished.
+    //
+    // A cooperative cancel finishes the request's frame queue, and the demux
+    // took that for the end of every stream: a handler saw its input end
+    // normally and answered with whatever part had arrived. A peer response
+    // cut short the same way read as a complete response.
+    func test351_framesCutShortAreAnError() throws {
+        let rid = MessageId.newUUID()
+        let payload = Data(CBOR.byteString([UInt8]("part".utf8)).encode())
+        let chunk = Frame.chunk(reqId: rid, streamId: "arg0", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload))
+        func iterate(_ frames: [Frame]) -> AnyIterator<Frame> {
+            var index = 0
+            return AnyIterator {
+                guard index < frames.count else { return nil }
+                defer { index += 1 }
+                return frames[index]
+            }
+        }
+        let start = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:enc=utf-8")
+
+        // A request's input, ended mid-stream.
+        let cut = demuxMultiStream(frameIterator: iterate([start, chunk])).makeIterator()
+        let stream = try XCTUnwrap(cut.next()).get()
+        let items = stream.makeIterator()
+        _ = try XCTUnwrap(items.next()).get()
+        guard case .failure(.abandoned)? = items.next() else {
+            return XCTFail("an open stream whose input stopped errors")
+        }
+        guard case .failure(.abandoned)? = cut.next() else {
+            return XCTFail("and so does the package")
+        }
+
+        // The same input with its END is a stream that finished.
+        let whole = demuxMultiStream(frameIterator: iterate([
+            start, chunk, Frame.streamEnd(reqId: rid, streamId: "arg0", chunkCount: 1), Frame.end(id: rid),
+        ])).makeIterator()
+        let finished = try XCTUnwrap(whole.next()).get().makeIterator()
+        _ = try XCTUnwrap(finished.next()).get()
+        XCTAssertNil(finished.next(), "a stream that reached STREAM_END ends")
+        XCTAssertNil(whole.next(), "an input that reached END ends")
+
+        // A peer response, stopped before its END.
+        let response = demuxSingleStream(
+            responseRx: iterate([
+                Frame.streamStart(reqId: rid, streamId: "r", mediaUrn: "media:enc=utf-8"),
+                Frame.chunk(reqId: rid, streamId: "r", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)),
+            ]),
+            maxChunk: Limits().maxChunk
+        )
+        guard case .data(.success, _)? = response.recv() else {
+            return XCTFail("the part that arrived is delivered")
+        }
+        guard case .data(.failure(.abandoned), _)? = response.recv() else {
+            return XCTFail("a peer response cut short errors")
+        }
+        XCTAssertNil(response.recv())
+    }
+
+    // TEST373: a request's terminal is claimed exactly once, by its handler or
+    // by a cancel.
+    //
+    // Both used to send: a handler finishing just as a cancel arrived had its
+    // END followed by the cancel's ERR. Whoever claims first ends the request,
+    // however many try at once.
+    func test373_aTerminalIsClaimedExactlyOnce() {
+        for _ in 0..<200 {
+            let claim = TerminalClaim()
+            let group = DispatchGroup()
+            let lock = NSLock()
+            var handlerWon = false
+            DispatchQueue.global().async(group: group) {
+                let won = claim.forHandler()
+                lock.lock(); handlerWon = won; lock.unlock()
+            }
+            let cancelWon = claim.forCancel()
+            group.wait()
+            lock.lock(); let handler = handlerWon; lock.unlock()
+            XCTAssertTrue(handler != cancelWon, "exactly one of them ends the request")
+            XCTAssertFalse(claim.forHandler() || claim.forCancel(), "and nobody after")
+        }
+    }
+
     // TEST8126: deriveResponseMedia — the response label is the effect
     // inference over the declared input, per effect value; an unparseable
     // cap URN fails hard instead of falling back.

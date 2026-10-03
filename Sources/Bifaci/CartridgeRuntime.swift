@@ -97,6 +97,12 @@ public enum StreamError: Error {
     case decode(String)
     case io(String)
     case protocolError(String)
+    /// Frames stopped before their END: a request's input, finished by the
+    /// runtime because the request was cancelled or the connection ended, or
+    /// a peer's response, cut short the same way. Every stream still open
+    /// errors with this — a stream cut short never looks like one that
+    /// finished, so a handler cannot answer with whatever part had arrived.
+    case abandoned
 }
 
 /// Allows sending frames directly through the output channel.
@@ -1635,6 +1641,34 @@ internal func tryDecodeSequenceItem(_ buf: [UInt8]) throws -> (CBOR, Int)? {
 /// one at a time as they arrive. Returns immediately — LOG frames are delivered
 /// in real-time, not buffered until data starts. This is critical for keeping
 /// the engine's activity timer alive during long peer calls (e.g., model downloads).
+/// Who ends a request: its handler or a cancel — exactly one of them.
+///
+/// A request has one terminal frame. Its handler's completion sends END (or its
+/// ERR); a cancel's ERR is sent once the handler has exited. Without a decision
+/// both were sent: a handler that finished just as a cancel arrived had its END
+/// followed by the cancel's ERR, and a handler that noticed the cancel and
+/// failed had its own ERR followed by the cancel's. Whichever claims first
+/// ends the request; the other sends nothing.
+final class TerminalClaim: @unchecked Sendable {
+    private enum State { case open, byHandler, byCancel }
+    private let lock = NSLock()
+    private var state = State.open
+
+    /// The handler finished: may it send its terminal?
+    func forHandler() -> Bool { claim(.byHandler) }
+
+    /// A cancel arrived: will its ERR be the terminal?
+    func forCancel() -> Bool { claim(.byCancel) }
+
+    private func claim(_ by: State) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard state == .open else { return false }
+        state = by
+        return true
+    }
+}
+
 internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, grants: InputGrantEmitter? = nil) -> PeerResponse {
     // Fragment crediting for sequence-mode responses (same scheme as
     // `demuxMultiStream`): the caller grants one frame per consumed ITEM,
@@ -1647,10 +1681,16 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
     // Items already decoded but not yet yielded (one fragment frame can
     // complete zero or several items).
     var pendingItems: [PeerResponseItem] = []
+    // Whether the response reached its END — or its cut-short error has been
+    // reported, which also ends it.
+    var ended = false
 
     let iterator = AnyIterator<PeerResponseItem> {
         if !pendingItems.isEmpty {
             return pendingItems.removeFirst()
+        }
+        if ended {
+            return nil
         }
         while let frame = responseRx.next() {
             switch frame.frameType {
@@ -1732,6 +1772,7 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                         "sequence stream ended mid-item: \(s.buf.count) trailing bytes do not form a complete CBOR item"
                     )), nil)
                 }
+                ended = true
                 return nil
 
             case .err:
@@ -1750,7 +1791,11 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                 return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")), nil)
             }
         }
-        return nil
+        // The response's frames stopped before its END: the peer call was
+        // cancelled, or the connection ended. A cut-short response never
+        // reads as complete.
+        ended = true
+        return .data(.failure(.abandoned), nil)
     }
 
     return PeerResponse(items: iterator, grants: grants)
@@ -1808,7 +1853,16 @@ internal func demuxMultiStream(
             streamsQueue.finish()
         }
 
-        loop: while let frame = frameIterator.next() {
+        // Whether the frames stopped before END: the runtime finished the
+        // request's queue because the request was cancelled, or the
+        // connection ended. Every other way out of the loop is END, an ERR,
+        // or an error already delivered.
+        var cutShort = false
+        loop: while true {
+            guard let frame = frameIterator.next() else {
+                cutShort = true
+                break loop
+            }
             switch frame.frameType {
             case .streamStart:
                 guard let streamId = frame.streamId else {
@@ -2044,6 +2098,12 @@ internal func demuxMultiStream(
             }
         }
 
+        if cutShort {
+            // Every open stream errors rather than ending, and so does the
+            // package — finishing the queues alone reads as completion.
+            for (_, queue) in streamChannels { queue.push(.failure(.abandoned)) }
+            streamsQueue.push(.failure(.abandoned))
+        }
         finishAll()
     }
 
@@ -4705,6 +4765,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
         let pendingIncomingLock = NSLock()
 
         var cancelledRequests: [MessageId: CancelReason] = [:]
+        // Each running handler's terminal claim (see `TerminalClaim`), until it
+        // reports done.
+        var terminalClaims: [MessageId: TerminalClaim] = [:]
         var handlerRoutingIds: [MessageId: MessageId?] = [:]
         // The registered pattern serving each running request — the pool
         // chain released when its handler finishes (see Pools.swift).
@@ -4774,7 +4837,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
             pendingPeerRequestsLock: NSLock,
             maxChunk: Int,
             eventQueue: BlockingQueue<LoopEvent>,
-            feedHandles: LiveFeedHandles
+            feedHandles: LiveFeedHandles,
+            terminal: TerminalClaim
         ) {
             Thread.detachNewThread {
                 fputs("[CartridgeRuntime] handler started: cap='\(capUrn)' rid=\(requestId)\n", stderr)
@@ -4832,6 +4896,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 do {
                     let op = factory()
                     try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
+                    // A cancel that claimed the request first ends it with its
+                    // own ERR, sent by the main loop once this reports done.
+                    guard terminal.forHandler() else {
+                        fputs("[CartridgeRuntime] request was cancelled first — the handler's END is not sent: rid=\(requestId)\n", stderr)
+                        eventQueue.push(.handlerDone(requestId))
+                        return
+                    }
 
                     fputs("[CartridgeRuntime] handler completed OK: cap='\(capUrn)' rid=\(requestId)\n", stderr)
                     // The END frame carries the terminal metadata (L3/L5): the
@@ -4848,6 +4919,11 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     endFrame.routingId = routingId
                     try? outputSender.send(endFrame)
                 } catch {
+                    guard terminal.forHandler() else {
+                        fputs("[CartridgeRuntime] request was cancelled first — the handler's ERR is not sent: rid=\(requestId) error=\(error)\n", stderr)
+                        eventQueue.push(.handlerDone(requestId))
+                        return
+                    }
                     fputs("[CartridgeRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
                     // The ERR frame carries the failure's DECLARED identity
                     // (docs/failure-taxonomy.md): the code and class from
@@ -4910,7 +4986,12 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     pendingPeerRequestsLock: pendingPeerRequestsLock,
                     maxChunk: self.limits.maxChunk,
                     eventQueue: eventQueue,
-                    feedHandles: queuedFeedHandles
+                    feedHandles: queuedFeedHandles,
+                    terminal: {
+                        let claim = TerminalClaim()
+                        terminalClaims[queued.requestId] = claim
+                        return claim
+                    }()
                 )
                 handlerRoutingIds[queued.requestId] = queued.routingId
                 handlerPatterns[queued.requestId] = queued.pattern
@@ -4939,6 +5020,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 if let feeds = liveFeedHandlesByRid.removeValue(forKey: rid) {
                     feeds.closeAll()
                 }
+                terminalClaims.removeValue(forKey: rid)
                 if let reason = cancelledRequests.removeValue(forKey: rid) {
                     let routingId = handlerRoutingIds.removeValue(forKey: rid) ?? nil
                     var err = Frame.err(id: rid, code: reason.terminalCode, attributionClass: reason.terminalClass, message: reason.terminalMessage)
@@ -5081,7 +5163,12 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         pendingPeerRequestsLock: pendingPeerRequestsLock,
                         maxChunk: self.limits.maxChunk,
                         eventQueue: eventQueue,
-                        feedHandles: feedHandles
+                        feedHandles: feedHandles,
+                        terminal: {
+                            let claim = TerminalClaim()
+                            terminalClaims[requestId] = claim
+                            return claim
+                        }()
                     )
                     handlerRoutingIds[requestId] = routingId
                     handlerPatterns[requestId] = pattern
@@ -5308,11 +5395,6 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 }
                 fputs("[CartridgeRuntime] Cancel received: rid=\(targetRid) code=\(reason.terminalCode) class=\(reason.terminalClass.rawValue) forceKill=\(reason.forceKill)\n", stderr)
 
-                // Skip if already cancelled
-                if cancelledRequests[targetRid] != nil {
-                    continue
-                }
-
                 // Close any live feeds the request holds so a capture source
                 // does not keep producing for a request that is ending with
                 // ERR.
@@ -5338,43 +5420,54 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // Case 2: In-flight handler — finish the frame queue (cooperative cancel)
-                pendingIncomingLock.lock()
-                if let pending = pendingIncoming.removeValue(forKey: targetRid) {
-                    pendingIncomingLock.unlock()
-                    // Finishing the queue ends the handler's frame iterator → handler exits
-                    pending.frames.finish()
-                    cancelledRequests[targetRid] = reason
-                    // Release any credit-blocked writers immediately (L13,
-                    // L17) — a cancelled producer must not hang on credit.
-                    creditRouter.closeRequest(rid: targetRid, reason: reason.terminalCode)
-
-                    // Cancel peer calls originating from this request
-                    pendingPeerRequestsLock.lock()
-                    var peerRidsToCancel: [MessageId] = []
-                    for key in pendingPeerRequests.allKeys {
-                        if let rid = key as? MessageId,
-                           let pending = pendingPeerRequests[rid] as? PendingPeerRequest,
-                           pending.originRequestId == targetRid {
-                            peerRidsToCancel.append(rid)
-                            pending.continuation.finish()
-                        }
-                    }
-                    for rid in peerRidsToCancel {
-                        pendingPeerRequests.removeObject(forKey: rid)
-                        // Peer calls end under the SAME reason — a peer of an
-                        // aborted request is collateral of the same failure.
-                        let cancel = Frame.cancel(targetRid: rid, reason: reason)
-                        try? outputSender.send(cancel)
-                    }
-                    pendingPeerRequestsLock.unlock()
-
-                    fputs("[CartridgeRuntime] Cancelled in-flight request (cooperative): rid=\(targetRid)\n", stderr)
-                } else {
-                    pendingIncomingLock.unlock()
-                    // Case 3: Unknown — ignore
+                // Case 2: its handler is running — a cooperative cancel. The
+                // handler may already have ended the request and not yet
+                // reported done: then a cancel's ERR would be a second
+                // terminal, and the cancel adds nothing. Otherwise the cancel
+                // ends it: its input stops (a reader of it gets `.abandoned`),
+                // its credit waiters and peer calls are released, and its ERR
+                // is sent when the handler reports done. A handler whose input
+                // has already ended is still running, and still cancelled.
+                guard let terminal = terminalClaims[targetRid] else {
+                    // Case 3: unknown — already ended, or never seen.
                     fputs("[CartridgeRuntime] Cancel for unknown rid=\(targetRid) — ignoring\n", stderr)
+                    continue
                 }
+                guard terminal.forCancel() else {
+                    fputs("[CartridgeRuntime] Cancel for rid=\(targetRid) whose handler already ended it — nothing to send\n", stderr)
+                    continue
+                }
+                cancelledRequests[targetRid] = reason
+                pendingIncomingLock.lock()
+                let pending = pendingIncoming.removeValue(forKey: targetRid)
+                pendingIncomingLock.unlock()
+                // Finishing the queue ends the handler's frame iterator.
+                pending?.frames.finish()
+                // Release any credit-blocked writers immediately (L13,
+                // L17) — a cancelled producer must not hang on credit.
+                creditRouter.closeRequest(rid: targetRid, reason: reason.terminalCode)
+
+                // Cancel peer calls originating from this request
+                pendingPeerRequestsLock.lock()
+                var peerRidsToCancel: [MessageId] = []
+                for key in pendingPeerRequests.allKeys {
+                    if let rid = key as? MessageId,
+                       let peerCall = pendingPeerRequests[rid] as? PendingPeerRequest,
+                       peerCall.originRequestId == targetRid {
+                        peerRidsToCancel.append(rid)
+                        peerCall.continuation.finish()
+                    }
+                }
+                for rid in peerRidsToCancel {
+                    pendingPeerRequests.removeObject(forKey: rid)
+                    // Peer calls end under the SAME reason — a peer of an
+                    // aborted request is collateral of the same failure.
+                    let cancel = Frame.cancel(targetRid: rid, reason: reason)
+                    try? outputSender.send(cancel)
+                }
+                pendingPeerRequestsLock.unlock()
+
+                fputs("[CartridgeRuntime] Cancelled in-flight request (cooperative): rid=\(targetRid)\n", stderr)
 
             case .credit:
                 // Flow-control grant for a stream a local sender is writing.

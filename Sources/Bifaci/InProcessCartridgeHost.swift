@@ -203,13 +203,36 @@ public func accumulateInput(inputStream: AsyncStream<Frame>) async throws -> [Ca
         case .end:
             return streams.map { CapArgumentValue(mediaUrn: $0.mediaUrn, value: $0.data) }
 
+        case .err:
+            throw InProcessInputError.failedUpstream(code: frame.errorCode ?? "ERR", message: frame.errorMessage ?? "")
+
         default:
             break // ignore unexpected frame types
         }
     }
 
-    // If we exit the loop without seeing END, return what we have
-    return streams.map { CapArgumentValue(mediaUrn: $0.mediaUrn, value: $0.data) }
+    // The input stopped before its END: the host finished it because the
+    // request was cancelled or its connection ended. Its arguments are
+    // incomplete, and answering them would answer a request that no longer
+    // exists.
+    throw InProcessInputError.endedWithoutEnd
+}
+
+/// Why a request's input did not reach its END.
+public enum InProcessInputError: Error, LocalizedError, Equatable {
+    /// The host finished the input: the request was cancelled or its connection closed.
+    case endedWithoutEnd
+    /// An ERR arrived from upstream while the input was still arriving.
+    case failedUpstream(code: String, message: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .endedWithoutEnd:
+            return "the request's input ended before its END: the request was cancelled or its connection closed"
+        case let .failedUpstream(code, message):
+            return "the request failed upstream before its input was complete: \(code): \(message)"
+        }
+    }
 }
 
 // MARK: - Built-in Identity Handler
@@ -470,12 +493,30 @@ public final class InProcessCartridgeHost {
         let writerTask = Task {
             let writer = FrameWriter(handle: localWrite)
             let seqAssigner = SeqAssigner()
+            // The cartridge runtime's terminal gate: whether a frame is
+            // written, and whether it ends its flow, is the proved model's
+            // decision (L4). A handler still emitting after a Cancel's ERR, or
+            // a Cancel arriving after the handler's END, produces post-terminal
+            // frames, and those are suppressed, never written.
+            let terminated = TerminatedFlows(cap: 1024)
+            let stragglers = StragglerCounters()
 
             for await var frame in writeStream {
+                let key = FlowKey.fromFrame(frame)
+                let ends: Bool
+                switch ProtocolModel.write(over: terminated.contains(key), frame.frameType) {
+                case .send(let endsFlow):
+                    ends = endsFlow
+                case .suppress:
+                    let total = stragglers.record(frame.frameType)
+                    fputs("[InProcessHost] post-terminal frame suppressed — END/ERR already written for this flow (L4) type=\(frame.frameType.asString) rid=\(frame.id) straggler_total=\(total)\n", stderr)
+                    continue
+                }
                 seqAssigner.assign(&frame)
                 try? writer.write(frame)
-                if frame.frameType.isTerminal {
-                    seqAssigner.remove(FlowKey.fromFrame(frame))
+                if ends {
+                    seqAssigner.remove(key)
+                    terminated.insert(key)
                 }
             }
         }
@@ -504,6 +545,8 @@ public final class InProcessCartridgeHost {
 
         // Active request channels: request_id → AsyncStream.Continuation for forwarding frames to handler
         var active: [MessageId: AsyncStream<Frame>.Continuation] = [:]
+        // Each live request's handler task, so a cancel can stop it.
+        var handlerTasks: [MessageId: Task<Void, Never>] = [:]
 
         // Built-in identity handler
         let identityHandler = IdentityHandler()
@@ -557,7 +600,7 @@ public final class InProcessCartridgeHost {
                     maxChunk: Limits().maxChunk
                 )
 
-                Task.detached {
+                handlerTasks[rid] = Task.detached {
                     await handler.handleRequest(capUrn: capUrn, inputStream: inputStream, output: output)
                 }
 
@@ -573,6 +616,7 @@ public final class InProcessCartridgeHost {
                     continuation.yield(frame)
                     continuation.finish()
                 }
+                handlerTasks.removeValue(forKey: frame.id)
 
             case .heartbeat:
                 // The heartbeat is the capacity CONFIG channel (see the
@@ -610,10 +654,13 @@ public final class InProcessCartridgeHost {
                 writeContinuation.yield(response)
 
             case .err:
-                // Error from relay for a pending request — close handler's input
+                // Error from relay for a pending request — forward it, then close
+                // the handler's input.
                 if let continuation = active.removeValue(forKey: frame.id) {
+                    continuation.yield(frame)
                     continuation.finish()
                 }
+                handlerTasks.removeValue(forKey: frame.id)
 
             case .closeStream:
                 // An in-process handler holds no live feed taps: a CloseStream
@@ -629,14 +676,22 @@ public final class InProcessCartridgeHost {
                 guard let reason = frame.cancelReason() else {
                     preconditionFailure("a Cancel frame always yields a reason")
                 }
-                // Cancel: close handler's input stream (cooperative cancel) and
-                // send the terminal ERR in the cancel's own attribution.
-                if let continuation = active.removeValue(forKey: targetRid) {
-                    continuation.finish()
-                }
+                // Terminal ERR in the cancel's own attribution, queued BEFORE
+                // the handler learns of the cancel: a handler that saw its
+                // input close first could fail and queue its own ERR ahead of
+                // this one, and the cancel's attribution would be the frame
+                // suppressed. Whatever the stopping handler emits after it —
+                // or the whole ERR, when the handler had already sent its END
+                // — is a post-terminal frame the writer suppresses (L4).
                 var err = Frame.err(id: targetRid, code: reason.terminalCode, attributionClass: reason.terminalClass, message: reason.terminalMessage)
                 err.routingId = xid
                 writeContinuation.yield(err)
+                // Then stop the handler: cooperatively, by cancelling its task
+                // and finishing its input.
+                if let continuation = active.removeValue(forKey: targetRid) {
+                    continuation.finish()
+                }
+                handlerTasks.removeValue(forKey: targetRid)?.cancel()
 
             default:
                 // RelayNotify, RelayState, etc. — not expected from relay side

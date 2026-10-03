@@ -549,6 +549,152 @@ final class InProcessCartridgeHostTests: XCTestCase {
         testRead.closeFile()
         Thread.sleep(forTimeInterval: 0.1)
     }
+
+    // MARK: - One terminal per request
+
+    /// Answers however its input ended: at END, or when the host finished its
+    /// input. It stands for every handler that does not check — the host, not
+    /// the handler, is what keeps a request to one terminal. Signals
+    /// `answered` once it has sent its answer.
+    final class AnswersAnywayHandler: FrameHandler {
+        let answered = DispatchSemaphore(value: 0)
+        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) {
+            Task {
+                for await frame in inputStream where frame.frameType == .end {
+                    break
+                }
+                output.emitResponse(mediaUrn: "media:", data: "an answer".data(using: .utf8)!)
+                self.answered.signal()
+            }
+        }
+    }
+
+    // TEST344: input that does not reach its END is refused, not returned as
+    // the request's arguments.
+    //
+    // The host finishes a handler's input when the request is cancelled or its
+    // connection ends, and forwards an ERR from upstream. Each was accumulated
+    // as if the request were complete, so a handler answered a request that no
+    // longer existed, with whatever part of its input had arrived.
+    func test344_accumulateRefusesInputThatNeverEnded() async throws {
+        let rid = MessageId.newUUID()
+        let payload = cborBytesPayload("part".data(using: .utf8)!)
+        let start = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:text")
+        let chunk = Frame.chunk(reqId: rid, streamId: "arg0", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload))
+
+        let (closed, closedIn) = AsyncStream<Frame>.makeStream()
+        closedIn.yield(start)
+        closedIn.yield(chunk)
+        closedIn.finish()
+        do {
+            _ = try await accumulateInput(inputStream: closed)
+            XCTFail("input finished before its END was accumulated")
+        } catch let error as InProcessInputError {
+            XCTAssertEqual(error, .endedWithoutEnd)
+        }
+
+        let (failed, failedIn) = AsyncStream<Frame>.makeStream()
+        failedIn.yield(start)
+        failedIn.yield(Frame.err(id: rid, code: "UPSTREAM_DIED", attributionClass: .internal, message: "the producer failed"))
+        failedIn.finish()
+        do {
+            _ = try await accumulateInput(inputStream: failed)
+            XCTFail("input with an upstream ERR was accumulated")
+        } catch let error as InProcessInputError {
+            XCTAssertEqual(error, .failedUpstream(code: "UPSTREAM_DIED", message: "the producer failed"))
+        }
+
+        let (complete, completeIn) = AsyncStream<Frame>.makeStream()
+        for frame in [start, chunk, Frame.streamEnd(reqId: rid, streamId: "arg0", chunkCount: 1), Frame.end(id: rid)] {
+            completeIn.yield(frame)
+        }
+        completeIn.finish()
+        let args = try await accumulateInput(inputStream: complete)
+        XCTAssertEqual(args.map { $0.value }, ["part".data(using: .utf8)!])
+    }
+
+    // TEST345: once a request has its terminal, the host sends nothing more
+    // for it.
+    //
+    // Two ways a request ended and more followed: a CANCEL arriving after the
+    // handler finished, answered with a second terminal; and a CANCEL while
+    // input was open, after which a handler that answers anyway sent its
+    // response around the cancel's ERR. The ERR must be that request's only
+    // frame.
+    func test345_aRequestEndsOnce() throws {
+        let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
+        let xid = MessageId.uint(1)
+
+        /// Runs `script` against a fresh host; every frame the host sent for
+        /// the request, up to the connection's end.
+        func framesFor(_ script: (MessageId, FrameWriter, FrameReader, DispatchSemaphore) throws -> [Frame]) throws -> [Frame] {
+            let handler = AnswersAnywayHandler()
+            let host = InProcessCartridgeHost(
+                identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+                handlers: [("answers", [makeTestCap(capUrn)], handler)]
+            )
+            let (hostRead, testWrite) = Pipe.socketPair()
+            let (testRead, hostWrite) = Pipe.socketPair()
+            let hostDone = DispatchSemaphore(value: 0)
+            let hostThread = Thread {
+                try? host.run(localRead: hostRead, localWrite: hostWrite)
+                hostDone.signal()
+            }
+            hostThread.start()
+            let reader = FrameReader(handle: testRead)
+            let writer = FrameWriter(handle: testWrite)
+            XCTAssertEqual(try XCTUnwrap(reader.read()).frameType, .relayNotify)
+
+            let rid = MessageId.newUUID()
+            var req = Frame.req(id: rid, capUrn: capUrn, payload: Data(), contentType: "application/cbor")
+            req.routingId = xid
+            try writer.write(req)
+            try writer.write(Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:text"))
+            var seen = try script(rid, writer, reader, handler.answered)
+            // The script is done writing: the host ends, and everything it
+            // sent is read to the connection's end.
+            testWrite.closeFile()
+            XCTAssertEqual(hostDone.wait(timeout: .now() + 10), .success, "the host ends when its input does")
+            hostWrite.closeFile()
+            while let frame = try reader.read() {
+                seen.append(frame)
+            }
+            testRead.closeFile()
+            return seen.filter { $0.id == rid }
+        }
+        func cancelFor(_ rid: MessageId) -> Frame {
+            var cancel = Frame.cancel(targetRid: .uint(0), reason: .user())
+            cancel.id = rid
+            cancel.routingId = xid
+            return cancel
+        }
+
+        // A CANCEL after the handler finished: the request's END stands alone.
+        let afterEnd = try framesFor { rid, writer, reader, answered in
+            try writer.write(Frame.end(id: rid))
+            XCTAssertEqual(answered.wait(timeout: .now() + 10), .success)
+            var seen: [Frame] = []
+            while true {
+                let frame = try XCTUnwrap(reader.read())
+                seen.append(frame)
+                if frame.id == rid && frame.frameType == .end { break }
+            }
+            try writer.write(cancelFor(rid))
+            return seen
+        }
+        XCTAssertEqual(afterEnd.last?.frameType, .end)
+        XCTAssertFalse(afterEnd.contains { $0.frameType == .err }, "a cancel after END adds no terminal")
+
+        // A CANCEL while input is open: its ERR is the request's only frame.
+        let cancelled = try framesFor { rid, writer, _, answered in
+            try writer.write(cancelFor(rid))
+            XCTAssertEqual(answered.wait(timeout: .now() + 10), .success, "the handler answered")
+            return []
+        }
+        XCTAssertEqual(cancelled.count, 1, "\(cancelled.map { $0.frameType })")
+        XCTAssertEqual(cancelled.first?.frameType, .err)
+        XCTAssertEqual(cancelled.first?.errorCode, "CANCELLED")
+    }
 }
 
 // MARK: - Socket Pair Extension
