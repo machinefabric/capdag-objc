@@ -545,8 +545,9 @@ public final class InProcessCartridgeHost {
 
         // Active request channels: request_id → AsyncStream.Continuation for forwarding frames to handler
         var active: [MessageId: AsyncStream<Frame>.Continuation] = [:]
-        // Each live request's handler task, so a cancel can stop it.
-        var handlerTasks: [MessageId: Task<Void, Never>] = [:]
+        // Every handler still running, so a cancel can stop it and the end of
+        // input can wait for it.
+        let running = RunningHandlers()
 
         // Built-in identity handler
         let identityHandler = IdentityHandler()
@@ -600,9 +601,11 @@ public final class InProcessCartridgeHost {
                     maxChunk: Limits().maxChunk
                 )
 
-                handlerTasks[rid] = Task.detached {
+                let task = Task.detached {
                     await handler.handleRequest(capUrn: capUrn, inputStream: inputStream, output: output)
+                    running.finished(rid)
                 }
+                running.started(rid, task)
 
             // Continuation frames: forward to handler
             case .streamStart, .chunk, .streamEnd:
@@ -616,7 +619,6 @@ public final class InProcessCartridgeHost {
                     continuation.yield(frame)
                     continuation.finish()
                 }
-                handlerTasks.removeValue(forKey: frame.id)
 
             case .heartbeat:
                 // The heartbeat is the capacity CONFIG channel (see the
@@ -660,7 +662,6 @@ public final class InProcessCartridgeHost {
                     continuation.yield(frame)
                     continuation.finish()
                 }
-                handlerTasks.removeValue(forKey: frame.id)
 
             case .closeStream:
                 // An in-process handler holds no live feed taps: a CloseStream
@@ -691,7 +692,7 @@ public final class InProcessCartridgeHost {
                 if let continuation = active.removeValue(forKey: targetRid) {
                     continuation.finish()
                 }
-                handlerTasks.removeValue(forKey: targetRid)?.cancel()
+                running.cancel(targetRid)
 
             default:
                 // RelayNotify, RelayState, etc. — not expected from relay side
@@ -705,7 +706,66 @@ public final class InProcessCartridgeHost {
         }
         active.removeAll()
 
+        // And WAIT for them, then for the writer to write everything they and
+        // this loop queued. Cancelling the writer instead ended its loop with
+        // frames still queued: a cancel's ERR queued just before the input
+        // ended never reached the wire. (as the Go host: handlers, then writer)
+        Self.wait { await running.all() }
         writeContinuation.finish()
-        writerTask.cancel()
+        Self.wait { await writerTask.value }
+    }
+
+    /// Block this thread until `work` is done. `run` is synchronous — it reads
+    /// its input with blocking reads, on a thread of its own.
+    private static func wait(_ work: @escaping @Sendable () async -> Void) {
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            await work()
+            done.signal()
+        }
+        done.wait()
+    }
+}
+
+/// The handlers still running, by request: a cancel stops one, and the end of
+/// input waits for all. A handler leaves when it finishes. One that finishes
+/// before it is registered — its task can run to completion before `started`
+/// is reached — is remembered so it is never registered at all.
+final class RunningHandlers: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tasks: [MessageId: Task<Void, Never>] = [:]
+    private var finishedEarly: Set<MessageId> = []
+
+    func started(_ rid: MessageId, _ task: Task<Void, Never>) {
+        lock.lock(); defer { lock.unlock() }
+        if finishedEarly.remove(rid) == nil {
+            tasks[rid] = task
+        }
+    }
+
+    func finished(_ rid: MessageId) {
+        lock.lock(); defer { lock.unlock() }
+        if tasks.removeValue(forKey: rid) == nil {
+            finishedEarly.insert(rid)
+        }
+    }
+
+    func cancel(_ rid: MessageId) {
+        lock.lock()
+        let task = tasks[rid]
+        lock.unlock()
+        task?.cancel()
+    }
+
+    /// Wait for every handler running now.
+    func all() async {
+        for task in now() {
+            await task.value
+        }
+    }
+
+    private func now() -> [Task<Void, Never>] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(tasks.values)
     }
 }
