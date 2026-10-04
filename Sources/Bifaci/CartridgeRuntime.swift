@@ -3969,6 +3969,10 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// Parsed manifest for CLI mode support.
     /// Contains cap definitions with command names and argument sources.
     let parsedManifest: Manifest?
+    /// Why `parsedManifest` is nil, in the decoder's own words. A manifest that
+    /// does not decode is refused in CLI mode WITH this, not as a bare "failed
+    /// to parse": the reason is the one thing that says which field to fix.
+    let manifestParseError: String?
 
     /// The runtime's concurrency-pool state (see Pools.swift; nil inside
     /// until the run loop materializes it). One lock guards admission
@@ -4041,7 +4045,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
     public init(manifest: Data) {
         self.manifestData = manifest
         // Parse manifest for CLI mode support
-        self.parsedManifest = try? JSONDecoder().decode(Manifest.self, from: manifest)
+        do {
+            self.parsedManifest = try JSONDecoder().decode(Manifest.self, from: manifest)
+            self.manifestParseError = nil
+        } catch {
+            self.parsedManifest = nil
+            self.manifestParseError = String(describing: error)
+        }
 
         // FAIL HARD if manifest doesn't declare CAP_IDENTITY
         // Cartridges MUST explicitly declare all caps they provide - no fallbacks
@@ -4265,7 +4275,8 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// Run in CLI mode - parse arguments and invoke handler.
     private func runCliMode(_ args: [String]) throws {
         guard let manifest = parsedManifest else {
-            throw CartridgeRuntimeError.manifestError("Failed to parse manifest for CLI mode")
+            throw CartridgeRuntimeError.manifestError(
+                "Failed to parse manifest for CLI mode: \(manifestParseError ?? "no reason was recorded")")
         }
 
         // Handle --help at top level
