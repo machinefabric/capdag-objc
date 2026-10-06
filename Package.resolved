@@ -1,5 +1,5 @@
 {
-  "originHash" : "7400241030880d4f4791ae9c426da69c6bc01a78793e6b30e9aa04f9d5137131",
+  "originHash" : "38a25a756c5c9445952998aa725f0687f5cb2cf8efb26c6fd10d6559391b6aa6",
   "pins" : [
     {
       "identity" : "glob",
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/machinefabric/tagged-urn-objc.git",
       "state" : {
-        "revision" : "3122e7f109d573ae66ff53701f5fb3c79815d44d",
-        "version" : "1.78.43"
+        "revision" : "51a67da1b09d194aea39223b45a3caef9362d63d",
+        "version" : "1.80.43"
       }
     }
   ],
