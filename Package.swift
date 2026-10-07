@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.603.0
+// version: 1.604.4
 import PackageDescription
 
 let package = Package(
@@ -25,7 +25,7 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.101.43"),
+        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.103.4"),
         // The runtime the code generated from ../formal runs on, at exactly the lungo release
         // that generated it.
         .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "1.88.0"),
