@@ -107,6 +107,10 @@ let package = Package(
         .testTarget(
             name: "CapDAGSwiftTests",
             dependencies: ["CapDAG"]),
+        // What is proved of the model's functions, read from its Swift API.
+        .testTarget(
+            name: "CapDAGFormalTests",
+            dependencies: ["CapDAGFormal"]),
         .testTarget(
             name: "LLMTests",
             dependencies: ["LLM"]),
