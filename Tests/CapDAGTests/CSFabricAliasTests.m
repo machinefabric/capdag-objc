@@ -21,7 +21,7 @@
 
 static CSCap *buildExtractCap(void) {
     NSError *e = nil;
-    CSCapUrn *urn = [CSCapUrn fromString:@"cap:extract;in=\"media:ext=pdf\";out=\"media:enc=utf-8\"" error:&e];
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:extract;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8\"" error:&e];
     return [CSCap capWithUrn:urn
                        title:@"extract"
                      aliases:@[@"extract"]
@@ -47,7 +47,7 @@ static CSCap *buildExtractCap(void) {
 
 // TEST1881: URN-vs-alias detection keys purely on the presence of ':'. The whole design rests on this discriminator being exact.
 - (void)test1881_TokenURNvsAliasDetection {
-    XCTAssertTrue(CSTokenIsURN(@"cap:in=\"media:ext=pdf\";extract;out=\"media:enc=utf-8\""));
+    XCTAssertTrue(CSTokenIsURN(@"cap:in=\"media:document;ext=pdf\";extract;out=\"media:enc=utf-8\""));
     XCTAssertTrue(CSTokenIsURN(@"media:fmt=json;record"));
     XCTAssertFalse(CSTokenIsURN(@"pdf2text"));
     XCTAssertTrue(CSIsAliasToken(@"pdf2text"));
@@ -163,7 +163,7 @@ static CSCap *buildExtractCap(void) {
     }];
 
     [reg insertCachedAliasForTest:@{@"name": @"pdf2text",
-                                    @"target": @"cap:extract;in=\"media:ext=pdf\";out=\"media:enc=utf-8\"",
+                                    @"target": @"cap:extract;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8\"",
                                     @"version": @1}];
     XCTestExpectation *bad = [self expectationWithDescription:@"cap alias at getMediaDef"];
     [reg getMediaDef:@"pdf2text" completion:^(NSDictionary *spec, NSError *error) {

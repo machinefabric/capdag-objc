@@ -32,9 +32,9 @@
 // request spelled that way asked for a cap that takes everything, and found
 // none. The unknown side asks nothing; the stated side is held to.
 - (void)test12368_aQuestionMayLeaveASideUnknown {
-    CSCapUrn *pages = [self cap:@"cap:disbind;in=\"media:ext=pdf\";out=\"media:enc=utf-8;ext=txt;page\""];
+    CSCapUrn *pages = [self cap:@"cap:disbind;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8;ext=txt;page\""];
     CSCapUrn *toJpeg = [self cap:@"cap:convert-image;in=\"media:ext=png;image\";out=\"media:ext=jpeg;image\""];
-    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:ext=pdf\";out=\"media:image\""];
+    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
     CSCapUrn *passesThrough = [self cap:@"cap:decimate-sequence;effect=none"];
 
     CSCapQuery *wantsJpeg = [CSCapQuery producing:[self media:@"media:ext=jpeg;image"] tags:nil];
@@ -53,7 +53,7 @@
     XCTAssertFalse([wantsImage admits:passesThrough], @"media: out promises no image");
 
     // What can a pdf become? Whatever takes a pdf — or takes anything.
-    CSCapQuery *hasPdf = [CSCapQuery consuming:[self media:@"media:ext=pdf"] tags:nil];
+    CSCapQuery *hasPdf = [CSCapQuery consuming:[self media:@"media:document;ext=pdf"] tags:nil];
     XCTAssertTrue([hasPdf admits:pages]);
     XCTAssertTrue([hasPdf admits:someImage]);
     XCTAssertTrue([hasPdf admits:passesThrough], @"it takes anything, a pdf included");
@@ -61,7 +61,7 @@
     XCTAssertEqual([hasPdf grade:toJpeg], CSMatchGradeNone);
 
     // Both sides stated is the typed call.
-    CSCapQuery *pdfToImage = [CSCapQuery betweenInput:[self media:@"media:ext=pdf"]
+    CSCapQuery *pdfToImage = [CSCapQuery betweenInput:[self media:@"media:document;ext=pdf"]
                                                output:[self media:@"media:image"]
                                                  tags:nil];
     XCTAssertTrue([pdfToImage admits:someImage]);
@@ -76,7 +76,7 @@
 // no cap needs to declare; and a cap may carry tags nobody asked about.
 - (void)test12369_aQuerysTagsAreAskedOfTheTagsACapHas {
     CSCapUrn *toJpeg = [self cap:@"cap:convert-image;in=\"media:ext=png;image\";out=\"media:ext=jpeg;image\""];
-    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:ext=pdf\";out=\"media:image\""];
+    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
     CSMediaUrn *anyImage = [self media:@"media:image"];
 
     CSCapQuery *converters = [CSCapQuery producing:anyImage tags:@{@"convert-image": @"*"}];

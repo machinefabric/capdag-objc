@@ -125,7 +125,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Create a media definition with extensions array
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:ext=pdf",
+            @"urn": @"media:document;ext=pdf",
             @"media_type": @"application/pdf",
             @"profile_uri": @"https://capdag.com/schema/pdf",
             @"title": @"PDF Document",
@@ -135,7 +135,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:ext=pdf", registryWithSpecs(mediaDefs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:document;ext=pdf", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");

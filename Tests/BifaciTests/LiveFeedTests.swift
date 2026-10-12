@@ -351,7 +351,7 @@ final class LiveFeedTests: XCTestCase {
     // content does not conform to the cap's main input is a hard error at
     // resolution, never a mislabeled stream.
     func test8138_mainInputFallbackContentMismatchRejected() throws {
-        let (ctx, _, _) = try makeBlindContext(mainIn: "media:audio-frames;pcm")
+        let (ctx, _, _) = try makeBlindContext(mainIn: "media:audio;audio-frames;pcm")
         let package = demuxLiveReference(ctx: ctx, selector: "{}")
         guard let result = package.nextStream() else {
             return XCTFail("the failure must be delivered")

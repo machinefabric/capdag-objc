@@ -28,10 +28,10 @@ the core APIs and `Bifaci` for runtime components.
 import CapDAG
 
 let parsed = try CSCapUrn.fromString(
-    "cap:disbind;in=\"media:ext=pdf\";out=\"media:enc=utf-8;page\""
+    "cap:disbind;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8;page\""
 )
 let built = try CSCapUrnBuilder()
-    .inSpec("media:ext=pdf")
+    .inSpec("media:document;ext=pdf")
     .outSpec("media:enc=utf-8;page")
     .marker("disbind")
     .build()

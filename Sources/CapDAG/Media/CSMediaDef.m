@@ -30,15 +30,18 @@ NSString * const CSMediaObjectList = @"media:list;record";
 NSString * const CSMediaIdentity = @"media:";
 NSString * const CSMediaVoid = @"media:void";
 // Semantic content types
+// The mediums: the type every format of that medium conforms to.
+NSString * const CSMediaImage = @"media:image";
+NSString * const CSMediaAudio = @"media:audio";
+NSString * const CSMediaVideo = @"media:video";
+NSString * const CSMediaDocument = @"media:document";
 NSString * const CSMediaPng = @"media:ext=png;image";
-NSString * const CSMediaImage = @"media:ext=png;image"; // alias for CSMediaPng
 NSString * const CSMediaJpeg = @"media:ext=jpeg;image";
 NSString * const CSMediaGif = @"media:ext=gif;image";
 NSString * const CSMediaBmp = @"media:ext=bmp;image";
 NSString * const CSMediaTiff = @"media:ext=tiff;image";
 NSString * const CSMediaWebp = @"media:ext=webp;image";
-NSString * const CSMediaAudio = @"media:audio;ext=wav";
-NSString * const CSMediaWav = @"media:audio;ext=wav"; // alias for CSMediaAudio
+NSString * const CSMediaWav = @"media:audio;ext=wav";
 NSString * const CSMediaMp3 = @"media:audio;ext=mp3";
 NSString * const CSMediaFlac = @"media:audio;ext=flac";
 NSString * const CSMediaOgg = @"media:audio;ext=ogg";
@@ -46,7 +49,6 @@ NSString * const CSMediaAac = @"media:audio;ext=aac";
 NSString * const CSMediaM4a = @"media:audio;ext=m4a";
 NSString * const CSMediaAiff = @"media:audio;ext=aiff";
 NSString * const CSMediaOpus = @"media:audio;ext=opus";
-NSString * const CSMediaVideo = @"media:video";
 NSString * const CSMediaMp4 = @"media:ext=mp4;video";
 NSString * const CSMediaMov = @"media:ext=mov;video";
 NSString * const CSMediaWebm = @"media:ext=webm;video";
@@ -55,8 +57,8 @@ NSString * const CSMediaMkv = @"media:ext=mkv;video";
 NSString * const CSMediaAudioSpeech = @"media:audio;ext=wav;speech";
 NSString * const CSMediaTextablePage = @"media:enc=utf-8;ext=txt;page;plain-text";
 // Document types (PRIMARY naming - type IS the format)
-NSString * const CSMediaPdf = @"media:ext=pdf";
-NSString * const CSMediaEpub = @"media:ext=epub";
+NSString * const CSMediaPdf = @"media:document;ext=pdf";
+NSString * const CSMediaEpub = @"media:document;ext=epub";
 // Text format types (PRIMARY naming - type IS the format)
 NSString * const CSMediaMd = @"media:enc=utf-8;ext=md";
 NSString * const CSMediaTxt = @"media:enc=utf-8;ext=txt";

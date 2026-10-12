@@ -510,7 +510,7 @@ public protocol LiveFeedProvider: Sendable {
     /// Provider name, for errors and logs.
     var name: String { get }
     /// The CONTENT media URN this provider's feed delivers (e.g. the
-    /// microphone provider delivers `media:audio-frames;pcm`). Used when a
+    /// microphone provider delivers `media:audio;audio-frames;pcm`). Used when a
     /// live reference resolves against a cap's MAIN INPUT (the cap declares
     /// no explicit reference arg): the content urn must conform to the main
     /// input's declared urn, and the delivered stream is labeled with it.

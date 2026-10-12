@@ -49,15 +49,18 @@ FOUNDATION_EXPORT NSString * const CSMediaObjectList;    // media:list;record
 FOUNDATION_EXPORT NSString * const CSMediaIdentity;       // media:
 FOUNDATION_EXPORT NSString * const CSMediaVoid;         // media:void
 // Semantic content types
+// The mediums: the type every format of that medium conforms to.
+FOUNDATION_EXPORT NSString * const CSMediaImage;        // media:image
+FOUNDATION_EXPORT NSString * const CSMediaAudio;        // media:audio
+FOUNDATION_EXPORT NSString * const CSMediaVideo;        // media:video
+FOUNDATION_EXPORT NSString * const CSMediaDocument;     // media:document
 FOUNDATION_EXPORT NSString * const CSMediaPng;          // media:ext=png;image
-FOUNDATION_EXPORT NSString * const CSMediaImage;        // media:ext=png;image (alias for CSMediaPng)
 FOUNDATION_EXPORT NSString * const CSMediaJpeg;         // media:ext=jpeg;image
 FOUNDATION_EXPORT NSString * const CSMediaGif;          // media:ext=gif;image
 FOUNDATION_EXPORT NSString * const CSMediaBmp;          // media:ext=bmp;image
 FOUNDATION_EXPORT NSString * const CSMediaTiff;         // media:ext=tiff;image
 FOUNDATION_EXPORT NSString * const CSMediaWebp;         // media:ext=webp;image
-FOUNDATION_EXPORT NSString * const CSMediaAudio;        // media:audio;ext=wav
-FOUNDATION_EXPORT NSString * const CSMediaWav;          // media:audio;ext=wav (alias for CSMediaAudio)
+FOUNDATION_EXPORT NSString * const CSMediaWav;          // media:audio;ext=wav
 FOUNDATION_EXPORT NSString * const CSMediaMp3;          // media:audio;ext=mp3
 FOUNDATION_EXPORT NSString * const CSMediaFlac;         // media:audio;ext=flac
 FOUNDATION_EXPORT NSString * const CSMediaOgg;          // media:audio;ext=ogg
@@ -65,7 +68,6 @@ FOUNDATION_EXPORT NSString * const CSMediaAac;          // media:audio;ext=aac
 FOUNDATION_EXPORT NSString * const CSMediaM4a;          // media:audio;ext=m4a
 FOUNDATION_EXPORT NSString * const CSMediaAiff;         // media:audio;ext=aiff
 FOUNDATION_EXPORT NSString * const CSMediaOpus;         // media:audio;ext=opus
-FOUNDATION_EXPORT NSString * const CSMediaVideo;        // media:video
 FOUNDATION_EXPORT NSString * const CSMediaMp4;          // media:ext=mp4;video
 FOUNDATION_EXPORT NSString * const CSMediaMov;          // media:ext=mov;video
 FOUNDATION_EXPORT NSString * const CSMediaWebm;         // media:ext=webm;video
@@ -74,8 +76,8 @@ FOUNDATION_EXPORT NSString * const CSMediaMkv;          // media:ext=mkv;video
 FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;ext=wav;speech
 FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:enc=utf-8;ext=txt;page;plain-text
 // Document types (PRIMARY naming - type IS the format)
-FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:ext=pdf
-FOUNDATION_EXPORT NSString * const CSMediaEpub;         // media:ext=epub
+FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:document;ext=pdf
+FOUNDATION_EXPORT NSString * const CSMediaEpub;         // media:document;ext=epub
 // Text format types (PRIMARY naming - type IS the format)
 FOUNDATION_EXPORT NSString * const CSMediaMd;           // media:enc=utf-8;ext=md
 FOUNDATION_EXPORT NSString * const CSMediaTxt;          // media:enc=utf-8;ext=txt
@@ -199,7 +201,7 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
  */
 @interface CSMediaDef : NSObject
 
-/// The media URN identifier (e.g., "media:ext=pdf")
+/// The media URN identifier (e.g., "media:document;ext=pdf")
 @property (nonatomic, readonly, nullable) NSString *mediaUrn;
 
 /// The MIME content type (e.g., "application/json", "image/png")

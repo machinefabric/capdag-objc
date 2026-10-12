@@ -17,7 +17,7 @@
 static CSFabricRegistry *testFabricRegistry(void) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
     [registry addMediaDef:@{
-        @"urn": @"media:ext=pdf",
+        @"urn": @"media:document;ext=pdf",
         @"media_type": @"application/pdf",
         @"title": @"PDF",
         @"extensions": @[@"pdf"],
@@ -439,7 +439,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
 // TEST1144: ContentStructure is_list/is_record helpers and Display implementation are correct
 - (void)test1144_content_structure_helpers {
     CSResolvedFile *scalarOpaque = [CSResolvedFile fileWithPath:@"/x"
-                                                       mediaUrn:@"media:ext=pdf"
+                                                       mediaUrn:@"media:document;ext=pdf"
                                                       sizeBytes:0
                                                contentStructure:CSContentStructureScalarOpaque];
     XCTAssertFalse([scalarOpaque isList]);

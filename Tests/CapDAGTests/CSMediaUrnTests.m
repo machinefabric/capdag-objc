@@ -17,7 +17,7 @@
 // TEST852: LUB of identical URNs returns the same URN
 - (void)test852_lub_identical {
     NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
     XCTAssertNotNil(pdf);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf, pdf]];
     XCTAssertTrue([lub isEquivalentTo:pdf]);
@@ -26,7 +26,7 @@
 // TEST853: LUB of URNs with no common tags returns media: (universal)
 - (void)test853_lub_no_common_tags {
     NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
     CSMediaUrn *png = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     XCTAssertNotNil(pdf);
     XCTAssertNotNil(png);
@@ -77,7 +77,7 @@
 // TEST857: LUB of single input returns that input
 - (void)test857_lub_single {
     NSError *error;
-    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:ext=pdf" error:&error];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
     XCTAssertNotNil(pdf);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf]];
     XCTAssertTrue([lub isEquivalentTo:pdf]);
@@ -213,7 +213,7 @@
     XCTAssertFalse([[CSMediaUrn fromString:@"media:string" error:&e] isVoid]);
 }
 
-// TEST546: is_image returns true only when image marker tag is present
+// TEST546: is_image returns true only when image marker tag is present; a format conforms to its own medium and to no other
 - (void)test546_is_image {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaPng error:&e] isImage]);
@@ -223,6 +223,22 @@
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaAudio error:&e] isImage]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaVideo error:&e] isImage]);
+
+    // The medium itself, and what its formats are to it.
+    CSMediaUrn *image = [CSMediaUrn fromString:CSMediaImage error:&e];
+    CSMediaUrn *document = [CSMediaUrn fromString:CSMediaDocument error:&e];
+    CSMediaUrn *png = [CSMediaUrn fromString:CSMediaPng error:&e];
+    CSMediaUrn *pdf = [CSMediaUrn fromString:CSMediaPdf error:&e];
+    XCTAssertNotNil(image);
+    XCTAssertNotNil(document);
+    XCTAssertTrue([image isImage]);
+    XCTAssertFalse([document isImage]);
+    XCTAssertTrue([png conformsTo:image]);
+    XCTAssertTrue([pdf conformsTo:document]);
+    XCTAssertFalse([png conformsTo:document]);
+    XCTAssertFalse([pdf conformsTo:image]);
+    // The medium is wider than any one format of it.
+    XCTAssertFalse([image conformsTo:png]);
 }
 
 // TEST547: is_audio returns true only when audio marker tag is present
@@ -373,9 +389,9 @@
 // TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements
 - (void)test074_media_urn_matching {
     NSError *e;
-    // CSMediaPdf is now "media:ext=pdf" — the request must also use the ext= form.
+    // CSMediaPdf is now "media:document;ext=pdf" — the request must also use the ext= form.
     CSMediaUrn *pdfListing = [CSMediaUrn fromString:CSMediaPdf error:&e];
-    CSMediaUrn *pdfReq = [CSMediaUrn fromString:@"media:ext=pdf" error:&e];
+    CSMediaUrn *pdfReq = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&e];
     XCTAssertTrue([pdfListing conformsTo:pdfReq]);
 
     // CSMediaMd is now "media:enc=utf-8;ext=md" — request with just ext=md tag.

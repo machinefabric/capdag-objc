@@ -69,9 +69,9 @@ final class ManifestTests: XCTestCase {
             capDescription: "Roundtrip process cap",
             args: [
                 CapArg(
-                    mediaUrn: "media:ext=pdf",
+                    mediaUrn: "media:document;ext=pdf",
                     required: true,
-                    sources: [.stdin("media:ext=pdf")]
+                    sources: [.stdin("media:document;ext=pdf")]
                 ),
                 CapArg(
                     mediaUrn: "media:chunk-size;numeric",
@@ -407,7 +407,7 @@ final class ManifestTests: XCTestCase {
                      "an empty adapter_urns must be omitted, not written as []")
 
         // A group that DOES claim adapters still writes them.
-        let claiming = CapGroup(name: "default", caps: [], adapterUrns: ["media:ext=pdf"])
+        let claiming = CapGroup(name: "default", caps: [], adapterUrns: ["media:document;ext=pdf"])
         let claimingJson = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: try JSONEncoder().encode(claiming)) as? [String: Any])
         XCTAssertEqual((claimingJson["adapter_urns"] as? [String])?.count, 1,

@@ -229,7 +229,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // cap URN fails hard instead of falling back.
     func test8126_deriveResponseMediaPerEffect() throws {
         XCTAssertEqual(
-            try deriveResponseMedia(capUrn: "cap:extract;in=\"media:ext=pdf\";out=\"media:record\""),
+            try deriveResponseMedia(capUrn: "cap:extract;in=\"media:document;ext=pdf\";out=\"media:record\""),
             "media:record",
             "effect=declared derives the declared out=")
         XCTAssertEqual(
@@ -521,13 +521,13 @@ final class CartridgeRuntimeTests: XCTestCase {
 
         let cborArray: CBOR = .array([
             .map([
-                .utf8String("media_urn"): .utf8String("media:ext=pdf"),
+                .utf8String("media_urn"): .utf8String("media:document;ext=pdf"),
                 .utf8String("value"): .byteString(binaryData)
             ])
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"", args: [])
         let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
         guard let decoded = try CBOR.decode([UInt8](result)),
               case .array(let arr) = decoded,
@@ -684,7 +684,7 @@ final class CapArgumentValueTests: XCTestCase {
 
     // TEST277: Test CapArgumentValue::value_as_str fails for non-UTF-8 binary data
     func test277_capArgumentValueAsStrInvalidUtf8() {
-        let arg = CapArgumentValue(mediaUrn: "media:ext=pdf", value: Data([0xFF, 0xFE, 0x80]))
+        let arg = CapArgumentValue(mediaUrn: "media:document;ext=pdf", value: Data([0xFF, 0xFE, 0x80]))
         XCTAssertThrowsError(try arg.valueAsString(), "non-UTF-8 data must fail")
     }
 
@@ -710,7 +710,7 @@ final class CapArgumentValueTests: XCTestCase {
             }
         }
         data = data.prefix(10000)  // trim to exactly 10000
-        let arg = CapArgumentValue(mediaUrn: "media:ext=pdf", value: data)
+        let arg = CapArgumentValue(mediaUrn: "media:document;ext=pdf", value: data)
         XCTAssertEqual(arg.value.count, 10000)
         XCTAssertEqual(arg.value, data)
     }
@@ -824,13 +824,13 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process PDF",
             aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
-                sources: [.stdin("media:ext=pdf"), .positional(0)]
+                sources: [.stdin("media:document;ext=pdf"), .positional(0)]
             )]
         )
 
@@ -892,13 +892,13 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process",
             aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
-                sources: [.stdin("media:ext=pdf"), .cliFlag("--file")]
+                sources: [.stdin("media:document;ext=pdf"), .cliFlag("--file")]
             )]
         )
 
@@ -955,14 +955,14 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST340: File not found error provides clear message
     func test340_file_not_found_clear_error() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";test;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";test;out=\"media:void\"",
             title: "Test",
             aliases: ["test"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
                 sources: [
-                    .stdin("media:ext=pdf"),
+                    .stdin("media:document;ext=pdf"),
                     .positional(0)
                 ]
             )]
@@ -1262,13 +1262,13 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:enc=utf-8;result\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:enc=utf-8;result\"",
             title: "Process PDF",
             aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
-                sources: [.stdin("media:ext=pdf"), .positional(0)]
+                sources: [.stdin("media:document;ext=pdf"), .positional(0)]
             )]
         )
 
@@ -1659,14 +1659,14 @@ final class CborFilePathConversionTests: XCTestCase {
         try pdfContent.write(to: testFile)
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process",
             aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
                 sources: [
-                    .stdin("media:ext=pdf"),
+                    .stdin("media:document;ext=pdf"),
                     .positional(0)
                 ]
             )]
@@ -1686,7 +1686,7 @@ final class CborFilePathConversionTests: XCTestCase {
               case .array(let arr) = decoded
         else { return XCTFail("Expected CBOR array") }
 
-        let inSpec = try CSMediaUrn.fromString("media:ext=pdf")
+        let inSpec = try CSMediaUrn.fromString("media:document;ext=pdf")
         var foundValue: Data? = nil
         for arg in arr {
             guard case .map(let m) = arg else { continue }
@@ -1859,14 +1859,14 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process",
             aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
                 sources: [
-                    .stdin("media:ext=pdf"),
+                    .stdin("media:document;ext=pdf"),
                     .positional(0)
                 ]
             )]
@@ -1895,14 +1895,14 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Create cap that accepts stdin
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:ext=pdf",
+                mediaUrn: "media:document;ext=pdf",
                 required: true,
                 sources: [
-                    .stdin("media:ext=pdf")
+                    .stdin("media:document;ext=pdf")
                 ]
             )]
         )
@@ -1952,7 +1952,7 @@ final class CborFilePathConversionTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(mediaUrn, "media:ext=pdf", "Media URN should match cap in_spec")
+        XCTAssertEqual(mediaUrn, "media:document;ext=pdf", "Media URN should match cap in_spec")
         XCTAssertEqual(value, pdfContent, "Binary content should be preserved exactly")
     }
 
@@ -1966,14 +1966,14 @@ final class CborFilePathConversionTests: XCTestCase {
         let resultHolder = ResultHolder()
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:ext=pdf",
+                mediaUrn: "media:document;ext=pdf",
                 required: true,
                 sources: [
-                    .stdin("media:ext=pdf")
+                    .stdin("media:document;ext=pdf")
                 ]
             )]
         )
@@ -2002,7 +2002,7 @@ final class CborFilePathConversionTests: XCTestCase {
         }
 
         // Build CBOR payload
-        let args = [CapArgumentValue(mediaUrn: "media:ext=pdf", value: pdfContent)]
+        let args = [CapArgumentValue(mediaUrn: "media:document;ext=pdf", value: pdfContent)]
         let cborArgs: [CBOR] = args.map { arg in
             CBOR.map([
                 CBOR.utf8String("media_urn"): CBOR.utf8String(arg.mediaUrn),
@@ -2012,11 +2012,11 @@ final class CborFilePathConversionTests: XCTestCase {
         let payloadBytes = Data(CBOR.array(cborArgs).encode())
 
         // Create InputPackage from payload
-        let inputPackage = createInputPackage(fromPayload: payloadBytes, mediaUrn: "media:ext=pdf")
+        let inputPackage = createInputPackage(fromPayload: payloadBytes, mediaUrn: "media:document;ext=pdf")
 
         // Create output collector
         let outputCollector = OutputCollector()
-        let outputStream = createCollectingOutputStream(collector: outputCollector, mediaUrn: "media:ext=pdf")
+        let outputStream = createCollectingOutputStream(collector: outputCollector, mediaUrn: "media:document;ext=pdf")
 
         // Execute Op handler
         let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
@@ -2036,13 +2036,13 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:ext=pdf\";process;out=\"media:void\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:void\"",
             title: "Process",
             aliases: ["process"],
             args: [createArg(
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
-                sources: [.stdin("media:ext=pdf")]
+                sources: [.stdin("media:document;ext=pdf")]
             )]
         )
 
@@ -2072,7 +2072,7 @@ final class CborFilePathConversionTests: XCTestCase {
                 else if key == "value", case .byteString(let b) = v { value = b }
             }
         }
-        XCTAssertEqual(mediaUrn, "media:ext=pdf", "Should be relabeled to stdin source target")
+        XCTAssertEqual(mediaUrn, "media:document;ext=pdf", "Should be relabeled to stdin source target")
         XCTAssertEqual(value.map { Data($0) }, pdfContent, "File-path auto-converted to bytes")
     }
 }

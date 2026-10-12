@@ -179,7 +179,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST0318: Canonical dictionary deserialization
 - (void)test0318_CanonicalDictionaryDeserialization {
     // Test CSCap.capWithDictionary with new args format (stdin is part of arg sources)
-    NSString *stdinMediaType = @"media:ext=pdf";
+    NSString *stdinMediaType = @"media:document;ext=pdf";
     NSDictionary *capDict = @{
         @"urn": @"cap:extract;in=media:void;out=\"media:enc=utf-8;record\";target=metadata",
         @"title": @"Extract Metadata",
@@ -514,7 +514,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
 // TEST6564: Cap manifest dictionary deserialization
 - (void)test6564_CapManifestDictionaryDeserialization {
-    NSString *stdinMediaType = @"media:ext=pdf";
+    NSString *stdinMediaType = @"media:document;ext=pdf";
     NSDictionary *manifestDict = @{
         @"name": @"TestComponent",
         @"version": @"0.1.0",
@@ -1091,8 +1091,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 - (void)test7100_StreamUrnReturnsStdinSourceUrnWhenItDiffersFromSlotUrn {
     CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
                                      required:YES
-                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:ext=pdf;pdf-stream"]]];
-    XCTAssertEqualObjects([arg streamUrn], @"media:ext=pdf;pdf-stream",
+                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:document;ext=pdf;pdf-stream"]]];
+    XCTAssertEqualObjects([arg streamUrn], @"media:document;ext=pdf;pdf-stream",
                           @"streamUrn must return the stdin source URN");
     XCTAssertNotEqualObjects([arg streamUrn], arg.mediaUrn,
                              @"stream URN must differ from the declared slot media URN here");
@@ -1110,35 +1110,35 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST7102: isMainInputForInSpec: is YES when the stdin URN is order-theoretically EQUIVALENT to the cap's in= spec even when the two strings list their tags in a different order — the comparison is the media-URN equivalence predicate, never a string comparison.
 - (void)test7102_IsMainInputTrueOnTagOrderInsensitiveEquivalenceToInSpec {
     NSError *error;
-    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:ext=pdf;pdf-stream" error:&error];
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:document;ext=pdf;pdf-stream" error:&error];
     XCTAssertNotNil(inSpec, @"Failed to parse in= spec: %@", error);
 
     // Same tags, different order.
     CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
                                      required:YES
-                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;ext=pdf"]]];
+                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;document;ext=pdf"]]];
     XCTAssertTrue([arg isMainInputForInSpec:inSpec],
                   @"tag-order-insensitive equivalent stdin URN must be the main input");
     // The raw strings genuinely differ — proves the match is equivalence,
     // not string equality.
-    XCTAssertNotEqualObjects([inSpec toString], @"media:pdf-stream;ext=pdf",
+    XCTAssertNotEqualObjects([inSpec toString], @"media:pdf-stream;document;ext=pdf",
                              @"raw spec strings must differ for this test to be meaningful");
 }
 
 // TEST7103: isMainInputForInSpec: is NO for cli_flag-only and position-only arguments (no stdin source means never the main input, whatever the declared slot URN says), and NO when the stdin URN is not equivalent to in=.
 - (void)test7103_IsMainInputFalseWithoutEquivalentStdinSource {
     NSError *error;
-    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:ext=pdf;pdf-stream" error:&error];
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:document;ext=pdf;pdf-stream" error:&error];
     XCTAssertNotNil(inSpec, @"Failed to parse in= spec: %@", error);
 
     // Slot URN even matches in= — irrelevant without a stdin source.
-    CSCapArg *cliFlagOnly = [CSCapArg argWithMediaUrn:@"media:ext=pdf;pdf-stream"
+    CSCapArg *cliFlagOnly = [CSCapArg argWithMediaUrn:@"media:document;ext=pdf;pdf-stream"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--input"]]];
     XCTAssertFalse([cliFlagOnly isMainInputForInSpec:inSpec],
                    @"cli_flag-only argument is never the main input");
 
-    CSCapArg *positionOnly = [CSCapArg argWithMediaUrn:@"media:ext=pdf;pdf-stream"
+    CSCapArg *positionOnly = [CSCapArg argWithMediaUrn:@"media:document;ext=pdf;pdf-stream"
                                               required:YES
                                                sources:@[[CSArgSource positionSource:0]]];
     XCTAssertFalse([positionOnly isMainInputForInSpec:inSpec],
@@ -1154,13 +1154,13 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST7104: A realistic multi-arg cap (one stdin main input; one required, defaultless cli_flag arg; several defaulted cli_flag args): exactly one argument is the main input, and partitioning the remaining arguments by required-without-default vs has-default yields the expected sets.
 - (void)test7104_MultiArgCapExactlyOneMainInputAndPartitionOfRest {
     NSError *error;
-    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:ext=pdf;pdf-stream" error:&error];
+    CSMediaUrn *inSpec = [CSMediaUrn fromString:@"media:document;ext=pdf;pdf-stream" error:&error];
     XCTAssertNotNil(inSpec, @"Failed to parse in= spec: %@", error);
 
     // Main input may ALSO be delivered by cli-flag; stdin is the defining route.
     CSCapArg *mainArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
                                          required:YES
-                                          sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;ext=pdf"],
+                                          sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;document;ext=pdf"],
                                                     [CSArgSource cliFlagSource:@"--input"]]];
     CSCapArg *questionArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;question"
                                              required:YES

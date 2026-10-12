@@ -61,7 +61,7 @@
 
 // TEST697: Tests CapShapeInfo correctly identifies one-to-one pattern Verifies Single input and Single output result in OneToOne pattern
 - (void)test697_cap_shape_info_one_to_one {
-    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:test" inSpec:@"media:ext=pdf" outSpec:@"media:ext=png;image"];
+    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:test" inSpec:@"media:document;ext=pdf" outSpec:@"media:ext=png;image"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToOne);
@@ -69,7 +69,7 @@
 
 // TEST698: CapShapeInfo cardinality is always Single when derived from URN Cardinality comes from context (is_sequence), not from URN tags. The list tag is a semantic type property, not a cardinality indicator.
 - (void)test698_cap_shape_info_cardinality_always_single_from_urn {
-    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:ext=pdf" outSpec:@"media:ext=png;list"];
+    CSCapShapeInfo *info = [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages" inSpec:@"media:document;ext=pdf" outSpec:@"media:ext=png;list"];
     XCTAssertEqual(info.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(info.output.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual([info cardinalityPattern], CSCardinalityPatternOneToOne);
@@ -78,15 +78,15 @@
 // TEST699: CapShapeInfo cardinality from URN is always Single; ManyToOne requires is_sequence
 - (void)test699_cap_shape_info_list_urn_still_single_cardinality {
     // URN parsing always yields Single — the "list" tag is a structure marker, not cardinality
-    CSCapShapeInfo *fromUrn = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:ext=pdf;list" outSpec:@"media:ext=pdf"];
+    CSCapShapeInfo *fromUrn = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs" inSpec:@"media:document;ext=pdf;list" outSpec:@"media:document;ext=pdf"];
     XCTAssertEqual(fromUrn.input.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual(fromUrn.output.cardinality, CSInputCardinalitySingle);
     XCTAssertEqual([fromUrn cardinalityPattern], CSCardinalityPatternOneToOne);
 
     // With is_sequence=true on input, cardinality becomes ManyToOne
     CSCapShapeInfo *withSeq = [CSCapShapeInfo fromCapUrn:@"cap:merge-pdfs"
-                                                  inSpec:@"media:ext=pdf;list"
-                                                 outSpec:@"media:ext=pdf"
+                                                  inSpec:@"media:document;ext=pdf;list"
+                                                 outSpec:@"media:document;ext=pdf"
                                          inputIsSequence:YES
                                         outputIsSequence:NO];
     XCTAssertEqual(withSeq.input.cardinality, CSInputCardinalitySequence);
@@ -117,7 +117,7 @@
 // TEST711: Tests shape chain analysis for simple linear one-to-one capability chains Verifies chains with no fan-out are valid and require no transformation
 - (void)test711_strand_shape_analysis_simple_linear {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-png" inSpec:@"media:ext=pdf" outSpec:@"media:ext=png;image"],
+        [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-png" inSpec:@"media:document;ext=pdf" outSpec:@"media:ext=png;image"],
         [CSCapShapeInfo fromCapUrn:@"cap:resize" inSpec:@"media:ext=png;image" outSpec:@"media:ext=png;image"],
     ];
     CSStrandShapeAnalysis *analysis = [CSStrandShapeAnalysis analyze:infos];
@@ -130,7 +130,7 @@
 - (void)test712_strand_shape_analysis_with_fan_out {
     NSArray *infos = @[
         [CSCapShapeInfo fromCapUrn:@"cap:pdf-to-pages"
-                            inSpec:@"media:ext=pdf"
+                            inSpec:@"media:document;ext=pdf"
                            outSpec:@"media:ext=png;image"
                    inputIsSequence:NO
                   outputIsSequence:YES],
@@ -175,7 +175,7 @@
 
 // TEST720: Tests InputStructure correctly identifies opaque media URNs Verifies that URNs without record marker are parsed as Opaque
 - (void)test720_from_media_urn_opaque {
-    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:ext=pdf"), CSInputStructureOpaque);
+    XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:document;ext=pdf"), CSInputStructureOpaque);
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:enc=utf-8"), CSInputStructureOpaque);
     XCTAssertEqual(CSInputStructureFromMediaUrn(@"media:integer"), CSInputStructureOpaque);
     // List marker doesn't affect structure
@@ -316,7 +316,7 @@
 // TEST741: Tests CapShapeInfo pattern detection — OneToMany requires output is_sequence=true
 - (void)test741_cap_shape_info_pattern {
     CSCapShapeInfo *oneToMany = [CSCapShapeInfo fromCapUrn:@"cap:disbind"
-                                                    inSpec:@"media:ext=pdf"
+                                                    inSpec:@"media:document;ext=pdf"
                                                    outSpec:@"media:enc=utf-8;disbound-page"
                                            inputIsSequence:NO
                                           outputIsSequence:YES];
@@ -339,7 +339,7 @@
 // TEST751: Tests shape chain analysis detects structure mismatch
 - (void)test751_strand_shape_structure_mismatch {
     NSArray *infos = @[
-        [CSCapShapeInfo fromCapUrn:@"cap:extract" inSpec:@"media:ext=pdf" outSpec:@"media:enc=utf-8"],
+        [CSCapShapeInfo fromCapUrn:@"cap:extract" inSpec:@"media:document;ext=pdf" outSpec:@"media:enc=utf-8"],
         // This cap expects record but gets opaque - should fail
         [CSCapShapeInfo fromCapUrn:@"cap:parse" inSpec:@"media:fmt=json;record" outSpec:@"media:data;record"],
     ];
@@ -353,7 +353,7 @@
 - (void)test752_strand_shape_with_fanout {
     NSArray *infos = @[
         [CSCapShapeInfo fromCapUrn:@"cap:disbind"
-                            inSpec:@"media:ext=pdf"
+                            inSpec:@"media:document;ext=pdf"
                            outSpec:@"media:enc=utf-8;page"
                    inputIsSequence:NO
                   outputIsSequence:YES],

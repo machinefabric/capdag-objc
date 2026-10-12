@@ -71,7 +71,7 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 - (BOOL)accepts:(CSMediaUrn *)instance error:(NSError **)error;
 
 /// Whether this media type and `other` COULD describe the same value: not a guarantee
-/// (conformsTo), and not excluded. `media:ext` meets `media:ext=pdf`; `media:ext=pdf` does
+/// (conformsTo), and not excluded. `media:ext` meets `media:document;ext=pdf`; `media:document;ext=pdf` does
 /// not meet `media:ext=png`.
 - (BOOL)meets:(CSMediaUrn *)other error:(NSError **)error;
 /// The same, without an error out-parameter; a comparison that cannot be made raises.
