@@ -210,7 +210,7 @@ def build_manifest() -> CapManifest:
 
     return CapManifest(
         name="__CARTRIDGE_NAME__",
-        version="1.124.1212",
+        version="1.205.2130",
         channel="nightly",          # 'nightly' or 'release'; nightly for dev.
         registry_url=None,           # None => dev cartridge (installed locally).
         description="Classify a piece of text as positive, neutral, or negative.",
@@ -294,7 +294,7 @@ cartridge.json
         flag: #"--rust"#,
         display: #"Rust"#,
         entry: #"target/release/__CARTRIDGE_NAME__"#,
-        build: [#"cargo build --release"#],
+        build: [#"cargo build --release --target-dir target"#],
         runtimePackage: #"capdag"#,
         runtimeRegistry: #"git tag"#,
         runtimeInstall: #"cargo build (the dependency is declared in Cargo.toml)"#,
@@ -315,7 +315,7 @@ cartridge.json
 //! calls a peer, one manifest, one main().
 //!
 //! Develop it with:
-//!     cargo build --release                     # the entry the host launches
+//!     cargo build --release --target-dir target # the entry the host launches
 //!     capdag dev-install .                      # install under the local `dev` slug
 //!     echo "I love this" | capdag __CARTRIDGE_NAME__
 //!     # edit the labels or the peer cap, then re-run both to update
@@ -513,7 +513,7 @@ async fn main() -> Result<()> {
                 contents: #"""
 [package]
 name = "__CARTRIDGE_NAME__"
-version = "1.124.1212"
+version = "1.205.2130"
 edition = "2021"
 
 [dependencies]
@@ -522,7 +522,7 @@ anyhow = "1.0"
 # which is unpublishable, and cargo requires a version requirement on every
 # dependency. The tag is stamped from capdag's own version.txt, so it tracks
 # what capdag's next release tags instead of drifting until someone notices.
-capdag = { git = "https://github.com/machinefabric/capdag-rs", tag = "v1.710.0" }
+capdag = { git = "https://github.com/machinefabric/capdag-rs", tag = "v1.900.65" }
 ciborium = "0.2"
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
@@ -559,8 +559,9 @@ stdin and emits `positive`, `neutral`, or `negative`.
 ## Develop
 
 ```bash
-# 1. Build the entry the host launches:
-cargo build --release
+# 1. Build the entry the host launches, target/release/__CARTRIDGE_NAME__
+#    (--target-dir says so to a cargo that keeps build output elsewhere):
+cargo build --release --target-dir target
 
 # 2. Install this cartridge under the local `dev` slug:
 capdag dev-install .
@@ -570,7 +571,7 @@ echo "I love this" | capdag __CARTRIDGE_NAME__
 # => positive
 
 # 4. Edit the labels or the peer cap in src/main.rs, then re-run steps 1-2:
-cargo build --release && capdag dev-install .
+cargo build --release --target-dir target && capdag dev-install .
 ```
 
 Unlike the Python cartridge, the entry here is a COMPILED binary, so an edit
@@ -807,7 +808,7 @@ func buildManifest() *bifaci.CapManifest {
 
 	return capdag.NewCapManifest(
 		"__CARTRIDGE_NAME__",
-		"1.124.1212",
+		"1.205.2130",
 		"nightly", // 'nightly' or 'release'; nightly for dev.
 		nil,       // nil => dev cartridge (installed locally).
 		"Classify a piece of text as positive, neutral, or negative.",
@@ -845,7 +846,7 @@ go 1.21
 // always ahead of the newest tag -- asked for one no tag satisfies and
 // resolved whatever older one it could, so every fix to the mirror stayed
 // invisible to the stub suite until a release happened to catch up.
-require github.com/machinefabric/capdag-go v1.386.0
+require github.com/machinefabric/capdag-go v1.530.113
 
 """#,
                 executable: false
@@ -1073,7 +1074,7 @@ func buildManifest() -> Manifest {
 
     return Manifest(
         name: "__CARTRIDGE_NAME__",
-        version: "1.124.1212",
+        version: "1.205.2130",
         channel: "nightly",   // 'nightly' or 'release'; nightly for dev.
         registryURL: nil,     // nil => dev cartridge (installed locally).
         description: "Classify a piece of text as positive, neutral, or negative.",
@@ -1109,7 +1110,7 @@ let package = Package(
         .macOS(.v13)
     ],
     dependencies: [
-        .package(url: "https://github.com/machinefabric/capdag-objc.git", from: "1.450.2"),
+        .package(url: "https://github.com/machinefabric/capdag-objc.git", from: "1.617.136"),
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
     ],
     targets: [
