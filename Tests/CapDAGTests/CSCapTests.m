@@ -44,7 +44,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     XCTAssertNotNil(cap);
@@ -70,7 +70,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     XCTAssertNotNil(cap);
@@ -92,7 +92,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                       documentation:nil
                            metadata:@{}
                           args:@[]
-                             output:nil
+                             outputs:@[]
                        metadataJSON:nil];
 
     XCTAssertNotNil(cap1);
@@ -103,6 +103,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSString *stdinMediaType = @"media:enc=utf-8";
     CSArgSource *stdinSource = [CSArgSource stdinSourceWithMediaUrn:stdinMediaType];
     CSCapArg *stdinArg = [CSCapArg argWithMediaUrn:stdinMediaType
+                                          name:@"stdin"
                                           required:YES
                                            sources:@[stdinSource]];
     CSCap *cap2 = [CSCap capWithUrn:key
@@ -112,7 +113,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                       documentation:nil
                            metadata:@{}
                                args:@[stdinArg]
-                             output:nil
+                             outputs:@[]
                        metadataJSON:nil];
 
     XCTAssertNotNil(cap2);
@@ -136,7 +137,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     // URN tags are sorted alphabetically
@@ -157,6 +158,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test copying preserves stdin - encoded as arg with stdin source
     CSArgSource *stdinSource = [CSArgSource stdinSourceWithMediaUrn:stdinMediaType];
     CSCapArg *stdinArg = [CSCapArg argWithMediaUrn:stdinMediaType
+                                          name:@"stdin"
                                           required:YES
                                            sources:@[stdinSource]];
     CSCap *original = [CSCap capWithUrn:key
@@ -166,7 +168,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                           documentation:nil
                                metadata:@{@"model": @"sentence-transformer"}
                                    args:@[stdinArg]
-                                 output:nil
+                                 outputs:@[]
                            metadataJSON:nil];
 
     CSCap *copied = [original copy];
@@ -189,6 +191,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"args": @[
             @{
                 @"media_urn": @"media:enc=utf-8;file-path",
+                @"name": @"document",
                 @"required": @YES,
                 @"sources": @[
                     @{@"stdin": stdinMediaType},
@@ -229,6 +232,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test CSCapArg.argWithDictionary with media_urn format
     NSDictionary *argDict = @{
         @"media_urn": CSMediaString,
+        @"name": @"file_path",
         @"required": @YES,
         @"sources": @[
             @{@"position": @0},
@@ -247,6 +251,15 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNotNil([arg getPosition], @"Should have position source");
     XCTAssertEqualObjects([arg getPosition], @0);
     XCTAssertEqualObjects([arg getCliFlag], @"--file_path");
+    XCTAssertEqualObjects(arg.name, @"file_path");
+    XCTAssertEqualObjects([arg toDictionary][@"name"], @"file_path", @"the name is written back");
+
+    // An argument is named: a dictionary without a name is no argument.
+    NSMutableDictionary *unnamed = [argDict mutableCopy];
+    [unnamed removeObjectForKey:@"name"];
+    error = nil;
+    XCTAssertNil([CSCapArg argWithDictionary:unnamed error:&error]);
+    XCTAssertTrue([error.localizedDescription containsString:@"has no name"], @"%@", error);
 }
 
 // TEST6551: Canonical output deserialization
@@ -254,6 +267,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test CSCapOutput.outputWithDictionary with media_urn format
     NSDictionary *outputDict = @{
         @"media_urn": CSMediaObject,
+        @"name": @"metadata",
         @"output_description": @"JSON metadata object"
     };
 
@@ -264,6 +278,26 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNotNil(output, @"Output should be created from dictionary");
     XCTAssertEqualObjects(output.mediaUrn, CSMediaObject);  // Verify spec ID
     XCTAssertEqualObjects(output.outputDescription, @"JSON metadata object");
+    XCTAssertEqualObjects(output.name, @"metadata");
+    XCTAssertFalse(output.optional, @"an output is produced unless it says it may not be");
+    XCTAssertNil(output.carries, @"an output carries its own type unless it says otherwise");
+    XCTAssertEqualObjects([output toDictionary][@"optional"], @NO, @"written always, as the reference writes it");
+
+    // An output is named, and carries its own type or the input's — nothing else.
+    NSMutableDictionary *unnamed = [outputDict mutableCopy];
+    [unnamed removeObjectForKey:@"name"];
+    error = nil;
+    XCTAssertNil([CSCapOutput outputWithDictionary:unnamed error:&error]);
+    XCTAssertTrue([error.localizedDescription containsString:@"has no name"], @"%@", error);
+    NSMutableDictionary *carrying = [outputDict mutableCopy];
+    carrying[@"carries"] = @"output";
+    error = nil;
+    XCTAssertNil([CSCapOutput outputWithDictionary:carrying error:&error]);
+    carrying[@"carries"] = @"input";
+    carrying[@"optional"] = @YES;
+    CSCapOutput *router = [CSCapOutput outputWithDictionary:carrying error:&error];
+    XCTAssertEqualObjects(router.carries, CSOutputCarriesInput);
+    XCTAssertTrue(router.optional);
 }
 
 // TEST6553: Canonical validation deserialization
@@ -303,6 +337,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"args": @[
             @{
                 @"media_urn": CSMediaString,
+                @"name": @"expression",
                 @"required": @YES,
                 @"is_sequence": @NO,
                 @"streaming": @NO,
@@ -314,6 +349,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
             },
             @{
                 @"media_urn": CSMediaString,
+                @"name": @"format",
                 @"required": @NO,
                 @"sources": @[
                     @{@"cli_flag": @"--ext"}
@@ -322,10 +358,11 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                 @"default_value": @"json"
             }
         ],
-        @"output": @{
+        @"outputs": @[@{
             @"media_urn": @"media:output",
+            @"name": @"output",
             @"output_description": @"Transformed data"
-        }
+        }]
     };
 
     NSError *error;
@@ -356,8 +393,11 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertEqualObjects(optionalArg.mediaUrn, CSMediaString);
 
     // Verify output
-    XCTAssertNotNil(cap.output);
-    XCTAssertEqualObjects(cap.output.mediaUrn, @"media:output");
+    XCTAssertEqual(cap.outputs.count, 1);
+    XCTAssertEqualObjects(cap.outputs[0].mediaUrn, @"media:output");
+    XCTAssertEqualObjects([cap outputNamed:@"output"], cap.outputs[0], @"an output by its name");
+    XCTAssertEqualObjects([cap argNamed:@"format"].mediaUrn, CSMediaString, @"an arg by its name");
+    XCTAssertNil([cap argNamed:@"string"], @"no relation between a name and a URN is read");
 }
 
 // TEST6317: Media urn resolution with registry
@@ -431,7 +471,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"TestComponent"
@@ -464,7 +504,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [[CSCapManifest manifestWithName:@"TestComponent"
@@ -494,7 +534,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [[[CSCapManifest manifestWithName:@"TestComponent"
@@ -534,6 +574,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                         @"args": @[
                             @{
                                 @"media_urn": @"media:enc=utf-8;file-path",
+                                @"name": @"document",
                                 @"required": @YES,
                                 @"sources": @[
                                     @{@"stdin": stdinMediaType},
@@ -598,7 +639,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     CSCap *cap2 = [CSCap capWithUrn:key2
@@ -608,7 +649,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{@"supports_outline": @"true"}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     CSCapManifest *manifest = [CSCapManifest manifestWithName:@"MultiCapComponent"
@@ -669,7 +710,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     CSCapManifest *manifestWithoutAuthor = [CSCapManifest manifestWithName:@"ValidatorComponent"
@@ -728,7 +769,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                          args:args
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     // Create manifest similar to what a cartridge would have
@@ -774,6 +815,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     CSArgSource *positionSource = [CSArgSource positionSource:0];
     CSArgSource *cliFlagSource = [CSArgSource cliFlagSource:@"--input"];
     CSCapArg *stringArg = [CSCapArg argWithMediaUrn:CSMediaString
+                                           name:@"string"
                                            required:YES
                                             sources:@[positionSource, cliFlagSource]
                                      argDescription:@"Input text"
@@ -786,6 +828,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Test with integer spec
     CSCapArg *intArg = [CSCapArg argWithMediaUrn:CSMediaInteger
+                                        name:@"int"
                                         required:NO
                                          sources:@[[CSArgSource cliFlagSource:@"--count"]]
                                   argDescription:@"Count value"
@@ -797,6 +840,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Test with object spec
     CSCapArg *objArg = [CSCapArg argWithMediaUrn:CSMediaObject
+                                        name:@"obj"
                                         required:YES
                                          sources:@[[CSArgSource cliFlagSource:@"--data"]]
                                   argDescription:@"JSON data"
@@ -816,6 +860,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
 
     CSCapArg *arg = [CSCapArg argWithMediaUrn:CSMediaString
+                                     name:@"arg"
                                      required:YES
                                       sources:@[cliFlagSource, positionSource]
                                argDescription:@"The name argument"
@@ -843,6 +888,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST116: Test CapArg constructor methods basic and with_description create args correctly
 - (void)test116_capArgConstructors {
     CSCapArg *basicArg = [CSCapArg argWithMediaUrn:CSMediaString
+                                          name:@"basic"
                                           required:YES
                                            sources:@[[CSArgSource cliFlagSource:@"--name"]]];
     XCTAssertEqualObjects(basicArg.mediaUrn, CSMediaString);
@@ -852,6 +898,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(basicArg.defaultValue);
 
     CSCapArg *describedArg = [CSCapArg argWithMediaUrn:CSMediaInteger
+                                              name:@"described"
                                               required:NO
                                                sources:@[[CSArgSource positionSource:0]]
                                         argDescription:@"The count argument"
@@ -870,6 +917,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     };
     NSDictionary *metadata = @{@"hint": @"enter name"};
     CSCapArg *arg = [CSCapArg argWithMediaUrn:CSMediaString
+                                     name:@"arg"
                                      required:YES
                                       sources:@[[CSArgSource cliFlagSource:@"--name"]]
                                argDescription:@"User name"
@@ -893,6 +941,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 - (void)test6580_OutputCreationWithNewAPI {
     // Test creating output with the new mediaUrn API
     CSCapOutput *output = [CSCapOutput outputWithMediaUrn:CSMediaObject
+                                        name:@"output"
                                         outputDescription:@"JSON output"];
 
     XCTAssertNotNil(output);
@@ -901,6 +950,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Test with custom spec ID
     CSCapOutput *customOutput = [CSCapOutput outputWithMediaUrn:@"media:custom-output"
+                                              name:@"custom"
                                               outputDescription:@"Custom output"];
 
     XCTAssertNotNil(customOutput);
@@ -926,7 +976,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:body
                           metadata:@{}
                               args:@[]
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
     XCTAssertNotNil(cap);
     XCTAssertEqualObjects(cap.documentation, body, @"Constructor must store documentation verbatim");
@@ -962,7 +1012,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                               args:@[]
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
     XCTAssertNotNil(cap);
     XCTAssertNil(cap.documentation);
@@ -1038,7 +1088,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                               args:@[]
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
     XCTAssertEqual(cap.version, (uint32_t)0, @"Default version must be 0");
 
@@ -1090,6 +1140,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST7100: streamUrn returns the stdin source's URN when it differs from the declared slot media URN — the stdin URN, not the slot URN, is what the runtime demuxes the argument's input stream by.
 - (void)test7100_StreamUrnReturnsStdinSourceUrnWhenItDiffersFromSlotUrn {
     CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
+                                     name:@"arg"
                                      required:YES
                                       sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:document;ext=pdf;pdf-stream"]]];
     XCTAssertEqualObjects([arg streamUrn], @"media:document;ext=pdf;pdf-stream",
@@ -1101,6 +1152,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST7101: streamUrn falls back to the declared slot media URN when the argument declares no stdin source — a producer-fed argument may be delivered by its declared URN without ever appearing on stdin.
 - (void)test7101_StreamUrnFallsBackToDeclaredMediaUrnWithoutStdinSource {
     CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;system-prompt"
+                                     name:@"arg"
                                      required:YES
                                       sources:@[[CSArgSource cliFlagSource:@"--system-prompt"]]];
     XCTAssertEqualObjects([arg streamUrn], @"media:enc=utf-8;system-prompt",
@@ -1115,6 +1167,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Same tags, different order.
     CSCapArg *arg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
+                                     name:@"arg"
                                      required:YES
                                       sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;document;ext=pdf"]]];
     XCTAssertTrue([arg isMainInputForInSpec:inSpec],
@@ -1133,18 +1186,21 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Slot URN even matches in= — irrelevant without a stdin source.
     CSCapArg *cliFlagOnly = [CSCapArg argWithMediaUrn:@"media:document;ext=pdf;pdf-stream"
+                                             name:@"cli_flag_only"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--input"]]];
     XCTAssertFalse([cliFlagOnly isMainInputForInSpec:inSpec],
                    @"cli_flag-only argument is never the main input");
 
     CSCapArg *positionOnly = [CSCapArg argWithMediaUrn:@"media:document;ext=pdf;pdf-stream"
+                                              name:@"position_only"
                                               required:YES
                                                sources:@[[CSArgSource positionSource:0]]];
     XCTAssertFalse([positionOnly isMainInputForInSpec:inSpec],
                    @"position-only argument is never the main input");
 
     CSCapArg *nonEquivalentStdin = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;system-prompt"
+                                                    name:@"non_equivalent_stdin"
                                                     required:NO
                                                      sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:enc=utf-8;system-prompt"]]];
     XCTAssertFalse([nonEquivalentStdin isMainInputForInSpec:inSpec],
@@ -1159,23 +1215,28 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     // Main input may ALSO be delivered by cli-flag; stdin is the defining route.
     CSCapArg *mainArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;file-path"
+                                         name:@"main"
                                          required:YES
                                           sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:pdf-stream;document;ext=pdf"],
                                                     [CSArgSource cliFlagSource:@"--input"]]];
     CSCapArg *questionArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;question"
+                                             name:@"question"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--question"]]];
     CSCapArg *maxTokensArg = [CSCapArg argWithMediaUrn:@"media:max-tokens;numeric"
+                                              name:@"max_tokens"
                                               required:NO
                                                sources:@[[CSArgSource cliFlagSource:@"--max-tokens"]]
                                         argDescription:nil
                                           defaultValue:@1024];
     CSCapArg *temperatureArg = [CSCapArg argWithMediaUrn:@"media:numeric;temperature"
+                                                name:@"temperature"
                                                 required:NO
                                                  sources:@[[CSArgSource cliFlagSource:@"--temperature"]]
                                           argDescription:nil
                                             defaultValue:@0.7];
     CSCapArg *systemPromptArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;system-prompt"
+                                                 name:@"system_prompt"
                                                  required:NO
                                                   sources:@[[CSArgSource cliFlagSource:@"--system-prompt"]]
                                            argDescription:nil
@@ -1220,11 +1281,13 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"args": @[
             @{
                 @"media_urn": @"media:enc=utf-8;context",
+                @"name": @"input",
                 @"required": @NO,
                 @"sources": @[@{@"stdin": @"media:enc=utf-8;context"}],
             },
             @{
                 @"media_urn": @"media:enc=utf-8",
+                @"name": @"input-2",
                 @"required": @YES,
                 @"is_sequence": @YES,
                 @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
@@ -1250,25 +1313,27 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"args": @[
             @{
                 @"media_urn": @"media:enc=utf-8",
+                @"name": @"input",
                 @"required": @YES,
                 @"is_sequence": @YES,
                 @"streaming": @YES,
                 @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
             },
         ],
-        @"output": @{
+        @"outputs": @[@{
             @"media_urn": @"media:enc=utf-8;result",
+            @"name": @"result",
             @"output_description": @"result",
             @"is_sequence": @YES,
             @"streaming": @YES,
-        },
+        }],
     } error:&error];
     XCTAssertNotNil(ok, @"%@", error);
-    XCTAssertTrue([CSCapValidator validateCap:ok error:&error], @"%@", error);
+    XCTAssertTrue([CSCapValidator validateCapDefinition:ok error:&error], @"%@", error);
     XCTAssertTrue([ok primaryInputStreams]);
     XCTAssertTrue([ok outputStreams]);
     XCTAssertEqualObjects([ok mainInputArg].toDictionary[@"streaming"], @YES);
-    XCTAssertEqualObjects(ok.output.toDictionary[@"streaming"], @YES);
+    XCTAssertEqualObjects([ok mainOutput].toDictionary[@"streaming"], @YES);
 
     CSCap *bad = [CSCap capWithDictionary:@{
         @"urn": @"cap:in=\"media:enc=utf-8\";feed;out=\"media:enc=utf-8;result\"",
@@ -1277,20 +1342,23 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         @"args": @[
             @{
                 @"media_urn": @"media:enc=utf-8",
+                @"name": @"input",
                 @"required": @YES,
                 @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
             },
             @{
                 @"media_urn": @"media:integer;numeric",
+                @"name": @"count",
                 @"required": @NO,
                 @"streaming": @YES,
                 @"sources": @[@{@"cli_flag": @"--count"}],
             },
         ],
+        @"outputs": @[@{@"media_urn": @"media:enc=utf-8;result", @"name": @"result", @"output_description": @"result"}],
     } error:&error];
     XCTAssertNotNil(bad, @"%@", error);
     error = nil;
-    XCTAssertFalse([CSCapValidator validateCap:bad error:&error], @"a streaming side option must be refused");
+    XCTAssertFalse([CSCapValidator validateCapDefinition:bad error:&error], @"a streaming side option must be refused");
     XCTAssertNotNil(error);
     XCTAssertTrue([error.localizedDescription containsString:@"RULE14"], @"%@", error);
     XCTAssertTrue([error.localizedDescription containsString:@"media:integer;numeric"], @"%@", error);
@@ -1303,7 +1371,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 - (void)test1964_unknownDefinitionFieldIsRefused {
     NSError *error = nil;
     CSCapArg *arg = [CSCapArg argWithDictionary:@{
-        @"media_urn": @"media:enc=utf-8", @"required": @YES,
+        @"media_urn": @"media:enc=utf-8", @"name": @"input", @"required": @YES,
         @"sources": @[@{@"stdin": @"media:enc=utf-8"}], @"chunking": @"adaptive",
     } error:&error];
     XCTAssertNil(arg, @"an unknown arg field must be refused");
@@ -1311,7 +1379,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     error = nil;
     CSCapArg *known = [CSCapArg argWithDictionary:@{
-        @"media_urn": @"media:enc=utf-8", @"required": @YES,
+        @"media_urn": @"media:enc=utf-8", @"name": @"input", @"required": @YES,
         @"sources": @[@{@"stdin": @"media:enc=utf-8"}], @"streaming": @YES,
     } error:&error];
     XCTAssertNotNil(known, @"%@", error);
@@ -1319,7 +1387,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     error = nil;
     CSCapOutput *output = [CSCapOutput outputWithDictionary:@{
-        @"media_urn": @"media:enc=utf-8", @"output_description": @"x", @"windowed": @YES,
+        @"media_urn": @"media:enc=utf-8", @"name": @"output", @"output_description": @"x", @"windowed": @YES,
     } error:&error];
     XCTAssertNil(output, @"an unknown output field must be refused");
     XCTAssertTrue([error.localizedDescription containsString:@"windowed"], @"%@", error);

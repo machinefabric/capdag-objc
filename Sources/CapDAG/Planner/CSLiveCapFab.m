@@ -216,7 +216,7 @@
 
     // Cardinality follows the declared main input, never argument order.
     BOOL inputIsSeq = [cap primaryInputIsSequence];
-    BOOL outputIsSeq = cap.output ? cap.output.isSequence : NO;
+    BOOL outputIsSeq = [cap mainOutput] ? [cap mainOutput].isSequence : NO;
 
     // Create edge
     NSUInteger edgeIdx = self.edges.count;

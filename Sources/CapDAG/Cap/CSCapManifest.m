@@ -6,6 +6,7 @@
 //
 
 #import "CSCapManifest.h"
+#import "CSCapValidator.h"
 #import "CSCap.h"
 #import "CSCapUrn.h"
 #import "CSStandardCaps.h"
@@ -65,6 +66,12 @@
     }
 
     return [[self alloc] initWithName:name caps:[caps copy] adapterUrns:adapterUrns];
+}
+
+- (NSDictionary *)toDictionary {
+    NSMutableArray *caps = [NSMutableArray array];
+    for (CSCap *cap in self.caps) [caps addObject:[cap toDictionary]];
+    return @{@"name": self.name, @"caps": caps, @"adapter_urns": self.adapterUrns ?: @[]};
 }
 
 @end
@@ -202,6 +209,21 @@
     return manifest;
 }
 
+- (NSDictionary *)toDictionary {
+    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+    dict[@"name"] = self.name;
+    dict[@"version"] = self.version;
+    dict[@"channel"] = self.channel == CSCartridgeChannelRelease ? @"release" : @"nightly";
+    dict[@"registry_url"] = self.registryURL ?: [NSNull null];
+    dict[@"description"] = self.manifestDescription;
+    NSMutableArray *groups = [NSMutableArray array];
+    for (CSCapGroup *group in self.capGroups) [groups addObject:[group toDictionary]];
+    dict[@"cap_groups"] = groups;
+    if (self.author) dict[@"author"] = self.author;
+    if (self.pageUrl) dict[@"page_url"] = self.pageUrl;
+    return [dict copy];
+}
+
 - (CSCapManifest *)withAuthor:(NSString *)author {
     self.author = [author copy];
     return self;
@@ -218,6 +240,43 @@
         [result addObjectsFromArray:group.caps];
     }
     return [result copy];
+}
+
+NSErrorDomain const CSManifestLoadErrorDomain = @"CSManifestLoadError";
+
+- (BOOL)validateDefinitions:(NSError **)error {
+    for (CSCap *cap in [self allCaps]) {
+        if (![CSCapValidator validateCapDefinition:cap error:error]) return NO;
+    }
+    return YES;
+}
+
++ (nullable instancetype)manifestFromAdvertisedData:(NSData *)data error:(NSError **)error {
+    NSError *parseError = nil;
+    id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError];
+    CSCapManifest *manifest = nil;
+    if ([json isKindOfClass:[NSDictionary class]]) {
+        manifest = [CSCapManifest manifestWithDictionary:json error:&parseError];
+    } else if (json != nil) {
+        parseError = [NSError errorWithDomain:CSManifestLoadErrorDomain code:CSManifestLoadUnparseable
+                                     userInfo:@{NSLocalizedDescriptionKey: @"a manifest is a JSON object"}];
+    }
+    if (manifest == nil) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSManifestLoadErrorDomain code:CSManifestLoadUnparseable
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"not a manifest: %@", parseError.localizedDescription]}];
+        }
+        return nil;
+    }
+    NSError *ruleError = nil;
+    if (![manifest validateDefinitions:&ruleError]) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSManifestLoadErrorDomain code:CSManifestLoadInvalidDefinition
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"invalid cap definition: %@", ruleError.localizedDescription]}];
+        }
+        return nil;
+    }
+    return manifest;
 }
 
 - (BOOL)validate:(NSError **)error {
@@ -251,6 +310,8 @@
         return NO;
     }
 
+    if (![self validateDefinitions:error]) return NO;
+
     return YES;
 }
 
@@ -276,9 +337,7 @@
     }
 
     // Add identity cap to the first cap group (or create one)
-    CSCap *identityCap = [CSCap capWithUrn:identityUrn
-                                     title:@"Identity"
-                                   aliases:@[@"identity"]];
+    CSCap *identityCap = [CSCap identityCap];
 
     NSMutableArray<CSCapGroup *> *newGroups = [self.capGroups mutableCopy];
     if (newGroups.count > 0) {

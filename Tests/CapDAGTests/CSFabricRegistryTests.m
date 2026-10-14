@@ -302,7 +302,7 @@ static NSString *buildRegistryURL(NSString *urn) {
                           metadata:@{}
                         mediaDefs:@[]
                               args:@[]
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
     
     XCTestExpectation *expectation = [self expectationWithDescription:@"Validate cap"];

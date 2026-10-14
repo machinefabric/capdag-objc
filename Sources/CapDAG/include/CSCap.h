@@ -148,6 +148,17 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Unique identifier (media URN)
 @property (nonatomic, readonly) NSString *mediaUrn;
 
+/// The label a machine selects this arg by: unique within the cap, and
+/// nothing more than a label — the arg is identified by its media URN, and no
+/// relation between the two is ever assumed (RULE17).
+@property (nonatomic, readonly) NSString *name;
+
+/// The media type a value bound to this arg must conform to, when that is not
+/// the arg's own URN: two args may then accept one type and stay two args.
+/// The main input says what it accepts through its stdin source, so an arg
+/// never has both (RULE18).
+@property (nonatomic, readonly, nullable) NSString *accepts;
+
 /// Whether this argument is required
 @property (nonatomic, readonly) BOOL required;
 
@@ -175,17 +186,20 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /**
  * Create an argument with minimal fields
  * @param mediaUrn The media URN identifier
+ * @param name The label a machine selects it by
  * @param required Whether this argument is required
  * @param sources Array of sources
  * @return A new CSCapArg instance
  */
 + (instancetype)argWithMediaUrn:(NSString *)mediaUrn
+                           name:(NSString *)name
                        required:(BOOL)required
                         sources:(NSArray<CSArgSource *> *)sources;
 
 /**
  * Create an argument with all fields
  * @param mediaUrn The media URN identifier
+ * @param name The label a machine selects it by
  * @param required Whether this argument is required
  * @param sources Array of sources
  * @param argDescription Optional description
@@ -193,10 +207,23 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  * @return A new CSCapArg instance
  */
 + (instancetype)argWithMediaUrn:(NSString *)mediaUrn
+                           name:(NSString *)name
                        required:(BOOL)required
                         sources:(NSArray<CSArgSource *> *)sources
                  argDescription:(nullable NSString *)argDescription
                    defaultValue:(nullable id)defaultValue;
+
+/** This argument, accepting `accepts` where its own URN would be taken. */
+- (instancetype)argAccepting:(nullable NSString *)accepts;
+
+/** This argument, taking a sequence of items (YES) or one item (NO). */
+- (instancetype)argAsSequence:(BOOL)isSequence;
+
+/**
+ * The type a value bound to this arg must conform to: its stdin source's URN,
+ * else what it accepts, else its own URN.
+ */
+- (NSString *)acceptedUrn;
 
 /**
  * Create from dictionary representation
@@ -296,10 +323,23 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /**
  * Output definition
  */
+/// What an output carries when it carries the main input's type unchanged
+/// (a router's branches): the wire value of `carries`.
+FOUNDATION_EXPORT NSString * const CSOutputCarriesInput;
+
 @interface CSCapOutput : NSObject <NSCopying, NSCoding>
 
+/// The output's media URN: its identity, unique within the cap (RULE20).
 @property (nonatomic, readonly) NSString *mediaUrn;
+/// The label a machine takes this output by: unique within the cap (RULE19).
+@property (nonatomic, readonly) NSString *name;
 @property (nonatomic, readonly) NSString *outputDescription;
+/// The cap may end without producing this output; what needs it is skipped.
+@property (nonatomic, readonly) BOOL optional;
+/// CSOutputCarriesInput when the output carries the main input's type, nil
+/// when it carries its own URN. Only a non-main output of a cap that takes an
+/// input may (RULE22).
+@property (nonatomic, readonly, nullable) NSString *carries;
 /// Whether this output produces a sequence of items (YES) or a single item (NO, default)
 @property (nonatomic, readonly) BOOL isSequence;
 /// Whether this output MAY be emitted without a length promise (unbounded). A
@@ -312,11 +352,22 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /**
  * Create an output with media URN
  * @param mediaUrn Media URN (e.g., "media:object")
+ * @param name The label a machine takes it by
  * @param outputDescription Description of the output
  * @return A new CSCapOutput instance
  */
 + (instancetype)outputWithMediaUrn:(NSString * _Nonnull)mediaUrn
+                              name:(NSString * _Nonnull)name
                  outputDescription:(NSString * _Nonnull)outputDescription;
+
+/** This output, optional (YES) or always produced (NO). */
+- (instancetype)outputAsOptional:(BOOL)optional;
+
+/** This output, declared to carry the main input's type unchanged. */
+- (instancetype)outputCarryingInput;
+
+/** This output, producing a sequence of items (YES) or one item (NO). */
+- (instancetype)outputAsSequence:(BOOL)isSequence;
 
 + (instancetype)outputWithDictionary:(NSDictionary * _Nonnull)dictionary error:(NSError * _Nullable * _Nullable)error NS_SWIFT_NAME(init(dictionary:error:));
 
@@ -436,8 +487,9 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
 /// Cap arguments (new unified args array)
 @property (nonatomic, readonly) NSArray<CSCapArg *> *args;
 
-/// Output definition
-@property (nonatomic, readonly, nullable) CSCapOutput *output;
+/// Every output the cap declares: exactly one is the main output, the one
+/// whose media URN is the cap URN's out= (none when out= is media:void).
+@property (nonatomic, readonly) NSArray<CSCapOutput *> *outputs;
 
 /// Arbitrary metadata as JSON object
 @property (nonatomic, readonly, nullable) NSDictionary *metadataJSON;
@@ -467,8 +519,16 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
              documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> * _Nonnull)metadata
                       args:(NSArray<CSCapArg *> * _Nonnull)args
-                    output:(nullable CSCapOutput *)output
+                   outputs:(NSArray<CSCapOutput *> * _Nonnull)outputs
               metadataJSON:(nullable NSDictionary *)metadataJSON;
+
+/**
+ * The standard definition of CAP_IDENTITY: the categorical identity, which
+ * echoes its input unchanged — its one arg `input` and its one output
+ * `output`, both `media:`. Mandatory in every capability set; every capdag
+ * implementation defines it the same.
+ */
++ (instancetype)identityCap;
 
 /**
  * Create a cap with URN, title and aliases (minimal constructor)
@@ -558,11 +618,29 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  */
 - (BOOL)hasAlias:(NSString * _Nonnull)name;
 
+/** Every output the cap declares. */
+- (NSArray<CSCapOutput *> *)getOutputs;
+
 /**
- * Get the output definition if defined
- * @return The output definition or nil
+ * The main output: the one whose media URN is the cap URN's out=, by
+ * tagged-URN equivalence. Nil for a cap whose out= is media:void (RULE21).
  */
-- (nullable CSCapOutput *)getOutput;
+- (nullable CSCapOutput *)mainOutput;
+
+/** The output a media URN identifies, by tagged-URN equivalence, or nil. */
+- (nullable CSCapOutput *)outputByUrn:(NSString * _Nonnull)mediaUrn;
+
+/** The output a machine names, or nil. */
+- (nullable CSCapOutput *)outputNamed:(NSString * _Nonnull)name;
+
+/** The argument a machine names, or nil. */
+- (nullable CSCapArg *)argNamed:(NSString * _Nonnull)name;
+
+/** Replace the outputs this cap declares. */
+- (void)setOutputs:(NSArray<CSCapOutput *> * _Nonnull)outputs;
+
+/** Add an output. */
+- (void)addOutput:(CSCapOutput * _Nonnull)output;
 
 /**
  * Get all arguments
@@ -602,8 +680,8 @@ typedef NS_ENUM(NSInteger, CSArgSourceType) {
  *  (CSCapArg.streaming). Void-input caps do not stream. */
 - (BOOL)primaryInputStreams;
 
-/** Whether the output may be emitted without a length promise
- *  (CSCapOutput.streaming). Caps without an output do not stream. */
+/** Whether the main output may be emitted without a length promise
+ *  (CSCapOutput.streaming). A cap without one does not stream. */
 - (BOOL)outputStreams;
 
 /**

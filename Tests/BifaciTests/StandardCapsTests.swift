@@ -86,10 +86,19 @@ final class StandardCapsTests: XCTestCase {
 
     // MARK: - Manifest Validation Tests (TEST475-477)
 
+    /// A complete definition other than identity: its one arg is its main
+    /// input and its one output its main output.
+    private func completeTestCap() throws -> CSCap {
+        let cap = CSCap(urn: try CSCapUrn.fromString("cap:test;in=media:;out=media:"), title: "Test", aliases: ["test"])
+        cap.addArg(CSCapArg(mediaUrn: "media:", name: "input", required: true,
+                            sources: [CSArgSource.stdinSource(withMediaUrn: "media:")]))
+        cap.addOutput(CSCapOutput(mediaUrn: "media:", name: "output", outputDescription: "What it gives"))
+        return cap
+    }
+
     // TEST6598: CapManifest::validate() passes when CAP_IDENTITY is present
     func test6598_manifestValidatePassesWithIdentity() throws {
-        let identityUrn = try CSCapUrn.fromString(CSCapIdentity)
-        let identityCap = CSCap(urn: identityUrn, title: "Identity", aliases: ["identity"])
+        let identityCap = CSCap.identity()
         let group = CSCapGroup(name: "default", caps: [identityCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
@@ -103,8 +112,7 @@ final class StandardCapsTests: XCTestCase {
 
     // TEST6599: CapManifest::validate() fails when CAP_IDENTITY is missing
     func test6599_manifestValidateFailsWithoutIdentity() throws {
-        let otherUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
-        let otherCap = CSCap(urn: otherUrn, title: "Test", aliases: ["test"])
+        let otherCap = try completeTestCap()
         let group = CSCapGroup(name: "default", caps: [otherCap], adapterUrns: [])
         let manifest = CSCapManifest(name: "TestCartridge",
                                      version: "1.0.0",
@@ -113,14 +121,16 @@ final class StandardCapsTests: XCTestCase {
                                      manifestDescription: "Test",
                                      capGroups: [group])
 
-        XCTAssertThrowsError(try manifest.validate(), "Manifest without CAP_IDENTITY must fail validation")
+        XCTAssertThrowsError(try manifest.validate(), "Manifest without CAP_IDENTITY must fail validation") { error in
+            // For the identity it lacks, not for a definition: the cap it has is complete.
+            XCTAssertTrue((error as NSError).localizedDescription.contains("CAP_IDENTITY"), "\(error)")
+        }
     }
 
     // Mirror-specific coverage: Manifest.ensureIdentity() adds if missing, idempotent if present
     func test6244_manifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
-        let testUrn = try CSCapUrn.fromString("cap:test;in=media:;out=media:")
-        let cap1 = CSCap(urn: testUrn, title: "Test", aliases: ["test"])
+        let cap1 = try completeTestCap()
         let group = CSCapGroup(name: "default", caps: [cap1], adapterUrns: [])
         let manifestWithout = CSCapManifest(name: "TestCartridge",
                                             version: "1.0.0",

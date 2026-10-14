@@ -40,9 +40,22 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable instancetype)groupWithDictionary:(NSDictionary *)dictionary
                                        error:(NSError * _Nullable * _Nullable)error;
 
+/** The group as the dictionary +groupWithDictionary:error: reads. */
+- (NSDictionary *)toDictionary;
+
 @end
 
 // MARK: - Unified Cap Manifest
+
+/// The error domain of a manifest another program advertised that was not taken.
+FOUNDATION_EXPORT NSErrorDomain const CSManifestLoadErrorDomain;
+
+typedef NS_ENUM(NSInteger, CSManifestLoadErrorCode) {
+    /// The bytes are not a manifest.
+    CSManifestLoadUnparseable = 1,
+    /// The manifest parsed, and a cap definition in it breaks a definition rule.
+    CSManifestLoadInvalidDefinition = 2,
+};
 
 @interface CSCapManifest : NSObject
 
@@ -89,15 +102,31 @@ NS_ASSUME_NONNULL_BEGIN
 - (CSCapManifest *)withPageUrl:(NSString *)pageUrl;
 
 /**
- * Validate that CAP_IDENTITY is declared in this manifest.
- * Fails if missing — identity is mandatory in every capset.
+ * Validate this manifest: it declares CAP_IDENTITY — identity is mandatory
+ * in every capset — and every definition in it, in any group, passes the
+ * definition rules. Identity alone being present is not enough.
  *
  * Swift automatically converts this to a throwing method.
  *
  * @param error If validation fails, contains the error description
- * @return YES if manifest contains CAP_IDENTITY, NO otherwise
+ * @return YES if the manifest is valid
  */
 - (BOOL)validate:(NSError **)error;
+
+/** The manifest as the dictionary -manifestWithDictionary:error: reads. */
+- (NSDictionary *)toDictionary;
+
+/** Hold every definition in the manifest, in any group, to the definition rules. */
+- (BOOL)validateDefinitions:(NSError **)error;
+
+/**
+ * Take a manifest another program advertised: parse it and hold every
+ * definition in it to the definition rules, in one step. The two refusals
+ * are told apart by the error's code: CSManifestLoadUnparseable for bytes
+ * that are no manifest, CSManifestLoadInvalidDefinition for a manifest with
+ * a definition that breaks a rule.
+ */
++ (nullable instancetype)manifestFromAdvertisedData:(NSData * _Nonnull)data error:(NSError * _Nullable * _Nullable)error;
 
 /**
  * Ensure CAP_IDENTITY is present in this manifest. Adds it if missing.

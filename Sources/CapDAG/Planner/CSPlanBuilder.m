@@ -419,7 +419,7 @@ NSErrorDomain const CSStepTokenErrorDomain = @"com.machinefabric.capdag.StepToke
                 NSString *outSpec = [[cap capUrn] outSpec];
                 // Cardinality follows the declared main input, never argument order.
                 BOOL inputIsSeq = [cap primaryInputIsSequence];
-                BOOL outputIsSeq = cap.output ? cap.output.isSequence : NO;
+                BOOL outputIsSeq = [cap mainOutput] ? [cap mainOutput].isSequence : NO;
                 info.cardinality = [CSCapCardinalityInfo fromCapUrn:urn
                                                              inSpec:inSpec
                                                             outSpec:outSpec

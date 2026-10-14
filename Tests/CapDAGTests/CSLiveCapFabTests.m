@@ -24,6 +24,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
     CSCap *cap = [CSCap capWithUrn:built title:title aliases:@[@"test"]];
     [cap addArg:[CSCapArg argWithMediaUrn:inSpec
+                                  name:@"arg1"
                                   required:YES
                                    sources:@[[CSArgSource stdinSourceWithMediaUrn:inSpec]]]];
     return cap;
@@ -366,10 +367,12 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
         @"aliases": @[@"concat"],
         @"args": @[@{
             @"media_urn": @"media:enc=utf-8",
+            @"name": @"texts",
             @"required": @YES,
             @"is_sequence": @YES,
             @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
         }],
+        @"outputs": @[@{@"media_urn": @"media:enc=utf-8;ext=txt", @"name": @"text", @"output_description": @"The text"}],
     } error:&error];
     XCTAssertNotNil(concat, @"%@", error);
     [graph addCap:concat];

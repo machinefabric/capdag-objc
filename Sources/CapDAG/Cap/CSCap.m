@@ -301,9 +301,11 @@
 @implementation CSCapArg
 
 + (instancetype)argWithMediaUrn:(NSString *)mediaUrn
+                           name:(NSString *)name
                        required:(BOOL)required
                         sources:(NSArray<CSArgSource *> *)sources {
     return [self argWithMediaUrn:mediaUrn
+                            name:name
                         required:required
                          sources:sources
                   argDescription:nil
@@ -311,12 +313,16 @@
 }
 
 + (instancetype)argWithMediaUrn:(NSString *)mediaUrn
+                           name:(NSString *)name
                        required:(BOOL)required
                         sources:(NSArray<CSArgSource *> *)sources
                  argDescription:(nullable NSString *)argDescription
                    defaultValue:(nullable id)defaultValue {
+    NSParameterAssert(name != nil);
     CSCapArg *arg = [[CSCapArg alloc] init];
     arg->_mediaUrn = [mediaUrn copy];
+    arg->_name = [name copy];
+    arg->_accepts = nil;
     arg->_required = required;
     arg->_isSequence = NO;
     arg->_streaming = NO;
@@ -351,11 +357,27 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     return NO;
 }
 
+/// The `name` a definition's dictionary carries: a string, present. Whether
+/// it is a well-formed name is a definition rule (RULE17, RULE19); that one
+/// is there at all is the shape of a definition.
+static NSString *_Nullable CSRequireDefinitionName(NSDictionary *dictionary, NSString *what, NSString *domain, NSError **error) {
+    id name = dictionary[@"name"];
+    if (![name isKindOfClass:[NSString class]]) {
+        if (error) {
+            NSString *message = [NSString stringWithFormat:@"%@ '%@' has no name: every %@ is named", what,
+                                 dictionary[@"media_urn"] ?: @"?", what];
+            *error = [NSError errorWithDomain:domain code:1004 userInfo:@{NSLocalizedDescriptionKey: message}];
+        }
+        return nil;
+    }
+    return name;
+}
+
 + (nullable instancetype)argWithDictionary:(NSDictionary *)dictionary error:(NSError **)error {
     static NSSet<NSString *> *known;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        known = [NSSet setWithArray:@[@"media_urn", @"required", @"sources", @"arg_description",
+        known = [NSSet setWithArray:@[@"media_urn", @"name", @"accepts", @"required", @"sources", @"arg_description",
                                       @"default_value", @"metadata", @"is_sequence", @"streaming"]];
     });
     if (!CSRefuseUnknownKeys(dictionary, known, @"cap argument", @"CSCapArgError", error)) return nil;
@@ -366,6 +388,16 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
             *error = [NSError errorWithDomain:@"CSCapArgError"
                                          code:1001
                                      userInfo:@{NSLocalizedDescriptionKey: @"Missing required field: media_urn"}];
+        }
+        return nil;
+    }
+    NSString *name = CSRequireDefinitionName(dictionary, @"cap argument", @"CSCapArgError", error);
+    if (!name) return nil;
+    id accepts = dictionary[@"accepts"];
+    if (accepts != nil && ![accepts isKindOfClass:[NSString class]]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSCapArgError" code:1005
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"cap argument '%@': 'accepts' is a media URN", name]}];
         }
         return nil;
     }
@@ -416,6 +448,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
     CSCapArg *arg = [[CSCapArg alloc] init];
     arg->_mediaUrn = [mediaUrn copy];
+    arg->_name = [name copy];
+    arg->_accepts = [accepts copy];
     arg->_required = required;
     arg->_isSequence = isSequence;
     arg->_streaming = streaming;
@@ -431,6 +465,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
 
     dict[@"media_urn"] = self.mediaUrn;
+    dict[@"name"] = self.name;
+    if (self.accepts) dict[@"accepts"] = self.accepts;
     dict[@"required"] = @(self.required);
     // Emitted even when NO, as the reference does. Both are plain `bool` there
     // with `#[serde(default)]`, so they always serialize; omitting them here
@@ -450,6 +486,25 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     if (self.metadata) dict[@"metadata"] = self.metadata;
 
     return [dict copy];
+}
+
+- (instancetype)argAccepting:(nullable NSString *)accepts {
+    CSCapArg *copy = [self copy];
+    copy->_accepts = [accepts copy];
+    return copy;
+}
+
+- (instancetype)argAsSequence:(BOOL)isSequence {
+    CSCapArg *copy = [self copy];
+    copy->_isSequence = isSequence;
+    return copy;
+}
+
+- (NSString *)acceptedUrn {
+    NSString *stdinUrn = [self getStdinMediaUrn];
+    if (stdinUrn) return stdinUrn;
+    if (self.accepts) return self.accepts;
+    return self.mediaUrn;
 }
 
 - (BOOL)hasStdinSource {
@@ -552,6 +607,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 - (id)copyWithZone:(NSZone *)zone {
     CSCapArg *copy = [[CSCapArg alloc] init];
     copy->_mediaUrn = [self.mediaUrn copy];
+    copy->_name = [self.name copy];
+    copy->_accepts = [self.accepts copy];
     copy->_required = self.required;
     copy->_isSequence = self.isSequence;
     copy->_streaming = self.streaming;
@@ -564,6 +621,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
 - (void)encodeWithCoder:(NSCoder *)coder {
     [coder encodeObject:self.mediaUrn forKey:@"mediaUrn"];
+    [coder encodeObject:self.name forKey:@"name"];
+    [coder encodeObject:self.accepts forKey:@"accepts"];
     [coder encodeBool:self.required forKey:@"required"];
     [coder encodeBool:self.isSequence forKey:@"isSequence"];
     [coder encodeBool:self.streaming forKey:@"streaming"];
@@ -575,15 +634,18 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
 - (nullable instancetype)initWithCoder:(NSCoder *)coder {
     NSString *mediaUrn = [coder decodeObjectOfClass:[NSString class] forKey:@"mediaUrn"];
+    NSString *name = [coder decodeObjectOfClass:[NSString class] forKey:@"name"];
 
     // FAIL HARD on missing required fields
-    if (!mediaUrn) {
+    if (!mediaUrn || !name) {
         return nil;
     }
 
     self = [super init];
     if (self) {
         _mediaUrn = mediaUrn;
+        _name = name;
+        _accepts = [coder decodeObjectOfClass:[NSString class] forKey:@"accepts"];
         _required = [coder decodeBoolForKey:@"required"];
         _isSequence = [coder decodeBoolForKey:@"isSequence"];
         _streaming = [coder decodeBoolForKey:@"streaming"];
@@ -606,7 +668,11 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     CSCapArg *other = (CSCapArg *)object;
 
     if (![self.mediaUrn isEqualToString:other.mediaUrn]) return NO;
+    if (![self.name isEqualToString:other.name]) return NO;
+    if ((self.accepts == nil) != (other.accepts == nil)) return NO;
+    if (self.accepts && ![self.accepts isEqualToString:other.accepts]) return NO;
     if (self.required != other.required) return NO;
+    if (self.isSequence != other.isSequence || self.streaming != other.streaming) return NO;
     if (![self.sources isEqualToArray:other.sources]) return NO;
 
     if ((self.argDescription == nil) != (other.argDescription == nil)) return NO;
@@ -622,7 +688,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 }
 
 - (NSUInteger)hash {
-    return [self.mediaUrn hash] ^ (self.required ? 1 : 0) ^ [self.sources hash] ^
+    return [self.mediaUrn hash] ^ [self.name hash] ^ (self.required ? 1 : 0) ^ [self.sources hash] ^
            [self.argDescription hash] ^ [self.defaultValue hash] ^ [self.metadata hash];
 }
 
@@ -630,13 +696,20 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
 #pragma mark - CSCapOutput Implementation
 
+NSString * const CSOutputCarriesInput = @"input";
+
 @implementation CSCapOutput
 
 + (instancetype)outputWithMediaUrn:(NSString *)mediaUrn
+                              name:(NSString *)name
                  outputDescription:(NSString *)outputDescription {
+    NSParameterAssert(name != nil);
     CSCapOutput *output = [[CSCapOutput alloc] init];
     output->_mediaUrn = [mediaUrn copy];
+    output->_name = [name copy];
     output->_outputDescription = [outputDescription copy];
+    output->_optional = NO;
+    output->_carries = nil;
     output->_isSequence = NO;
     output->_streaming = NO;
     output->_metadata = nil;
@@ -647,11 +720,14 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     static NSSet<NSString *> *known;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        known = [NSSet setWithArray:@[@"media_urn", @"output_description", @"metadata", @"is_sequence", @"streaming"]];
+        known = [NSSet setWithArray:@[@"media_urn", @"name", @"output_description", @"optional", @"carries",
+                                      @"metadata", @"is_sequence", @"streaming"]];
     });
     if (!CSRefuseUnknownKeys(dictionary, known, @"cap output", @"CSCapOutputError", error)) return nil;
     NSString *mediaUrn = dictionary[@"media_urn"];
     NSString *outputDescription = dictionary[@"output_description"];
+    NSNumber *optionalValue = dictionary[@"optional"];
+    id carries = dictionary[@"carries"];
     NSNumber *isSequenceValue = dictionary[@"is_sequence"];
     NSNumber *streamingValue = dictionary[@"streaming"];
     id metadata = dictionary[@"metadata"];
@@ -665,6 +741,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
         }
         return nil;
     }
+    NSString *name = CSRequireDefinitionName(dictionary, @"cap output", @"CSCapOutputError", error);
+    if (!name) return nil;
 
     if (!outputDescription) {
         if (error) {
@@ -674,10 +752,22 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
         }
         return nil;
     }
+    if (carries != nil && ![carries isEqual:CSOutputCarriesInput]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"CSCapOutputError"
+                                         code:1003
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                                         @"cap output '%@' carries %@: an output carries its own type, or '%@'", name, carries, CSOutputCarriesInput]}];
+        }
+        return nil;
+    }
 
     CSCapOutput *output = [[CSCapOutput alloc] init];
     output->_mediaUrn = [mediaUrn copy];
+    output->_name = [name copy];
     output->_outputDescription = [outputDescription copy];
+    output->_optional = optionalValue ? [optionalValue boolValue] : NO;
+    output->_carries = [carries copy];
     output->_isSequence = isSequenceValue ? [isSequenceValue boolValue] : NO;
     output->_streaming = streamingValue ? [streamingValue boolValue] : NO;
     output->_metadata = [metadata copy];
@@ -685,10 +775,31 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     return output;
 }
 
+- (instancetype)outputAsOptional:(BOOL)optional {
+    CSCapOutput *copy = [self copy];
+    copy->_optional = optional;
+    return copy;
+}
+
+- (instancetype)outputCarryingInput {
+    CSCapOutput *copy = [self copy];
+    copy->_carries = CSOutputCarriesInput;
+    return copy;
+}
+
+- (instancetype)outputAsSequence:(BOOL)isSequence {
+    CSCapOutput *copy = [self copy];
+    copy->_isSequence = isSequence;
+    return copy;
+}
+
 - (id)copyWithZone:(NSZone *)zone {
     CSCapOutput *copy = [[CSCapOutput alloc] init];
     copy->_mediaUrn = [self.mediaUrn copy];
+    copy->_name = [self.name copy];
     copy->_outputDescription = [self.outputDescription copy];
+    copy->_optional = self.optional;
+    copy->_carries = [self.carries copy];
     copy->_isSequence = self.isSequence;
     copy->_streaming = self.streaming;
     copy->_metadata = [self.metadata copy];
@@ -697,7 +808,10 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
 - (void)encodeWithCoder:(NSCoder *)coder {
     [coder encodeObject:self.mediaUrn forKey:@"mediaUrn"];
+    [coder encodeObject:self.name forKey:@"name"];
     [coder encodeObject:self.outputDescription forKey:@"outputDescription"];
+    [coder encodeBool:self.optional forKey:@"optional"];
+    [coder encodeObject:self.carries forKey:@"carries"];
     [coder encodeBool:self.isSequence forKey:@"isSequence"];
     [coder encodeBool:self.streaming forKey:@"streaming"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
@@ -705,17 +819,21 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 
 - (nullable instancetype)initWithCoder:(NSCoder *)coder {
     NSString *mediaUrn = [coder decodeObjectOfClass:[NSString class] forKey:@"mediaUrn"];
+    NSString *name = [coder decodeObjectOfClass:[NSString class] forKey:@"name"];
     NSString *outputDescription = [coder decodeObjectOfClass:[NSString class] forKey:@"outputDescription"];
 
     // FAIL HARD on missing required fields
-    if (!mediaUrn || !outputDescription) {
+    if (!mediaUrn || !name || !outputDescription) {
         return nil;
     }
 
     self = [super init];
     if (self) {
         _mediaUrn = mediaUrn;
+        _name = name;
         _outputDescription = outputDescription;
+        _optional = [coder decodeBoolForKey:@"optional"];
+        _carries = [coder decodeObjectOfClass:[NSString class] forKey:@"carries"];
         _isSequence = [coder decodeBoolForKey:@"isSequence"];
         _streaming = [coder decodeBoolForKey:@"streaming"];
         _metadata = [coder decodeObjectForKey:@"metadata"];
@@ -727,10 +845,13 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
 
     dict[@"media_urn"] = self.mediaUrn;
+    dict[@"name"] = self.name;
     dict[@"output_description"] = self.outputDescription;
-    // Emitted even when NO, for the same reason as CSCapArg above: the
-    // reference serializes both unconditionally, and the stub suite compares
-    // one cap's manifest across every mirror byte for byte.
+    // Emitted even when NO, as the reference serializes them unconditionally,
+    // and the stub suite compares one cap's manifest across every mirror byte
+    // for byte.
+    dict[@"optional"] = @(self.optional);
+    if (self.carries) dict[@"carries"] = self.carries;
     dict[@"is_sequence"] = @(self.isSequence);
     dict[@"streaming"] = @(self.streaming);
 
@@ -762,7 +883,11 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     CSCapOutput *other = (CSCapOutput *)object;
 
     if (![self.mediaUrn isEqualToString:other.mediaUrn]) return NO;
+    if (![self.name isEqualToString:other.name]) return NO;
     if (![self.outputDescription isEqualToString:other.outputDescription]) return NO;
+    if (self.optional != other.optional || self.isSequence != other.isSequence || self.streaming != other.streaming) return NO;
+    if ((self.carries == nil) != (other.carries == nil)) return NO;
+    if (self.carries && ![self.carries isEqualToString:other.carries]) return NO;
 
     if ((self.metadata == nil) != (other.metadata == nil)) return NO;
     if (self.metadata && ![self.metadata isEqual:other.metadata]) return NO;
@@ -771,7 +896,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 }
 
 - (NSUInteger)hash {
-    return [self.mediaUrn hash] ^ [self.outputDescription hash] ^ [self.metadata hash];
+    return [self.mediaUrn hash] ^ [self.name hash] ^ [self.outputDescription hash] ^ [self.metadata hash];
 }
 
 @end
@@ -949,13 +1074,30 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
         }
     }
 
-    // Parse output
-    CSCapOutput *output = nil;
-    NSDictionary *outputDict = dictionary[@"output"];
-    if (outputDict) {
-        output = [CSCapOutput outputWithDictionary:outputDict error:error];
-        if (!output && error && *error) {
+    // Parse outputs: a list; absent is a cap that declares none.
+    NSMutableArray<CSCapOutput *> *outputs = [NSMutableArray array];
+    id outputsField = dictionary[@"outputs"];
+    if (outputsField != nil) {
+        if (![outputsField isKindOfClass:[NSArray class]]) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"CSCapError"
+                                             code:1005
+                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"cap '%@': 'outputs' is a list of outputs", urnField]}];
+            }
             return nil;
+        }
+        for (id outputDict in (NSArray *)outputsField) {
+            if (![outputDict isKindOfClass:[NSDictionary class]]) {
+                if (error) {
+                    *error = [NSError errorWithDomain:@"CSCapError"
+                                                 code:1006
+                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"cap '%@': an output is an object", urnField]}];
+                }
+                return nil;
+            }
+            CSCapOutput *output = [CSCapOutput outputWithDictionary:outputDict error:error];
+            if (!output) return nil;
+            [outputs addObject:output];
         }
     }
 
@@ -990,7 +1132,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
                     documentation:documentation
                          metadata:metadata
                              args:args
-                           output:output
+                          outputs:outputs
                      metadataJSON:metadataJSON];
     cap->_isAbstract = isAbstract;
     cap->_registeredBy = registeredBy;
@@ -1034,9 +1176,11 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
         dict[@"args"] = argsDicts;
     }
 
-    if (self.output) {
-        dict[@"output"] = [self.output toDictionary];
+    NSMutableArray *outputDicts = [NSMutableArray array];
+    for (CSCapOutput *output in self.outputs) {
+        [outputDicts addObject:[output toDictionary]];
     }
+    dict[@"outputs"] = outputDicts;
 
     if (self.metadataJSON) {
         dict[@"metadata_json"] = self.metadataJSON;
@@ -1137,9 +1281,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     if ((self.args == nil) != (other.args == nil)) return NO;
     if (self.args && ![self.args isEqualToArray:other.args]) return NO;
 
-    // Output
-    if ((self.output == nil) != (other.output == nil)) return NO;
-    if (self.output && ![self.output isEqual:other.output]) return NO;
+    // Outputs
+    if (![self.outputs isEqualToArray:other.outputs]) return NO;
 
     // MetadataJSON
     if ((self.metadataJSON == nil) != (other.metadataJSON == nil)) return NO;
@@ -1168,7 +1311,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     hash ^= [self.documentation hash];
     hash ^= [self.metadata hash];
     hash ^= [self.args hash];
-    hash ^= [self.output hash];
+    hash ^= [self.outputs hash];
     hash ^= [self.metadataJSON hash];
     hash ^= [self.registeredBy hash];
     hash ^= [self.supportedModelTypes hash];
@@ -1188,7 +1331,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
                      documentation:self.documentation
                           metadata:self.metadata
                               args:self.args
-                            output:self.output
+                           outputs:self.outputs
                       metadataJSON:self.metadataJSON];
     copy->_isAbstract = self.isAbstract;
     copy->_registeredBy = [self.registeredBy copy];
@@ -1207,7 +1350,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     [coder encodeObject:self.documentation forKey:@"documentation"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
     [coder encodeObject:self.args forKey:@"args"];
-    [coder encodeObject:self.output forKey:@"output"];
+    [coder encodeObject:self.outputs forKey:@"outputs"];
     [coder encodeObject:self.metadataJSON forKey:@"metadataJSON"];
     [coder encodeObject:self.registeredBy forKey:@"registeredBy"];
     [coder encodeObject:self.supportedModelTypes forKey:@"supportedModelTypes"];
@@ -1224,7 +1367,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     NSString *documentation = [coder decodeObjectOfClass:[NSString class] forKey:@"documentation"];
     NSDictionary *metadata = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadata"];
     NSArray *args = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSCapArg class], nil] forKey:@"args"];
-    CSCapOutput *output = [coder decodeObjectOfClass:[CSCapOutput class] forKey:@"output"];
+    NSArray *outputs = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSCapOutput class], nil] forKey:@"outputs"];
     NSDictionary *metadataJSON = [coder decodeObjectOfClass:[NSDictionary class] forKey:@"metadataJSON"];
     CSRegisteredBy *registeredBy = [coder decodeObjectOfClass:[CSRegisteredBy class] forKey:@"registeredBy"];
 
@@ -1243,7 +1386,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
                     documentation:documentation
                          metadata:metadata
                              args:args ?: @[]
-                           output:output
+                          outputs:outputs ?: @[]
                      metadataJSON:metadataJSON];
     cap->_isAbstract = isAbstract;
     cap->_registeredBy = registeredBy;
@@ -1263,7 +1406,7 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
               documentation:nil
                    metadata:@{}
                        args:@[]
-                     output:nil
+                    outputs:@[]
                metadataJSON:nil];
 }
 
@@ -1274,10 +1417,10 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
              documentation:(nullable NSString *)documentation
                   metadata:(NSDictionary<NSString *, NSString *> *)metadata
                       args:(NSArray<CSCapArg *> *)args
-                    output:(nullable CSCapOutput *)output
+                   outputs:(NSArray<CSCapOutput *> *)outputs
               metadataJSON:(nullable NSDictionary *)metadataJSON {
     // FAIL HARD if required fields are nil
-    if (!capUrn || !title || aliases.count == 0 || !metadata || !args) {
+    if (!capUrn || !title || aliases.count == 0 || !metadata || !args || !outputs) {
         return nil;
     }
 
@@ -1290,12 +1433,32 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     cap->_documentation = [documentation copy];
     cap->_metadata = [metadata copy];
     cap->_args = [args copy];
-    cap->_output = output;
+    cap->_outputs = [outputs copy];
     cap->_metadataJSON = [metadataJSON copy];
     cap->_supportedModelTypes = @[];
     cap->_defaultModelSpec = nil;
     cap->_version = 0;
     return cap;
+}
+
++ (instancetype)identityCap {
+    NSError *error = nil;
+    CSCapUrn *urn = [CSCapUrn fromString:CSCapIdentity error:&error];
+    if (urn == nil) {
+        [NSException raise:NSInternalInconsistencyException format:@"CAP_IDENTITY is a valid cap URN: %@", error.localizedDescription];
+    }
+    CSCapArg *input = [CSCapArg argWithMediaUrn:@"media:" name:@"input" required:YES
+                                        sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:"]]];
+    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:" name:@"output" outputDescription:@"The input data, unchanged"];
+    return [self capWithUrn:urn
+                      title:@"Identity"
+                    aliases:@[@"identity"]
+                description:@"The categorical identity morphism. Echoes input as output unchanged. Mandatory in every capability set."
+              documentation:nil
+                   metadata:@{}
+                       args:@[input]
+                    outputs:@[output]
+               metadataJSON:nil];
 }
 
 - (NSArray<NSString *> *)getAliases {
@@ -1310,8 +1473,44 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
     return [self.aliases containsObject:name];
 }
 
-- (nullable CSCapOutput *)getOutput {
-    return self.output;
+- (NSArray<CSCapOutput *> *)getOutputs {
+    return self.outputs;
+}
+
+- (nullable CSCapOutput *)outputByUrn:(NSString *)mediaUrn {
+    CSMediaUrn *wanted = [CSMediaUrn fromString:mediaUrn error:nil];
+    if (wanted == nil) return nil;
+    for (CSCapOutput *output in self.outputs) {
+        CSMediaUrn *held = [CSMediaUrn fromString:output.mediaUrn error:nil];
+        if (held != nil && [held isEquivalentTo:wanted]) return output;
+    }
+    return nil;
+}
+
+- (nullable CSCapOutput *)mainOutput {
+    return [self outputByUrn:[self.capUrn getOutSpec]];
+}
+
+- (nullable CSCapOutput *)outputNamed:(NSString *)name {
+    for (CSCapOutput *output in self.outputs) {
+        if ([output.name isEqualToString:name]) return output;
+    }
+    return nil;
+}
+
+- (nullable CSCapArg *)argNamed:(NSString *)name {
+    for (CSCapArg *arg in self.args) {
+        if ([arg.name isEqualToString:name]) return arg;
+    }
+    return nil;
+}
+
+- (void)setOutputs:(NSArray<CSCapOutput *> *)outputs {
+    _outputs = [outputs copy];
+}
+
+- (void)addOutput:(CSCapOutput *)output {
+    _outputs = [_outputs arrayByAddingObject:output];
 }
 
 - (NSArray<CSCapArg *> *)getArgs {
@@ -1381,7 +1580,8 @@ static BOOL CSRefuseUnknownKeys(NSDictionary *dictionary, NSSet<NSString *> *kno
 }
 
 - (BOOL)outputStreams {
-    return self.output ? self.output.streaming : NO;
+    CSCapOutput *main = [self mainOutput];
+    return main ? main.streaming : NO;
 }
 
 - (nullable CSCapArg *)findArgByMediaUrn:(NSString *)mediaUrn {

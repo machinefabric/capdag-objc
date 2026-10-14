@@ -16,6 +16,7 @@
 //
 
 #import "CSFabricRegistry.h"
+#import "CSCapValidator.h"
 #import "CSFabricManifestVersion.h"
 #import "CSCap.h"
 #import "CSCapUrn.h"
@@ -923,14 +924,11 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     push([cap.capUrn outSpec]);
     for (CSCapArg *arg in cap.args) {
         push(arg.mediaUrn);
-        for (CSArgSource *source in arg.sources) {
-            if ([source isStdin]) {
-                push(source.stdinMediaUrn);
-            }
-        }
+        // What the arg accepts: its stdin source's URN, or its `accepts`.
+        push([arg acceptedUrn]);
     }
-    if (cap.output) {
-        push(cap.output.mediaUrn);
+    for (CSCapOutput *output in cap.outputs) {
+        push(output.mediaUrn);
     }
     return seen;
 }
@@ -1283,7 +1281,18 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
             completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError"
                                                 code:1001
                                             userInfo:@{NSLocalizedDescriptionKey:
-                                                           [NSString stringWithFormat:@"Failed to construct cap from registry response for '%@'", urn]}]);
+                                                           [NSString stringWithFormat:@"Failed to parse registry response for cap '%@': %@", urn, parseError.localizedDescription]}]);
+            return;
+        }
+        // A definition is held to the definition rules by the side that
+        // receives it as well as the side that sends it, before anything
+        // caches it.
+        NSError *ruleError = nil;
+        if (![CSCapValidator validateCapDefinition:cap error:&ruleError]) {
+            completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError"
+                                                code:1006
+                                            userInfo:@{NSLocalizedDescriptionKey:
+                                                           [NSString stringWithFormat:@"the registry's definition of cap '%@' breaks a definition rule: %@", urn, ruleError.localizedDescription]}]);
             return;
         }
         completion(cap, nil);

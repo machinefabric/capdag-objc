@@ -29,7 +29,7 @@ static CSCap *buildExtractCap(void) {
                documentation:nil
                     metadata:@{}
                         args:@[]
-                      output:nil
+                      outputs:@[]
                 metadataJSON:nil];
 }
 

@@ -27,9 +27,11 @@ static CSCap *makeRewriteCap(void) {
 
     CSCap *cap = [CSCap capWithUrn:urn title:@"Rewrite" aliases:@[@"rewrite"]];
     [cap addArg:[CSCapArg argWithMediaUrn:@"media:ext=txt;text"
+                                 name:@"arg1"
                                  required:YES
                                   sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:ext=txt;text"]]]];
     [cap addArg:[CSCapArg argWithMediaUrn:@"media:numeric;temperature"
+                                 name:@"arg2"
                                  required:NO
                                   sources:@[[CSArgSource cliFlagSource:@"--temperature"]]
                            argDescription:@"Sampling temperature"

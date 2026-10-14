@@ -625,9 +625,9 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
                  error:(NSError **)error {
     NSString *capUrn = [cap urnString];
 
-    CSCapOutput *outputDef = [cap getOutput];
+    CSCapOutput *outputDef = [cap mainOutput];
     if (!outputDef) {
-        // No output definition means any output is acceptable
+        // No main output (out=media:void): there is nothing to hold it to
         return YES;
     }
 
@@ -870,78 +870,268 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 @end
 
+BOOL CSIsValidDefinitionName(NSString *name) {
+    if (![name isKindOfClass:[NSString class]] || name.length == 0) return NO;
+    if ([name isEqualToString:@"true"] || [name isEqualToString:@"false"] || [name isEqualToString:@"null"]) return NO;
+    static NSRegularExpression *shape;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        shape = [NSRegularExpression regularExpressionWithPattern:@"^[A-Za-z_][A-Za-z0-9_-]*$" options:0 error:nil];
+    });
+    return [shape numberOfMatchesInString:name options:0 range:NSMakeRange(0, name.length)] == 1;
+}
+
+/// The cli_flags a definition may not take: the ones every cartridge's own
+/// command line already means something by.
+static NSArray<NSString *> *CSReservedCliFlags(void) {
+    return @[@"manifest", @"--help", @"--version", @"-v", @"-h"];
+}
+
+static NSString *CSSourceTypeName(CSArgSource *source) {
+    switch (source.type) {
+        case CSArgSourceTypeStdin: return @"stdin";
+        case CSArgSourceTypePosition: return @"position";
+        case CSArgSourceTypeCliFlag: return @"cli_flag";
+    }
+    return @"unknown";
+}
+
 @implementation CSCapValidator
 
-+ (BOOL)validateCap:(CSCap *)cap
-                     error:(NSError **)error {
-    NSString *capUrn = [cap urnString];
-    NSArray<CSCapArg *> *requiredArgs = [cap getRequiredArgs];
-    NSArray<CSCapArg *> *optionalArgs = [cap getOptionalArgs];
++ (BOOL)refuse:(CSCap *)cap issue:(NSString *)issue error:(NSError **)error {
+    if (error) *error = [CSValidationError invalidCapSchemaError:[cap urnString] issue:issue];
+    return NO;
+}
 
-    // Validate that required arguments don't have default values
-    for (CSCapArg *arg in requiredArgs) {
-        if (arg.defaultValue) {
-            if (error) {
-                NSString *issue = [NSString stringWithFormat:@"Required argument '%@' cannot have a default value", arg.mediaUrn];
-                *error = [CSValidationError invalidCapSchemaError:capUrn issue:issue];
-            }
-            return NO;
++ (BOOL)validateCapArgs:(CSCap *)cap error:(NSError **)error {
+    NSArray<CSCapArg *> *args = cap.args;
+
+    // RULE1: No duplicate media_urns
+    NSMutableSet<NSString *> *mediaUrns = [NSMutableSet set];
+    for (CSCapArg *arg in args) {
+        if ([mediaUrns containsObject:arg.mediaUrn]) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE1: Duplicate media_urn '%@'", arg.mediaUrn] error:error];
+        }
+        [mediaUrns addObject:arg.mediaUrn];
+    }
+
+    // RULE2: sources must not be empty
+    for (CSCapArg *arg in args) {
+        if (arg.sources.count == 0) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE2: Argument '%@' has empty sources", arg.mediaUrn] error:error];
         }
     }
 
-    // Validate argument position uniqueness
-    NSMutableSet<NSNumber *> *positions = [NSMutableSet set];
-    NSArray<CSCapArg *> *allArgs = [requiredArgs arrayByAddingObjectsFromArray:optionalArgs];
-    for (CSCapArg *arg in allArgs) {
-        NSNumber *argPosition = [arg getPosition];
-        if (argPosition) {
-            if ([positions containsObject:argPosition]) {
-                if (error) {
-                    NSString *issue = [NSString stringWithFormat:@"Duplicate argument position %@ for argument '%@'", argPosition, arg.mediaUrn];
-                    *error = [CSValidationError invalidCapSchemaError:capUrn issue:issue];
-                }
-                return NO;
+    NSMutableArray<NSString *> *stdinUrns = [NSMutableArray array];
+    NSMutableArray<NSArray *> *positions = [NSMutableArray array];
+    NSMutableArray<NSArray *> *cliFlags = [NSMutableArray array];
+    for (CSCapArg *arg in args) {
+        NSMutableSet<NSString *> *sourceTypes = [NSMutableSet set];
+        BOOL hasPosition = NO;
+        BOOL hasCliFlag = NO;
+        for (CSArgSource *source in arg.sources) {
+            NSString *type = CSSourceTypeName(source);
+            // RULE4: No arg may specify the same source type more than once
+            if ([sourceTypes containsObject:type]) {
+                return [self refuse:cap issue:[NSString stringWithFormat:@"RULE4: Argument '%@' has duplicate source type '%@'", arg.mediaUrn, type] error:error];
             }
-            [positions addObject:argPosition];
+            [sourceTypes addObject:type];
+            if ([source isStdin]) [stdinUrns addObject:source.stdinMediaUrn];
+            if ([source isPosition]) {
+                hasPosition = YES;
+                [positions addObject:@[@(source.position), arg.mediaUrn]];
+            }
+            if ([source isCliFlag]) {
+                hasCliFlag = YES;
+                [cliFlags addObject:@[source.cliFlag, arg.mediaUrn]];
+                // RULE10: Reserved cli_flags
+                if ([CSReservedCliFlags() containsObject:source.cliFlag]) {
+                    return [self refuse:cap issue:[NSString stringWithFormat:@"RULE10: Argument '%@' uses reserved cli_flag '%@'", arg.mediaUrn, source.cliFlag] error:error];
+                }
+            }
+        }
+        // RULE7: No arg may have both position and cli_flag
+        if (hasPosition && hasCliFlag) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE7: Argument '%@' has both position and cli_flag sources", arg.mediaUrn] error:error];
         }
     }
 
-    // Validate CLI flag uniqueness
-    NSMutableSet<NSString *> *cliFlags = [NSMutableSet set];
-    for (CSCapArg *arg in allArgs) {
-        NSString *argCliFlag = [arg getCliFlag];
-        if (argCliFlag) {
-            if ([cliFlags containsObject:argCliFlag]) {
-                if (error) {
-                    NSString *issue = [NSString stringWithFormat:@"Duplicate CLI flag '%@' for argument '%@'", argCliFlag, arg.mediaUrn];
-                    *error = [CSValidationError invalidCapSchemaError:capUrn issue:issue];
-                }
-                return NO;
+    // RULE3: At most one arg declares a stdin source. `stdin` is a command
+    // line's one piped input, and the arg that declares it is the main input.
+    NSMutableArray<NSString *> *stdinArgs = [NSMutableArray array];
+    for (CSCapArg *arg in args) {
+        if ([arg hasStdinSource]) [stdinArgs addObject:arg.mediaUrn];
+    }
+    if (stdinArgs.count > 1) {
+        return [self refuse:cap issue:[NSString stringWithFormat:@"RULE3: Arguments '%@' and '%@' both declare a stdin source; a cap has one main input", stdinArgs[0], stdinArgs[1]] error:error];
+    }
+
+    // RULE17: names
+    NSMutableArray<CSCapArg *> *named = [NSMutableArray array];
+    for (CSCapArg *arg in args) {
+        if (arg.name.length == 0) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE17: Argument '%@' has no name", arg.mediaUrn] error:error];
+        }
+        if (!CSIsValidDefinitionName(arg.name)) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE17: Argument name '%@' is not a valid name", arg.name] error:error];
+        }
+        for (CSCapArg *seen in named) {
+            if ([seen.name isEqualToString:arg.name]) {
+                return [self refuse:cap issue:[NSString stringWithFormat:@"RULE17: Arguments '%@' and '%@' share the name '%@'", seen.mediaUrn, arg.mediaUrn, arg.name] error:error];
             }
-            [cliFlags addObject:argCliFlag];
+        }
+        [named addObject:arg];
+    }
+
+    // RULE18: an arg says what it accepts in one place.
+    for (CSCapArg *arg in args) {
+        if (arg.accepts != nil && [arg hasStdinSource]) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE18: Argument '%@' declares both a stdin source and accepts", arg.mediaUrn] error:error];
+        }
+    }
+
+    // RULE15: The main input matches in=. With in=media:void no arg declares
+    // a stdin source; otherwise one does, equivalent to in= — compared as
+    // tagged URNs, never as strings.
+    NSError *inError = nil;
+    CSMediaUrn *inMedia = [CSMediaUrn fromString:[cap.capUrn getInSpec] error:&inError];
+    if (inMedia == nil) {
+        return [self refuse:cap issue:[NSString stringWithFormat:@"RULE15: Failed to parse in= spec: %@", inError.localizedDescription] error:error];
+    }
+    CSMediaUrn *voidMedia = [CSMediaUrn fromString:CSMediaVoid error:nil];
+    BOOL inIsVoid = [inMedia isEquivalentTo:voidMedia];
+    if (inIsVoid && stdinUrns.count > 0) {
+        return [self refuse:cap issue:[NSString stringWithFormat:@"RULE15: in= is 'media:void' but %lu arg(s) declare a stdin source", (unsigned long)stdinUrns.count] error:error];
+    }
+    if (!inIsVoid) {
+        BOOL found = NO;
+        for (NSString *stdinUrn in stdinUrns) {
+            CSMediaUrn *parsed = [CSMediaUrn fromString:stdinUrn error:nil];
+            if (parsed != nil && [parsed isEquivalentTo:inMedia]) found = YES;
+        }
+        if (!found) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE15: in= is '%@' but no arg declares a stdin source equivalent to it", [cap.capUrn getInSpec]] error:error];
         }
     }
 
     // RULE14: Only the main input may stream. `streaming` declares that an
     // argument is consumed without a length promise — a feed. Side arguments
-    // (options, model specs, prompts alongside the main input) are values the
-    // runtime demuxes whole; a feed there has no meaning and would let an
-    // unbounded stream reach a collector that must refuse it (L16).
-    NSError *inError = nil;
-    CSMediaUrn *inSpec = [CSMediaUrn fromString:[cap.capUrn getInSpec] error:&inError];
-    if (inSpec) {
-        for (CSCapArg *arg in allArgs) {
-            if (arg.streaming && ![arg isMainInputForInSpec:inSpec]) {
-                if (error) {
-                    NSString *issue = [NSString stringWithFormat:@"RULE14: Argument '%@' declares streaming=true but is not the main input (no stdin source equivalent to in='%@') — only the main input may be consumed without a length promise", arg.mediaUrn, [cap.capUrn getInSpec]];
-                    *error = [CSValidationError invalidCapSchemaError:capUrn issue:issue];
-                }
-                return NO;
-            }
+    // are values the runtime demuxes whole; a feed there has no meaning and
+    // would let an unbounded stream reach a collector that must refuse it.
+    for (CSCapArg *arg in args) {
+        if (arg.streaming && ![arg isMainInputForInSpec:inMedia]) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE14: Argument '%@' declares streaming=true but is not the main input (no stdin source equivalent to in='%@') — only the main input may be consumed without a length promise", arg.mediaUrn, [cap.capUrn getInSpec]] error:error];
         }
     }
 
+    // RULE5: No two args may have the same position
+    NSMutableSet<NSNumber *> *positionSet = [NSMutableSet set];
+    for (NSArray *held in positions) {
+        if ([positionSet containsObject:held[0]]) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE5: Duplicate position %@ in argument '%@'", held[0], held[1]] error:error];
+        }
+        [positionSet addObject:held[0]];
+    }
+
+    // RULE6: Positions must be sequential (0-based, no gaps when aggregated)
+    NSArray<NSArray *> *sortedPositions = [positions sortedArrayUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) {
+        return [a[0] compare:b[0]];
+    }];
+    for (NSUInteger i = 0; i < sortedPositions.count; i++) {
+        if ([sortedPositions[i][0] integerValue] != (NSInteger)i) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE6: Position gap - expected %lu but found %@", (unsigned long)i, sortedPositions[i][0]] error:error];
+        }
+    }
+
+    // RULE9: No two args may have the same cli_flag
+    NSMutableSet<NSString *> *flagSet = [NSMutableSet set];
+    for (NSArray *held in cliFlags) {
+        if ([flagSet containsObject:held[0]]) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE9: Duplicate cli_flag '%@' in argument '%@'", held[0], held[1]] error:error];
+        }
+        [flagSet addObject:held[0]];
+    }
     return YES;
+}
+
++ (BOOL)validateCapOutputs:(CSCap *)cap error:(NSError **)error {
+    NSArray<CSCapOutput *> *outputs = cap.outputs;
+    NSError *parseError = nil;
+    CSMediaUrn *outMedia = [CSMediaUrn fromString:[cap.capUrn getOutSpec] error:&parseError];
+    if (outMedia == nil) {
+        return [self refuse:cap issue:[NSString stringWithFormat:@"RULE21: Failed to parse out= spec: %@", parseError.localizedDescription] error:error];
+    }
+    CSMediaUrn *inMedia = [CSMediaUrn fromString:[cap.capUrn getInSpec] error:&parseError];
+    if (inMedia == nil) {
+        return [self refuse:cap issue:[NSString stringWithFormat:@"RULE22: Failed to parse in= spec: %@", parseError.localizedDescription] error:error];
+    }
+    CSMediaUrn *voidMedia = [CSMediaUrn fromString:CSMediaVoid error:nil];
+    BOOL outIsVoid = [outMedia isEquivalentTo:voidMedia];
+    BOOL inIsVoid = [inMedia isEquivalentTo:voidMedia];
+
+    // RULE19: names
+    NSMutableArray<CSCapOutput *> *named = [NSMutableArray array];
+    for (CSCapOutput *output in outputs) {
+        if (output.name.length == 0) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE19: Output '%@' has no name", output.mediaUrn] error:error];
+        }
+        if (!CSIsValidDefinitionName(output.name)) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE19: Output name '%@' is not a valid name", output.name] error:error];
+        }
+        for (CSCapOutput *seen in named) {
+            if ([seen.name isEqualToString:output.name]) {
+                return [self refuse:cap issue:[NSString stringWithFormat:@"RULE19: Outputs '%@' and '%@' share the name '%@'", seen.mediaUrn, output.mediaUrn, output.name] error:error];
+            }
+        }
+        [named addObject:output];
+    }
+
+    // RULE20: identities, compared as media URNs (tag order is not identity)
+    NSMutableArray<CSMediaUrn *> *identities = [NSMutableArray array];
+    for (CSCapOutput *output in outputs) {
+        CSMediaUrn *identity = [CSMediaUrn fromString:output.mediaUrn error:&parseError];
+        if (identity == nil) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE20: Output media_urn '%@' is not a media URN: %@", output.mediaUrn, parseError.localizedDescription] error:error];
+        }
+        for (CSMediaUrn *seen in identities) {
+            if ([seen isEquivalentTo:identity]) {
+                return [self refuse:cap issue:[NSString stringWithFormat:@"RULE20: Duplicate output media_urn '%@'", output.mediaUrn] error:error];
+            }
+        }
+        [identities addObject:identity];
+    }
+
+    // RULE21: the main output
+    if (outIsVoid) {
+        if (outputs.count > 0) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE21: out= is 'media:void' but %lu output(s) are declared", (unsigned long)outputs.count] error:error];
+        }
+        return YES;
+    }
+    NSMutableArray<NSNumber *> *main = [NSMutableArray array];
+    for (NSUInteger i = 0; i < identities.count; i++) {
+        if ([identities[i] isEquivalentTo:outMedia]) [main addObject:@(i)];
+    }
+    if (main.count != 1) {
+        return [self refuse:cap issue:[NSString stringWithFormat:@"RULE21: out= is '%@' but %lu outputs are equivalent to it; exactly one must be", [cap.capUrn getOutSpec], (unsigned long)main.count] error:error];
+    }
+
+    // RULE22: what an output carries
+    for (NSUInteger i = 0; i < outputs.count; i++) {
+        CSCapOutput *output = outputs[i];
+        if (output.carries == nil) continue;
+        if (i == [main[0] unsignedIntegerValue]) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE22: The main output '%@' declares carries", output.mediaUrn] error:error];
+        }
+        if (inIsVoid) {
+            return [self refuse:cap issue:[NSString stringWithFormat:@"RULE22: Output '%@' carries the input but the cap takes none", output.mediaUrn] error:error];
+        }
+    }
+    return YES;
+}
+
++ (BOOL)validateCapDefinition:(CSCap *)cap error:(NSError **)error {
+    return [self validateCapArgs:cap error:error] && [self validateCapOutputs:cap error:error];
 }
 
 @end
@@ -1010,9 +1200,9 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
     }
 
     // For binary outputs, we primarily validate existence and basic constraints
-    CSCapOutput *output = [cap getOutput];
+    CSCapOutput *output = [cap mainOutput];
     if (!output) {
-        // No output definition means any output is acceptable
+        // No main output (out=media:void): there is nothing to hold it to
         return YES;
     }
 
@@ -1077,7 +1267,7 @@ NSString * const CSValidationErrorExpectedTypeKey = @"CSValidationErrorExpectedT
 
 - (BOOL)validateCapSchema:(CSCap *)cap
                            error:(NSError **)error {
-    return [CSCapValidator validateCap:cap error:error];
+    return [CSCapValidator validateCapDefinition:cap error:error];
 }
 
 @end

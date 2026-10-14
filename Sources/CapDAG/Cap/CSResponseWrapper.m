@@ -81,9 +81,11 @@
 - (BOOL)validateAgainstCap:(CSCap *)cap
                   registry:(CSFabricRegistry *)registry
                      error:(NSError * _Nullable * _Nullable)error {
-    CSCapOutput *output = [cap getOutput];
+    // A response is the cap's main output; a cap that declares none (out=
+    // media:void) has nothing to hold it to.
+    CSCapOutput *output = [cap mainOutput];
     if (!output || !output.mediaUrn) {
-        // No output definition, validation passes
+        // No main output, validation passes
         return YES;
     }
 
@@ -167,10 +169,10 @@
 - (BOOL)matchesOutputTypeForCap:(CSCap *)cap
                        registry:(CSFabricRegistry *)registry
                           error:(NSError **)error {
-    CSCapOutput *outputDef = [cap getOutput];
+    CSCapOutput *outputDef = [cap mainOutput];
     if (!outputDef || !outputDef.mediaUrn) {
         if (error) {
-            NSString *message = [NSString stringWithFormat:@"Cap '%@' has no output definition", [cap urnString]];
+            NSString *message = [NSString stringWithFormat:@"Cap '%@' has no main output", [cap urnString]];
             *error = [NSError errorWithDomain:@"CSResponseWrapper"
                                          code:1005
                                      userInfo:@{NSLocalizedDescriptionKey: message}];

@@ -75,6 +75,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;user-data"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--user"]]
                                        argDescription:@"User data object"
@@ -115,6 +116,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;user-data"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--user"]]
                                        argDescription:@"User data object"
@@ -141,6 +143,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 - (void)test6358_ArgumentValidationWithUnknownSpecFails {
     // Create argument with non-existent spec ID
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"unknown:spec.v1"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--data"]]
                                        argDescription:@"Some data"
@@ -169,6 +172,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:CSMediaString
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--name"]]
                                        argDescription:@"User name"
@@ -210,6 +214,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;list;query-results"
+                                         name:@"output"
                                          outputDescription:@"Query results"];
 
     // Valid output data
@@ -250,6 +255,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;list;query-results"
+                                         name:@"output"
                                          outputDescription:@"Query results"];
 
     // Invalid data - negative count
@@ -297,6 +303,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *userArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;user"
+                                            name:@"user"
                                             required:YES
                                              sources:@[[CSArgSource cliFlagSource:@"--user"]]
                                       argDescription:@"User object"
@@ -309,7 +316,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                               args:@[userArg]
-                            output:nil
+                            outputs:@[]
                       metadataJSON:nil];
 
     // Valid user data
@@ -346,7 +353,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 - (void)test6373_IntegrationWithOutputValidation {
     // Create cap with schema-enabled output
     // Use media:enc=utf-8;record instead of media:object to indicate textable object data
-    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record"] tag:@"op" value:@"query"] tag:@"target" value:@"data"] build:nil];
+    // The cap's out= is the output it is checked against: its main output (RULE21).
+    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;list;results-array"] tag:@"op" value:@"query"] tag:@"target" value:@"data"] build:nil];
 
     NSDictionary *resultSchema = @{
         @"type": @"array",
@@ -371,6 +379,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;list;results-array"
+                                         name:@"output"
                                          outputDescription:@"Query results array"];
 
     CSCap *cap = [CSCap capWithUrn:urn
@@ -380,7 +389,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                               args:@[]
-                            output:output
+                            outputs:@[output]
                       metadataJSON:nil];
 
     // Valid output
@@ -454,6 +463,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;payload"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--payload"]]
                                        argDescription:@"Complex payload"
@@ -525,6 +535,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;test-arg"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--test"]]
                                        argDescription:@"Test argument"
@@ -573,6 +584,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *strArg = [CSCapArg argWithMediaUrn:CSMediaString
+                                           name:@"str"
                                            required:YES
                                             sources:@[[CSArgSource cliFlagSource:@"--text"]]
                                      argDescription:@"Text input"
@@ -584,6 +596,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(error);
 
     CSCapArg *intArg = [CSCapArg argWithMediaUrn:CSMediaInteger
+                                         name:@"int"
                                          required:YES
                                           sources:@[[CSArgSource cliFlagSource:@"--count"]]
                                    argDescription:@"Count value"
@@ -594,6 +607,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNil(error);
 
     CSCapArg *objArg = [CSCapArg argWithMediaUrn:CSMediaObject
+                                        name:@"obj"
                                         required:YES
                                          sources:@[[CSArgSource cliFlagSource:@"--data"]]
                                   argDescription:@"JSON data"
@@ -618,6 +632,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;text-input"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--input"]]
                                        argDescription:@"Text input"
@@ -665,6 +680,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;large-data"
+                                             name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--data"]]
                                        argDescription:@"Large data set"
@@ -697,7 +713,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test complete cap validation flow with mediaDefs resolution
     // Use media:enc=utf-8;record instead of media:object to indicate textable object data
     NSError *error = nil;
-    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record"] tag:@"format" value:@"json"] tag:@"op" value:@"transform"] build:&error];
+    // The cap's out= is its one output: the main output (RULE21).
+    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record;transform-output"] tag:@"format" value:@"json"] tag:@"op" value:@"transform"] build:&error];
     XCTAssertNotNil(urn);
 
     NSDictionary *inputSchema = @{
@@ -740,12 +757,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     ];
 
     CSCapArg *inputArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;transform-input"
+                                             name:@"input"
                                              required:YES
-                                              sources:@[[CSArgSource positionSource:0], [CSArgSource cliFlagSource:@"--input"]]
+                                              sources:@[[CSArgSource positionSource:0]]
                                        argDescription:@"Transformation input"
                                          defaultValue:nil];
 
     CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;record;transform-output"
+                                         name:@"output"
                                          outputDescription:@"Transformation result"];
 
     CSCap *cap = [CSCap capWithUrn:urn
@@ -755,11 +774,11 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
                      documentation:nil
                           metadata:@{}
                               args:@[inputArg]
-                            output:output
+                            outputs:@[output]
                       metadataJSON:nil];
 
     // Validate cap itself
-    BOOL capValid = [CSCapValidator validateCap:cap error:&error];
+    BOOL capValid = [CSCapValidator validateCapDefinition:cap error:&error];
     XCTAssertTrue(capValid, @"Cap should be valid: %@", error);
 
     // Test valid input

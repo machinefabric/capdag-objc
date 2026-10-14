@@ -115,11 +115,42 @@ typedef NS_ENUM(NSInteger, CSValidationErrorType) {
 @end
 
 /// Cap schema validator
+/**
+ * Whether a text is a well-formed name for an argument or an output: it
+ * starts with a letter or an underscore, continues with letters, digits,
+ * underscores and hyphens, and is not one of the words notation reads as
+ * constants (true, false, null).
+ */
+FOUNDATION_EXPORT BOOL CSIsValidDefinitionName(NSString * _Nullable name);
+
+/**
+ * The definition rules a cap is held to wherever it crosses from one program
+ * to another, under the numbers every capdag implementation raises them
+ * under: a number names one rule.
+ */
 @interface CSCapValidator : NSObject
 
-/// Validate a cap definition itself
-+ (BOOL)validateCap:(CSCap * _Nonnull)cap
-              error:(NSError * _Nullable * _Nullable)error;
+/**
+ * The rules on a cap's arguments: RULE1 no duplicate media URNs, RULE2
+ * sources not empty, RULE3 at most one stdin source, RULE4 no source type
+ * twice, RULE5 no position twice, RULE6 positions sequential, RULE7 not
+ * both position and cli_flag, RULE9 no cli_flag twice, RULE10 no reserved
+ * cli_flag, RULE14 only the main input streams, RULE15 the stdin argument's
+ * URN is in=, RULE17 names well-formed and unique, RULE18 accepts never beside
+ * a stdin source.
+ */
++ (BOOL)validateCapArgs:(CSCap * _Nonnull)cap error:(NSError * _Nullable * _Nullable)error;
+
+/**
+ * The rules on a cap's outputs: RULE19 names well-formed and unique, RULE20
+ * no duplicate media URNs, RULE21 exactly one main output, the cap's out=
+ * (none when out= is media:void), RULE22 only a non-main output of a cap
+ * that takes an input carries it.
+ */
++ (BOOL)validateCapOutputs:(CSCap * _Nonnull)cap error:(NSError * _Nullable * _Nullable)error;
+
+/** Every definition rule: the arguments', then the outputs'. */
++ (BOOL)validateCapDefinition:(CSCap * _Nonnull)cap error:(NSError * _Nullable * _Nullable)error;
 
 @end
 

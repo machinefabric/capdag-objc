@@ -16,7 +16,7 @@ final class CartridgeCapsTests: XCTestCase {
                      documentation: nil,
                      metadata: [:],
                      args: [],
-                     output: nil,
+                     outputs: [],
                      metadataJSON: nil)
     }
 
