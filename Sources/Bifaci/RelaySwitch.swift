@@ -101,7 +101,7 @@ public struct SocketPair: Sendable {
 }
 
 /// Composite routing key: (XID, RID) — uniquely identifies a request flow.
-/// Alias onto the unified request table's key type (protocol v4, L7).
+/// Alias onto the unified request table's key type (L7).
 typealias RoutingKey = RequestKey
 
 public struct RelayNotifyCapabilitiesPayload: Codable {
@@ -697,7 +697,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         // Control/side-channel frames are legal ANYWHERE during the
                         // probe (spec 12.4: LOG interleaves without affecting data
                         // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A v4 cartridge crediting its
+                        // gate itself exempts, L4). A cartridge crediting its
                         // probe input as it consumes (L10) must not fail identity
                         // verification.
                         break
@@ -1061,7 +1061,7 @@ public final class RelaySwitch: @unchecked Sendable {
                         // Control/side-channel frames are legal ANYWHERE during the
                         // probe (spec 12.4: LOG interleaves without affecting data
                         // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A v4 cartridge crediting its
+                        // gate itself exempts, L4). A cartridge crediting its
                         // probe input as it consumes (L10) must not fail identity
                         // verification.
                         break
@@ -1083,7 +1083,7 @@ public final class RelaySwitch: @unchecked Sendable {
         // Commit the connection state into the slot.
         // `defer`, not hand-paired unlocks: this region contains throwing calls
         // (`configureMasterAdmissionLocked` rejects a cartridge record missing
-        // mandatory v4 runtime_stats), and an error unwinds straight past a
+        // mandatory runtime_stats), and an error unwinds straight past a
         // trailing `lock.unlock()`. Rust holds a `MutexGuard` here, which
         // releases on every exit including the error path; hand-pairing lost
         // that property in translation and turned one legitimate registration
@@ -1289,7 +1289,7 @@ public final class RelaySwitch: @unchecked Sendable {
         for record in cartridges {
             guard let stats = record.runtimeStats else {
                 throw RelaySwitchError.protocolError(
-                    "cartridge '\(record.id)' on master \(masterIdx) is missing mandatory v4 runtime_stats"
+                    "cartridge '\(record.id)' on master \(masterIdx) is missing mandatory runtime_stats"
                 )
             }
             let key = Self.admissionKey(masterIdx: masterIdx, record: record)
@@ -1415,7 +1415,7 @@ public final class RelaySwitch: @unchecked Sendable {
         }
         guard let stats = cartridge.runtimeStats else {
             throw RelaySwitchError.protocolError(
-                "cartridge '\(cartridge.id)' on master \(masterIdx) is missing mandatory v4 runtime_stats")
+                "cartridge '\(cartridge.id)' on master \(masterIdx) is missing mandatory runtime_stats")
         }
         admission.configurePools(
             key, pools: try Self.poolCapacities(stats, cartridgeId: cartridge.id))
@@ -2142,7 +2142,7 @@ public final class RelaySwitch: @unchecked Sendable {
         rebuildLimits()
     }
 
-    // MARK: - Protocol Stats + Cancellation (protocol v4)
+    // MARK: - Protocol Stats + Cancellation
 
     /// The switch's protocol observability snapshot (L8): live request state,
     /// recent terminations, and per-reason drop counters. Field names are the
@@ -2532,7 +2532,7 @@ public final class RelaySwitch: @unchecked Sendable {
                 // Control/side-channel frames are legal ANYWHERE during the
                 // probe (spec 12.4: LOG interleaves without affecting data
                 // flow; CREDIT/HEARTBEAT are the control plane the writer
-                // gate itself exempts, L4). A v4 cartridge crediting its
+                // gate itself exempts, L4). A cartridge crediting its
                 // probe input as it consumes (L10) must not fail identity
                 // verification.
                 break

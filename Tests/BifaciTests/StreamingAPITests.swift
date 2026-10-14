@@ -662,7 +662,10 @@ final class StreamingAPITests: XCTestCase {
         let cborPayload = Data(CBOR.byteString([UInt8](rawData)).encode())
         let checksum = Frame.computeChecksum(cborPayload)
         responseFrames.append(Frame.chunk(reqId: reqId, streamId: "response-stream", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
+        // STREAM_END, then the END that ends the response: a stream's end
+        // ends that stream, and the response goes on until the request ends.
         responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "response-stream", chunkCount: 1))
+        responseFrames.append(Frame.end(id: reqId))
 
         var idx = 0
         let responseRx = AnyIterator<Frame> {
@@ -788,6 +791,7 @@ final class StreamingAPITests: XCTestCase {
         let checksum = Frame.computeChecksum(cborPayload)
         responseFrames.append(Frame.chunk(reqId: reqId, streamId: "s1", seq: 0, payload: cborPayload, chunkIndex: 0, checksum: checksum))
         responseFrames.append(Frame.streamEnd(reqId: reqId, streamId: "s1", chunkCount: 1))
+        responseFrames.append(Frame.end(id: reqId))
 
         var idx = 0
         let responseRx = AnyIterator<Frame> {
@@ -797,8 +801,8 @@ final class StreamingAPITests: XCTestCase {
             return f
         }
 
-        // demuxSingleStream returns PeerResponse immediately — not blocking on StreamStart
-        let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
+        // demuxPeerResponse returns PeerResponse immediately — not blocking on StreamStart
+        let response = demuxPeerResponse(responseRx: responseRx)
 
         // First 3 items must be LOG frames
         let item1 = response.recv()
@@ -838,7 +842,7 @@ final class StreamingAPITests: XCTestCase {
         }
 
         // Stream must end
-        XCTAssertNil(response.recv(), "stream must end after STREAM_END")
+        XCTAssertNil(response.recv(), "the response ends at END")
     }
 
     // TEST840: PeerResponse::collect_bytes rejects unhandled LOG frames.
@@ -866,7 +870,7 @@ final class StreamingAPITests: XCTestCase {
             return f
         }
 
-        let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
+        let response = demuxPeerResponse(responseRx: responseRx)
         XCTAssertThrowsError(try response.collectBytes()) { error in
             guard case StreamError.protocolError(let message) = error else {
                 return XCTFail("expected protocolError, got \(error)")
@@ -899,7 +903,7 @@ final class StreamingAPITests: XCTestCase {
             return f
         }
 
-        let response = demuxSingleStream(responseRx: responseRx, maxChunk: 256_000)
+        let response = demuxPeerResponse(responseRx: responseRx)
         XCTAssertThrowsError(try response.collectValue()) { error in
             guard case StreamError.protocolError(let message) = error else {
                 return XCTFail("expected protocolError, got \(error)")
@@ -1081,7 +1085,7 @@ private final class CaptureFrameSender: FrameSender, @unchecked Sendable {
             routingId: nil,
             maxChunk: 1000
         )
-        return (PeerResponse(items: iterator), output, sender)
+        return (PeerResponse(uncredited: iterator), output, sender)
     }
 
     // TEST7118: finite peer collection preserves source diagnostics instead of consuming them as data or dropping them. Progress is mapped into the caller's range and argument attribution survives byte-for-byte.

@@ -1,4 +1,4 @@
-/// Protocol v4 RUNTIME-layer parity tests — writer terminal gate (L4),
+/// Protocol RUNTIME-layer parity tests — writer terminal gate (L4),
 /// counted drops (L8), credit flow control (L9/L10/L12/L14), unbounded
 /// streams (L16), unified switch request state (L6/L7), and host stats
 /// surfacing. Mirrors the same-numbered tests in
@@ -39,7 +39,7 @@ final class LockedFlag: @unchecked Sendable {
 }
 
 @available(macOS 10.15.4, iOS 13.4, *)
-final class ProtocolV4RuntimeTests: XCTestCase {
+final class ProtocolRuntimeTests: XCTestCase {
 
     /// Build a ChannelFrameSender (the runtime's single output serialization
     /// point — the Swift counterpart of the Rust writer thread) writing to a
@@ -665,7 +665,7 @@ final class ProtocolV4RuntimeTests: XCTestCase {
 // MARK: - Switch-layer unified request state (L6/L7) + stats surfacing
 
 @available(macOS 10.15.4, iOS 13.4, *)
-final class ProtocolV4SwitchTests: XCTestCase {
+final class ProtocolSwitchTests: XCTestCase {
 
     // Helper: RelayNotify payload with capability URNs wrapped in a synthetic
     // installed cartridge (the wire schema embeds caps in cap_groups).

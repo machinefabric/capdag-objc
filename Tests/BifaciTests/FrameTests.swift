@@ -177,7 +177,7 @@ final class CborFrameTests: XCTestCase {
     // TEST181: Test Frame::hello_with_manifest produces HELLO with manifest bytes for cartridge side
     func test181_helloFrameWithManifest() {
         let manifestJSON = """
-        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]}]}]}
+        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]}]}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 1_000_000, maxChunk: 100_000, maxReorderBuffer: 64)
@@ -434,7 +434,57 @@ final class CborFrameTests: XCTestCase {
 
     // TEST199: Test PROTOCOL_VERSION is 4
     func test199_protocolVersionConstant() {
-        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 4)
+        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 5)
+    }
+
+    // TEST12718: the STREAM_START of a response stream that is not the cap's
+    // main output names the output it is, beside the type of what it carries;
+    // the name round-trips through CBOR under key 21, the main output's stream
+    // and a request stream carry none, and no other frame type may carry one.
+    func test12718_streamStartNamesItsOutput() throws {
+        let rid = MessageId.newUUID()
+        // Two outputs of one cap may carry the same type: the name tells them apart.
+        let kept = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false)
+            .forOutput("media:enc=utf-8;kept")
+        let dropped = Frame.streamStart(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf-8", isSequence: false)
+            .forOutput("media:dropped;enc=utf-8")
+        let keptBack = try decodeFrame(try encodeFrame(kept))
+        let droppedBack = try decodeFrame(try encodeFrame(dropped))
+        XCTAssertEqual(keptBack.outputUrn, "media:enc=utf-8;kept")
+        XCTAssertEqual(droppedBack.outputUrn, "media:dropped;enc=utf-8")
+        XCTAssertEqual(keptBack.mediaUrn, droppedBack.mediaUrn, "the data's type is its own field")
+        XCTAssertEqual(keptBack.mediaUrn, "media:enc=utf-8")
+
+        // The unbounded form keeps both.
+        let feed = Frame.streamStartUnbounded(reqId: rid, streamId: "s3", mediaUrn: "media:tick", isSequence: true)
+            .forOutput("media:tick")
+        let feedBack = try decodeFrame(try encodeFrame(feed))
+        XCTAssertTrue(feedBack.isUnbounded)
+        XCTAssertEqual(feedBack.outputUrn, "media:tick")
+
+        // The main output's stream and a request stream name no output, and
+        // the key is not written.
+        let argument = Frame.streamStart(reqId: rid, streamId: "s4", mediaUrn: "media:enc=utf-8")
+        let encoded = try encodeFrame(argument)
+        guard case .map(let map)? = try CBOR.decode([UInt8](encoded)) else { return XCTFail("a frame is a map") }
+        XCTAssertNil(map[.unsignedInt(21)], "a STREAM_START that names no output does not carry key 21")
+        XCTAssertNil(try decodeFrame(encoded).outputUrn)
+        XCTAssertEqual(FrameKey.output.rawValue, 21)
+
+        // Only a STREAM_START may name an output.
+        var chunk = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data("x".utf8), chunkIndex: 0, checksum: Frame.computeChecksum(Data("x".utf8)))
+        chunk.output = "media:enc=utf-8;kept"
+        XCTAssertThrowsError(try decodeFrame(try encodeFrame(chunk)), "a CHUNK naming an output is refused") { error in
+            XCTAssertTrue("\(error)".contains("output"), "\(error)")
+        }
+
+        // Key 21 that is not text is a malformed frame, not a stream that
+        // names no output.
+        guard case .map(var entries)? = try CBOR.decode([UInt8](try encodeFrame(kept))) else { return XCTFail("a frame is a map") }
+        entries[.unsignedInt(21)] = .unsignedInt(7)
+        XCTAssertThrowsError(try decodeFrame(Data(CBOR.map(entries).encode())), "key 21 must be text") { error in
+            XCTAssertTrue("\(error)".contains("text string"), "\(error)")
+        }
     }
 
     // TEST200: Test integer key constants match the protocol specification
@@ -551,7 +601,7 @@ final class CborFrameTests: XCTestCase {
     // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes and limits
     func test211_helloWithManifestRoundtrip() throws {
         let manifestJSON = """
-        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test description","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:test","title":"Test","aliases":["test"]}]}]}
+        {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test description","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:test","title":"Test","aliases":["test"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"Test output"}]}]}]}
         """
         let manifestData = manifestJSON.data(using: .utf8)!
         let limits = Limits(maxFrame: 500_000, maxChunk: 50_000, maxReorderBuffer: 64)

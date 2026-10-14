@@ -1,8 +1,8 @@
 //
-//  ProtocolV4Tests.swift
+//  ProtocolTests.swift
 //  Bifaci
 //
-//  Protocol v4 parity tests (TEST7000–TEST7029) ported from the Rust
+//  Protocol parity tests (TEST7000–TEST7029) ported from the Rust
 //  reference (capdag/src/bifaci/{io,frame,credit,stats}.rs).
 //
 //  Covers: handshake version enforcement + initial_credit negotiation,
@@ -18,8 +18,8 @@ import XCTest
 import Foundation
 
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
-private let v4TestManifest = """
-{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]}]}]}
+private let handshakeTestManifest = """
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]}]}]}
 """.data(using: .utf8)!
 
 /// Thread-safe boolean flag for observing completion of concurrent waiters.
@@ -58,7 +58,7 @@ private final class TestBox<T>: @unchecked Sendable {
     }
 }
 
-final class ProtocolV4Tests: XCTestCase {
+final class ProtocolTests: XCTestCase {
 
     // MARK: - Helpers
 
@@ -79,9 +79,9 @@ final class ProtocolV4Tests: XCTestCase {
         return (hostWrite, cartridgeRead, cartridgeWrite, hostRead)
     }
 
-    /// Run a full v4 handshake: host with default limits against a cartridge
+    /// Run a full handshake: host with default limits against a cartridge
     /// proposing `cartridgeLimits`. Returns both sides' negotiated results.
-    private func runV4Handshake(cartridgeLimits: Limits) throws -> (host: HandshakeResult, cart: Limits) {
+    private func runHandshake(cartridgeLimits: Limits) throws -> (host: HandshakeResult, cart: Limits) {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         let cartResult = TestBox<Result<Limits, Error>>()
@@ -92,7 +92,7 @@ final class ProtocolV4Tests: XCTestCase {
             do {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite, limits: cartridgeLimits)
-                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: v4TestManifest, poolStates: [:])
+                let limits = try acceptHandshakeWithManifest(reader: reader, writer: writer, manifest: handshakeTestManifest, poolStates: [:])
                 cartResult.set(.success(limits))
             } catch {
                 cartResult.set(.failure(error))
@@ -123,7 +123,7 @@ final class ProtocolV4Tests: XCTestCase {
 
     // MARK: - Handshake (TEST7000-7002)
 
-    // TEST7000: v4 handshake succeeds and negotiates all four limits plus required handler capacity.
+    // TEST7000: the handshake succeeds and negotiates all four limits plus required handler capacity.
     func test7000_v4HandshakeNegotiatesAllFourLimits() throws {
         let cartridgeLimits = Limits(
             maxFrame: 2_000_000,
@@ -131,7 +131,7 @@ final class ProtocolV4Tests: XCTestCase {
             maxReorderBuffer: 32,
             initialCredit: 16
         )
-        let (host, cart) = try runV4Handshake(cartridgeLimits: cartridgeLimits)
+        let (host, cart) = try runHandshake(cartridgeLimits: cartridgeLimits)
 
         XCTAssertEqual(host.limits.maxFrame, 2_000_000, "min(3.5MB, 2MB)")
         XCTAssertEqual(host.limits.maxChunk, 128_000, "min(256KB, 128KB)")
@@ -143,24 +143,28 @@ final class ProtocolV4Tests: XCTestCase {
         XCTAssertEqual(cart.maxReorderBuffer, 32)
     }
 
-    // TEST7001: HELLO carrying protocol version 2 is rejected at handshake with a version-mismatch error
-    func test7001_handshakeRejectsVersion2() throws {
+    // TEST7001: HELLO carrying another protocol version is rejected at
+    // handshake with a version-mismatch error naming both — the version this
+    // one replaced included: a cartridge built for it does not name its
+    // response streams' outputs, and nothing downstream could read it.
+    func test7001_handshakeRejectsAnotherVersion() throws {
         let (hostWrite, cartridgeRead, cartridgeWrite, hostRead) = createSocketPairs()
 
         let semaphore = DispatchSemaphore(value: 0)
 
-        // Fake v2 cartridge: replies to the host HELLO with a version=2 HELLO.
+        // A cartridge of the previous protocol: replies to the host HELLO with
+        // a version=4 HELLO.
         DispatchQueue.global().async {
             do {
                 let reader = FrameReader(handle: cartridgeRead)
                 let writer = FrameWriter(handle: cartridgeWrite)
                 _ = try reader.read() // host HELLO
-                var hello = Frame.helloWithManifest(limits: Limits(), manifest: v4TestManifest, poolStates: [:])
-                hello.version = 2
-                hello.meta?["version"] = .unsignedInt(2)
+                var hello = Frame.helloWithManifest(limits: Limits(), manifest: handshakeTestManifest, poolStates: [:])
+                hello.version = 4
+                hello.meta?["version"] = .unsignedInt(4)
                 try writer.write(hello)
             } catch {
-                XCTFail("fake v2 cartridge failed: \(error)")
+                XCTFail("the previous-version cartridge failed: \(error)")
             }
             semaphore.signal()
         }
@@ -168,10 +172,10 @@ final class ProtocolV4Tests: XCTestCase {
         let reader = FrameReader(handle: hostRead)
         let writer = FrameWriter(handle: hostWrite)
 
-        XCTAssertThrowsError(try performHandshakeWithManifest(reader: reader, writer: writer), "v2 HELLO must be rejected") { error in
+        XCTAssertThrowsError(try performHandshakeWithManifest(reader: reader, writer: writer), "a HELLO of another version must be rejected") { error in
             let msg = (error as? FrameError)?.errorDescription ?? "\(error)"
             XCTAssertTrue(msg.contains("version"), "error must name the version mismatch: \(msg)")
-            XCTAssertTrue(msg.contains("2") && msg.contains("4"), "error must state both versions: \(msg)")
+            XCTAssertTrue(msg.contains("ours 5") && msg.contains("theirs 4"), "error must state both versions: \(msg)")
         }
         XCTAssertEqual(semaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }
@@ -180,13 +184,13 @@ final class ProtocolV4Tests: XCTestCase {
     func test7002_initialCreditNegotiatedMinimum() throws {
         // Cartridge proposes a smaller window than the host default (32) → 8 wins.
         let smaller = Limits(initialCredit: 8)
-        let (smallHost, smallCart) = try runV4Handshake(cartridgeLimits: smaller)
+        let (smallHost, smallCart) = try runHandshake(cartridgeLimits: smaller)
         XCTAssertEqual(smallHost.limits.initialCredit, 8)
         XCTAssertEqual(smallCart.initialCredit, 8)
 
         // Cartridge proposes a larger window (128) → the host default 32 wins.
         let larger = Limits(initialCredit: 128)
-        let (largeHost, largeCart) = try runV4Handshake(cartridgeLimits: larger)
+        let (largeHost, largeCart) = try runHandshake(cartridgeLimits: larger)
         XCTAssertEqual(largeHost.limits.initialCredit, 32)
         XCTAssertEqual(largeCart.initialCredit, 32)
     }

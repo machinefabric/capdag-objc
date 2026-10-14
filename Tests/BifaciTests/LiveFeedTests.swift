@@ -16,7 +16,7 @@ import CapDAG
 /// of items), and a stdin source carrying the CONTENT urn — the exact
 /// file-path reference shape, unbounded.
 private let LIVE_FEED_MANIFEST = #"""
-{"name":"FeedCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Live feed test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:drain;in=\"media:feed-frames\";out=\"media:fmt=json;record\"","title":"Drain","aliases":["drain"],"args":[{"media_urn":"media:live;synthetic","required":true,"is_sequence":true,"sources":[{"stdin":"media:feed-frames"}]}]}]}]}
+{"name":"FeedCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Live feed test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:drain;in=\"media:feed-frames\";out=\"media:fmt=json;record\"","title":"Drain","aliases":["drain"],"args":[{"media_urn":"media:live;synthetic","name":"frames","required":true,"is_sequence":true,"sources":[{"stdin":"media:feed-frames"}]}],"outputs":[{"media_urn":"media:fmt=json;record","name":"summary","output_description":"What was drained"}]}]}]}
 """#
 
 private let FEED_CAP_URN = #"cap:drain;in="media:feed-frames";out="media:fmt=json;record""#
@@ -307,8 +307,9 @@ final class LiveFeedTests: XCTestCase {
         {"name":"BlindCartridge","version":"1.0.0","channel":"release","registry_url":null,\
         "description":"Transport-blind live consumer","cap_groups":[{"name":"default","caps":[\
         {"urn":"\(escapedCap)","title":"Consume","aliases":["consume"],"args":[\
-        {"media_urn":"\(mainIn)","required":true,"is_sequence":true,\
-        "sources":[{"stdin":"\(mainIn)"}]}]}]}]}
+        {"media_urn":"\(mainIn)","name":"frames","required":true,"is_sequence":true,\
+        "sources":[{"stdin":"\(mainIn)"}]}],\
+        "outputs":[{"media_urn":"media:fmt=json;record","name":"summary","output_description":"What was consumed"}]}]}]}
         """
         let manifest = try JSONDecoder().decode(Manifest.self, from: Data(json.utf8))
         let providers = LiveFeedProviders()

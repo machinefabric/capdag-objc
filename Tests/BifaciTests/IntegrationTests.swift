@@ -24,7 +24,7 @@ import Foundation
 // Test manifest JSON - cartridges MUST include manifest in HELLO response (including mandatory CAP_IDENTITY).
 // `channel` is part of every cartridge's identity (release/nightly).
 private let testManifest = """
-{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"]}]}]}
+{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"Test output"}]}]}]}
 """.data(using: .utf8)!
 
 final class CborIntegrationTests: XCTestCase {

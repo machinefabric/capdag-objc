@@ -1,9 +1,12 @@
 import Foundation
 @preconcurrency import SwiftCBOR
 
-/// Protocol version 4 requires explicit diagnostic attribution and cartridge
-/// handler capacity. Older handshakes are rejected.
-public let CBOR_PROTOCOL_VERSION: UInt8 = 4
+/// Protocol version 5: a cap may answer with one stream per declared output.
+/// The stream of its main output names none; the stream of another output
+/// names the output it is (key 21). It keeps explicit diagnostic attribution,
+/// cartridge handler capacity, credit-based flow control and terminal
+/// metadata. Every other version is rejected during handshake.
+public let CBOR_PROTOCOL_VERSION: UInt8 = 5
 
 /// Default maximum frame size (3.5 MB) - safe margin below 3.75MB limit
 /// Larger payloads automatically use CHUNK frames
@@ -252,6 +255,14 @@ public struct Frame: @unchecked Sendable {
     /// Whether the stream makes no length promise (no chunk_count on STREAM_END,
     /// receivers must consume incrementally). Present on STREAM_START frames only.
     public var unbounded: Bool?
+    /// Which output of the cap this response stream is, when it is not the
+    /// main one: that output's media URN. The stream of a cap's MAIN output
+    /// (the one the cap URN's `out=` states) carries none — it is the cap's
+    /// answer, and whoever asked knows what they asked for without the cap's
+    /// definition. A request stream is an argument and carries none either.
+    /// `mediaUrn` says what the data is; two outputs may carry one type, and
+    /// this says which of them the stream is. STREAM_START only (key 21).
+    public var output: String?
 
     public init(frameType: FrameType, id: MessageId) {
         self.frameType = frameType
@@ -548,6 +559,21 @@ public struct Frame: @unchecked Sendable {
         return unbounded ?? false
     }
 
+    /// This STREAM_START as the stream of an output other than the cap's main
+    /// one: the output `output` identifies (that output's media URN).
+    /// (matches Rust Frame::for_output)
+    public func forOutput(_ output: String) -> Frame {
+        var frame = self
+        frame.output = output
+        return frame
+    }
+
+    /// The output this STREAM_START names. nil on the main output's stream and
+    /// on a request stream. (matches Rust Frame::output_urn)
+    public var outputUrn: String? {
+        return output
+    }
+
     /// Create a STREAM_END frame to mark completion of a specific stream.
     /// After this, any CHUNK for this stream_id is a fatal protocol error.
     ///
@@ -796,7 +822,7 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Extract limits from RELAY_NOTIFY metadata
-    /// Returns nil if any required field is missing (protocol violation in v4)
+    /// Returns nil if any required field is missing (a protocol violation)
     public var relayNotifyLimits: Limits? {
         guard frameType == .relayNotify, let meta = meta,
               case .unsignedInt(let maxFrame) = meta["max_frame"],
@@ -826,7 +852,7 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Extract max_reorder_buffer from HELLO metadata
-    /// Returns nil if missing (protocol violation in v4)
+    /// Returns nil if missing (a protocol violation)
     public var helloMaxReorderBuffer: Int? {
         guard frameType == .hello, let meta = meta, case .unsignedInt(let n) = meta["max_reorder_buffer"] else {
             return nil
@@ -958,6 +984,7 @@ public enum FrameKey: UInt64 {
     case forceKill = 18
     case credit = 19       // Flow-control credit grant in CHUNK units (Credit frames)
     case unbounded = 20    // Stream makes no length promise (STREAM_START frames)
+    case output = 21       // The output a response stream is, when not the cap's main one (STREAM_START frames)
 }
 
 // MARK: - Cancel Reason

@@ -154,7 +154,7 @@ final class StandardCapsTests: XCTestCase {
     func test478_cartridgeRuntimeAutoRegistersIdentity() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
-            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"]}
+            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]}
         ]}]}
         """.data(using: .utf8)!
 
@@ -169,7 +169,7 @@ final class StandardCapsTests: XCTestCase {
     func test479_identityHandlerEchoesInput() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
-            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"]}
+            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]}
         ]}]}
         """.data(using: .utf8)!
 
@@ -237,8 +237,8 @@ final class StandardCapsTests: XCTestCase {
     func test480_discardHandlerConsumesInput() throws {
         let manifest = """
         {"name":"Test","version":"1.0.0","channel":"release","description":"Test","cap_groups":[{"name":"default","caps":[
-            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"]},
-            {"urn":"\(CSCapDiscard)","title":"Discard","aliases":["discard"]}
+            {"urn":"\(CSCapIdentity)","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},
+            {"urn":"\(CSCapDiscard)","title":"Discard","aliases":["discard"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}]}
         ]}]}
         """.data(using: .utf8)!
 

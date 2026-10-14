@@ -60,6 +60,10 @@ public enum CartridgeRuntimeError: Error, LocalizedError, @unchecked Sendable {
     case unknownSubcommand(String)
     case manifestError(String)
     case capUrnError(String)
+    /// A handler asked for an output the cap it serves does not declare
+    /// (`CborRequest.output(for:)`). A defect in the cartridge: the definition
+    /// and the handler disagree about what the cap produces.
+    case unknownOutput(capUrn: String, output: String)
 
     public var errorDescription: String? {
         switch self {
@@ -77,6 +81,7 @@ public enum CartridgeRuntimeError: Error, LocalizedError, @unchecked Sendable {
         case .unknownSubcommand(let cmd): return "Unknown subcommand: \(cmd)"
         case .manifestError(let msg): return "Manifest error: \(msg)"
         case .capUrnError(let msg): return "Cap URN error: \(msg)"
+        case .unknownOutput(let capUrn, let output): return "Cap '\(capUrn)' declares no output '\(output)'"
         }
     }
 }
@@ -119,9 +124,8 @@ final class InputGrantEmitter: @unchecked Sendable {
     private let sender: any FrameSender
     private let rid: MessageId
     private let xid: MessageId?
-    /// Some = grant a specific stream; nil = grant the request's sole stream
-    /// (single-stream peer responses).
-    private let streamId: String?
+    /// The stream these grants credit, by name.
+    private let streamId: String
     /// Which side's stream these grants credit (routing discriminator, L11):
     /// `.request` for handler-input consumption, `.response` for peer-response
     /// consumption.
@@ -130,7 +134,7 @@ final class InputGrantEmitter: @unchecked Sendable {
     /// window the demux checks arriving chunks against.
     private let window: CreditWindow
 
-    init(sender: any FrameSender, rid: MessageId, xid: MessageId?, streamId: String?, direction: CreditDirection, window: CreditWindow) {
+    init(sender: any FrameSender, rid: MessageId, xid: MessageId?, streamId: String, direction: CreditDirection, window: CreditWindow) {
         self.sender = sender
         self.rid = rid
         self.xid = xid
@@ -199,7 +203,7 @@ public typealias StreamMeta = [String: CBOR]
 /// - Sequence: iteration delivers per-item metadata from CHUNK frames (an
 ///   item's FIRST fragment carries it).
 ///
-/// Streams are delivered INCREMENTALLY (protocol v4, L16): items arrive from
+/// Streams are delivered INCREMENTALLY (L16): items arrive from
 /// a live channel as the producer emits them — never buffered to completion.
 /// Consumption replenishes the sender's flow-control window (L10) — a slow
 /// handler naturally throttles the producer.
@@ -356,9 +360,13 @@ public final class InputStream: Sequence, @unchecked Sendable {
 /// `PeerResponse.recv()` yields these interleaved in arrival order. Handlers
 /// match on each variant to decide how to react (e.g., forward progress, accumulate data).
 public enum PeerResponseItem {
-    /// A decoded CBOR data chunk from the peer response, with optional
+    /// A decoded CBOR data chunk of the peer's MAIN output, with optional
     /// per-chunk metadata (mirrors the reference's `Data(Result, Option<StreamMeta>)`).
     case data(Result<CBOR, StreamError>, StreamMeta?)
+    /// A decoded CBOR data chunk of another output the peer's cap declares,
+    /// tagged with that output's media URN as its stream named it. A caller
+    /// that wants only the cap's answer ignores these.
+    case output(output: String, item: Result<CBOR, StreamError>, meta: StreamMeta?)
     /// A LOG frame from the peer (progress, status messages, etc.).
     case log(Frame)
 }
@@ -369,25 +377,34 @@ public enum PeerResponseItem {
 /// Collection helpers reject LOG frames so source diagnostics cannot be
 /// silently discarded. Callers that accept diagnostics must drain `recv()`.
 public final class PeerResponse: @unchecked Sendable {
-    private let items: UnsafeTransfer<AnyIterator<PeerResponseItem>>
-    /// Consumption grants for the responding peer's output window (L10/L14).
-    /// nil = uncredited context (in-process host, synthetic test responses).
-    private let grants: InputGrantEmitter?
+    /// Each item with the grants of the stream it came on (L10/L14). nil for a
+    /// LOG item and in an uncredited context (in-process host, synthetic test
+    /// responses).
+    private let items: UnsafeTransfer<AnyIterator<(PeerResponseItem, InputGrantEmitter?)>>
 
-    init(items: AnyIterator<PeerResponseItem>, grants: InputGrantEmitter? = nil) {
+    init(items: AnyIterator<(PeerResponseItem, InputGrantEmitter?)>) {
         self.items = UnsafeTransfer(items)
-        self.grants = grants
+    }
+
+    /// A response made of `items`, none of them credited.
+    convenience init(uncredited items: AnyIterator<PeerResponseItem>) {
+        self.init(items: AnyIterator { items.next().map { ($0, nil) } })
     }
 
     /// Receive the next item (data or LOG) from the peer response.
-    /// Returns nil when the stream ends.
+    /// Returns nil when the response ends.
     ///
-    /// Data consumption replenishes the responding peer's output window —
-    /// a slow consumer naturally throttles the producer (L10).
+    /// Consumption replenishes the responding peer's output windows — a slow
+    /// consumer naturally throttles the producer (L10).
     public func recv() -> PeerResponseItem? {
-        let item = items.value.next()
-        if let item = item, case .data(.success, _) = item {
+        guard let (item, grants) = items.value.next() else { return nil }
+        // An item of any output was consumed from its stream: that stream's
+        // window is what is replenished.
+        switch item {
+        case .data(.success, _), .output(_, .success, _):
             grants?.consumed()
+        default:
+            break
         }
         return item
     }
@@ -421,6 +438,10 @@ public final class PeerResponse: @unchecked Sendable {
                 default:
                     result.append(Data(value.encode()))
                 }
+            case .output(_, let item, _):
+                // Another output of the peer's cap: not what this caller asked
+                // for — but what went wrong on it went wrong in the response.
+                _ = try item.get()
             case .log(let frame):
                 guard let level = frame.logLevel else {
                     throw StreamError.protocolError("peer LOG missing required text level")
@@ -476,6 +497,8 @@ public final class PeerResponse: @unchecked Sendable {
                     let encoded = Data(value.encode())
                     result.append(encoded)
                 }
+            case .output(_, let item, _):
+                _ = try item.get()
             case .log:
                 throw StreamError.protocolError(
                     "peer response emitted a LOG frame; collect with explicit diagnostic forwarding"
@@ -496,6 +519,8 @@ public final class PeerResponse: @unchecked Sendable {
                     throw StreamError.protocolError("peer response contained more than one value")
                 }
                 value = try dataResult.get()
+            case .output(_, let item, _):
+                _ = try item.get()
             case .log:
                 // No `collectValueForwarding` exists (nor does the reference have
                 // one): a caller that wants the peer's diagnostics drains the
@@ -687,7 +712,7 @@ final class FinalStatusHolder: @unchecked Sendable {
 /// - `close()` is idempotent. No-op if `start()` was never called. Unbounded
 ///   streams close with a STREAM_END that carries no chunk_count (L16).
 ///
-/// Flow control (protocol v4, L9): when constructed with a credit router,
+/// Flow control (L9): when constructed with a credit router,
 /// every CHUNK acquires one credit before it is sent — the async variants
 /// await an exhausted window; `blockingWrite`/`blockingEmitListItem` block
 /// the calling thread instead (FFI threads, non-async contexts). Uncredited
@@ -779,6 +804,11 @@ public final class OutputStream: @unchecked Sendable {
     private let closedLock = NSLock()
     private var _closed = false
 
+    /// The output this stream is, when it is not the cap's main one: that
+    /// output's media URN, which its STREAM_START names. nil for the main
+    /// output's stream. Set once, before the stream is handed to a handler.
+    private var namedOutput: String?
+
     /// Per-stream flow-control window (L9). One credit is acquired per CHUNK
     /// before it is sent; the receiver replenishes via CREDIT frames.
     /// nil = uncredited context — writes never wait.
@@ -823,6 +853,24 @@ public final class OutputStream: @unchecked Sendable {
     /// Media URN of this stream.
     public var mediaUrn: String {
         _mediaUrn
+    }
+
+    /// Make this the stream of an output other than the cap's main one: the
+    /// declared output `output` identifies. Its STREAM_START names it.
+    /// (matches Rust OutputStream::naming_output)
+    func namingOutput(_ output: String) -> OutputStream {
+        namedOutput = output
+        return self
+    }
+
+    /// The output this stream names: nil for the main output's stream.
+    public var outputUrn: String? {
+        namedOutput
+    }
+
+    /// Whether the handler has written to this stream (its STREAM_START is sent).
+    public var isStarted: Bool {
+        startedMode() != nil
     }
 
     /// Acquire one chunk of credit, waiting if the window is exhausted.
@@ -903,6 +951,7 @@ public final class OutputStream: @unchecked Sendable {
             mediaUrn: _mediaUrn,
             isSequence: isSequence
         )
+        startFrame.output = namedOutput
         startFrame.meta = meta
         startFrame.routingId = routingId
         try sender.send(startFrame)
@@ -921,6 +970,7 @@ public final class OutputStream: @unchecked Sendable {
             mediaUrn: _mediaUrn,
             isSequence: isSequence
         )
+        startFrame.output = namedOutput
         startFrame.routingId = routingId
         try sender.send(startFrame)
     }
@@ -1406,11 +1456,11 @@ public final class PeerCall: @unchecked Sendable {
     /// uncredited context.
     private let creditRouter: CreditRouter?
     private let initialCredit: UInt64
-    /// Consumption grants for the responding peer's output window (L10/L14),
-    /// created by the caller alongside the response iterator so the iterator
-    /// can flush pending grants before blocking (L10 deadlock-freedom rule).
-    /// nil = uncredited context.
-    private let responseGrants: InputGrantEmitter?
+    /// Consumption grants for the responding peer's output windows (L10/L14),
+    /// one per response stream, created by the caller alongside the response
+    /// iterator so the iterator can flush pending grants before blocking (L10
+    /// deadlock-freedom rule). nil = uncredited context.
+    private let responseGrants: PeerGrantSource?
 
     init(
         sender: any FrameSender,
@@ -1419,7 +1469,7 @@ public final class PeerCall: @unchecked Sendable {
         responseRx: AnyIterator<Frame>,
         creditRouter: CreditRouter? = nil,
         initialCredit: UInt64 = DEFAULT_INITIAL_CREDIT,
-        responseGrants: InputGrantEmitter? = nil
+        responseGrants: PeerGrantSource? = nil
     ) {
         self.sender = sender
         self.requestId = requestId
@@ -1470,12 +1520,12 @@ public final class PeerCall: @unchecked Sendable {
 
         // Start demux — returns immediately so LOG frames can be consumed
         // before data arrives (critical for keeping activity timer alive).
-        // Consumption grants keep the responding peer's output window
-        // replenished (L10/L14); single-stream response → stream-less grants.
-        // The grants emitter was created alongside the response iterator by
-        // the caller (PeerInvokerImpl.call) so the iterator flushes pending
-        // grants before it blocks on an empty response channel (L10).
-        let peerResponse = demuxSingleStream(responseRx: rx, maxChunk: maxChunk, grants: responseGrants)
+        // Consumption grants keep each of the responding peer's output windows
+        // replenished, by stream (L10/L14). The grant source was created
+        // alongside the response iterator by the caller (PeerInvokerImpl.call)
+        // so the iterator flushes pending grants before it blocks on an empty
+        // response channel (L10).
+        let peerResponse = demuxPeerResponse(responseRx: rx, grants: responseGrants)
         fputs("[PeerCall] finish: demux started for peer_rid=\(requestId)\n", stderr)
         return peerResponse
     }
@@ -1669,23 +1719,117 @@ final class TerminalClaim: @unchecked Sendable {
     }
 }
 
-internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, grants: InputGrantEmitter? = nil) -> PeerResponse {
-    // Fragment crediting for sequence-mode responses (same scheme as
-    // `demuxMultiStream`): the caller grants one frame per consumed ITEM,
-    // so continuation fragments are credited back on arrival here.
-    let fragmentGrants = grants
-    // Sequence reassembly for the single response stream (nil until a
-    // STREAM_START with isSequence=true arrives). Sequence frame payloads
-    // are RFC 8742 fragments — decode at item granularity.
-    var seq: SeqReassembly? = nil
+/// Where a peer response's consumption grants come from: one emitter per
+/// response stream, made as the stream starts, each crediting that stream by
+/// name — a grant that names no stream reaches a callee with several only by
+/// guessing.
+final class PeerGrantSource: @unchecked Sendable {
+    private let sender: any FrameSender
+    private let rid: MessageId
+    private let initialCredit: UInt64
+    private let lock = NSLock()
+    private var emitters: [InputGrantEmitter] = []
+
+    init(sender: any FrameSender, rid: MessageId, initialCredit: UInt64) {
+        self.sender = sender
+        self.rid = rid
+        self.initialCredit = initialCredit
+    }
+
+    /// The grants of the response stream `streamId`.
+    func forStream(_ streamId: String) -> InputGrantEmitter {
+        let emitter = InputGrantEmitter(
+            sender: sender,
+            rid: rid,
+            xid: nil,
+            streamId: streamId,
+            // Peer-response consumption credits the CALLEE's output streams —
+            // response direction, routed toward the handler (L11).
+            direction: .response,
+            // The callee's send window was negotiated on ITS link, which this
+            // side cannot see: arriving chunks are not checked against this
+            // window, which only paces the grants for what is consumed.
+            window: CreditWindow(initialCredit: initialCredit)
+        )
+        lock.lock()
+        emitters.append(emitter)
+        lock.unlock()
+        return emitter
+    }
+
+    /// Flush every stream's pending grants (L10): before the receiver blocks,
+    /// since the responding peer may be stalled on exactly this credit, on any
+    /// of its streams.
+    func flushAll() {
+        lock.lock()
+        let all = emitters
+        lock.unlock()
+        for emitter in all {
+            emitter.flush()
+        }
+    }
+}
+
+/// One stream of a peer response.
+private final class PeerStream {
+    /// The output the stream named. nil: the main output's stream.
+    let output: String?
+    /// Sequence reassembly, for a stream started with isSequence=true.
+    /// Sequence frame payloads are RFC 8742 fragments — decoded at item
+    /// granularity.
+    var seq: SeqReassembly?
+    let grants: InputGrantEmitter?
+
+    init(output: String?, seq: SeqReassembly?, grants: InputGrantEmitter?) {
+        self.output = output
+        self.seq = seq
+        self.grants = grants
+    }
+
+    func item(_ item: Result<CBOR, StreamError>, _ meta: StreamMeta?) -> (PeerResponseItem, InputGrantEmitter?) {
+        guard let output else { return (.data(item, meta), grants) }
+        return (.output(output: output, item: item, meta: meta), grants)
+    }
+
+    /// The error of a sequence item the stream ended inside, if it did.
+    func endMidItem() -> (PeerResponseItem, InputGrantEmitter?)? {
+        guard let held = seq else { return nil }
+        seq = nil
+        guard !held.buf.isEmpty else { return nil }
+        return item(.failure(.decode(
+            "sequence stream ended mid-item: \(held.buf.count) trailing bytes do not form a complete CBOR item"
+        )), nil)
+    }
+}
+
+/// Demux for a peer call's response.
+///
+/// A response has one stream per output the callee's cap answers on. The
+/// stream that names no output is its MAIN output: its items are the
+/// response's `PeerResponseItem.data`. A stream that names an output yields
+/// `PeerResponseItem.output` items tagged with it, so a caller that never
+/// heard of the callee's other outputs still reads the cap's answer and
+/// nothing else. The response ends at the request's END or ERR — not at a
+/// stream's end, which only ends that stream.
+///
+/// Returns immediately — LOG frames are delivered as they arrive, not held
+/// until the first data frame. This is critical for keeping the engine's
+/// activity timer alive during long peer calls (e.g., model downloads).
+internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGrantSource? = nil) -> PeerResponse {
+    var streams: [String: PeerStream] = [:]
     // Items already decoded but not yet yielded (one fragment frame can
-    // complete zero or several items).
-    var pendingItems: [PeerResponseItem] = []
-    // Whether the response reached its END — or its cut-short error has been
-    // reported, which also ends it.
+    // complete zero or several items; END can end several streams mid-item).
+    var pendingItems: [(PeerResponseItem, InputGrantEmitter?)] = []
+    // Whether the response reached its END — or the error that ends it has
+    // been reported, which also ends it.
     var ended = false
 
-    let iterator = AnyIterator<PeerResponseItem> {
+    func protocolError(_ message: String) -> (PeerResponseItem, InputGrantEmitter?) {
+        ended = true
+        return (.data(.failure(.protocolError(message)), nil), nil)
+    }
+
+    let iterator = AnyIterator<(PeerResponseItem, InputGrantEmitter?)> {
         if !pendingItems.isEmpty {
             return pendingItems.removeFirst()
         }
@@ -1695,26 +1839,36 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
         while let frame = responseRx.next() {
             switch frame.frameType {
             case .streamStart:
-                if frame.isSequence == true {
-                    seq = SeqReassembly(fragmentGrants: fragmentGrants)
+                guard let streamId = frame.streamId else {
+                    return protocolError("STREAM_START missing stream_id")
                 }
+                // Fragment crediting for sequence-mode streams (same scheme as
+                // `demuxMultiStream`): the caller grants one frame per consumed
+                // ITEM, so continuation fragments are credited back on arrival.
+                let emitter = grants?.forStream(streamId)
+                let seq = frame.isSequence == true ? SeqReassembly(fragmentGrants: emitter) : nil
+                if streams[streamId] != nil {
+                    return protocolError("a second STREAM_START for stream '\(streamId)'")
+                }
+                streams[streamId] = PeerStream(output: frame.outputUrn, seq: seq, grants: emitter)
                 continue
 
             case .chunk:
-                guard let payload = frame.payload else {
-                    return .data(.failure(.protocolError("CHUNK frame missing payload")), nil)
+                guard let streamId = frame.streamId, let stream = streams[streamId] else {
+                    return protocolError("CHUNK for a stream that was not started ('\(frame.streamId ?? "")')")
                 }
-
-                // Verify checksum (MANDATORY in protocol v2)
+                guard let payload = frame.payload else {
+                    return stream.item(.failure(.protocolError("CHUNK frame missing payload")), nil)
+                }
                 guard let expectedChecksum = frame.checksum else {
-                    return .data(.failure(.protocolError("CHUNK frame missing required checksum field")), nil)
+                    return stream.item(.failure(.protocolError("CHUNK frame missing required checksum field")), nil)
                 }
                 let actualChecksum = Frame.computeChecksum(payload)
                 if actualChecksum != expectedChecksum {
-                    return .data(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")), nil)
+                    return stream.item(.failure(.protocolError("Checksum mismatch: expected=\(expectedChecksum), actual=\(actualChecksum) (payload \(payload.count) bytes)")), nil)
                 }
 
-                if let seq = seq {
+                if let seq = stream.seq {
                     // Sequence stream: raw RFC 8742 fragment — buffer and
                     // deliver at ITEM granularity (see `SeqReassembly`).
                     if seq.buf.isEmpty {
@@ -1733,12 +1887,12 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                             seq.buf.removeFirst(consumed)
                             let meta = seq.itemMeta
                             seq.itemMeta = nil
-                            pendingItems.append(.data(.success(value), meta))
+                            pendingItems.append(stream.item(.success(value), meta))
                             if seq.buf.isEmpty {
                                 break decodeLoop
                             }
                         } catch {
-                            pendingItems.append(.data(.failure(.decode("Failed to decode CBOR sequence item: \(error)")), nil))
+                            pendingItems.append(stream.item(.failure(.decode("Failed to decode CBOR sequence item: \(error)")), nil))
                             seq.buf.removeAll()
                             break decodeLoop
                         }
@@ -1753,59 +1907,66 @@ internal func demuxSingleStream(responseRx: AnyIterator<Frame>, maxChunk: Int, g
                 // CBOR value with optional per-chunk metadata.
                 do {
                     guard let value = try CBOR.decode([UInt8](payload)) else {
-                        return .data(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")), nil)
+                        return stream.item(.failure(.decode("Failed to decode CBOR chunk - decode returned nil")), nil)
                     }
-                    return .data(.success(value), frame.meta)
+                    return stream.item(.success(value), frame.meta)
                 } catch {
-                    return .data(.failure(.decode("Failed to decode CBOR chunk: \(error)")), nil)
+                    return stream.item(.failure(.decode("Failed to decode CBOR chunk: \(error)")), nil)
                 }
 
             case .log:
-                return .log(frame)
+                return (.log(frame), nil)
 
-            case .streamEnd, .end:
-                // Sequence stream ending mid-item is a truncation — surface
-                // it, never silently drop the partial item.
-                if let s = seq, !s.buf.isEmpty {
-                    seq = nil
-                    return .data(.failure(.decode(
-                        "sequence stream ended mid-item: \(s.buf.count) trailing bytes do not form a complete CBOR item"
-                    )), nil)
+            case .streamEnd:
+                // The end of one stream. The response goes on until END.
+                if let streamId = frame.streamId, let stream = streams[streamId], let cut = stream.endMidItem() {
+                    return cut
                 }
+                continue
+
+            case .end:
+                // A stream the peer never ended, with part of an item still
+                // held, ended mid-item with the request.
                 ended = true
-                return nil
+                for streamId in streams.keys.sorted() {
+                    if let cut = streams[streamId]?.endMidItem() {
+                        pendingItems.append(cut)
+                    }
+                }
+                return pendingItems.isEmpty ? nil : pendingItems.removeFirst()
 
             case .err:
                 guard let code = frame.errorCode, let message = frame.errorMessage else {
-                    return .data(.failure(.protocolError("ERR frame missing required code or message")), nil)
+                    return protocolError("ERR frame missing required code or message")
                 }
                 let attributionClass: AttributionClass
                 do { attributionClass = try frame.attributionClass() }
-                catch { return .data(.failure(.protocolError("\(error)")), nil) }
+                catch { return protocolError("\(error)") }
                 let argUrn: String?
                 do { argUrn = try frame.attributionArgUrn() }
-                catch { return .data(.failure(.protocolError("\(error)")), nil) }
-                return .data(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)), nil)
+                catch { return protocolError("\(error)") }
+                ended = true
+                return (.data(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)), nil), nil)
 
             default:
-                return .data(.failure(.protocolError("Unexpected frame type in response: \(frame.frameType)")), nil)
+                return protocolError("Unexpected frame type in response: \(frame.frameType)")
             }
         }
         // The response's frames stopped before its END: the peer call was
         // cancelled, or the connection ended. A cut-short response never
         // reads as complete.
         ended = true
-        return .data(.failure(.abandoned), nil)
+        return (.data(.failure(.abandoned), nil), nil)
     }
 
-    return PeerResponse(items: iterator, grants: grants)
+    return PeerResponse(items: iterator)
 }
 
 /// Demux multiple input streams from a frame iterator into an InputPackage.
 /// Groups frames by stream_id, yields an InputStream for each stream.
 /// Used for incoming requests (cartridge receiving from host).
 ///
-/// Protocol v4 regime (L16): the demux runs on its own thread and feeds each
+/// The dispatch regime (L16): the demux runs on its own thread and feeds each
 /// stream's queue LIVE as frames arrive from the iterator — the handler
 /// observes items incrementally while the producer is still emitting; input
 /// is never buffered to completion. When `credit` is supplied, the demux
@@ -1867,6 +2028,14 @@ internal func demuxMultiStream(
             case .streamStart:
                 guard let streamId = frame.streamId else {
                     streamsQueue.push(.failure(.protocolError("STREAM_START missing stream_id")))
+                    break loop
+                }
+                // A request stream is an argument, identified by its media URN
+                // alone. One that names an output is a response stream where an
+                // argument belongs: nothing of it is read as an argument.
+                if let named = frame.outputUrn {
+                    streamsQueue.push(.failure(.protocolError(
+                        "request stream '\(streamId)' names an output ('\(named)'): an argument is identified by its media URN alone")))
                     break loop
                 }
                 let mediaUrn = frame.mediaUrn ?? "media:"
@@ -2208,6 +2377,13 @@ final class CliFrameSender: FrameSender, @unchecked Sendable {
     /// Whether to add newlines after each emit (NDJSON style)
     let ndjson: Bool
 
+    /// The streams whose data is not printed: a command line has one standard
+    /// output, and it carries the cap's main output. A stream that names an
+    /// output is another output — recognised by naming it, not by what it
+    /// carries, which may be the same type.
+    private let unprintedLock = NSLock()
+    private(set) var unprinted: Set<String> = []
+
     /// Create a new CLI sender with NDJSON formatting (newline after each emit)
     init() {
         self.stdoutHandle = FileHandle.standardOutput
@@ -2225,11 +2401,31 @@ final class CliFrameSender: FrameSender, @unchecked Sendable {
         return CliFrameSender(ndjson: false)
     }
 
+    /// Whether `frame` opens a stream whose data is not printed: the stream
+    /// of an output other than the cap's main one.
+    func isUnprintedStart(_ frame: Frame) -> Bool {
+        frame.frameType == .streamStart && frame.outputUrn != nil
+    }
+
     func send(_ frame: Frame) throws {
+        if isUnprintedStart(frame), let streamId = frame.streamId {
+            unprintedLock.lock()
+            unprinted.insert(streamId)
+            unprintedLock.unlock()
+            return
+        }
         // In CLI mode, only handle CHUNK frames with payload
         // STREAM_START, STREAM_END are ignored
         guard frame.frameType == .chunk, let payload = frame.payload else {
             return
+        }
+        // A chunk of another output's stream is consumed without being
+        // decoded or printed.
+        if let streamId = frame.streamId {
+            unprintedLock.lock()
+            let skip = unprinted.contains(streamId)
+            unprintedLock.unlock()
+            if skip { return }
         }
 
         // Decode CBOR value from payload
@@ -2681,12 +2877,19 @@ public func buildCliForeachIterations(rawPayload: Data, cap: CapDefinition) thro
 public final class CborRequest: @unchecked Sendable {
     private let _inputLock = NSLock()
     private var _inputPackage: InputPackage?
-    private let _output: OutputStream
+    let outputs: ResponseOutputs
     private let _peer: any PeerInvoker
 
-    public init(input: InputPackage, output: OutputStream, peer: any PeerInvoker) {
+    /// A request that has the one output `output` is: nothing is known of the
+    /// cap it is for.
+    public convenience init(input: InputPackage, output: OutputStream, peer: any PeerInvoker) {
+        self.init(input: input, outputs: .undeclared(output), peer: peer)
+    }
+
+    /// A request that answers on the declared outputs of its cap.
+    init(input: InputPackage, outputs: ResponseOutputs, peer: any PeerInvoker) {
         _inputPackage = input
-        _output = output
+        self.outputs = outputs
         _peer = peer
     }
 
@@ -2701,8 +2904,193 @@ public final class CborRequest: @unchecked Sendable {
         return pkg
     }
 
-    public func output() -> OutputStream { _output }
+    /// The main output's stream: the output whose media URN is the cap URN's `out=`.
+    public func output() -> OutputStream { outputs.main.stream }
+
+    /// The stream of the declared output `mediaUrn` identifies (tagged-URN
+    /// equivalence). The main output's URN gives the same stream as
+    /// `output()`. A URN the cap does not declare is
+    /// `CartridgeRuntimeError.unknownOutput`.
+    public func output(for mediaUrn: String) throws -> OutputStream {
+        try outputs.stream(for: mediaUrn)
+    }
+
     public func peer() -> any PeerInvoker { _peer }
+}
+
+// MARK: - Response Outputs
+
+/// The outputs a request answers on (13.2 §Outputs), before any stream is
+/// open: for each, what it is, the label its STREAM_START carries, the output
+/// it names, and whether it is sent when the handler never wrote to it.
+///
+/// A cap answers with one stream per output its definition declares. The
+/// stream of its main output names none — it is the cap's answer; the stream
+/// of another output names the output it is (STREAM_START key 21).
+struct ResponseOutputPlan: Sendable {
+    struct Output: Sendable {
+        /// The output's media URN: its identity, and — for an output other
+        /// than the main one — what its STREAM_START names.
+        let urn: String
+        /// What its STREAM_START carries as the data's type.
+        let label: String
+        /// The output it names: nil for the main output.
+        let names: String?
+        /// An output the handler never wrote to is sent as an empty value when
+        /// the handler returns; an optional one is not sent — it did not fire.
+        let required: Bool
+        /// The declared cardinality, which an empty stream opened by the
+        /// runtime states in the handler's place.
+        let isSequence: Bool
+    }
+
+    let capUrn: String
+    let main: Output
+    let others: [Output]
+
+    /// The outputs of `capUrn` as `manifest` defines it.
+    ///
+    /// The main output carries the label the cap URN's effect derives
+    /// (`deriveResponseMedia`) and names no output; another output carries its
+    /// own media URN, or the cap's declared input when it carries the input,
+    /// and names itself. A cap served without a definition in the manifest (a
+    /// built-in the cartridge did not advertise) answers on the one output its
+    /// URN states.
+    static func forCap(_ capUrn: String, manifest: Manifest?) throws -> ResponseOutputPlan {
+        let cap: CSCapUrn
+        do {
+            cap = try CSCapUrn.fromString(capUrn)
+        } catch {
+            throw CartridgeRuntimeError.capUrnError("'\(capUrn)': \(error.localizedDescription)")
+        }
+        func parse(_ urn: String) throws -> CSMediaUrn {
+            do {
+                return try CSMediaUrn.fromString(urn)
+            } catch {
+                throw CartridgeRuntimeError.handlerError(
+                    "cap '\(capUrn)' declares an output that is not a media URN ('\(urn)'): \(error.localizedDescription)")
+            }
+        }
+        let definition = manifest?.allCaps().first { candidate in
+            guard let candidateUrn = try? CSCapUrn.fromString(candidate.urn) else { return false }
+            return candidateUrn.isEquivalent(cap)
+        }
+        let declaredMain = definition?.mainOutput()
+        let outSpec = cap.getOutSpec()
+        let outIsVoid = try parse(outSpec).isEquivalent(to: try parse("media:void"))
+
+        let mainUrn = declaredMain?.mediaUrn ?? outSpec
+        _ = try parse(mainUrn)
+        let main = Output(
+            urn: mainUrn,
+            label: try deriveResponseMedia(capUrn: capUrn),
+            names: nil,
+            // A cap whose `out=` is void has no output: its stream exists for
+            // progress and logs, and is never opened on the handler's behalf.
+            required: !outIsVoid && !(declaredMain?.optional ?? false),
+            isSequence: declaredMain?.isSequence ?? false
+        )
+
+        var others: [Output] = []
+        for output in definition?.outputs ?? [] {
+            if let declaredMain, declaredMain.mediaUrn == output.mediaUrn { continue }
+            _ = try parse(output.mediaUrn)
+            others.append(Output(
+                urn: output.mediaUrn,
+                label: output.carries == .input ? cap.getInSpec() : output.mediaUrn,
+                names: output.mediaUrn,
+                required: !output.optional,
+                isSequence: output.isSequence
+            ))
+        }
+        return ResponseOutputPlan(capUrn: capUrn, main: main, others: others)
+    }
+
+    /// The outputs with a stream each: `open` builds one stream from the label
+    /// its STREAM_START carries.
+    func open(_ makeStream: (String) -> OutputStream) -> ResponseOutputs {
+        func opened(_ output: Output) -> ResponseOutputs.Output {
+            var stream = makeStream(output.label)
+            if let names = output.names {
+                stream = stream.namingOutput(names)
+            }
+            return ResponseOutputs.Output(
+                urn: try! CSMediaUrn.fromString(output.urn),
+                required: output.required,
+                isSequence: output.isSequence,
+                stream: stream
+            )
+        }
+        return ResponseOutputs(capUrn: capUrn, main: opened(main), others: others.map(opened))
+    }
+}
+
+/// The outputs of the cap a request is for: its main output and every other
+/// output its definition declares, each with a stream of its own.
+final class ResponseOutputs: @unchecked Sendable {
+    final class Output: @unchecked Sendable {
+        let urn: CSMediaUrn
+        let required: Bool
+        let isSequence: Bool
+        let stream: OutputStream
+
+        init(urn: CSMediaUrn, required: Bool, isSequence: Bool, stream: OutputStream) {
+            self.urn = urn
+            self.required = required
+            self.isSequence = isSequence
+            self.stream = stream
+        }
+    }
+
+    let capUrn: String
+    let main: Output
+    let others: [Output]
+
+    init(capUrn: String, main: Output, others: [Output]) {
+        self.capUrn = capUrn
+        self.main = main
+        self.others = others
+    }
+
+    /// The outputs of `capUrn` as `manifest` defines it, each on the stream
+    /// `open` builds from its label.
+    static func forCap(_ capUrn: String, manifest: Manifest?, open: (String) -> OutputStream) throws -> ResponseOutputs {
+        try ResponseOutputPlan.forCap(capUrn, manifest: manifest).open(open)
+    }
+
+    /// One undeclared output on a stream built elsewhere: what a request has
+    /// when it is made from a bare stream. Nothing is known of the output, so
+    /// nothing is sent for it unless the handler writes.
+    static func undeclared(_ stream: OutputStream) -> ResponseOutputs {
+        ResponseOutputs(
+            capUrn: "",
+            main: Output(urn: try! CSMediaUrn.fromString("media:"), required: false, isSequence: false, stream: stream),
+            others: []
+        )
+    }
+
+    /// The stream of the output `mediaUrn` identifies, by tagged-URN
+    /// equivalence — the way an input stream is found.
+    func stream(for mediaUrn: String) throws -> OutputStream {
+        let unknown = CartridgeRuntimeError.unknownOutput(capUrn: capUrn, output: mediaUrn)
+        guard let wanted = try? CSMediaUrn.fromString(mediaUrn) else { throw unknown }
+        guard let output = ([main] + others).first(where: { $0.urn.isEquivalent(to: wanted) }) else { throw unknown }
+        return output.stream
+    }
+
+    /// End every output once the handler has returned successfully: a stream
+    /// the handler wrote to is closed; a required output it never wrote to is
+    /// opened and closed empty, in its declared cardinality; an optional one
+    /// it never wrote to sends nothing.
+    func finish() {
+        for output in [main] + others {
+            if !output.stream.isStarted {
+                if !output.required { continue }
+                guard (try? output.stream.start(isSequence: output.isSequence)) != nil else { continue }
+            }
+            try? output.stream.blockingClose()
+        }
+    }
 }
 
 /// WetContext key for the CborRequest object.
@@ -2783,9 +3171,10 @@ public struct AdapterSelectionOp: Op, Sendable {
 
 /// Dispatch an AnyOp<Void> with a CborRequest via WetContext.
 /// Bridges sync handler threads to async Op.perform via DispatchSemaphore + Task.
-/// Closes the output stream on success (sends STREAM_END if stream was started).
-func dispatchOp(op: AnyOp<Void>, input: InputPackage, output: OutputStream, peer: any PeerInvoker) throws {
-    let req = CborRequest(input: input, output: output, peer: peer)
+/// On success, ends every output (`ResponseOutputs.finish`); a handler that
+/// failed gets nothing sent on its behalf.
+func dispatchOp(op: AnyOp<Void>, input: InputPackage, outputs: ResponseOutputs, peer: any PeerInvoker) throws {
+    let req = CborRequest(input: input, outputs: outputs, peer: peer)
     let dry = DryContext()
     let wet = WetContext()
     wet.insertRef(req, for: WET_KEY_REQUEST)
@@ -2807,9 +3196,9 @@ func dispatchOp(op: AnyOp<Void>, input: InputPackage, output: OutputStream, peer
     if let err = holder.error {
         throw err
     }
-    // Auto-close output stream on success — flushes any coalesced tail
-    // before STREAM_END (blocking variant: dispatchOp is a sync bridge).
-    try? output.blockingClose()
+    // End every output on success — each flushes any coalesced tail before
+    // its STREAM_END (blocking variant: dispatchOp is a sync bridge).
+    outputs.finish()
 }
 
 // MARK: - Internal: Pending Peer Request
@@ -2830,7 +3219,7 @@ private struct PendingPeerRequest {
 /// ChannelFrameSender implementation for sending frames from PeerInvokerImpl and OutputStream.
 /// This is the runtime's single output serialization point — the Swift
 /// counterpart of the Rust writer thread. It applies SeqAssigner to every
-/// outbound frame and, per protocol v4 (L4), enforces the WRITER TERMINAL
+/// outbound frame and, per L4, enforces the WRITER TERMINAL
 /// GATE: once a flow's END/ERR has been written, any later flow frame for the
 /// same FlowKey is post-terminal — dropped and counted, never written. Gating
 /// at the single point where wire order is decided deterministically closes
@@ -3044,28 +3433,20 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
             queue.complete()
         }
 
-        // Consumption grants for the responding peer's output window
-        // (L10/L14). Single-stream response → stream-less grants; direction
-        // `.response` (we are crediting the handler's output stream, L11).
-        // The window batches grants only — arrivals are not checked here,
-        // because the responder's window was negotiated on another link.
-        let responseGrants = InputGrantEmitter(
-            sender: sender,
-            rid: requestId,
-            xid: nil,
-            streamId: nil,
-            direction: .response,
-            window: CreditWindow(initialCredit: initialCredit)
-        )
+        // Consumption grants for the responding peer's output windows
+        // (L10/L14): one per response stream, each naming it; direction
+        // `.response` (we are crediting the handler's output streams, L11).
+        let responseGrants = PeerGrantSource(sender: sender, rid: requestId, initialCredit: initialCredit)
 
         // Try-then-flush-then-block (L10 deadlock-freedom rule): before
-        // blocking on an empty response channel, flush pending sub-batch
-        // grants — the responding peer may be stalled on exactly this credit.
+        // blocking on an empty response channel, flush every stream's pending
+        // sub-batch grants — the responding peer may be stalled on exactly
+        // this credit, on any of its streams.
         let frameIterator = AnyIterator<Frame> {
             if let frame = queue.tryNext() {
                 return frame
             }
-            responseGrants.flush()
+            responseGrants.flushAll()
             return queue.next()
         }
 
@@ -3205,7 +3586,16 @@ public enum JSONValue: Codable, Sendable, Equatable {
 }
 
 public struct CapArg: Codable, Sendable {
+    /// The argument's identity: its media URN, unique within the cap (RULE1).
     public let mediaUrn: String
+    /// The argument's name in the cap definition: required, unique within the
+    /// cap (RULE17), a label and nothing more — never the argument's identity,
+    /// and never related to its URN.
+    public let name: String
+    /// The type the argument's stream must conform to, when that is not its
+    /// own URN. The main input says it through its stdin source instead, and an
+    /// argument has one or the other, never both (RULE18).
+    public let accepts: String?
     public let required: Bool
     /// Whether this argument carries a sequence of items (isSequence=true)
     /// or a single item (isSequence=false, the default). Drives
@@ -3228,6 +3618,8 @@ public struct CapArg: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case mediaUrn = "media_urn"
+        case name
+        case accepts
         case required
         case isSequence = "is_sequence"
         case streaming
@@ -3236,8 +3628,10 @@ public struct CapArg: Codable, Sendable {
         case defaultValue = "default_value"
     }
 
-    public init(mediaUrn: String, required: Bool, isSequence: Bool = false, streaming: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil) {
+    public init(mediaUrn: String, name: String, required: Bool, isSequence: Bool = false, streaming: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil, accepts: String? = nil) {
         self.mediaUrn = mediaUrn
+        self.name = name
+        self.accepts = accepts
         self.required = required
         self.isSequence = isSequence
         self.streaming = streaming
@@ -3249,6 +3643,10 @@ public struct CapArg: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
+        // Every argument is named (RULE17); a definition without one is not a
+        // definition this library reads.
+        name = try container.decode(String.self, forKey: .name)
+        accepts = try container.decodeIfPresent(String.self, forKey: .accepts)
         required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
         isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
         streaming = try container.decodeIfPresent(Bool.self, forKey: .streaming) ?? false
@@ -3314,9 +3712,13 @@ public func identityCapDefinition() -> CapDefinition {
         args: [
             CapArg(
                 mediaUrn: "media:",
+                name: "input",
                 required: true,
                 sources: [.stdin("media:")]
             )
+        ],
+        outputs: [
+            CapOutput(mediaUrn: "media:", name: "output", outputDescription: "The input data, unchanged")
         ]
     )
 }
@@ -3326,9 +3728,21 @@ public func identityCapDefinition() -> CapDefinition {
 /// by the Rust host, and a Swift cartridge that could not declare its output
 /// produced a manifest the other four implementations could not round-trip.
 public struct CapOutput: Codable, Sendable {
-    /// Media URN referencing a media definition, e.g. "media:enc=utf-8;tag".
+    /// Media URN referencing a media definition, e.g. "media:enc=utf-8;tag":
+    /// the output's identity, unique within the cap (RULE20).
     public let mediaUrn: String
+    /// The output's name in the cap definition: required, unique within the
+    /// cap (RULE19), a label and nothing more.
+    public let name: String
     public let outputDescription: String
+    /// Whether this output may not fire: the cap ends without opening its
+    /// stream, and whatever it would have fed sees it as absent. `false` (the
+    /// default) is a contract: the output always has a stream.
+    public let optional: Bool
+    /// What a non-main output carries when that is not its own `mediaUrn`
+    /// (RULE22). nil on the main output, whose type the cap URN's effect
+    /// decides.
+    public let carries: OutputCarries?
     /// Whether this output produces a sequence of items (isSequence=true) or a
     /// single item (isSequence=false, the default).
     public let isSequence: Bool
@@ -3345,15 +3759,21 @@ public struct CapOutput: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case mediaUrn = "media_urn"
+        case name
         case outputDescription = "output_description"
+        case optional
+        case carries
         case isSequence = "is_sequence"
         case streaming
         case metadata
     }
 
-    public init(mediaUrn: String, outputDescription: String, isSequence: Bool = false, streaming: Bool = false, metadata: JSONValue? = nil) {
+    public init(mediaUrn: String, name: String, outputDescription: String, optional: Bool = false, carries: OutputCarries? = nil, isSequence: Bool = false, streaming: Bool = false, metadata: JSONValue? = nil) {
         self.mediaUrn = mediaUrn
+        self.name = name
         self.outputDescription = outputDescription
+        self.optional = optional
+        self.carries = carries
         self.isSequence = isSequence
         self.streaming = streaming
         self.metadata = metadata
@@ -3362,7 +3782,11 @@ public struct CapOutput: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
+        // Every output is named (RULE19).
+        name = try container.decode(String.self, forKey: .name)
         outputDescription = try container.decode(String.self, forKey: .outputDescription)
+        optional = try container.decodeIfPresent(Bool.self, forKey: .optional) ?? false
+        carries = try container.decodeIfPresent(OutputCarries.self, forKey: .carries)
         isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
         streaming = try container.decodeIfPresent(Bool.self, forKey: .streaming) ?? false
         metadata = try container.decodeIfPresent(JSONValue.self, forKey: .metadata)
@@ -3371,7 +3795,12 @@ public struct CapOutput: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(mediaUrn, forKey: .mediaUrn)
+        try container.encode(name, forKey: .name)
         try container.encode(outputDescription, forKey: .outputDescription)
+        // `optional` is written even when false and `carries` only when
+        // present, as the reference does.
+        try container.encode(optional, forKey: .optional)
+        try container.encodeIfPresent(carries, forKey: .carries)
         // `is_sequence` is written even when false, because the reference does
         // (`#[serde(default)]` with no skip_serializing_if). Metadata is
         // omitted when absent, because the reference skips it. A manifest is
@@ -3381,6 +3810,12 @@ public struct CapOutput: Codable, Sendable {
         try container.encode(streaming, forKey: .streaming)
         try container.encodeIfPresent(metadata, forKey: .metadata)
     }
+}
+
+/// What an output's stream carries, when not its own media URN.
+public enum OutputCarries: String, Codable, Sendable {
+    /// The main input's runtime type, unchanged: what a router's outputs carry.
+    case input
 }
 
 public struct CapDefinition: Codable, Sendable {
@@ -3394,7 +3829,10 @@ public struct CapDefinition: Codable, Sendable {
     public let isAbstract: Bool
     public let capDescription: String?
     public let args: [CapArg]
-    public let output: CapOutput?
+    /// Every output the cap declares. Exactly one is the main output, the one
+    /// whose URN is the cap URN's `out=` (RULE21); a cap whose `out=` is void
+    /// declares none.
+    public let outputs: [CapOutput]
 
     enum CodingKeys: String, CodingKey {
         case urn
@@ -3403,7 +3841,7 @@ public struct CapDefinition: Codable, Sendable {
         case isAbstract = "abstract"
         case capDescription = "cap_description"
         case args
-        case output
+        case outputs
     }
 
     /// The primary (first) alias — single-name display. A cap always has one.
@@ -3412,14 +3850,14 @@ public struct CapDefinition: Codable, Sendable {
     /// Whether `name` is one of this cap's aliases (exact match).
     public func hasAlias(_ name: String) -> Bool { aliases.contains(name) }
 
-    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], output: CapOutput? = nil) {
+    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], outputs: [CapOutput] = []) {
         self.urn = urn
         self.title = title
         self.aliases = aliases
         self.isAbstract = isAbstract
         self.capDescription = capDescription
         self.args = args
-        self.output = output
+        self.outputs = outputs
     }
 
     public init(from decoder: Decoder) throws {
@@ -3436,7 +3874,7 @@ public struct CapDefinition: Codable, Sendable {
         isAbstract = try container.decodeIfPresent(Bool.self, forKey: .isAbstract) ?? false
         capDescription = try container.decodeIfPresent(String.self, forKey: .capDescription)
         args = try container.decodeIfPresent([CapArg].self, forKey: .args) ?? []
-        output = try container.decodeIfPresent(CapOutput.self, forKey: .output)
+        outputs = try container.decodeIfPresent([CapOutput].self, forKey: .outputs) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -3452,7 +3890,36 @@ public struct CapDefinition: Codable, Sendable {
         if !args.isEmpty {
             try container.encode(args, forKey: .args)
         }
-        try container.encodeIfPresent(output, forKey: .output)
+        if !outputs.isEmpty {
+            try container.encode(outputs, forKey: .outputs)
+        }
+    }
+
+    /// The main output: the one whose media URN is the cap URN's `out=`, by
+    /// tagged-URN equivalence. nil for a cap whose `out=` is void, which
+    /// declares none (RULE21).
+    public func mainOutput() -> CapOutput? {
+        guard let capUrn = try? CSCapUrn.fromString(urn) else { return nil }
+        return output(byUrn: capUrn.getOutSpec())
+    }
+
+    /// The output a media URN identifies, by tagged-URN equivalence.
+    public func output(byUrn mediaUrn: String) -> CapOutput? {
+        guard let wanted = try? CSMediaUrn.fromString(mediaUrn) else { return nil }
+        return outputs.first { output in
+            guard let held = try? CSMediaUrn.fromString(output.mediaUrn) else { return false }
+            return held.isEquivalent(to: wanted)
+        }
+    }
+
+    /// The output a machine names (`name = node`).
+    public func output(named name: String) -> CapOutput? {
+        outputs.first { $0.name == name }
+    }
+
+    /// The argument a machine names (`name = source`).
+    public func arg(named name: String) -> CapArg? {
+        args.first { $0.name == name }
     }
 
     /// Check if this cap accepts stdin input.
@@ -3507,6 +3974,55 @@ public struct CapGroup: Codable, Sendable {
             try container.encode(adapterUrns, forKey: .adapterUrns)
         }
     }
+}
+
+/// Why bytes another program wrote are not a manifest this library reads.
+public enum AdvertisedManifestError: Error, LocalizedError, Equatable {
+    /// The bytes are no manifest.
+    case unparseable(String)
+    /// A manifest whose definition breaks a definition rule; the message names
+    /// the cap and the rule.
+    case invalidDefinition(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unparseable(let message): return "not a manifest: \(message)"
+        case .invalidDefinition(let message): return message
+        }
+    }
+}
+
+/// The definition rule (RULE1–RULE22) a manifest's definitions break, naming
+/// the cap and the rule; nil when every definition keeps them, or when the
+/// bytes are no manifest at all. The rules are the cap library's
+/// (`CSCapValidator`): this library holds a definition to them, it does not
+/// restate them.
+func definitionRuleError(_ data: Data) -> String? {
+    do {
+        _ = try CSCapManifest(fromAdvertisedData: data)
+        return nil
+    } catch let error as NSError where error.domain == CSManifestLoadErrorDomain && error.code == CSManifestLoadErrorCode.invalidDefinition.rawValue {
+        return error.localizedDescription
+    } catch {
+        return nil
+    }
+}
+
+/// Read a manifest from bytes another program wrote: parse it, and hold every
+/// definition it declares to the definition rules, in one step. This is the
+/// one way a reader gets a `Manifest` from such bytes, so no reader routes by
+/// a definition nobody checked. (matches Rust CapManifest::from_advertised)
+public func advertisedManifest(_ data: Data) throws -> Manifest {
+    let manifest: Manifest
+    do {
+        manifest = try JSONDecoder().decode(Manifest.self, from: data)
+    } catch {
+        throw AdvertisedManifestError.unparseable(String(describing: error))
+    }
+    if let ruleError = definitionRuleError(data) {
+        throw AdvertisedManifestError.invalidDefinition(ruleError)
+    }
+    return manifest
 }
 
 public struct Manifest: Codable, Sendable {
@@ -3657,7 +4173,8 @@ struct PoolQueuedRequest {
     var ticket: UInt64
     let routingId: MessageId?
     let requestId: MessageId
-    let outputMediaUrn: String
+    /// The outputs the request answers on, planned when it arrived.
+    let outputs: ResponseOutputPlan
     let frames: BlockingQueue<Frame>
 }
 
@@ -3980,7 +4497,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
     private let poolsCell = PoolsCell()
 
     /// Routes inbound CREDIT frames to the gates of streams local senders are
-    /// writing (protocol v4 flow control). Senders register a `CreditGate` per
+    /// writing (flow control). Senders register a `CreditGate` per
     /// (rid, streamId); unmatched grants are correct no-ops.
     public let creditRouter = CreditRouter()
 
@@ -4070,6 +4587,11 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 }
             }
             precondition(hasIdentity, "Manifest validation failed - cartridge MUST declare CAP_IDENTITY (\(CSCapIdentity))")
+            // A cartridge holds its definitions to the definition rules before
+            // it advertises them, as the reader does before it believes them.
+            if let ruleError = definitionRuleError(manifest) {
+                preconditionFailure("Manifest validation failed - \(ruleError)")
+            }
         }
 
         // Auto-register standard capability handlers
@@ -4410,21 +4932,25 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // response label as the wire path: the CLI mode is a debugging
         // surface for the same contract, not a wildcard-labeled side channel.
         let cliSender = CliFrameSender()
-        let outputStream = OutputStream(
-            sender: cliSender,
-            streamId: "cli-output",
-            mediaUrn: try deriveResponseMedia(capUrn: cap.urn),
-            requestId: requestId,
-            routingId: nil,
-            maxChunk: DEFAULT_MAX_CHUNK
-        )
+        var cliStreams = 0
+        let outputs = try ResponseOutputs.forCap(cap.urn, manifest: parsedManifest) { label in
+            cliStreams += 1
+            return OutputStream(
+                sender: cliSender,
+                streamId: "cli-output-\(cliStreams)",
+                mediaUrn: label,
+                requestId: requestId,
+                routingId: nil,
+                maxChunk: DEFAULT_MAX_CHUNK
+            )
+        }
 
         // Create no-op peer invoker (CLI mode doesn't support peer calls)
         let peer = NoPeerInvoker()
 
-        // Invoke Op handler — dispatchOp closes output stream on success
+        // Invoke Op handler — dispatchOp ends every output on success
         let op = factory()
-        try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
+        try dispatchOp(op: op, input: inputPackage, outputs: outputs, peer: peer)
     }
 
     /// Find a cap by one of its aliases (the CLI subcommand). Aliases are
@@ -4764,7 +5290,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
         // Track pending incoming requests (host invoking cartridge caps)
         // Maps request ID to (capUrn, frame queue) — forwards request frames
-        // to the handler LIVE (protocol v4 dispatch regime: the handler starts
+        // to the handler LIVE (the dispatch regime: the handler starts
         // at REQ and its InputStreams yield items as they arrive). Created on
         // REQ even for queued requests, so frames accumulate in the queue
         // until the handler thread is spawned and the demux drains them.
@@ -4825,7 +5351,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
 
         // Helper: spawn a handler thread for a request. The handler receives
-        // input INCREMENTALLY (protocol v4): dispatch begins at REQ and its
+        // input INCREMENTALLY: dispatch begins at REQ and its
         // InputStreams yield items as they arrive on the live frame queue —
         // never buffered to completion (L16).
         let initialCredit = self.limits.initialCredit
@@ -4840,7 +5366,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
             requestId: MessageId,
             capUrn: String,
             routingId: MessageId?,
-            outputMediaUrn: String,
+            outputs outputPlan: ResponseOutputPlan,
             factory: @escaping OpFactory,
             frames: BlockingQueue<Frame>,
             outputSender: ChannelFrameSender,
@@ -4881,18 +5407,21 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     )
                 )
 
-                let responseStreamId = UUID().uuidString
-                let outputStream = OutputStream(
-                    sender: outputSender,
-                    streamId: responseStreamId,
-                    mediaUrn: outputMediaUrn,
-                    requestId: requestId,
-                    routingId: routingId,
-                    maxChunk: maxChunk,
-                    initialCredit: initialCredit,
-                    creditRouter: creditRouter
-                )
-                let finalStatus = outputStream.finalStatusHolder
+                // One stream per output the cap answers on, each credited.
+                let outputs = outputPlan.open { label in
+                    OutputStream(
+                        sender: outputSender,
+                        streamId: UUID().uuidString,
+                        mediaUrn: label,
+                        requestId: requestId,
+                        routingId: routingId,
+                        maxChunk: maxChunk,
+                        initialCredit: initialCredit,
+                        creditRouter: creditRouter
+                    )
+                }
+                // The request's terminal status is declared on its main output.
+                let finalStatus = outputs.main.stream.finalStatusHolder
 
                 let peer = PeerInvokerImpl(
                     sender: outputSender,
@@ -4906,7 +5435,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
                 do {
                     let op = factory()
-                    try dispatchOp(op: op, input: inputPackage, output: outputStream, peer: peer)
+                    try dispatchOp(op: op, input: inputPackage, outputs: outputs, peer: peer)
                     // A cancel that claimed the request first ends it with its
                     // own ERR, sent by the main loop once this reports done.
                     guard terminal.forHandler() else {
@@ -4989,7 +5518,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     requestId: queued.requestId,
                     capUrn: queued.capUrn,
                     routingId: queued.routingId,
-                    outputMediaUrn: queued.outputMediaUrn,
+                    outputs: queued.outputs,
                     factory: queued.factory,
                     frames: queued.frames,
                     outputSender: outputSender,
@@ -5091,15 +5620,16 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     continue
                 }
 
-                // The response label is DERIVED from the cap's declared
+                // The outputs the request answers on, one stream each. The
+                // main output's label is DERIVED from the cap's declared
                 // effect — not chosen by the op — so an honest lib-runtime
                 // cartridge satisfies the engine's effect audit by
                 // construction (this also parses the cap URN; an unparseable
                 // or underivable declaration fails the request here, before
                 // it is registered — never falls back).
-                let outputMediaUrn: String
+                let outputPlan: ResponseOutputPlan
                 do {
-                    outputMediaUrn = try deriveResponseMedia(capUrn: capUrn)
+                    outputPlan = try ResponseOutputPlan.forCap(capUrn, manifest: self.parsedManifest)
                 } catch {
                     fputs("[CartridgeRuntime] response media derivation FAILED: cap='\(capUrn)' rid=\(frame.id) error=\(error)\n", stderr)
                     var err = Frame.err(
@@ -5143,7 +5673,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                     ticket: 0, // the model's, once in line
                     routingId: routingId,
                     requestId: requestId,
-                    outputMediaUrn: outputMediaUrn,
+                    outputs: outputPlan,
                     frames: framesQueue
                 ))
                 poolsCell.lock.unlock()
@@ -5166,7 +5696,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         requestId: requestId,
                         capUrn: capUrn,
                         routingId: routingId,
-                        outputMediaUrn: outputMediaUrn,
+                        outputs: outputPlan,
                         factory: factory,
                         frames: framesQueue,
                         outputSender: outputSender,
@@ -5336,7 +5866,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
             case .log:
                 // Log frames from peer responses — forward to the pending peer request
-                // so demuxSingleStream delivers them as PeerResponseItem.log items.
+                // so demuxPeerResponse delivers them as PeerResponseItem.log items.
                 pendingPeerRequestsLock.lock()
                 if let pending = pendingPeerRequests[frame.id] as? PendingPeerRequest {
                     pending.continuation.yield(frame)
@@ -5504,7 +6034,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // Delegate to the wire layer's cartridge-side handshake: it enforces
         // the protocol-version match (L1), requires all limit fields, and
         // negotiates the element-wise minimum of every limit including
-        // initial_credit (protocol v4). It also sends our HELLO with the
+        // initial_credit. It also sends our HELLO with the
         // manifest — the ONLY way to communicate cartridge capabilities.
         // Materialize the concurrency pools BEFORE the handshake — the
         // HELLO carries the full pool-state map (see Pools.swift), and a

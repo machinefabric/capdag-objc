@@ -1,5 +1,6 @@
 import XCTest
 @testable import Bifaci
+import CapDAG
 
 // =============================================================================
 // Dev Tests
@@ -155,11 +156,17 @@ final class DevTests: XCTestCase {
             throw DevError.io("python missing from the contract")
         }
         let urnJSON = capURN.replacingOccurrences(of: "\"", with: "\\\"")
+        // A whole definition: its one argument the cap's input, its one output
+        // the cap's `out=`.
+        let parsed = try CSCapUrn.fromString(capURN)
+        let inSpec = parsed.getInSpec(), outSpec = parsed.getOutSpec()
         let manifest = """
             {"name":"\(name)","version":"0.1.0","channel":"nightly","registry_url":null,\
             "description":"stub","cap_groups":[{"name":"default","caps":[\
-            {"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},\
-            {"urn":"\(urnJSON)","title":"\(name)","aliases":["\(alias)"]}]}]}
+            {"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},\
+            {"urn":"\(urnJSON)","title":"\(name)","aliases":["\(alias)"],\
+            "args":[{"media_urn":"\(inSpec)","name":"input","required":true,"sources":[{"stdin":"\(inSpec)"}]}],\
+            "outputs":[{"media_urn":"\(outSpec)","name":"output","output_description":"What it gives"}]}]}]}
             """
         // A PYTHON stand-in, not a bash one. It used to be a bash script named
         // `cartridge.py`, which worked only because the shebang decided what

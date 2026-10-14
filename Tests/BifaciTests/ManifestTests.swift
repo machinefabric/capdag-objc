@@ -70,11 +70,13 @@ final class ManifestTests: XCTestCase {
             args: [
                 CapArg(
                     mediaUrn: "media:document;ext=pdf",
+                    name: "document",
                     required: true,
                     sources: [.stdin("media:document;ext=pdf")]
                 ),
                 CapArg(
                     mediaUrn: "media:chunk-size;numeric",
+                    name: "chunk_size",
                     required: false,
                     sources: [.cliFlag("--chunk-size")],
                     argDescription: "Chunk size",
@@ -82,6 +84,7 @@ final class ManifestTests: XCTestCase {
                 ),
                 CapArg(
                     mediaUrn: "media:enc=utf-8;timestamps;bool",
+                    name: "timestamps",
                     required: false,
                     sources: [.cliFlag("--timestamps")],
                     argDescription: "Include timestamps",
@@ -89,6 +92,7 @@ final class ManifestTests: XCTestCase {
                 ),
                 CapArg(
                     mediaUrn: "media:model-config;fmt=json;record",
+                    name: "model_config",
                     required: false,
                     sources: [.cliFlag("--model-config")],
                     argDescription: "Model config",
@@ -335,37 +339,64 @@ final class ManifestTests: XCTestCase {
         }
     }
 
-    // TEST7150: a cap's OUTPUT survives a manifest round-trip, under the wire
-    // key names the other implementations read.
+    // TEST7150: a cap's OUTPUTS survive a manifest round-trip, under the wire
+    // key names the other implementations read: each with its name, whether
+    // it is optional, and what it carries when that is not its own URN.
     func test7150_capOutputSurvivesSerializationRoundtrip() throws {
         let cap = CapDefinition(
             urn: "cap:in=\"media:enc=utf-8;in\";out=\"media:enc=utf-8;tag\";tag",
             title: "tag",
             aliases: ["tag"],
-            output: CapOutput(
-                mediaUrn: "media:enc=utf-8;tag",
-                outputDescription: "One of 'positive', 'neutral', or 'negative'."
-            )
+            outputs: [
+                CapOutput(
+                    mediaUrn: "media:enc=utf-8;tag",
+                    name: "tag",
+                    outputDescription: "One of 'positive', 'neutral', or 'negative'."
+                ),
+                CapOutput(
+                    mediaUrn: "media:enc=utf-8;unsure",
+                    name: "unsure",
+                    outputDescription: "The input, when no tag fits",
+                    optional: true,
+                    carries: .input
+                ),
+            ]
         )
 
         let encoded = try JSONEncoder().encode(cap)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        let outputJson = try XCTUnwrap(json["output"] as? [String: Any],
-                                       "a cap that declares an output must serialize one")
-        XCTAssertEqual(outputJson["media_urn"] as? String, "media:enc=utf-8;tag")
-        XCTAssertEqual(outputJson["output_description"] as? String,
+        XCTAssertNil(json["output"], "outputs are a list; there is no single `output` key")
+        let outputsJson = try XCTUnwrap(json["outputs"] as? [[String: Any]],
+                                        "a cap that declares outputs must serialize them")
+        XCTAssertEqual(outputsJson.count, 2)
+        XCTAssertEqual(outputsJson[0]["media_urn"] as? String, "media:enc=utf-8;tag")
+        XCTAssertEqual(outputsJson[0]["name"] as? String, "tag")
+        XCTAssertEqual(outputsJson[0]["output_description"] as? String,
                        "One of 'positive', 'neutral', or 'negative'.")
+        XCTAssertEqual(outputsJson[0]["optional"] as? Bool, false, "optional is written even when false")
+        XCTAssertNil(outputsJson[0]["carries"], "carries is written only when present")
+        XCTAssertEqual(outputsJson[1]["optional"] as? Bool, true)
+        XCTAssertEqual(outputsJson[1]["carries"] as? String, "input")
 
         let back = try JSONDecoder().decode(CapDefinition.self, from: encoded)
-        let backOutput = try XCTUnwrap(back.output, "output survives the round-trip")
-        XCTAssertEqual(backOutput.mediaUrn, "media:enc=utf-8;tag")
-        XCTAssertFalse(backOutput.isSequence)
+        XCTAssertEqual(back.outputs.map { $0.name }, ["tag", "unsure"])
+        XCTAssertEqual(back.mainOutput()?.name, "tag", "the main output is the one `out=` names")
+        XCTAssertEqual(back.output(byUrn: "media:unsure;enc=utf-8")?.name, "unsure", "found by URN, tags in any order")
+        XCTAssertTrue(back.outputs[1].optional)
+        XCTAssertEqual(back.outputs[1].carries, .input)
+        XCTAssertFalse(back.outputs[0].isSequence)
 
-        // A cap with no output must not carry the key at all.
+        // A cap with no outputs must not carry the key at all.
         let bare = CapDefinition(urn: "cap:effect=none", title: "Identity", aliases: ["identity"])
         let bareJson = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: try JSONEncoder().encode(bare)) as? [String: Any])
-        XCTAssertNil(bareJson["output"], "a cap without an output must omit the key")
+        XCTAssertNil(bareJson["outputs"], "a cap without outputs must omit the key")
+
+        // An output or argument without a name is not a definition.
+        let unnamedOutput = #"{"urn":"cap:effect=none","title":"I","aliases":["i"],"outputs":[{"media_urn":"media:","output_description":""}]}"#
+        XCTAssertThrowsError(try JSONDecoder().decode(CapDefinition.self, from: Data(unnamedOutput.utf8)))
+        let unnamedArg = #"{"urn":"cap:effect=none","title":"I","aliases":["i"],"args":[{"media_urn":"media:","required":true,"sources":[{"stdin":"media:"}]}]}"#
+        XCTAssertThrowsError(try JSONDecoder().decode(CapDefinition.self, from: Data(unnamedArg.utf8)))
     }
 
     // TEST7151: `is_sequence` is serialized even when false, on both CapArg and
@@ -378,6 +409,7 @@ final class ManifestTests: XCTestCase {
     func test7151_isSequenceIsSerializedEvenWhenFalse() throws {
         let arg = CapArg(
             mediaUrn: "media:enc=utf-8;in",
+            name: "input",
             required: true,
             sources: [.stdin("media:enc=utf-8;in")]
         )
@@ -386,7 +418,7 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(argJson["is_sequence"] as? Bool, false,
                        "CapArg must write is_sequence even when false")
 
-        let output = CapOutput(mediaUrn: "media:enc=utf-8;tag", outputDescription: "a tag")
+        let output = CapOutput(mediaUrn: "media:enc=utf-8;tag", name: "tag", outputDescription: "a tag")
         let outputJson = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: try JSONEncoder().encode(output)) as? [String: Any])
         XCTAssertEqual(outputJson["is_sequence"] as? Bool, false,

@@ -127,6 +127,11 @@ public func encodeFrame(_ frame: Frame) throws -> Data {
         map[.unsignedInt(FrameKey.unbounded.rawValue)] = .boolean(unbounded)
     }
 
+    // 21: output (a response stream that is not the cap's main output)
+    if let output = frame.output {
+        map[.unsignedInt(FrameKey.output.rawValue)] = .utf8String(output)
+    }
+
     let cbor = CBOR.map(map)
     return Data(cbor.encode())
 }
@@ -310,6 +315,21 @@ public func decodeFrame(_ data: Data) throws -> Frame {
 
     if case .boolean(let b) = map[.unsignedInt(FrameKey.unbounded.rawValue)] {
         frame.unbounded = b
+    }
+
+    // 21: which output a response stream is. Present and not a text string is
+    // a malformed frame, not an absent name: a stream that says which output
+    // it is must be readable.
+    if let outputValue = map[.unsignedInt(FrameKey.output.rawValue)] {
+        guard case .utf8String(let output) = outputValue else {
+            throw FrameError.protocolError("output (key \(FrameKey.output.rawValue)) must be a text string, got \(outputValue)")
+        }
+        frame.output = output
+    }
+    // Only a STREAM_START says which output it is; the stream's other frames
+    // are tied to it by stream_id.
+    if frame.output != nil && frame.frameType != .streamStart {
+        throw FrameError.protocolError("\(frame.frameType) frame carries output (key \(FrameKey.output.rawValue)), which only STREAM_START may")
     }
 
     // Protocol validation: CHUNK frames MUST have chunkIndex and checksum
@@ -729,7 +749,7 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
         throw FrameError.handshakeFailed("Cartridge HELLO pool-state map: \(error)")
     }
 
-    // Protocol v4: every negotiated field is required.
+    // Every negotiated field is required.
     guard let theirMaxFrame = theirFrame.helloMaxFrame else {
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_frame")
     }
@@ -788,7 +808,7 @@ public func acceptHandshakeWithManifest(
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
 
-    // Protocol v4: every negotiated field is required.
+    // Every negotiated field is required.
     guard let theirMaxFrame = theirFrame.helloMaxFrame else {
         throw FrameError.handshakeFailed("Protocol violation: HELLO missing max_frame")
     }

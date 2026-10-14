@@ -1,7 +1,7 @@
 import Foundation
 
 // =============================================================================
-// Credit-based per-stream flow control (protocol v4).
+// Credit-based per-stream flow control.
 //
 // One credit = permission to send one CHUNK frame. A sender starts each stream
 // with the negotiated `initial_credit` window and must wait when the window is
@@ -9,7 +9,7 @@ import Foundation
 // consumes chunks (L9/L10 in the normative bifaci protocol documentation).
 //
 // `CreditGate` mirrors the Rust reference's mutex + notify pair with a lock +
-// continuation queue, per the v4 portability mapping for Swift. The observable
+// continuation queue, per the portability mapping for Swift. The observable
 // contract is identical everywhere: `acquire` waits until credit is available
 // or the gate closes; `close` releases all waiters with an error; grants never
 // block.

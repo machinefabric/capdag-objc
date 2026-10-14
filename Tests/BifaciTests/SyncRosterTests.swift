@@ -81,7 +81,7 @@ final class CborSyncRosterTests: XCTestCase {
             CapGroup(
                 name: "default",
                 caps: [
-                    CapDefinition(urn: "cap:effect=none", title: "Identity", aliases: ["identity"]),
+                    identityCapDefinition(),
                     CapDefinition(urn: "cap:in=\"media:void\";late;out=\"media:void\"", title: "Late", aliases: ["late"]),
                 ],
                 adapterUrns: []

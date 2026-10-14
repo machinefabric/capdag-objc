@@ -40,7 +40,7 @@ func createSinglePayloadStream(requestId: MessageId = .newUUID(), streamId: Stri
 /// Matches Rust's invoke_op() test helper.
 func invokeOp(_ factory: OpFactory, input: InputPackage, output: Bifaci.OutputStream) throws {
     let op = factory()
-    try dispatchOp(op: op, input: input, output: output, peer: NoPeerInvoker())
+    try dispatchOp(op: op, input: input, outputs: .undeclared(output), peer: NoPeerInvoker())
 }
 
 /// Test Op that decodes the CBOR args array, extracts the first arg's
@@ -184,12 +184,11 @@ final class CartridgeRuntimeTests: XCTestCase {
         XCTAssertNil(whole.next(), "an input that reached END ends")
 
         // A peer response, stopped before its END.
-        let response = demuxSingleStream(
+        let response = demuxPeerResponse(
             responseRx: iterate([
                 Frame.streamStart(reqId: rid, streamId: "r", mediaUrn: "media:enc=utf-8"),
                 Frame.chunk(reqId: rid, streamId: "r", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)),
-            ]),
-            maxChunk: Limits().maxChunk
+            ])
         )
         guard case .data(.success, _)? = response.recv() else {
             return XCTFail("the part that arrived is delivered")
@@ -249,7 +248,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // MARK: - Test Constants
 
     static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"]}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"Test output"}]}]}]}
     """
     static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -731,12 +730,7 @@ final class CborFilePathConversionTests: XCTestCase {
         // Always append CAP_IDENTITY at the end - cartridges must declare it
         // (Appending instead of prepending to avoid breaking tests that reference caps[0])
         var allCaps = caps
-        let identityCap = CapDefinition(
-            urn: CSCapIdentity,
-            title: "Identity",
-            aliases: ["identity"]
-        )
-        allCaps.append(identityCap)
+        allCaps.append(identityCapDefinition())
 
         let manifest = Manifest(
             name: "TestCartridge",
@@ -756,12 +750,17 @@ final class CborFilePathConversionTests: XCTestCase {
         aliases: [String],
         args: [CapArg] = []
     ) -> CapDefinition {
+        // A whole definition: a cap whose `out=` is not void declares that
+        // output as its main one (RULE21).
+        let outSpec = try! CSCapUrn.fromString(urn).getOutSpec()
+        let isVoid = try! CSMediaUrn.fromString(outSpec).isEquivalent(to: CSMediaUrn.fromString("media:void"))
         return CapDefinition(
             urn: urn,
             title: title,
             aliases: aliases,
             capDescription: nil,
-            args: args
+            args: args,
+            outputs: isVoid ? [] : [CapOutput(mediaUrn: outSpec, name: "output", outputDescription: "What it gives")]
         )
     }
 
@@ -804,8 +803,10 @@ final class CborFilePathConversionTests: XCTestCase {
         isSequence: Bool = false,
         sources: [ArgSource]
     ) -> CapArg {
+        // Every cap these tests build has this one argument.
         return CapArg(
             mediaUrn: mediaUrn,
+            name: "input",
             required: required,
             isSequence: isSequence,
             sources: sources,
@@ -1038,8 +1039,9 @@ final class CborFilePathConversionTests: XCTestCase {
 
     // TEST343: Non-file-path args are not affected by file reading
     func test343_non_file_path_args_unaffected() throws {
+        // The stdin argument is the cap's input (RULE15).
         let cap = createCap(
-            urn: "cap:in=\"media:void\";test;out=\"media:void\"",
+            urn: "cap:in=\"media:enc=utf-8;model-spec\";test;out=\"media:void\"",
             title: "Test",
             aliases: ["test"],
             args: [createArg(
@@ -1226,7 +1228,10 @@ final class CborFilePathConversionTests: XCTestCase {
         let tempDir = FileManager.default.temporaryDirectory
         let testFile = tempDir.appendingPathComponent("test349.txt")
         try Data("content 349".utf8).write(to: testFile)
+        defer { try? FileManager.default.removeItem(at: testFile) }
 
+        // A flag and a position on one argument is refused by RULE7, so the
+        // order is shown over the two an argument may hold together.
         let cap = createCap(
             urn: "cap:in=\"media:\";test;out=\"media:void\"",
             title: "Test",
@@ -1235,9 +1240,8 @@ final class CborFilePathConversionTests: XCTestCase {
                 mediaUrn: "media:enc=utf-8;file-path",
                 required: true,
                 sources: [
-                    .cliFlag("--file"),     // First (not provided)
-                    .positional(0),         // Second (provided)
-                    .stdin("media:")   // Third (not used)
+                    .cliFlag("--file"),  // First (not provided)
+                    .stdin("media:")     // Second (provided)
                 ]
             )]
         )
@@ -1245,12 +1249,20 @@ final class CborFilePathConversionTests: XCTestCase {
         let manifest = createTestManifest(caps: [cap])
         let runtime = CartridgeRuntime(manifest: manifest)
 
-        // Only provide position arg, no --file flag
-        let cliArgs = [testFile.path]
-        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
-        XCTAssertEqual(result, Data("content 349".utf8), "Should fall back to position source and read file")
+        // No --file flag: the first source yields nothing and the second is
+        // consulted.
+        let (piped, pipedFromStdin) = try runtime.extractArgValue(argDef: cap.args[0], cliArgs: [], stdinData: Data("piped 349".utf8))
+        XCTAssertEqual(piped, Data("piped 349".utf8))
+        XCTAssertTrue(pipedFromStdin, "the value is reported as coming from stdin")
 
-        try? FileManager.default.removeItem(at: testFile)
+        // The flag given: the first source wins, stdin is not used, and the
+        // path it names is read as the file's bytes.
+        let cliArgs = ["--file", testFile.path]
+        let (flagged, flaggedFromStdin) = try runtime.extractArgValue(argDef: cap.args[0], cliArgs: cliArgs, stdinData: Data("unused".utf8))
+        XCTAssertEqual(flagged, Data(testFile.path.utf8))
+        XCTAssertFalse(flaggedFromStdin)
+        let result = try filepathConversion(cap: cap, cliArgs: cliArgs, runtime: runtime)
+        XCTAssertEqual(result, Data("content 349".utf8), "the flag's path is read as the file")
     }
 
     // TEST350: Integration test - full CLI mode invocation with file-path
@@ -1712,7 +1724,10 @@ final class CborFilePathConversionTests: XCTestCase {
             args: []
         )
 
-        let manifest = createTestManifest(caps: [cap])
+        // The cap is not one the cartridge advertises: a definition with no
+        // argument for its input breaks RULE15, and these tests read only how a
+        // payload is built from it.
+        let manifest = createTestManifest(caps: [])
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let data = "small payload".data(using: .utf8)!
@@ -1750,7 +1765,10 @@ final class CborFilePathConversionTests: XCTestCase {
             args: []
         )
 
-        let manifest = createTestManifest(caps: [cap])
+        // The cap is not one the cartridge advertises: a definition with no
+        // argument for its input breaks RULE15, and these tests read only how a
+        // payload is built from it.
+        let manifest = createTestManifest(caps: [])
         let runtime = CartridgeRuntime(manifest: manifest)
 
         // Use small max_chunk to force multi-chunk
@@ -1780,7 +1798,10 @@ final class CborFilePathConversionTests: XCTestCase {
             args: []
         )
 
-        let manifest = createTestManifest(caps: [cap])
+        // The cap is not one the cartridge advertises: a definition with no
+        // argument for its input breaks RULE15, and these tests read only how a
+        // payload is built from it.
+        let manifest = createTestManifest(caps: [])
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let reader = InputStream(data: Data())
@@ -1838,7 +1859,10 @@ final class CborFilePathConversionTests: XCTestCase {
             args: []
         )
 
-        let manifest = createTestManifest(caps: [cap])
+        // The cap is not one the cartridge advertises: a definition with no
+        // argument for its input breaks RULE15, and these tests read only how a
+        // payload is built from it.
+        let manifest = createTestManifest(caps: [])
         let runtime = CartridgeRuntime(manifest: manifest)
 
         let reader = ErrorInputStream()

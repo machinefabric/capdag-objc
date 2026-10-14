@@ -36,7 +36,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // MARK: - Test Infrastructure
 
     nonisolated static let testManifestJSON = """
-    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"]}]}]}
+    {"name":"TestCartridge","version":"1.0.0","channel":"release",\"registry_url\":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:in=media:;test;out=media:","title":"Test","aliases":["test"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"Test output"}]}]}]}
     """
     nonisolated static let testManifestData = testManifestJSON.data(using: .utf8)!
 
@@ -47,11 +47,16 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     nonisolated static func makeManifest(name: String, caps: [String]) -> Data {
         // Always include CAP_IDENTITY as first cap (mandatory)
-        var allCaps = ["{\"urn\":\"cap:effect=none\",\"title\":\"Identity\",\"aliases\":[\"identity\"]}"]
+        var allCaps = ["{\"urn\":\"cap:effect=none\",\"title\":\"Identity\",\"aliases\":[\"identity\"],\"args\":[{\"media_urn\":\"media:\",\"name\":\"input\",\"required\":true,\"sources\":[{\"stdin\":\"media:\"}]}],\"outputs\":[{\"media_urn\":\"media:\",\"name\":\"output\",\"output_description\":\"The input data, unchanged\"}]}"]
         // Add user caps as proper cap objects with full direction specs
         for cap in caps {
             let capWithDirs = cap.contains("in=") ? cap : "cap:in=media:;\(cap.dropFirst(4));out=media:"
-            allCaps.append("{\"urn\":\"\(capWithDirs)\",\"title\":\"\(name)\",\"aliases\":[\"\(name.lowercased())\"]}")
+            // A whole definition: its one argument the cap's input, its one
+            // output the cap's `out=`.
+            let parsed = try! CSCapUrn.fromString(capWithDirs)
+            let inSpec = parsed.getInSpec(), outSpec = parsed.getOutSpec()
+            let urnJSON = capWithDirs.replacingOccurrences(of: "\"", with: "\\\"")
+            allCaps.append("{\"urn\":\"\(urnJSON)\",\"title\":\"\(name)\",\"aliases\":[\"\(name.lowercased())\"],\"args\":[{\"media_urn\":\"\(inSpec)\",\"name\":\"input\",\"required\":true,\"sources\":[{\"stdin\":\"\(inSpec)\"}]}],\"outputs\":[{\"media_urn\":\"\(outSpec)\",\"name\":\"output\",\"output_description\":\"What it gives\"}]}")
         }
         let capsJson = allCaps.joined(separator: ",")
         // Manifest uses cap_groups format — all caps in a single default group.
@@ -323,6 +328,57 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let caps = host.capabilities
         XCTAssertTrue(caps.isEmpty || String(data: caps, encoding: .utf8) == "[]",
             "Capabilities should be empty initially")
+    }
+
+    // TEST12712: the host holds the definitions a cartridge advertises to the
+    // definition rules. A manifest that parses, declares identity, and carries
+    // a cap that breaks a rule is incompatible, naming the cap and the rule —
+    // the host does not route by a definition nobody checked.
+    func test12712_parseCapGroupsRejectsAnInvalidDefinition() throws {
+        let identity = String(decoding: try JSONEncoder().encode(identityCapDefinition()), as: UTF8.self)
+        func manifest(_ cap: String) -> Data {
+            Data("""
+            {"name":"Test","version":"1.0","channel":"release","registry_url":null,"description":"Test",\
+            "cap_groups":[{"name":"default","caps":[\(identity),\(cap)]}]}
+            """.utf8)
+        }
+        let urn = #"cap:in=\"media:enc=utf-8\";compare;out=\"media:record\""#
+        func arg(_ media: String, _ name: String, stdin: String) -> String {
+            #"{"media_urn":"\#(media)","name":"\#(name)","required":true,"sources":[{"stdin":"\#(stdin)"}]}"#
+        }
+        let output = #"{"media_urn":"media:record","name":"result","output_description":"The result"}"#
+
+        let good = #"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8"))],"outputs":[\#(output)]}"#
+        let groups = try CartridgeHost.extractCapGroups(from: manifest(good))
+        XCTAssertEqual(groups.first?.caps.count, 2, "a complete definition is accepted")
+
+        func refused(_ cap: String, line: UInt = #line) -> String {
+            do {
+                _ = try CartridgeHost.extractCapGroups(from: manifest(cap))
+                XCTFail("an invalid definition must be rejected", line: line)
+            } catch let error as CartridgeHost.ManifestExtractError {
+                guard case .incompatible(let text) = error else {
+                    XCTFail("expected incompatible, got \(error)", line: line)
+                    return ""
+                }
+                XCTAssertEqual(error.attachmentKind, .incompatible, line: line)
+                XCTAssertTrue(text.contains("compare"), "the cap is named: \(text)", line: line)
+                return text
+            } catch {
+                XCTFail("unexpected \(error)", line: line)
+            }
+            return ""
+        }
+        // Two arguments claim the main input.
+        var text = refused(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8")),\#(arg("media:enc=utf-8;other", "right", stdin: "media:enc=utf-8"))],"outputs":[\#(output)]}"#)
+        XCTAssertTrue(text.contains("RULE3"), text)
+        // The output the cap URN states is not declared.
+        text = refused(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8"))]}"#)
+        XCTAssertTrue(text.contains("RULE21"), text)
+
+        // An attached cartridge's record is not made from such a manifest either.
+        XCTAssertNotNil(installedCartridgeRecordFromManifest(manifest(good)))
+        XCTAssertNil(installedCartridgeRecordFromManifest(manifest(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8"))]}"#)))
     }
 
     // TEST425: find_cartridge_for_cap returns None for unregistered cap

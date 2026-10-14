@@ -408,7 +408,7 @@ internal func buildInstalledCartridgeRecord(
 /// so unit tests can drive it without reaching into the private `ManagedCartridge`.
 /// Mirrors the reference `installed_cartridge_record_from_manifest`.
 internal func installedCartridgeRecordFromManifest(_ manifest: Data) -> InstalledCartridgeRecord? {
-    guard let parsed = try? JSONDecoder().decode(Manifest.self, from: manifest) else {
+    guard let parsed = try? advertisedManifest(manifest) else {
         return nil
     }
     return InstalledCartridgeRecord(
@@ -1047,7 +1047,7 @@ public final class CartridgeHost: @unchecked Sendable {
     /// List 2: INCOMING_RXIDS — tracks incoming requests FROM relay ((XID, RID) → cartridge_idx).
     /// Routes continuation frames (STREAM_START/CHUNK/STREAM_END/END/ERR) to the correct cartridge.
     ///
-    /// Lifecycle (protocol v4): the entry lives from REQ until the request's
+    /// Lifecycle: the entry lives from REQ until the request's
     /// RESPONSE terminal, NOT the request-body END. The body END only sets a
     /// body-done marker (`incomingBodyDone`) so self-loop peer-response data
     /// frames fall through to outgoing routing; the handler's response
@@ -1708,7 +1708,7 @@ public final class CartridgeHost: @unchecked Sendable {
         let reader = FrameReader(handle: stdoutHandle)
         let writer = FrameWriter(handle: stdinHandle)
 
-        // Perform the v4 HELLO handshake via the wire layer: it enforces the
+        // Perform the HELLO handshake via the wire layer: it enforces the
         // protocol-version match (L1), requires all limit fields, negotiates
         // the element-wise minimum of every limit including initial_credit,
         // and extracts the manifest.
@@ -2222,7 +2222,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 case nil:
                     stateLock.unlock()
                     let total = drops.record(.noRoute, frame.frameType)
-                    fputs("[CartridgeHost] dropped CREDIT without direction — v4 requires credit_dir (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
+                    fputs("[CartridgeHost] dropped CREDIT without direction — credit_dir is required (no_route, total=\(total)) rid=\(frame.id)\n", stderr)
                     return
                 }
             } else {
@@ -2303,7 +2303,7 @@ public final class CartridgeHost: @unchecked Sendable {
             // Terminal bookkeeping.
             // - Via incomingRxids: the REQUEST BODY completed. The entry
             //   STAYS — the handler's response is still flowing and its
-            //   output CREDIT grants route through it (v4). It is removed
+            //   output CREDIT grants route through it. It is removed
             //   when the handler's response terminal passes outbound
             //   (handleCartridgeFrame) or on cartridge death.
             // - Via outgoingRids: a peer RESPONSE completed — clean up.
@@ -2568,7 +2568,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     outgoingMaxSeqTouched.removeValue(forKey: flowKey)
 
                     // The handler's RESPONSE terminal is the request's true
-                    // end at this host (v4): once the body has completed
+                    // end at this host: once the body has completed
                     // too, release the incoming routing entry and its
                     // body-done marker. If the response terminates BEFORE
                     // the body END arrives (response-first race), remember
@@ -3120,8 +3120,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 restartCount: cartridge.restartCount,
                 protocolDropsTotal: cartridge.protocolDropsTotal
             )
-            // A cartridge whose HELLO permanently failed (e.g. a pre-v4
-            // binary hard-rejected by the version check) stays IN the
+            // A cartridge whose HELLO permanently failed (e.g. a binary of
+            // another protocol version, hard-rejected by the version check) stays IN the
             // inventory with an attachment error — never silently absent.
             // It carries no capGroups, so it is never routable. Mirrors the
             // corrected Rust reference (the old "not advertised" behavior on
@@ -3244,7 +3244,7 @@ public final class CartridgeHost: @unchecked Sendable {
         /// `cap_groups` array (top-level structural failure).
         case invalidJson(String)
         /// Manifest parsed but violated the cartridge schema (missing
-        /// CAP_IDENTITY, etc.).
+        /// CAP_IDENTITY, a definition that breaks a definition rule).
         case incompatible(String)
 
         var description: String {
@@ -3264,12 +3264,15 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Extract cap URN strings from a manifest JSON blob.
     /// Throws `ManifestExtractError` so the caller can classify the failure
     /// for `recordAttachmentError`.
-    private static func extractCapGroups(from manifest: Data) throws -> [CapGroup] {
+    static func extractCapGroups(from manifest: Data) throws -> [CapGroup] {
         let decoded: Manifest
         do {
-            decoded = try JSONDecoder().decode(Manifest.self, from: manifest)
-        } catch {
-            throw ManifestExtractError.invalidJson("Invalid CapManifest JSON: \(error)")
+            decoded = try advertisedManifest(manifest)
+        } catch AdvertisedManifestError.unparseable(let message) {
+            throw ManifestExtractError.invalidJson("Invalid CapManifest JSON: \(message)")
+        } catch AdvertisedManifestError.invalidDefinition(let message) {
+            // The host does not route by a definition nobody checked.
+            throw ManifestExtractError.incompatible(message)
         }
 
         guard let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) else {
@@ -3363,7 +3366,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 // Control/side-channel frames are legal ANYWHERE during the
                 // probe (spec 12.3/12.4: LOG interleaves without affecting
                 // data flow; CREDIT/HEARTBEAT are the control plane the
-                // writer gate itself exempts, L4). A v4 cartridge crediting
+                // writer gate itself exempts, L4). A cartridge crediting
                 // its probe input as it consumes (L10) must not fail
                 // identity verification.
                 break

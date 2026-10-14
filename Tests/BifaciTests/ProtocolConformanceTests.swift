@@ -515,7 +515,7 @@ final class ProtocolConformanceTests: XCTestCase {
             ticket: 0,
             routingId: nil,
             requestId: .newUUID(),
-            outputMediaUrn: "media:",
+            outputs: try! ResponseOutputPlan.forCap(CSCapIdentity, manifest: nil),
             frames: BlockingQueue<Frame>()
         )
     }
