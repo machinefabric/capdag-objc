@@ -436,4 +436,54 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
                    @"A specific disbind cap should NOT be equivalent to identity");
 }
 
+// TEST12847: every output of a cap other than its main one is reachable by
+// planning: the search has an edge from the cap's input to that output's own
+// type, and a strand that reaches it records which output it took (by URN),
+// with that output's cardinality. An output that carries the input has no
+// type of its own and no edge; the main output's edge is the cap's.
+- (void)test12847_aCapsOtherOutputsAreReachableByPlanning {
+    CSCap *split = makeTestCap(@"media:enc=utf-8;ext=txt", @"media:enc=utf-8;head", @"split", @"Split");
+    [split setOutputs:@[
+        [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;head" name:@"head" outputDescription:@"the head"],
+        [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;rest" name:@"rest" outputDescription:@"the rest"],
+        [[CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;part" name:@"parts" outputDescription:@"the parts"] outputAsSequence:YES],
+        [[CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;same" name:@"same" outputDescription:@"the input"] outputCarryingInput],
+    ]];
+    CSCap *count = makeTestCap(@"media:enc=utf-8;rest", @"media:integer;numeric", @"count", @"Count");
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    [graph addCap:split];
+    [graph addCap:count];
+    XCTAssertEqual([graph edgeCount], 4u, @"split: head, rest, parts; count: one");
+
+    CSMediaUrn *(^media)(NSString *) = ^CSMediaUrn *(NSString *text) { return [CSMediaUrn fromString:text error:nil]; };
+    CSMediaUrn *text = media(@"media:enc=utf-8;ext=txt");
+    CSStrandStep *(^onlyStep)(NSString *) = ^CSStrandStep *(NSString *target) {
+        NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:text target:media(target) maxDepth:3 maxPaths:10 isSequence:NO];
+        XCTAssertEqual(paths.count, 1u, @"one path to %@", target);
+        XCTAssertEqual(paths.firstObject.steps.count, 1u);
+        return paths.firstObject.steps.firstObject;
+    };
+
+    XCTAssertNil(onlyStep(@"media:enc=utf-8;head").outputUrn);
+
+    CSStrandStep *rest = onlyStep(@"media:enc=utf-8;rest");
+    XCTAssertEqualObjects(rest.capUrn, [split.capUrn toString]);
+    XCTAssertEqualObjects(rest.outputUrn, @"media:enc=utf-8;rest");
+    XCTAssertFalse(rest.outputIsSequence);
+    XCTAssertEqualObjects(rest.toSpec, @"media:enc=utf-8;rest", @"the output's own type, not the effect's");
+
+    XCTAssertTrue(onlyStep(@"media:enc=utf-8;part").outputIsSequence, @"the output's own cardinality");
+
+    XCTAssertEqual([graph findPathsToExactTarget:text target:media(@"media:enc=utf-8;same") maxDepth:3 maxPaths:10 isSequence:NO].count, 0u,
+                   @"a carried output is reached by no edge");
+
+    // Through another output and on.
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:text target:media(@"media:integer;numeric") maxDepth:3 maxPaths:10 isSequence:NO];
+    XCTAssertEqual(paths.count, 1u);
+    NSArray<CSStrandStep *> *steps = paths.firstObject.steps;
+    XCTAssertEqual(steps.count, 2u);
+    XCTAssertEqualObjects(steps.firstObject.outputUrn, @"media:enc=utf-8;rest");
+    XCTAssertNil(steps.lastObject.outputUrn);
+}
+
 @end

@@ -129,9 +129,13 @@ typedef NS_ERROR_ENUM(CSStepTokenErrorDomain, CSStepTokenErrorCode) {
 /// Whether the cap's main input expects a sequence (Cap steps; NO for cardinality transitions).
 /// Mirrors Rust: StrandStepType::Cap { input_is_sequence }
 @property (nonatomic, assign) BOOL inputIsSequence;
-/// Whether the cap's output produces a sequence (Cap steps; NO for cardinality transitions).
+/// Whether the output this step takes produces a sequence (Cap steps; NO for cardinality transitions).
 /// Mirrors Rust: StrandStepType::Cap { output_is_sequence }
 @property (nonatomic, assign) BOOL outputIsSequence;
+/// The output this step takes, when it is not the cap's main one: that
+/// output's media URN, its identity in the definition (never its name, which
+/// is a label). nil: the main output. Mirrors Rust: StrandStepType::Cap { output_urn }
+@property (nonatomic, copy, nullable) NSString *outputUrn;
 /// Human-readable title for this step
 - (NSString *)title;
 /// Whether this is a real cap step

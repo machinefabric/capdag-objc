@@ -23,6 +23,7 @@
 @property (nonatomic, assign, readwrite) CSLiveMachinePlanEdgeType edgeType;
 @property (nonatomic, assign, readwrite) BOOL inputIsSequence;
 @property (nonatomic, assign, readwrite) BOOL outputIsSequence;
+@property (nonatomic, strong, readwrite, nullable) CSMediaUrn *outputUrn;
 @property (nonatomic, strong, readwrite, nullable) CSCapUrn *capUrn;
 @property (nonatomic, copy, readwrite, nullable) NSString *capTitle;
 @property (nonatomic, assign, readwrite) NSUInteger specificity;
@@ -36,7 +37,8 @@
                       title:(NSString *)title
                 specificity:(NSUInteger)specificity
            inputIsSequence:(BOOL)inputIsSeq
-          outputIsSequence:(BOOL)outputIsSeq {
+          outputIsSequence:(BOOL)outputIsSeq
+                 outputUrn:(nullable CSMediaUrn *)outputUrn {
     CSLiveMachinePlanEdge *edge = [[CSLiveMachinePlanEdge alloc] init];
     edge.fromSpec = from;
     edge.toSpec = to;
@@ -46,6 +48,7 @@
     edge.specificity = specificity;
     edge.inputIsSequence = inputIsSeq;
     edge.outputIsSequence = outputIsSeq;
+    edge.outputUrn = outputUrn;
     return edge;
 }
 
@@ -210,15 +213,40 @@
     CSMediaUrn *toSpec = [CSMediaUrn fromString:outSpecStr error:&error];
     if (!toSpec) return;
 
+    // Cardinality follows the declared main input, never argument order.
+    BOOL inputIsSeq = [cap primaryInputIsSequence];
+    CSCapOutput *main = [cap mainOutput];
+    BOOL outputIsSeq = main ? main.isSequence : NO;
+    [self pushEdgeOfCap:cap from:fromSpec to:toSpec inputIsSequence:inputIsSeq outputIsSequence:outputIsSeq outputUrn:nil];
+
+    // Every other output the cap declares is reachable too: an edge from the
+    // cap's input to that output's own type. An output that carries the input
+    // unchanged (a router's) has no type of its own to reach.
+    for (CSCapOutput *output in [cap getOutputs]) {
+        if (output.carries != nil) continue;
+        if (main != nil && [main.mediaUrn isEqualToString:output.mediaUrn]) continue;
+        NSError *outputError = nil;
+        CSMediaUrn *outputUrn = [CSMediaUrn fromString:output.mediaUrn error:&outputError];
+        if (outputUrn == nil) {
+            [NSException raise:NSInternalInconsistencyException
+                        format:@"cap registry invariant: output media_urn '%@' of '%@' is a valid media URN: %@",
+                               output.mediaUrn, cap.capUrn, outputError.localizedDescription];
+        }
+        [self pushEdgeOfCap:cap from:fromSpec to:outputUrn inputIsSequence:inputIsSeq outputIsSequence:output.isSequence outputUrn:outputUrn];
+    }
+}
+
+/// Store one edge of `cap`, from its input to one of its outputs.
+- (void)pushEdgeOfCap:(CSCap *)cap
+                 from:(CSMediaUrn *)fromSpec
+                   to:(CSMediaUrn *)toSpec
+      inputIsSequence:(BOOL)inputIsSeq
+     outputIsSequence:(BOOL)outputIsSeq
+            outputUrn:(nullable CSMediaUrn *)outputUrn {
     NSString *fromCanonical = [fromSpec toString];
     NSString *toCanonical = [toSpec toString];
     NSString *capCanonical = [cap.capUrn toString];
 
-    // Cardinality follows the declared main input, never argument order.
-    BOOL inputIsSeq = [cap primaryInputIsSequence];
-    BOOL outputIsSeq = [cap mainOutput] ? [cap mainOutput].isSequence : NO;
-
-    // Create edge
     NSUInteger edgeIdx = self.edges.count;
     CSLiveMachinePlanEdge *edge = [CSLiveMachinePlanEdge capEdgeFrom:fromSpec
                                                   to:toSpec
@@ -226,7 +254,8 @@
                                                title:cap.title
                                          specificity:(NSUInteger)[cap.capUrn specificity]
                                     inputIsSequence:inputIsSeq
-                                   outputIsSequence:outputIsSeq];
+                                   outputIsSequence:outputIsSeq
+                                          outputUrn:outputUrn];
     [self.edges addObject:edge];
 
     // Update indices
@@ -476,6 +505,7 @@
                     step.specificity = edge.specificity;
                     step.inputIsSequence = edge.inputIsSequence;
                     step.outputIsSequence = edge.outputIsSequence;
+                    step.outputUrn = [edge.outputUrn toString];
                     break;
                 case CSLiveMachinePlanEdgeTypeForEach:
                     step.stepType = CSStrandStepTypeForEach;

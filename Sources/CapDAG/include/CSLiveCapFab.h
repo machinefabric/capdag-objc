@@ -47,8 +47,11 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
 @property (nonatomic, assign, readonly) CSLiveMachinePlanEdgeType edgeType;
 /// Whether the cap's main input expects a sequence
 @property (nonatomic, assign, readonly) BOOL inputIsSequence;
-/// Whether the cap's output produces a sequence
+/// Whether the output this edge reaches produces a sequence
 @property (nonatomic, assign, readonly) BOOL outputIsSequence;
+/// The output this edge reaches, when it is not the cap's main one: that
+/// output's media URN, its identity in the definition. nil: the main output.
+@property (nonatomic, strong, readonly, nullable) CSMediaUrn *outputUrn;
 
 /// Cap URN (for Cap edges only; nil for cardinality transitions)
 @property (nonatomic, strong, readonly, nullable) CSCapUrn *capUrn;
@@ -70,7 +73,8 @@ typedef NS_ENUM(NSInteger, CSLiveMachinePlanEdgeType) {
                       title:(NSString *)title
                 specificity:(NSUInteger)specificity
             inputIsSequence:(BOOL)inputIsSeq
-           outputIsSequence:(BOOL)outputIsSeq;
+           outputIsSequence:(BOOL)outputIsSeq
+                  outputUrn:(nullable CSMediaUrn *)outputUrn;
 
 /// Create a ForEach edge (list -> item)
 + (instancetype)forEachEdgeFrom:(CSMediaUrn *)from to:(CSMediaUrn *)to;
