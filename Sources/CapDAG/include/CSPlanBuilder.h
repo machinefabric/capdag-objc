@@ -156,49 +156,4 @@ typedef NS_ERROR_ENUM(CSStepTokenErrorDomain, CSStepTokenErrorCode) {
 @property (nonatomic, copy, nullable) NSString *pathDescription;
 @end
 
-/// Information about an argument
-@interface CSArgumentInfo : NSObject
-@property (nonatomic, copy) NSString *name;
-@property (nonatomic, copy) NSString *mediaUrn;
-@property (nonatomic, assign) BOOL isRequired;
-@property (nonatomic, strong, nullable) id defaultValue;
-@property (nonatomic, strong, nullable) NSDictionary *schema;
-@end
-
-/// Argument requirements for a step
-@interface CSStepArgumentRequirements : NSObject
-@property (nonatomic, copy) NSString *capUrn;
-/// The planner-minted `CSStrandStep.tokenId` of the step these requirements
-/// describe — the ONLY address an argument value is ever bound to. A caller
-/// renders a form from this and binds the values it collects straight back under
-/// this token: no lookup, no strand to consult, and therefore no way for a value
-/// to end up addressed to a different plan's step.
-@property (nonatomic, copy) CSStepToken *tokenId;
-@property (nonatomic, strong) NSArray<CSArgumentInfo *> *arguments;
-@end
-
-/// Argument requirements for a path
-@interface CSPathArgumentRequirements : NSObject
-@property (nonatomic, strong) NSArray<CSStepArgumentRequirements *> *steps;
-@property (nonatomic, strong) NSArray<CSArgumentInfo *> *allSlots;
-@end
-
-// MARK: - MachinePlanBuilder
-
-/// The argument requirements of the steps of a strand.
-@interface CSMachinePlanBuilder : NSObject
-
-/// Create a new plan builder backed by the unified `CSFabricRegistry`.
-- (instancetype)initWithFabricRegistry:(id<CSFabricRegistryProtocol>)fabricRegistry;
-
-/// Analyze argument requirements for a strand.
-///
-/// Takes the resolved `CSStrand` — not a list of cap URNs — because the
-/// requirements it produces are addressed by each step's `tokenId`, and only a
-/// plan carries those. Mirrors Rust: `MachinePlanBuilder::analyze_path_arguments`.
-- (void)analyzePathArgumentsForStrand:(CSStrand *)strand
-                           completion:(void (^)(CSPathArgumentRequirements * _Nullable requirements, NSError * _Nullable error))completion;
-
-@end
-
 NS_ASSUME_NONNULL_END

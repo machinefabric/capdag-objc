@@ -488,12 +488,3 @@ static NSError *CSPlanError(NSString *message) {
 
 @end
 
-// MARK: - NodeExecutionResult
-
-@implementation CSNodeExecutionResult
-@end
-
-// MARK: - MachineResult
-
-@implementation CSMachineResult
-@end
