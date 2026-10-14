@@ -384,7 +384,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
             ]
         )
 
-        let manifest = host.buildManifest()
+        let manifest = try host.buildManifest()
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         let caps = payload.capUrns()
         XCTAssertEqual(caps[0], CSCapIdentity)
@@ -400,6 +400,25 @@ final class InProcessCartridgeHostTests: XCTestCase {
         let pools = payload.installedCartridges[0].runtimeStats?.pools ?? [:]
         XCTAssertEqual(pools[poolAll]?.configured, 0, "in-process hosts are unlimited")
         XCTAssertNotNil(pools[CSCapIdentity])
+    }
+
+    // TEST12870: a handler's cap is advertised as the definition it declares —
+    // every arg and output with its name — not a summary of its URN and title.
+    func test12870_manifestAdvertisesWholeDefinitions() throws {
+        let urn = try CSCapUrn.fromString("cap:in=\"media:document;ext=pdf\";thumbnail;out=\"media:ext=png;image\"")
+        let input = CSCapArg(mediaUrn: "media:document;ext=pdf", name: "document", required: true, sources: [CSArgSource.stdinSource(withMediaUrn: "media:document;ext=pdf")])
+        let width = CSCapArg(mediaUrn: "media:integer;width", name: "width", required: false, sources: [CSArgSource.cliFlagSource("--width")])
+        let thumbnail = CSCapOutput(mediaUrn: "media:ext=png;image", name: "thumbnail", outputDescription: "The first page")
+        let cap = CSCap(urn: urn, title: "Thumbnail", aliases: ["thumbnail"], description: nil, documentation: nil, metadata: [:], args: [input, width], outputs: [thumbnail], metadataJSON: nil)
+        let host = InProcessCartridgeHost(identity: InProcessHostIdentity.forTest(id: "thumb-host"), handlers: [("thumb", [cap], EchoHandler())])
+
+        let payload = try JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: try host.buildManifest())
+        let advertised = try XCTUnwrap(payload.installedCartridges[0].capGroups[0].caps.first { $0.urn == urn.toString() })
+        XCTAssertEqual(advertised.args.map(\.name), ["document", "width"])
+        XCTAssertEqual(advertised.args.map(\.mediaUrn), ["media:document;ext=pdf", "media:integer;width"])
+        XCTAssertEqual(advertised.outputs.map(\.name), ["thumbnail"])
+        XCTAssertEqual(advertised.outputs.map(\.outputDescription), ["The first page"])
+        XCTAssertEqual(advertised.title, "Thumbnail")
     }
 
     // TEST658: InProcessCartridgeHost handles heartbeat by echoing same ID

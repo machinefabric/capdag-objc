@@ -361,7 +361,7 @@ public final class InProcessCartridgeHost {
     /// supplied at construction. The wire format is symmetric with
     /// out-of-process hosts: the engine reads `cap_groups` from
     /// `installed_cartridges` and derives the flat cap list.
-    internal func buildManifest() -> Data {
+    internal func buildManifest() throws -> Data {
         var caps: [CapDefinition] = [
             // The canonical identity definition — its argument contract must
             // match what the fabric publishes (cap-drift guard).
@@ -371,7 +371,7 @@ public final class InProcessCartridgeHost {
             for cap in entry.caps {
                 let urn = cap.capUrn.toString()
                 if urn != CSCapIdentity {
-                    caps.append(CapDefinition(urn: urn, title: cap.title, aliases: cap.aliases))
+                    caps.append(try CapDefinition(declaredBy: cap))
                 }
             }
         }
@@ -522,7 +522,7 @@ public final class InProcessCartridgeHost {
         }
 
         // Send initial RelayNotify with aggregate caps
-        let manifest = buildManifest()
+        let manifest = try buildManifest()
         let notify = Frame.relayNotify(manifest: manifest, limits: Limits())
         writeContinuation.yield(notify)
 

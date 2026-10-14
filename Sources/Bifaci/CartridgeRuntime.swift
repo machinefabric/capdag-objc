@@ -3850,6 +3850,16 @@ public struct CapDefinition: Codable, Sendable {
     /// Whether `name` is one of this cap's aliases (exact match).
     public func hasAlias(_ name: String) -> Bool { aliases.contains(name) }
 
+    /// The definition `cap` declares, exactly as it declares it: every arg and
+    /// output with its name, read through the wire form a cartridge manifest
+    /// and this type share. A host advertising a cap advertises this — a
+    /// summary without its args and outputs is not a definition, and a reader
+    /// holds what it is given to the definition rules.
+    public init(declaredBy cap: CSCap) throws {
+        let data = try JSONSerialization.data(withJSONObject: cap.toDictionary())
+        self = try JSONDecoder().decode(CapDefinition.self, from: data)
+    }
+
     public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], outputs: [CapOutput] = []) {
         self.urn = urn
         self.title = title
