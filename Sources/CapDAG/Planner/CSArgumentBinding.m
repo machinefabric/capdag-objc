@@ -80,7 +80,6 @@
 @property (nonatomic, assign) NSInteger bindingType;
 @property (nonatomic, assign) NSUInteger inputFileIndex;
 @property (nonatomic, copy, nullable) NSString *nodeId;
-@property (nonatomic, copy, nullable) NSString *outputField;
 @property (nonatomic, copy, nullable) NSString *settingUrn;
 @property (nonatomic, strong, nullable) id literalValue;
 @property (nonatomic, copy, nullable) NSString *slotName;
@@ -121,11 +120,10 @@ typedef NS_ENUM(NSInteger, CSArgumentBindingType) {
     return binding;
 }
 
-+ (instancetype)previousOutputFromNode:(NSString *)nodeId outputField:(nullable NSString *)outputField {
++ (instancetype)previousOutputFromNode:(NSString *)nodeId {
     CSArgumentBinding *binding = [[CSArgumentBinding alloc] init];
     binding.bindingType = CSArgumentBindingTypePreviousOutput;
     binding.nodeId = nodeId;
-    binding.outputField = outputField;
     return binding;
 }
 
@@ -345,27 +343,7 @@ NSError *_Nullable CSResolveArgumentBinding(
                                            @"No output from node '%@'", binding.nodeId]}];
             }
 
-            id jsonValue = output;
-            if (binding.outputField) {
-                if ([output isKindOfClass:[NSDictionary class]]) {
-                    jsonValue = output[binding.outputField];
-                    if (!jsonValue) {
-                        return [NSError errorWithDomain:@"CSPlannerError"
-                                                   code:1
-                                               userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                                                   @"Field '%@' not found in output from node '%@'",
-                                                   binding.outputField, binding.nodeId]}];
-                    }
-                } else {
-                    return [NSError errorWithDomain:@"CSPlannerError"
-                                               code:1
-                                           userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                                               @"Cannot extract field '%@' from non-dictionary output",
-                                               binding.outputField]}];
-                }
-            }
-
-            value = JSONValueToBytes(jsonValue);
+            value = JSONValueToBytes(output);
             source = CSArgumentSourcePreviousOutput;
             break;
         }

@@ -11,9 +11,6 @@
 #import "CSFabricRegistry.h"
 
 @class CSCap;
-@class CSMachinePlan;
-@class CSCapInputFile;
-@class CSCardinalityChainAnalysis;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -184,53 +181,12 @@ typedef NS_ERROR_ENUM(CSStepTokenErrorDomain, CSStepTokenErrorCode) {
 
 // MARK: - MachinePlanBuilder
 
-/// Builder for creating cap execution plans
+/// The argument requirements of the steps of a strand.
 @interface CSMachinePlanBuilder : NSObject
 
 /// Create a new plan builder backed by the unified `CSFabricRegistry`.
 - (instancetype)initWithFabricRegistry:(id<CSFabricRegistryProtocol>)fabricRegistry;
 
-/// Set the filter for available cap URNs
-- (instancetype)withAvailableCaps:(NSSet<NSString *> *)availableCaps;
-
-/// Find a path through the capfab from source to target media type
-- (void)findPathFromSource:(NSString *)sourceMedia
-                  toTarget:(NSString *)targetMedia
-                completion:(void (^)(NSArray<NSString *> * _Nullable capUrns, NSError * _Nullable error))completion;
-
-/// Build an execution plan for transforming from source to target media type
-- (void)buildPlanFromSource:(NSString *)sourceMedia
-                   toTarget:(NSString *)targetMedia
-                 inputFiles:(NSArray<CSCapInputFile *> *)inputFiles
-                 completion:(void (^)(CSMachinePlan * _Nullable plan, NSError * _Nullable error))completion;
-
-/// Analyze what transformations would be needed for a path
-- (void)analyzePathCardinalityFromSource:(NSString *)sourceMedia
-                                toTarget:(NSString *)targetMedia
-                              completion:(void (^)(CSCardinalityChainAnalysis * _Nullable analysis, NSError * _Nullable error))completion;
-
-/// Build a plan from a pre-defined path
-- (void)buildPlanFromPath:(CSStrand *)path
-                     name:(NSString *)name
-        inputCardinality:(CSInputCardinality)cardinality
-              completion:(void (^)(CSMachinePlan * _Nullable plan, NSError * _Nullable error))completion;
-
-/// Get all possible target media defs from a given source
-- (void)getReachableTargetsFromSource:(NSString *)sourceMedia
-                           completion:(void (^)(NSArray<NSString *> * _Nullable targets, NSError * _Nullable error))completion;
-
-/// Get all reachable targets with additional metadata
-- (void)getReachableTargetsWithMetadataFromSource:(NSString *)sourceMedia
-                                         maxDepth:(NSUInteger)maxDepth
-                                       completion:(void (^)(NSArray<CSReachableTargetInfo *> * _Nullable targets, NSError * _Nullable error))completion;
-
-/// Find all paths (up to max depth) from source to target
-- (void)findAllPathsFromSource:(NSString *)sourceMedia
-                      toTarget:(NSString *)targetMedia
-                      maxDepth:(NSUInteger)maxDepth
-                    completion:(void (^)(NSArray<NSArray<NSString *> *> * _Nullable paths, NSError * _Nullable error))completion;
-
-/// Analyze argument requirements for a path
 /// Analyze argument requirements for a strand.
 ///
 /// Takes the resolved `CSStrand` — not a list of cap URNs — because the

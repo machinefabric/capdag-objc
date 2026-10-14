@@ -1,141 +1,152 @@
 //
 //  OrchestratorTypes.swift
-//  Orchestrator: DOT Parser with CapDag Orchestration
+//  Bifaci
 //
-//  This module parses DOT digraphs and interprets edge labels starting with `cap:`
-//  as Cap URNs. It resolves each Cap URN via a CapDag registry, validates the graph,
-//  and produces a validated, executable DAG IR.
+//  The graph an executor runs: the steps of a machine plan with the cap
+//  definitions they run, wired by the nodes they read and produce.
+//  Mirrors Rust: src/orchestrator/types.rs
 
 import Foundation
 @preconcurrency import CapDAG
 
 // MARK: - Error Types
 
-/// Errors that can occur during DOT parsing and orchestration
+/// Errors that can occur turning a plan into a graph
 public enum ParseOrchestrationError: Error, Equatable {
-    /// DOT parsing failed
-    case dotParseFailed(String)
-
-    /// Edge is missing the required 'label' attribute
-    case edgeMissingLabel(from: String, to: String)
-
-    /// Edge label does not start with 'cap:'
-    case edgeLabelNotCapUrn(from: String, to: String, label: String)
-
     /// Cap URN not found in registry
     case capNotFound(capUrn: String)
 
-    /// Cap URN is invalid
-    case capInvalid(capUrn: String, details: String)
-
-    /// Node media URN conflicts with existing assignment
-    case nodeMediaConflict(node: String, existing: String, requiredByCap: String)
-
-    /// Node media attribute conflicts with derived media URN
-    case nodeMediaAttrConflict(node: String, existing: String, attrValue: String)
-
-    /// Graph contains a cycle (not a DAG)
-    case notADag(cycleNodes: [String])
-
-    /// Cap URN parsing error
-    case capUrnParseError(String)
-
-    /// Media URN parsing error
-    case mediaUrnParseError(String)
-
-    /// Registry error
-    case registryError(String)
-
-    /// Structure mismatch between connected nodes (record vs opaque)
-    case structureMismatch(node: String, sourceStructure: InputStructure, expectedStructure: InputStructure)
+    /// The plan or graph is not one that can be run as asked
+    case invalidGraph(String)
 }
 
 extension ParseOrchestrationError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .dotParseFailed(let msg):
-            return "DOT parse failed: \(msg)"
-        case .edgeMissingLabel(let from, let to):
-            return "Edge from '\(from)' to '\(to)' is missing label attribute"
-        case .edgeLabelNotCapUrn(let from, let to, let label):
-            return "Edge from '\(from)' to '\(to)' has label '\(label)' that does not start with 'cap:'"
         case .capNotFound(let capUrn):
             return "Cap URN '\(capUrn)' not found in registry"
-        case .capInvalid(let capUrn, let details):
-            return "Cap URN '\(capUrn)' is invalid: \(details)"
-        case .nodeMediaConflict(let node, let existing, let requiredByCap):
-            return "Node '\(node)' has conflicting media URNs: existing='\(existing)', required_by_cap='\(requiredByCap)'"
-        case .nodeMediaAttrConflict(let node, let existing, let attrValue):
-            return "Node '\(node)' has media attribute '\(attrValue)' that conflicts with derived media URN '\(existing)'"
-        case .notADag(let cycleNodes):
-            return "Graph is not a DAG, contains cycle involving nodes: \(cycleNodes)"
-        case .capUrnParseError(let msg):
-            return "Failed to parse Cap URN: \(msg)"
-        case .mediaUrnParseError(let msg):
-            return "Failed to parse Media URN: \(msg)"
-        case .registryError(let msg):
-            return "Registry error: \(msg)"
-        case .structureMismatch(let node, let sourceStructure, let expectedStructure):
-            return "Structure mismatch at node '\(node)': source is \(sourceStructure) but cap expects \(expectedStructure)"
+        case .invalidGraph(let message):
+            return "Invalid graph: \(message)"
         }
     }
 }
 
-// MARK: - Input Structure
-
-/// Structure of input data - record (structured JSON) vs opaque (binary/text blob)
-public enum InputStructure: String, Equatable, Sendable {
-    case record = "record"
-    case opaque = "opaque"
-}
-
 // MARK: - IR Structures
 
-/// A resolved edge in the orchestration graph
-public struct ResolvedEdge: Equatable {
-    /// Source node DOT ID
-    public let from: String
-    /// Target node DOT ID
-    public let to: String
-    /// Cap URN string from label
+/// What one input of a step is sent: one node's value as it is, or several
+/// nodes' values gathered, in order, into one sequence — a single value
+/// contributes one item, a sequence its items. A gather with no members is an
+/// empty sequence.
+public enum StepSource: Equatable, Sendable {
+    case node(String)
+    case gather([String])
+
+    /// Every node this source reads, in order.
+    public var nodes: [String] {
+        switch self {
+        case .node(let node): return [node]
+        case .gather(let members): return members
+        }
+    }
+}
+
+/// One input stream of a step.
+public struct StepInput: Equatable, Sendable {
+    /// The URN the stream is delivered under: the cap's `in=` for its main
+    /// input, the arg's stream URN for any other. A cartridge tells its inputs
+    /// apart by this.
+    public let streamUrn: String
+    public let source: StepSource
+
+    public init(streamUrn: String, source: StepSource) {
+        self.streamUrn = streamUrn
+        self.source = source
+    }
+}
+
+/// An output of a step other than its main one that something takes.
+public struct StepOutput: Equatable, Sendable {
+    /// The output's media URN in the cap's definition: what its response
+    /// stream names.
+    public let outputMediaUrn: String
+    /// The node its value is stored at.
+    public let node: String
+
+    public init(outputMediaUrn: String, node: String) {
+        self.outputMediaUrn = outputMediaUrn
+        self.node = node
+    }
+}
+
+/// One step of a resolved graph: one invocation of a cap.
+public struct ResolvedStep: Equatable {
+    /// The stable per-step identity carried from the plan's Cap node: the key
+    /// by which a run's live progress maps back to the graph element a client
+    /// rendered.
+    public let tokenId: CSStepToken
+    /// The step's node: where its MAIN output is stored.
+    public let node: String
+    /// Cap URN string
     public let capUrn: String
     /// Resolved cap definition
     public let cap: CSCap
-    /// Input media URN (the actual stream label for this edge)
-    public let inMedia: String
-    /// Output media URN from cap definition
+    /// The streams the step is sent, besides the values its args are given by
+    /// the run. None for a step nothing is wired into.
+    public let inputs: [StepInput]
+    /// The outputs other than the main one that something takes.
+    public let outputs: [StepOutput]
+    /// The media URN of the main output, from the cap definition.
     public let outMedia: String
+    /// What the step does when it fails.
+    public let policy: CSStepPolicy
 
-    public init(from: String, to: String, capUrn: String, cap: CSCap, inMedia: String, outMedia: String) {
-        self.from = from
-        self.to = to
+    public init(tokenId: CSStepToken, node: String, capUrn: String, cap: CSCap,
+                inputs: [StepInput], outputs: [StepOutput], outMedia: String, policy: CSStepPolicy) {
+        self.tokenId = tokenId
+        self.node = node
         self.capUrn = capUrn
         self.cap = cap
-        self.inMedia = inMedia
+        self.inputs = inputs
+        self.outputs = outputs
         self.outMedia = outMedia
+        self.policy = policy
     }
 
-    public static func == (lhs: ResolvedEdge, rhs: ResolvedEdge) -> Bool {
-        return lhs.from == rhs.from &&
-               lhs.to == rhs.to &&
+    /// Every node the step reads, in input order.
+    public var sourceNodes: [String] {
+        inputs.flatMap { $0.source.nodes }
+    }
+
+    /// Every node the step produces: its own, then its other taken outputs'.
+    public var producedNodes: [String] {
+        [node] + outputs.map { $0.node }
+    }
+
+    public static func == (lhs: ResolvedStep, rhs: ResolvedStep) -> Bool {
+        return lhs.tokenId == rhs.tokenId &&
+               lhs.node == rhs.node &&
                lhs.capUrn == rhs.capUrn &&
-               lhs.inMedia == rhs.inMedia &&
-               lhs.outMedia == rhs.outMedia
+               lhs.inputs == rhs.inputs &&
+               lhs.outputs == rhs.outputs &&
+               lhs.outMedia == rhs.outMedia &&
+               lhs.policy == rhs.policy
     }
 }
 
-/// A resolved orchestration graph
+/// Steps with the cap definitions they run, wired by the nodes they read and
+/// produce. A node no step of the graph produces is an input of the graph:
+/// its value is supplied when the graph is run.
 public struct ResolvedGraph: Equatable {
-    /// Map from DOT node ID to derived media URN
+    /// Map from a node name to the media URN it holds
     public var nodes: [String: String]
-    /// Resolved edges with cap definitions
-    public var edges: [ResolvedEdge]
-    /// Original graph name (if any)
+    /// The steps, in the order they were asked for
+    public var steps: [ResolvedStep]
+    /// The name of the plan the graph came from
     public var graphName: String?
 
-    public init(nodes: [String: String] = [:], edges: [ResolvedEdge] = [], graphName: String? = nil) {
+    public init(nodes: [String: String] = [:], steps: [ResolvedStep] = [], graphName: String? = nil) {
         self.nodes = nodes
-        self.edges = edges
+        self.steps = steps
         self.graphName = graphName
     }
 }
@@ -146,6 +157,7 @@ public struct ResolvedGraph: Equatable {
 ///
 /// This allows dependency injection and testing without network access
 public protocol FabricRegistryProtocol: Sendable {
-    /// Look up a cap by URN
+    /// Look up a cap by URN. A cap the registry does not have is
+    /// `ParseOrchestrationError.capNotFound`.
     func lookup(_ urn: String) async throws -> CSCap
 }

@@ -130,8 +130,8 @@ typedef NS_ENUM(NSInteger, CSArgumentSource) {
 /// Input media URN (current file)
 + (instancetype)inputMediaUrn;
 
-/// Previous output from a node
-+ (instancetype)previousOutputFromNode:(NSString *)nodeId outputField:(nullable NSString *)outputField;
+/// The whole value a node produced. There is no reading of a part of it.
++ (instancetype)previousOutputFromNode:(NSString *)nodeId;
 
 /// Cap default value
 + (instancetype)capDefault;
