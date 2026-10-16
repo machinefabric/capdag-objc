@@ -7,4 +7,4 @@
 // legacy v0 mode. Rewritten only when the value changes.
 #import <stdint.h>
 
-const uint32_t CSBakedCartridgeRegistryVersion = 1;
+const uint32_t CSBakedCartridgeRegistryVersion = 2;
