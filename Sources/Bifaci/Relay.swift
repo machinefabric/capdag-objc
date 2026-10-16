@@ -231,6 +231,12 @@ public final class RelaySlave: @unchecked Sendable {
                         if frame.frameType == .relayState {
                             return .keepGoing
                         }
+                        // A policy travels only toward cartridges (12.2
+                        // §Policy); one coming from the host side is a defect,
+                        // and the relay ends on it.
+                        if frame.frameType == .policy {
+                            throw FrameError.protocolError("Policy frame sent toward the switch; a policy travels only toward cartridges")
+                        }
 
                         // Pass through reorder buffer to validate seq
                         let readyFrames = try reorderBuffer.accept(frame)
@@ -399,6 +405,8 @@ public final class RelayMaster: @unchecked Sendable {
             } else if frame.frameType == .relayState {
                 // RelayState from slave? Protocol error - ignore
                 continue
+            } else if frame.frameType == .policy {
+                throw FrameError.protocolError("Policy frame from a relay slave; a policy travels only toward cartridges")
             }
 
             // Pass through reorder buffer

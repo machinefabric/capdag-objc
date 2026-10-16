@@ -40,7 +40,7 @@ func createSinglePayloadStream(requestId: MessageId = .newUUID(), streamId: Stri
 /// Matches Rust's invoke_op() test helper.
 func invokeOp(_ factory: OpFactory, input: InputPackage, output: Bifaci.OutputStream) throws {
     let op = factory()
-    try dispatchOp(op: op, input: input, outputs: .undeclared(output), peer: NoPeerInvoker())
+    try dispatchOp(op: op, input: input, outputs: .undeclared(output), peer: NoPeerInvoker(), network: fullNetwork())
 }
 
 /// Test Op that decodes the CBOR args array, extracts the first arg's

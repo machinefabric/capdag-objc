@@ -314,7 +314,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let root = slugRoot(of: dir)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         host.registerCartridge(
             path: dir.appendingPathComponent("dropcart").path,
             cartridgeDir: dir.path,
@@ -383,7 +383,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let stalePath = staleDir.appendingPathComponent("stalecart").path
         let rejectedPath = rejectedDir.appendingPathComponent("rejectedcart").path
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         host.registerCartridge(path: stalePath, cartridgeDir: staleDir.path, capGroups: [])
 
         // Healthy (never spawned): advertised without an attachment error.

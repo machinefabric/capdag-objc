@@ -1,10 +1,10 @@
-// GENERATED FILE — do not edit by hand.
+// The cartridge registry version this build speaks: the `/v<N>/` path of the
+// registry manifest and the `{slug}/v<N>/{channel}/…` cartridge layout.
 //
-// Baked from `schemas/cartridge-registry/registry-version.txt` by
-// `scripts/lib/config.sh`, the Objective-C analogue of how `capdag/build.rs`
-// bakes `MFR_CARTRIDGE_REGISTRY_VERSION`. Single source of the cartridge
-// registry version for the ObjC side; no runtime-environment fallback, no
-// legacy v0 mode. Rewritten only when the value changes.
+// The same value as `schemas/cartridge-registry/registry-version.txt`, which
+// Rust bakes from at build time; Go and Python hold it as a constant as this
+// file does. A registry version change commits the new value here with it,
+// and `scripts/lib/config.sh` refuses to build while this file says another.
 #import <stdint.h>
 
-const uint32_t CSBakedCartridgeRegistryVersion = 1;
+const uint32_t CSBakedCartridgeRegistryVersion = 2;

@@ -481,6 +481,13 @@ public final class RelaySwitch: @unchecked Sendable {
     /// small slot count.
     private let addMasterLock = NSLock()
 
+    /// What the engine allows the cartridges behind this switch to do (12.2
+    /// §Policy). Given at construction, so no master is ever connected without
+    /// one; sent to each master before anything else, and to every master on
+    /// each change (`setPolicy`). Guarded by `addMasterLock`, so a change
+    /// cannot fall between a new master's send and its joining.
+    private var policy: HostPolicy
+
     /// Shutdown flag — when true, reader threads and the probe driver exit.
     ///
     /// Deliberately NOT guarded by `lock`, and read/written through its own
@@ -559,7 +566,8 @@ public final class RelaySwitch: @unchecked Sendable {
     ///
     /// - Parameter sockets: Array of socket pairs (one per master). Can be empty — use add_master later.
     /// - Throws: RelaySwitchError if construction or identity verification fails
-    public init(sockets: [SocketPair]) throws {
+    public init(sockets: [SocketPair], policy: HostPolicy) throws {
+        self.policy = policy
         // Allow empty sockets — creates empty switch. Use addMaster() to add masters later.
         // Matches Rust TEST432: Empty masters list creates empty switch, add_master works.
         if sockets.isEmpty {
@@ -607,6 +615,10 @@ public final class RelaySwitch: @unchecked Sendable {
 
             var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
             var caps = notifyPayload.capUrns()
+
+            // The policy goes first, before the identity probe or anything
+            // routed: the host gives it to each cartridge it connects.
+            try socketWriter.write(Frame.policy(policy))
 
             // Per-master SeqAssigner that persists into the MasterConnection
             // regardless of whether we run the identity probe.
@@ -920,6 +932,40 @@ public final class RelaySwitch: @unchecked Sendable {
     ///   index baked in.
     ///
     /// Returns the slot index (stable across reattach).
+    /// The policy in force (12.2 §Policy).
+    public var currentPolicy: HostPolicy {
+        addMasterLock.lock()
+        defer { addMasterLock.unlock() }
+        return policy
+    }
+
+    /// Replace the policy and send it to every attached master, whose hosts
+    /// pass it to their cartridges (12.2 §Policy). Setting the policy in force
+    /// sends nothing. A master that is not attached is given the current
+    /// policy when it attaches; the masters a send failed on are thrown.
+    public func setPolicy(_ newPolicy: HostPolicy) throws {
+        addMasterLock.lock()
+        defer { addMasterLock.unlock() }
+        guard newPolicy != policy else { return }
+        policy = newPolicy
+        lock.lock()
+        let attached = masters.enumerated().filter { !$0.element.detached }
+        lock.unlock()
+        var failures: [String] = []
+        for (idx, master) in attached {
+            do {
+                try master.socketWriter.write(Frame.policy(newPolicy))
+            } catch {
+                failures.append("master \(idx): \(error)")
+            }
+        }
+        if !failures.isEmpty {
+            throw RelaySwitchError.protocolError(
+                "the policy '\(newPolicy.network.asString)' did not reach every master: \(failures.joined(separator: "; "))"
+            )
+        }
+    }
+
     public func addMaster(_ socket: SocketPair) throws -> Int {
         addMasterLock.lock()
         defer { addMasterLock.unlock() }
@@ -968,6 +1014,11 @@ public final class RelaySwitch: @unchecked Sendable {
 
         var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
         var caps = notifyPayload.capUrns()
+
+        // The current policy goes first, before the identity probe or
+        // anything routed. `setPolicy` holds `addMasterLock`, which this call
+        // holds.
+        try socketWriter.write(Frame.policy(policy))
 
         let seqAssigner = SeqAssigner()
 

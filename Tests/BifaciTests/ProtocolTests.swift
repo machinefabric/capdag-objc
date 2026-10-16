@@ -160,8 +160,8 @@ final class ProtocolTests: XCTestCase {
                 let writer = FrameWriter(handle: cartridgeWrite)
                 _ = try reader.read() // host HELLO
                 var hello = Frame.helloWithManifest(limits: Limits(), manifest: handshakeTestManifest, poolStates: [:])
-                hello.version = 4
-                hello.meta?["version"] = .unsignedInt(4)
+                hello.version = 5
+                hello.meta?["version"] = .unsignedInt(5)
                 try writer.write(hello)
             } catch {
                 XCTFail("the previous-version cartridge failed: \(error)")
@@ -175,7 +175,7 @@ final class ProtocolTests: XCTestCase {
         XCTAssertThrowsError(try performHandshakeWithManifest(reader: reader, writer: writer), "a HELLO of another version must be rejected") { error in
             let msg = (error as? FrameError)?.errorDescription ?? "\(error)"
             XCTAssertTrue(msg.contains("version"), "error must name the version mismatch: \(msg)")
-            XCTAssertTrue(msg.contains("ours 5") && msg.contains("theirs 4"), "error must state both versions: \(msg)")
+            XCTAssertTrue(msg.contains("ours 6") && msg.contains("theirs 5"), "error must state both versions: \(msg)")
         }
         XCTAssertEqual(semaphore.wait(timeout: .now() + 10), .success, "timed out waiting for cartridge thread")
     }

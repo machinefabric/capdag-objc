@@ -100,6 +100,13 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         }
         try writer.write(Frame.streamEnd(reqId: req.id, streamId: streamId, chunkCount: payload.isEmpty ? 0 : 1))
         try writer.write(Frame.end(id: req.id))
+
+        // The host gives its policy right after the identity check, before it
+        // routes anything (12.2 §Policy). A test that ends the host without
+        // routing anything may close it first.
+        if let policy = try reader.read(), policy.frameType != .policy {
+            throw CartridgeHostError.protocolError("the frame after the identity check must be the host's policy, got \(policy.frameType)")
+        }
     }
 
     /// Helper to write a frame with routingId (XID) stamped — required for frames entering via relay
@@ -220,7 +227,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeWriter.write(Frame.hello(limits: limits))
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         do {
             try host.attachCartridge(
                 stdinHandle: hostToCartridge.fileHandleForWriting,
@@ -253,7 +260,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeWriter.write(Frame.err(id: .uint(0), code: "WRONG", attributionClass: .internal, message: "Not a HELLO"))
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         do {
             try host.attachCartridge(
                 stdinHandle: hostToCartridge.fileHandleForWriting,
@@ -315,7 +322,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // TEST413: Register cartridge adds entries to cap_table
     func test413_registerCartridgeAddsToCaptable() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:convert"]))
         XCTAssertNotNil(host.findCartridgeForCap("cap:convert"), "Registered cap must be found")
         XCTAssertNil(host.findCartridgeForCap("cap:unknown"), "Unregistered cap must not be found")
@@ -323,7 +330,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // TEST6594: capabilities() returns empty JSON initially (no running cartridges)
     func test6594_capabilitiesEmptyInitially() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         // Capabilities are rebuilt from running cartridges — no running cartridges means empty
         let caps = host.capabilities
         XCTAssertTrue(caps.isEmpty || String(data: caps, encoding: .utf8) == "[]",
@@ -383,7 +390,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // TEST425: find_cartridge_for_cap returns None for unregistered cap
     func test425_findCartridgeForCapUnknown() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         host.registerCartridge(path: "/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known"]))
         XCTAssertNotNil(host.findCartridgeForCap("cap:known"))
         XCTAssertNil(host.findCartridgeForCap("cap:unknown"))
@@ -405,7 +412,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try CborRuntimeTests.handleIdentityVerification(reader: cartridgeReader, writer: cartridgeWriter)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -449,7 +456,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         }
 
         // Host: attach cartridge + run
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -527,7 +534,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "ok".data(using: .utf8)!)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -612,7 +619,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try CborRuntimeTests.writeResponse(writer: cartridgeBWriter, reqId: reqId, payload: "from-B".data(using: .utf8)!)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(stdinHandle: hostToCartridgeA.fileHandleForWriting, stdoutHandle: cartridgeAToHost.fileHandleForReading)
         try host.attachCartridge(stdinHandle: hostToCartridgeB.fileHandleForWriting, stdoutHandle: cartridgeBToHost.fileHandleForReading)
 
@@ -694,7 +701,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -761,7 +768,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, capGroups: capGroupsFromUrns(["cap:spawn-test"]))
 
         let hostTask = Task.detached { @Sendable in
@@ -831,7 +838,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId, payload: "ok".data(using: .utf8)!)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -901,7 +908,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeWriter.write(Frame.end(id: reqId, finalPayload: nil))
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -967,7 +974,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             cartridgeToHost.fileHandleForWriting.closeFile()
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -1020,7 +1027,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             cartridgeToHost.fileHandleForWriting.closeFile()
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -1093,7 +1100,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try CborRuntimeTests.writeResponse(writer: cartridgeWriter, reqId: reqId1, payload: "response-1".data(using: .utf8)!, streamId: "s1")
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -1183,7 +1190,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // with identity records.
     func test6623_cartridgeDeathKeepsKnownCapsAdvertised() async throws {
         let dir = makeCartridgeFixture(id: "respawn-fixture")
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         host.registerCartridge(
             path: "\(dir)/respawn-fixture",
@@ -1206,7 +1213,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     func test662_rebuildCapabilitiesIncludesNonRunningCartridges() async throws {
         let dir1 = makeCartridgeFixture(id: "fixture-one")
         let dir2 = makeCartridgeFixture(id: "fixture-two")
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         host.registerCartridge(
             path: "\(dir1)/fixture-one",
@@ -1245,7 +1252,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try? writer.write(badHello)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // Attempt to attach - should fail due to missing manifest
         do {
@@ -1285,7 +1292,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // Register with known_caps, but cartridge will advertise different caps via manifest
         host.registerCartridge(path: "/fake/path", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known-cap"]))
@@ -1322,7 +1329,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // Register a non-running cartridge with a real on-disk anchor
         // so it has a resolvable identity and contributes to the
@@ -1488,7 +1495,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeWriter.write(Frame.end(id: identityReq.id))
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         let idx = try host.attachCartridge(
             stdinHandle: hostToCartridge.fileHandleForWriting,
             stdoutHandle: cartridgeToHost.fileHandleForReading
@@ -1540,7 +1547,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             try cartridgeWriter.write(Frame.err(id: identityReq.id, code: "IDENTITY_FAILED", attributionClass: .internal, message: "Broken cartridge"))
         }
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // attach_cartridge should fail due to identity verification failure
         do {
@@ -1559,7 +1566,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
     // TEST490: Identity verification with multiple cartridges through single relay Both cartridges must pass identity verification independently before any real requests are routed.
     func test490_identityVerificationMultipleCartridges() async throws {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // Attach first cartridge
         let hostToCartridge1 = Pipe()
@@ -1643,5 +1650,16 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         try await cartridge1Task.value
         try await cartridge2Task.value
+    }
+}
+
+
+extension CartridgeHost {
+    /// A host given its policy (`full`) before anything is attached, as a host
+    /// behind a switch is before the switch routes to it (12.2 §Policy).
+    static func withFullPolicy() -> CartridgeHost {
+        let host = CartridgeHost()
+        host.setPolicy(HostPolicy(network: .full))
+        return host
     }
 }

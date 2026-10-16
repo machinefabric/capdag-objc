@@ -1,12 +1,9 @@
-// GENERATED FILE — do not edit by hand.
+// The fabric manifest version this build's fabric registry is pinned to.
 //
-// Baked from `fabric/manifest-version.txt` by `scripts/lib/config.sh`, the
-// Objective-C analogue of how `capdag/build.rs` bakes
-// `MFR_FABRIC_MANIFEST_VERSION` into the Rust engine. This is the single
-// source of the fabric manifest version for the ObjC fabric registry; there
-// is NO runtime-environment fallback and NO legacy v0 mode. config.sh
-// rewrites this file (only when the value changes) on every dx build, so it
-// stays in lockstep with the registry the engine was built against.
+// The same value as `fabric/manifest-version.txt`, which Rust bakes from at
+// build time. There is no runtime-environment fallback and no legacy v0 mode.
+// A manifest version change commits the new value here with it, and
+// `scripts/lib/config.sh` refuses to build while this file says another.
 #import <stdint.h>
 
 const uint32_t CSBakedFabricManifestVersion = 8;

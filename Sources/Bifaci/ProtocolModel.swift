@@ -49,6 +49,7 @@ extension FrameType {
         case .cancel: return .cancel
         case .credit: return .credit
         case .closeStream: return .closeStream
+        case .policy: return .policy
         }
     }
 

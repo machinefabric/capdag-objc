@@ -724,6 +724,9 @@ final class ProtocolSwitchTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: id, streamId: streamId, chunkCount: 1))
                 try writer.write(Frame.end(id: id))
                 return
+            case .policy where reqId == nil:
+                // The switch's policy comes first (12.2 §Policy).
+                break
             default:
                 return
             }
@@ -771,7 +774,7 @@ final class ProtocolSwitchTests: XCTestCase {
             let writer = FrameWriter(handle: pair1.write, limits: Limits())
             try! self.sendNotify(writer: writer, capabilities: [], limits: Limits())
         }
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
         defer {
             switch_.shutdown()
             try? pair1.write.close()
@@ -859,7 +862,7 @@ final class ProtocolSwitchTests: XCTestCase {
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "mA", read: pairA1.read, write: pairA2.write),
             SocketPair(id: "mB", read: pairB1.read, write: pairB2.write),
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Part 1: default-vs-default converges on the default first burst.
         XCTAssertEqual(aNotified.wait(timeout: .now() + 2), .success)
@@ -934,7 +937,7 @@ final class ProtocolSwitchTests: XCTestCase {
             }
         }
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
         XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
 
         // A LIVE engine-origin request whose consumer is GONE: the external
@@ -1030,7 +1033,7 @@ final class ProtocolSwitchTests: XCTestCase {
 
     // TEST7025: A flow frame for a request with no routing state is a counted no_route drop — not a protocol error and not a silent loss — observable in the protocol stats snapshot.
     func test7025_unroutableFlowFrameIsCountedDrop() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
 
         // Response continuation (has XID) for a key that was never registered
         // (or already terminated): must be dropped + counted, never an error.
@@ -1061,7 +1064,7 @@ final class ProtocolSwitchTests: XCTestCase {
     // credit-based flow control must not pollute the routing-anomaly alarm.
     // A frame for a RID the table never knew stays no_route (TEST7025).
     func test8114_stragglerForTerminatedRequestIsBenignNotADrop() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
         defer { switch_.shutdown() }
 
         let xid = MessageId.uint(21)
@@ -1117,7 +1120,7 @@ final class ProtocolSwitchTests: XCTestCase {
     // ledger entirely, so every healthy stream snapshot read as negative by
     // exactly the un-seeded initial window.
     func test8118_sendToMasterRecordsOutboundFlowAndWindow() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
         defer { switch_.shutdown() }
 
         let xid = MessageId.uint(31)
@@ -1165,7 +1168,7 @@ final class ProtocolSwitchTests: XCTestCase {
 
     // TEST7035: After END, the switch holds zero state for the request — entry, rid index, and response channel all released atomically, with the terminal delivered and a terminated summary recorded.
     func test7035_endTerminatesAndReleasesAllState() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
 
         let xid = MessageId.uint(11)
         let rid = MessageId.newUUID()
@@ -1210,7 +1213,7 @@ final class ProtocolSwitchTests: XCTestCase {
 
     // TEST7036: After ERR, the same total-cleanup invariant holds as after END, with kind err.
     func test7036_errTerminatesAndReleasesAllState() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
 
         let xid = MessageId.uint(21)
         let rid = MessageId.newUUID()
@@ -1272,7 +1275,7 @@ final class ProtocolSwitchTests: XCTestCase {
         }
         XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Parent (engine-origin, has a waiting channel) + child peer call.
         let parentKey = RequestKey(xid: .uint(1), rid: .newUUID())
@@ -1358,7 +1361,7 @@ final class ProtocolSwitchTests: XCTestCase {
         }
         XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
         let parentKey = RequestKey(xid: .uint(1), rid: .newUUID())
         let childKey = RequestKey(xid: .uint(2), rid: .newUUID())
         let parentChannel = BlockingQueue<Frame>()
@@ -1428,7 +1431,7 @@ final class ProtocolSwitchTests: XCTestCase {
         }
         XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
         let key = RequestKey(xid: .uint(1), rid: .newUUID())
         try switch_.requests.register(key, RequestState(
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: 0),
@@ -1473,7 +1476,7 @@ final class ProtocolSwitchTests: XCTestCase {
         }
         XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         let key = RequestKey(xid: .uint(5), rid: .newUUID())
         let channel = BlockingQueue<Frame>()

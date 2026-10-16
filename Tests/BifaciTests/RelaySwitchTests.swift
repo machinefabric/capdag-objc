@@ -99,6 +99,9 @@ final class CborRelaySwitchTests: XCTestCase {
                 try writer.write(Frame.streamEnd(reqId: id, streamId: streamId, chunkCount: 1))
                 try writer.write(Frame.end(id: id))
                 return
+            case .policy where reqId == nil:
+                // The switch's policy comes first (12.2 §Policy).
+                break
             default:
                 return
             }
@@ -141,7 +144,7 @@ final class CborRelaySwitchTests: XCTestCase {
         // Create RelaySwitch with properly connected sockets
         // engine reads from pair1 (where slave writes)
         // engine writes to pair2 (where slave reads)
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Send REQ
         let req = Frame.req(
@@ -225,7 +228,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "test-master-1", read: pair1_1.read, write: pair1_2.write),
             SocketPair(id: "test-master-2", read: pair2_1.read, write: pair2_2.write),
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Send REQ for echo cap → routes to master 1
         let req1 = Frame.req(
@@ -279,7 +282,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-3", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-3", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Send REQ for unknown cap
         let req = Frame.req(
@@ -335,7 +338,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "test-master-4", read: pair1_1.read, write: pair1_2.write),  // engine1 reads from pair1_1, writes to pair1_2
             SocketPair(id: "test-master-5", read: pair2_1.read, write: pair2_2.write),  // engine2 reads from pair2_1, writes to pair2_2
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Verify aggregate capabilities (returned as JSON array)
         let capList = try JSONSerialization.jsonObject(with: switch_.capabilities()) as! [String]
@@ -400,7 +403,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "test-master-6", read: pair1_1.read, write: pair1_2.write),
             SocketPair(id: "test-master-7", read: pair2_1.read, write: pair2_2.write),
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Send first request - should go to master 0 (first match)
         let req1 = Frame.req(id: MessageId.uint(1), capUrn: sameCap, payload: Data(), contentType: "text/plain")
@@ -465,7 +468,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-8", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-8", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         let reqId = MessageId.uint(1)
 
@@ -493,7 +496,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
     // TEST432: Empty masters list creates empty switch, add_master works
     func test432_empty_masters_allowed() throws {
-        let sw = try RelaySwitch(sockets: [])
+        let sw = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
 
         // Empty switch has no caps
         let capsJson = sw.capabilities()
@@ -549,7 +552,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "test-master-9", read: pair1_1.read, write: pair1_2.write),
             SocketPair(id: "test-master-10", read: pair2_1.read, write: pair2_2.write),
-        ])
+        ], policy: HostPolicy(network: .full))
 
         let capList = (try JSONSerialization.jsonObject(with: switch_.capabilities()) as! [String]).sorted()
 
@@ -599,7 +602,7 @@ final class CborRelaySwitchTests: XCTestCase {
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "test-master-11", read: pair1_1.read, write: pair1_2.write),
             SocketPair(id: "test-master-12", read: pair2_1.read, write: pair2_2.write),
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Should take minimum of each limit
         XCTAssertEqual(switch_.limits().maxFrame, 1_000_000)  // min(1M, 2M)
@@ -646,7 +649,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-13", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-13", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Exact match should work
         let req1 = Frame.req(id: MessageId.uint(1), capUrn: registeredCap, payload: Data(), contentType: "text/plain")
@@ -715,7 +718,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-14", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-14", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Request with the exact registered cap should route successfully
         let req = Frame.req(id: MessageId.uint(1), capUrn: CSCapIdentity, payload: Data(), contentType: "text/plain")
@@ -755,7 +758,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-15", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-15", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Request for the exact registered cap should succeed
         let req = Frame.req(id: MessageId.uint(1), capUrn: "cap:in=media:text;out=media:text", payload: Data(), contentType: "text/plain")
@@ -787,7 +790,7 @@ final class CborRelaySwitchTests: XCTestCase {
 
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-16", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-16", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Request for a cap that doesn't match should throw noHandler
         let req = Frame.req(id: MessageId.uint(1), capUrn: "cap:in=media:text;out=media:text", payload: Data(), contentType: "text/plain")
@@ -827,7 +830,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
         // Should succeed - identity verification passes
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-17", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-17", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
         XCTAssertNotNil(switch_)
 
         // Cleanup
@@ -850,6 +853,8 @@ final class CborRelaySwitchTests: XCTestCase {
             done.signal()
 
             // Read identity request and return ERR
+            // The switch's policy comes first (12.2 §Policy).
+            guard let policy = try? reader.read(), policy.frameType == .policy else { return }
             if let req = try? reader.read() {
                 if req.frameType == .req {
                     try! writer.write(Frame.err(id: req.id, code: "IDENTITY_FAILED", attributionClass: .internal, message: "Rejected"))
@@ -860,7 +865,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
         // Should fail - identity verification returns error
-        XCTAssertThrowsError(try RelaySwitch(sockets: [SocketPair(id: "test-master-18", read: pair1.read, write: pair2.write)])) { error in
+        XCTAssertThrowsError(try RelaySwitch(sockets: [SocketPair(id: "test-master-18", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))) { error in
             // Should get an error about identity verification
             XCTAssertTrue(error is RelaySwitchError)
         }
@@ -871,7 +876,7 @@ final class CborRelaySwitchTests: XCTestCase {
     // TEST132: add_master dynamically connects new host to running switch
     func test132_addMasterDynamic() throws {
         // Start with empty switch
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
         XCTAssertEqual(String(data: switch_.capabilities(), encoding: .utf8), "[]")
 
         // Add master dynamically
@@ -945,7 +950,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(done1.wait(timeout: .now() + 2), .success)
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "xpc-service", read: pair1a.read, write: pair2a.write)
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Phase 2: simulate master death synchronously, exactly
         // like the Rust reference test. The slot remains in the
@@ -994,7 +999,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "xpc-service", read: pair1.read, write: pair2.write)
-        ])
+        ], policy: HostPolicy(network: .full))
 
         // Try to add a second master with the same id while healthy.
         // The duplicate-id check fires BEFORE any I/O on the dummy
@@ -1042,7 +1047,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
         let switch_ = try RelaySwitch(sockets: [
             SocketPair(id: "xpc-service", read: pair1.read, write: pair2.write)
-        ])
+        ], policy: HostPolicy(network: .full))
         XCTAssertFalse(switch_.slotAcceptsAttach("xpc-service"),
             "a healthy attached slot must not accept a second attach")
         XCTAssertTrue(switch_.slotAcceptsAttach("never-seen"),
@@ -1108,7 +1113,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertThrowsError(try RelaySwitch(sockets: [
             SocketPair(id: "dup-id", read: pair1.read, write: pair2.write),
             SocketPair(id: "dup-id", read: pair3.read, write: pair4.write),
-        ])) { error in
+        ], policy: HostPolicy(network: .full))) { error in
             guard case let RelaySwitchError.protocolError(msg) = error else {
                 XCTFail("expected protocolError; got \(error)")
                 return
@@ -1237,7 +1242,7 @@ final class CborRelaySwitchTests: XCTestCase {
             )
         }
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0131", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0131", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Poll until the probe driver fails the probe and marks the master
         // unhealthy with a recorded error.
@@ -1280,7 +1285,7 @@ final class CborRelaySwitchTests: XCTestCase {
             )
         }
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0135", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0135", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // The post-init advertised cap becomes routable only AFTER the
         // probe passes (held back while the master is unhealthy).
@@ -1320,7 +1325,7 @@ final class CborRelaySwitchTests: XCTestCase {
             )
         }
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0138", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0138", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         let deadline = Date().addingTimeInterval(15)
         var unhealthy = false
@@ -1376,7 +1381,7 @@ final class CborRelaySwitchTests: XCTestCase {
         XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
 
         // Capabilities are rebuilt inside init — before we subscribe.
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0141", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0141", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         let rx = switch_.subscribeCapabilities()
         let watched = rx.value()
@@ -1447,7 +1452,7 @@ final class CborRelaySwitchTests: XCTestCase {
         }
         XCTAssertEqual(ready.wait(timeout: .now() + 2), .success)
 
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0142", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-0142", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // Pump the master frames in the background so the peer REQ is
         // processed (the call returns nil after sending the ERR; it must
@@ -1469,7 +1474,7 @@ final class CborRelaySwitchTests: XCTestCase {
     // FAILS must register the master UNHEALTHY (keeping its inventory
     // visible) rather than throwing. Caps stay held back from routing.
     func test0143_addMasterIdentityFailureRegistersUnhealthy() throws {
-        let switch_ = try RelaySwitch(sockets: [])
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
 
         let pair1 = FileHandle.socketPair()
         let pair2 = FileHandle.socketPair()
@@ -1484,6 +1489,8 @@ final class CborRelaySwitchTests: XCTestCase {
                 limits: Limits()
             )
             ready.signal()
+            // The switch's policy comes first (12.2 §Policy).
+            guard let policy = try? reader.read(), policy.frameType == .policy else { return }
             // Reply ERR to the identity REQ — a broken identity handler.
             if let frame = try? reader.read(), frame.frameType == .req {
                 try! writer.write(Frame.err(id: frame.id, code: "IDENTITY_FAILED", attributionClass: .internal, message: "Rejected"))
@@ -1584,7 +1591,7 @@ final class CborRelaySwitchTests: XCTestCase {
         }
 
         XCTAssertEqual(notifySent.wait(timeout: .now() + 2), .success)
-        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-7091", read: pair1.read, write: pair2.write)])
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "test-master-7091", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
 
         // The initial advertisement carried no host stats: absent, not zeroed.
         XCTAssertTrue(

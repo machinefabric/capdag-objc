@@ -52,7 +52,7 @@ final class CartridgeHostObserverTests: XCTestCase {
 
     // TEST6217: Host constructs and closes without an observer
     func test6217_HostConstructsAndClosesWithoutAnObserver() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         // Empty host with no cartridges → no spawn moments, no death
         // moments. close() must not crash even though the observer
         // is unset, the cartridge array is empty, and there's
@@ -62,7 +62,7 @@ final class CartridgeHostObserverTests: XCTestCase {
 
     // TEST6221: Set observer nil clears the previously registered observer
     func test6221_SetObserverNilClearsThePreviouslyRegisteredObserver() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         let observer = RecordingObserver()
 
         host.setObserver(observer)

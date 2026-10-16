@@ -1,12 +1,12 @@
 import Foundation
 @preconcurrency import SwiftCBOR
 
-/// Protocol version 5: a cap may answer with one stream per declared output.
-/// The stream of its main output names none; the stream of another output
-/// names the output it is (key 21). It keeps explicit diagnostic attribution,
-/// cartridge handler capacity, credit-based flow control and terminal
-/// metadata. Every other version is rejected during handshake.
-public let CBOR_PROTOCOL_VERSION: UInt8 = 5
+/// Protocol version 6: the host tells its cartridges what they may do with a
+/// Policy frame (15), sent after the handshake and on every change. It keeps
+/// version 5's streams per declared output (key 21), explicit diagnostic
+/// attribution, cartridge handler capacity, credit-based flow control and
+/// terminal metadata. Every other version is rejected during handshake.
+public let CBOR_PROTOCOL_VERSION: UInt8 = 6
 
 /// Default maximum frame size (3.5 MB) - safe margin below 3.75MB limit
 /// Larger payloads automatically use CHUNK frames
@@ -65,12 +65,17 @@ public enum FrameType: UInt8, Sendable {
     /// host-side request state is untouched. `streamId` names one stream;
     /// absent means every live feed the request holds.
     case closeStream = 14
+    /// What the host allows its cartridges to do, as it stands now (12.2
+    /// §Policy): host → cartridge only, after the handshake and on every
+    /// change. Non-flow, id 0; `meta.network` is required.
+    case policy = 15
 
     /// All variants, for counter arrays and snapshot serialization
     /// (matches Rust FrameType::ALL).
     public static let all: [FrameType] = [
         .hello, .req, .chunk, .end, .log, .err, .heartbeat,
         .streamStart, .streamEnd, .relayNotify, .relayState, .cancel, .credit, .closeStream,
+        .policy,
     ]
 
     /// Stable snake_case name (the snapshot contract for mirrors and
@@ -91,6 +96,7 @@ public enum FrameType: UInt8, Sendable {
         case .cancel: return "cancel"
         case .credit: return "credit"
         case .closeStream: return "close_stream"
+        case .policy: return "policy"
         }
     }
 }

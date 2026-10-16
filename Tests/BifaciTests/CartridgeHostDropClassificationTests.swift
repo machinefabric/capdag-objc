@@ -18,7 +18,7 @@ final class CartridgeHostDropClassificationTests: XCTestCase {
     // released rids classify as benign-straggler material, unknown rids do not,
     // duplicates collapse, and eviction past the cap ages a rid back out.
     func test8116_releasedRidRingDiscriminatesDedupesAndAgesOut() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         let rid = MessageId.uint(7)
 
         XCTAssertFalse(host.recentlyReleasedRidLocked(rid), "nothing released yet")
@@ -53,7 +53,7 @@ final class CartridgeHostDropClassificationTests: XCTestCase {
     // never routed is a genuine no_route DROP. The same law covers
     // unroutable LOG frames: counted, never silent, never conflated.
     func test8117_unroutableContinuationClassifiedByReleaseRing() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // Unknown rid: no routing entry, nothing released → no_route.
         var unknown = Frame(frameType: .chunk, id: .uint(41))

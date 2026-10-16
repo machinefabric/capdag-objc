@@ -51,7 +51,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     /// Echo handler: accumulates input, echoes raw bytes back (for TEST654, TEST657, TEST660)
     final class EchoHandler: FrameHandler {
-        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) {
+        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) {
             Task {
                 do {
                     let args = try await accumulateInput(inputStream: inputStream)
@@ -66,7 +66,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
     /// Fail handler: always returns error (for TEST659)
     final class FailHandler: FrameHandler {
-        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) {
+        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) {
             Task {
                 // Drain input
                 for await frame in inputStream {
@@ -87,7 +87,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
             self.tag = tag
         }
 
-        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) {
+        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) {
             Task {
                 // Drain input
                 for await frame in inputStream {
@@ -124,6 +124,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let reader = FrameReader(handle: testRead)
         let writer = FrameWriter(handle: testWrite)
+        // The switch gives its policy before it routes anything (12.2 §Policy).
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
 
         // First frame should be RelayNotify with manifest
         let notify = try! reader.read()!
@@ -208,6 +210,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
             hostThread.start()
             let reader = FrameReader(handle: testRead)
             let writer = FrameWriter(handle: testWrite)
+            // The switch gives its policy before it routes anything (12.2 §Policy).
+            try writer.write(Frame.policy(HostPolicy(network: .full)))
             let notify = try XCTUnwrap(reader.read())
             XCTAssertEqual(notify.frameType, .relayNotify)
 
@@ -287,6 +291,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let reader = FrameReader(handle: testRead)
         let writer = FrameWriter(handle: testWrite)
+        // The switch gives its policy before it routes anything (12.2 §Policy).
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
 
         // Skip RelayNotify
         _ = try! reader.read()!
@@ -348,6 +354,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let reader = FrameReader(handle: testRead)
         let writer = FrameWriter(handle: testWrite)
+        // The switch gives its policy before it routes anything (12.2 §Policy).
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
 
         // Skip RelayNotify
         _ = try! reader.read()!
@@ -438,6 +446,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let reader = FrameReader(handle: testRead)
         let writer = FrameWriter(handle: testWrite)
+        // The switch gives its policy before it routes anything (12.2 §Policy).
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
 
         // Skip RelayNotify
         _ = try! reader.read()!
@@ -483,6 +493,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let reader = FrameReader(handle: testRead)
         let writer = FrameWriter(handle: testWrite)
+        // The switch gives its policy before it routes anything (12.2 §Policy).
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
 
         // Skip RelayNotify
         _ = try! reader.read()!
@@ -536,6 +548,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let reader = FrameReader(handle: testRead)
         let writer = FrameWriter(handle: testWrite)
+        // The switch gives its policy before it routes anything (12.2 §Policy).
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
 
         // Skip RelayNotify
         _ = try! reader.read()!
@@ -577,7 +591,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
     /// `answered` once it has sent its answer.
     final class AnswersAnywayHandler: FrameHandler {
         let answered = DispatchSemaphore(value: 0)
-        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) {
+        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) {
             Task {
                 for await frame in inputStream where frame.frameType == .end {
                     break
@@ -662,6 +676,8 @@ final class InProcessCartridgeHostTests: XCTestCase {
             hostThread.start()
             let reader = FrameReader(handle: testRead)
             let writer = FrameWriter(handle: testWrite)
+            // The switch gives its policy before it routes anything (12.2 §Policy).
+            try writer.write(Frame.policy(HostPolicy(network: .full)))
             XCTAssertEqual(try XCTUnwrap(reader.read()).frameType, .relayNotify)
 
             let rid = MessageId.newUUID()

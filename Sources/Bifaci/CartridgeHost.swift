@@ -1027,6 +1027,13 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Managed cartridge binaries.
     private var cartridges: [ManagedCartridge] = []
 
+    /// What this host allows its cartridges to do (12.2 §Policy): given by the
+    /// relay's Policy frames, or by `setPolicy` for a host its builder tells
+    /// directly. Sent to each cartridge before anything is routed to it; nil
+    /// until the first one, and no routed request is served then. Guarded by
+    /// `stateLock`. (matches Rust CartridgeHostRuntime.policy)
+    private var policy: HostPolicy?
+
     /// Routing: cap_urn -> cartridge index.
     private var capTable: [(String, Int)] = []
 
@@ -1745,6 +1752,9 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.lock()
         let idx = cartridges.count
         cartridges.append(cartridge)
+        // The identity check is the only request a cartridge serves before
+        // its policy; it is given the policy before anything is routed.
+        givePolicyLocked(idx)
         for cap in capUrns {
             capTable.append((cap, idx))
         }
@@ -2095,6 +2105,22 @@ public final class CartridgeHost: @unchecked Sendable {
 
             guard let capUrn = frame.cap else {
                 var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", attributionClass: .internal, message: "REQ missing cap URN")
+                err.routingId = xid
+                sendToRelay(err)
+                return
+            }
+
+            // Nothing is routed before the host has a policy to give the
+            // cartridge first (12.2 §Policy). The switch sends one before
+            // anything else, so this is a peer that skipped it.
+            stateLock.lock()
+            let hasPolicy = policy != nil
+            stateLock.unlock()
+            guard hasPolicy else {
+                var err = Frame.err(
+                    id: frame.id, code: "PROTOCOL_VIOLATION", attributionClass: .internal,
+                    message: "request for '\(capUrn)' reached a host that has not been given a policy; the switch sends Policy before it routes anything"
+                )
                 err.routingId = xid
                 sendToRelay(err)
                 return
@@ -2451,7 +2477,40 @@ public final class CartridgeHost: @unchecked Sendable {
         case .relayNotify, .relayState:
             // Relay frames should be intercepted by the relay layer, never reach here
             fputs("[CartridgeHost] Protocol error: relay frame \(frame.frameType) reached host\n", stderr)
+
+        case .policy:
+            // The switch's policy: keep it and pass it to every connected
+            // cartridge; one connected later is given it then.
+            do {
+                guard let newPolicy = try frame.hostPolicy() else {
+                    fatalError("BUG: a Policy frame always answers hostPolicy()")
+                }
+                setPolicy(newPolicy)
+            } catch {
+                fputs("[CartridgeHost] Protocol error: \(error)\n", stderr)
+            }
         }
+    }
+
+    /// Give this host its policy (12.2 §Policy) and pass it to every cartridge
+    /// it has connected. A host behind a relay is given it by the switch's
+    /// Policy frames instead; this is for the builder of a host that is told
+    /// directly, before or instead of a relay.
+    public func setPolicy(_ newPolicy: HostPolicy) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        policy = newPolicy
+        for idx in cartridges.indices {
+            givePolicyLocked(idx)
+        }
+    }
+
+    /// Send the current policy to one connected cartridge. Nothing to send
+    /// before the host has one; a cartridge with no writer is given it when it
+    /// connects. Caller holds `stateLock`.
+    private func givePolicyLocked(_ idx: Int) {
+        guard let policy else { return }
+        cartridges[idx].writeFrame(Frame.policy(policy))
     }
 
     // MARK: - Cartridge Frame Handling (Cartridge -> Engine)
@@ -2516,8 +2575,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 cartridge.writeFrame(Frame.heartbeat(id: frame.id))
             }
 
-        case .relayNotify, .relayState:
-            // Cartridges must never send relay frames
+        case .relayNotify, .relayState, .policy:
+            // Cartridges must never send relay frames or a policy
             fputs("[CartridgeHost] Protocol error: relay frame \(frame.frameType) from cartridge \(cartridgeIdx)\n", stderr)
 
         case .req:
@@ -3565,6 +3624,9 @@ public final class CartridgeHost: @unchecked Sendable {
         // Successful attach — clear any lingering attachment error from a
         // prior failed attempt (e.g. after a binary replacement).
         cartridge.attachmentError = nil
+        // Given before the request it was spawned for is forwarded: the
+        // writer is ordered, so the policy precedes it.
+        givePolicyLocked(idx)
 
         // Update capTable with actual caps from manifest
         capTable.removeAll { $0.1 == idx }

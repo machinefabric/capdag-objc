@@ -353,6 +353,12 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         }
     }
 
+    // A Policy that does not say a policy is refused here, so every decoded
+    // Policy reads (12.2 §Policy).
+    if frame.frameType == .policy {
+        _ = try frame.hostPolicy()
+    }
+
     return frame
 }
 

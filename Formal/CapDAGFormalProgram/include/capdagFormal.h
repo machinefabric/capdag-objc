@@ -76,7 +76,7 @@ const lungo_value *capdagFormal_granted_window(const lungo_value *v);
 const lungo_value *capdagFormal_granted_grant(const lungo_value *v);
 
 /* CapDAG.Bifaci.Flow.FrameType */
-#define CAPDAGFORMAL_FRAME_TYPE_FINGERPRINT "3d6742b864aeb68cf6add586acfcd1a9663a3816d718f8d8aadc3c5e3dab3e2f"
+#define CAPDAGFORMAL_FRAME_TYPE_FINGERPRINT "ef92a191779a89ce9c1e60a09202ebd3d2de8fdf006f505bb4d1a8522287248e"
 lungo_type *capdagFormal_frame_type_type(void);
 #define CAPDAGFORMAL_FRAME_TYPE_HELLO 0
 /* CapDAG.Bifaci.Flow.FrameType.hello; takes ownership of the fields. */
@@ -120,6 +120,9 @@ lungo_value *capdagFormal_frame_type_credit(void);
 #define CAPDAGFORMAL_FRAME_TYPE_CLOSE_STREAM 13
 /* CapDAG.Bifaci.Flow.FrameType.closeStream; takes ownership of the fields. */
 lungo_value *capdagFormal_frame_type_close_stream(void);
+#define CAPDAGFORMAL_FRAME_TYPE_POLICY 14
+/* CapDAG.Bifaci.Flow.FrameType.policy; takes ownership of the fields. */
+lungo_value *capdagFormal_frame_type_policy(void);
 
 /* CapDAG.Bifaci.Flow.Reorder */
 #define CAPDAGFORMAL_REORDER_FINGERPRINT "d1e8b655f24db5e8b2348d6d41084a5c454346eb0a81fcf11b671432e72291bf"

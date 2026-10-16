@@ -31,7 +31,8 @@ final class CborFrameTests: XCTestCase {
     // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     func test172_invalidFrameType() {
         XCTAssertEqual(FrameType(rawValue: 14), .closeStream, "rawValue 14 is CloseStream (the tap-off)")
-        XCTAssertNil(FrameType(rawValue: 15), "rawValue 15 is one past CloseStream")
+        XCTAssertEqual(FrameType(rawValue: 15), .policy, "rawValue 15 is Policy")
+        XCTAssertNil(FrameType(rawValue: 16), "rawValue 16 is one past Policy")
         XCTAssertNil(FrameType(rawValue: 100), "rawValue 100 must be invalid")
         XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
     }
@@ -434,7 +435,7 @@ final class CborFrameTests: XCTestCase {
 
     // TEST199: Test PROTOCOL_VERSION is 4
     func test199_protocolVersionConstant() {
-        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 5)
+        XCTAssertEqual(CBOR_PROTOCOL_VERSION, 6)
     }
 
     // TEST12718: the STREAM_START of a response stream that is not the cap's
@@ -1351,7 +1352,8 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(FrameType(rawValue: 12), .cancel, "12 is Cancel")
         XCTAssertEqual(FrameType(rawValue: 13), .credit, "13 is Credit")
         XCTAssertEqual(FrameType(rawValue: 14), .closeStream, "14 is CloseStream")
-        XCTAssertNil(FrameType(rawValue: 15), "15 is past the last valid frame type")
+        XCTAssertEqual(FrameType(rawValue: 15), .policy, "15 is Policy")
+        XCTAssertNil(FrameType(rawValue: 16), "16 is past the last valid frame type")
         XCTAssertNil(FrameType(rawValue: 2), "2 (old Res) is still invalid")
     }
 

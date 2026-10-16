@@ -65,7 +65,7 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
     /// the current generation must perform the real teardown and notify the
     /// lifecycle observer once.
     func test8067_StaleReaderDeathCannotKillReplacementGeneration() {
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         let observer = RecordingObserver()
         host.setObserver(observer)
         let idx = host.attachStubCartridgeForTest()
@@ -106,7 +106,7 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         let observer = RecordingObserver()
         host.setObserver(observer)
 
@@ -182,7 +182,7 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
         do {
             let engineToHost = Pipe()
             let hostToEngine = Pipe()
-            let host = CartridgeHost()
+            let host = CartridgeHost.withFullPolicy()
             let runFinished = expectation(description: "session1 run() returned")
             let task = Task.detached { @Sendable in
                 try? host.run(
@@ -202,7 +202,7 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
         do {
             let engineToHost = Pipe()
             let hostToEngine = Pipe()
-            let host = CartridgeHost()
+            let host = CartridgeHost.withFullPolicy()
             let runFinished = expectation(description: "session2 run() returned")
             let task = Task.detached { @Sendable in
                 try? host.run(

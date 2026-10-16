@@ -46,7 +46,7 @@ public protocol FrameHandler: Sendable {
     ///
     /// The handler MUST send a complete response: either response frames
     /// (STREAM_START + CHUNK(s) + STREAM_END + END) or an error (via `output.emitError()`).
-    func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) async
+    func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) async
 }
 
 // MARK: - ResponseWriter
@@ -242,7 +242,7 @@ public enum InProcessInputError: Error, LocalizedError, Equatable {
 /// Echoes all accumulated chunk payloads back as-is. This is the protocol-level
 /// identity verification — it proves the transport works end-to-end.
 final class IdentityHandler: FrameHandler {
-    func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter) async {
+    func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) async {
         // Accumulate raw payload bytes (no CBOR decode — identity is raw passthrough)
         var data = Data()
         for await frame in inputStream {
@@ -551,9 +551,16 @@ public final class InProcessCartridgeHost {
 
         // Built-in identity handler
         let identityHandler = IdentityHandler()
+        // The switch's latest policy (12.2 §Policy), read live by every
+        // handler; empty until the switch sends the first.
+        let policy = LivePolicy()
+
+        // A Policy that names no policy ends the host once its handlers and
+        // writer are done; the error is thrown then.
+        var policyError: Error?
 
         // Main read loop — forward frames to handlers, no accumulation
-        while let frame = try? reader.read() {
+        readLoop: while let frame = try? reader.read() {
             switch frame.frameType {
             case .req:
                 let rid = frame.id
@@ -568,6 +575,19 @@ public final class InProcessCartridgeHost {
                 // Identity cap is the explicit CSCapIdentity constant (`cap:effect=none`)
                 // and is matched by exact string equality, not conforms_to.
                 let isIdentity = capUrn == CSCapIdentity
+
+                // Nothing but the identity check is served before the switch's
+                // policy (12.2 §Policy): the switch sends one before anything
+                // it routes.
+                if !isIdentity && policy.current == nil {
+                    var err = Frame.err(
+                        id: rid, code: "PROTOCOL_VIOLATION", attributionClass: .internal,
+                        message: "request for '\(capUrn)' arrived before the switch sent its policy"
+                    )
+                    err.routingId = xid
+                    writeContinuation.yield(err)
+                    continue
+                }
 
                 let handler: FrameHandler = isIdentity ? identityHandler : {
                     if let idx = Self.findHandlerForCap(capTable: capTable, capUrn: capUrn) {
@@ -601,8 +621,9 @@ public final class InProcessCartridgeHost {
                     maxChunk: Limits().maxChunk
                 )
 
+                let network = NetworkAccess(policy)
                 let task = Task.detached {
-                    await handler.handleRequest(capUrn: capUrn, inputStream: inputStream, output: output)
+                    await handler.handleRequest(capUrn: capUrn, inputStream: inputStream, output: output, network: network)
                     running.finished(rid)
                 }
                 running.started(rid, task)
@@ -663,6 +684,19 @@ public final class InProcessCartridgeHost {
                     continuation.finish()
                 }
 
+            case .policy:
+                // The switch's policy: every handler reads it live. One that
+                // does not read is a protocol violation, and the host ends.
+                do {
+                    guard let newPolicy = try frame.hostPolicy() else {
+                        fatalError("BUG: a Policy frame always answers hostPolicy()")
+                    }
+                    policy.set(newPolicy)
+                } catch {
+                    policyError = error
+                    break readLoop
+                }
+
             case .closeStream:
                 // An in-process handler holds no live feed taps: a CloseStream
                 // has nothing to close and never aborts the request — it is
@@ -713,6 +747,7 @@ public final class InProcessCartridgeHost {
         Self.wait { await running.all() }
         writeContinuation.finish()
         Self.wait { await writerTask.value }
+        if let policyError { throw policyError }
     }
 
     /// Block this thread until `work` is done. `run` is synchronous — it reads

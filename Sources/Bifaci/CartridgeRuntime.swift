@@ -2879,18 +2879,20 @@ public final class CborRequest: @unchecked Sendable {
     private var _inputPackage: InputPackage?
     let outputs: ResponseOutputs
     private let _peer: any PeerInvoker
+    private let _network: NetworkAccess
 
     /// A request that has the one output `output` is: nothing is known of the
     /// cap it is for.
-    public convenience init(input: InputPackage, output: OutputStream, peer: any PeerInvoker) {
-        self.init(input: input, outputs: .undeclared(output), peer: peer)
+    public convenience init(input: InputPackage, output: OutputStream, peer: any PeerInvoker, network: NetworkAccess) {
+        self.init(input: input, outputs: .undeclared(output), peer: peer, network: network)
     }
 
     /// A request that answers on the declared outputs of its cap.
-    init(input: InputPackage, outputs: ResponseOutputs, peer: any PeerInvoker) {
+    init(input: InputPackage, outputs: ResponseOutputs, peer: any PeerInvoker, network: NetworkAccess) {
         _inputPackage = input
         self.outputs = outputs
         _peer = peer
+        _network = network
     }
 
     /// Take the input package. Can only be called once — second call throws.
@@ -2916,6 +2918,11 @@ public final class CborRequest: @unchecked Sendable {
     }
 
     public func peer() -> any PeerInvoker { _peer }
+
+    /// The host's live network policy (12.2 §Policy). Code that reaches the
+    /// network asks it before every call; it reads the runtime's current
+    /// policy, never one taken when this request was dispatched.
+    public func network() -> NetworkAccess { _network }
 }
 
 // MARK: - Response Outputs
@@ -3169,12 +3176,22 @@ public struct AdapterSelectionOp: Op, Sendable {
     }
 }
 
+/// Whether a request is the host's identity check (CAP_IDENTITY), the one
+/// request a cartridge serves before it has a policy (12.3).
+func isIdentityRequest(_ capUrn: String) -> Bool {
+    guard let identity = try? CSCapUrn.fromString(CSCapIdentity) else {
+        fatalError("BUG: CAP_IDENTITY constant '\(CSCapIdentity)' is invalid")
+    }
+    guard let requested = try? CSCapUrn.fromString(capUrn) else { return false }
+    return identity.isEquivalent(requested)
+}
+
 /// Dispatch an AnyOp<Void> with a CborRequest via WetContext.
 /// Bridges sync handler threads to async Op.perform via DispatchSemaphore + Task.
 /// On success, ends every output (`ResponseOutputs.finish`); a handler that
 /// failed gets nothing sent on its behalf.
-func dispatchOp(op: AnyOp<Void>, input: InputPackage, outputs: ResponseOutputs, peer: any PeerInvoker) throws {
-    let req = CborRequest(input: input, outputs: outputs, peer: peer)
+func dispatchOp(op: AnyOp<Void>, input: InputPackage, outputs: ResponseOutputs, peer: any PeerInvoker, network: NetworkAccess) throws {
+    let req = CborRequest(input: input, outputs: outputs, peer: peer, network: network)
     let dry = DryContext()
     let wet = WetContext()
     wet.insertRef(req, for: WET_KEY_REQUEST)
@@ -4489,6 +4506,11 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
     private var limits = Limits()
 
+    /// The host's latest policy (12.2 §Policy): empty until the first Policy
+    /// frame, replaced by every later one, read live by every handler through
+    /// `CborRequest.network()`.
+    let livePolicy = LivePolicy()
+
     /// Cartridge manifest JSON data - sent in HELLO response.
     /// This is REQUIRED - cartridges must provide their manifest.
     let manifestData: Data
@@ -4958,9 +4980,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // Create no-op peer invoker (CLI mode doesn't support peer calls)
         let peer = NoPeerInvoker()
 
+        // No host: the person running the command decides for themselves
+        // (12.2 §Policy), so a cartridge run from a command line is under `full`.
+        livePolicy.set(HostPolicy(network: .full))
+
         // Invoke Op handler — dispatchOp ends every output on success
         let op = factory()
-        try dispatchOp(op: op, input: inputPackage, outputs: outputs, peer: peer)
+        try dispatchOp(op: op, input: inputPackage, outputs: outputs, peer: peer, network: NetworkAccess(livePolicy))
     }
 
     /// Find a cap by one of its aliases (the CLI subcommand). Aliases are
@@ -5445,7 +5471,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
                 do {
                     let op = factory()
-                    try dispatchOp(op: op, input: inputPackage, outputs: outputs, peer: peer)
+                    try dispatchOp(op: op, input: inputPackage, outputs: outputs, peer: peer, network: NetworkAccess(self.livePolicy))
                     // A cancel that claimed the request first ends it with its
                     // own ERR, sent by the main loop once this reports done.
                     guard terminal.forHandler() else {
@@ -5598,6 +5624,22 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
                 guard let capUrn = frame.cap else {
                     var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", attributionClass: .internal, message: "Request missing cap URN")
+                    err.routingId = routingIdForErrors
+                    try? outputSender.send(err)
+                    continue
+                }
+
+                // No routed request before the host's first policy: a
+                // cartridge never serves work without knowing what it may do.
+                // The host's identity check belongs to the handshake and
+                // comes before any policy (12.3).
+                if livePolicy.current == nil && !isIdentityRequest(capUrn) {
+                    var err = Frame.err(
+                        id: frame.id,
+                        code: "PROTOCOL_VIOLATION",
+                        attributionClass: .internal,
+                        message: "request for '\(capUrn)' arrived before the host sent its policy; a host sends Policy before it routes anything to a cartridge"
+                    )
                     err.routingId = routingIdForErrors
                     try? outputSender.send(err)
                     continue
@@ -6032,6 +6074,20 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // intercepted by the relay layer. If one arrives here, it's a
                 // protocol violation.
                 throw CartridgeRuntimeError.protocolError("Relay frame type \(frame.frameType) must not reach cartridge runtime")
+
+            case .policy:
+                // The host's new policy (12.2 §Policy): every handler's
+                // network() reads it at its next check, running ones too.
+                let policy: HostPolicy?
+                do {
+                    policy = try frame.hostPolicy()
+                } catch {
+                    throw CartridgeRuntimeError.protocolError("\(error)")
+                }
+                guard let policy else {
+                    fatalError("BUG: a Policy frame always answers hostPolicy()")
+                }
+                livePolicy.set(policy)
             }
         }
 

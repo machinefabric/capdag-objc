@@ -13,6 +13,11 @@ import Foundation
 import SwiftCBOR
 @testable import Bifaci
 import CapDAG
+
+/// A network handle under `full`, for handlers run directly by tests.
+func fullNetwork() -> NetworkAccess {
+    NetworkAccess(LivePolicy(HostPolicy(network: .full)))
+}
 import Ops
 
 private let SERIES = "media:fmt=json;record;series"
@@ -137,7 +142,7 @@ final class ResponseOutputsTests: XCTestCase {
     func test12719_aRequestAnswersOnEveryDeclaredOutput() throws {
         let cap = regressCap()
         let (outputs, sender) = try recordedOutputs(cap.urn, manifest([cap]))
-        let req = CborRequest(input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        let req = CborRequest(input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
 
         // The main output is the one whose URN is `out=`, wherever it is declared.
         XCTAssertTrue(req.output() === (try req.output(for: FIT)))
@@ -183,7 +188,7 @@ final class ResponseOutputsTests: XCTestCase {
         // and nothing is known of the cap it is for.
         let bare = Bifaci.OutputStream(sender: RecordingFrameSender(), streamId: "bare", mediaUrn: "media:",
                                        requestId: .newUUID(), routingId: nil, maxChunk: DEFAULT_MAX_CHUNK)
-        let lone = CborRequest(input: emptyInput(), output: bare, peer: NoPeerInvoker())
+        let lone = CborRequest(input: emptyInput(), output: bare, peer: NoPeerInvoker(), network: fullNetwork())
         XCTAssertTrue(lone.output() === (try lone.output(for: "media:")))
         XCTAssertThrowsError(try lone.output(for: "media:integer")) { error in
             guard case CartridgeRuntimeError.unknownOutput(let capUrn, let output) = error else {
@@ -203,7 +208,7 @@ final class ResponseOutputsTests: XCTestCase {
         let regressManifest = manifest([cap])
 
         var (outputs, sender) = try recordedOutputs(cap.urn, regressManifest)
-        try dispatchOp(op: AnyOp(ResidualsOnlyOp(fail: false)), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(ResidualsOnlyOp(fail: false)), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         var sent = starts(sender)
         XCTAssertEqual(sent.count, 2, "the written output and the required unwritten one: \(sent)")
         XCTAssertEqual(sent.compactMap { $0.output }, [RESIDUALS], "the residuals are named; optional outputs did not fire")
@@ -220,7 +225,7 @@ final class ResponseOutputsTests: XCTestCase {
 
         // A required SEQUENCE output nobody wrote to is an empty sequence.
         (outputs, sender) = try recordedOutputs(cap.urn, regressManifest)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         sent = starts(sender)
         XCTAssertEqual(sent.count, 2, "\(sent)")
         XCTAssertEqual(sent.first { $0.output == RESIDUALS }?.isSequence, true, "the residuals are declared a sequence")
@@ -228,14 +233,14 @@ final class ResponseOutputsTests: XCTestCase {
         // A failed handler: only what it wrote itself, and that left open — the
         // request ends with ERR, not with outputs made up for it.
         (outputs, sender) = try recordedOutputs(cap.urn, regressManifest)
-        XCTAssertThrowsError(try dispatchOp(op: AnyOp(ResidualsOnlyOp(fail: true)), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker()))
+        XCTAssertThrowsError(try dispatchOp(op: AnyOp(ResidualsOnlyOp(fail: true)), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork()))
         sent = starts(sender)
         XCTAssertEqual(sent.map { $0.output }, [RESIDUALS], "\(sent)")
         XCTAssertFalse(sender.snapshot().contains { $0.frameType == .streamEnd })
 
         // A cap whose `out=` is void has no output: nothing is opened for it.
         (outputs, sender) = try recordedOutputs("cap:in=\"media:enc=utf-8\";sink;out=media:void", nil)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         XCTAssertTrue(sender.snapshot().isEmpty)
 
         // The main output's label follows the cap's effect, and is not its
@@ -243,7 +248,7 @@ final class ResponseOutputsTests: XCTestCase {
         // input's type and names no output.
         let pass = "cap:effect=none;in=\"media:enc=utf-8;line\";out=\"media:enc=utf-8\";pass"
         (outputs, sender) = try recordedOutputs(pass, nil)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         sent = starts(sender)
         XCTAssertEqual(sent.count, 1)
         XCTAssertNil(sent.first?.output, "the main output's stream names no output")
@@ -252,7 +257,7 @@ final class ResponseOutputsTests: XCTestCase {
 
         // A cap served without a definition answers on the one output its URN states.
         (outputs, sender) = try recordedOutputs("cap:in=\"media:enc=utf-8\";count;out=\"media:integer\"", nil)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         sent = starts(sender)
         XCTAssertEqual(sent.count, 1)
         XCTAssertNil(sent.first?.output)
@@ -273,7 +278,7 @@ final class ResponseOutputsTests: XCTestCase {
             CapOutput(mediaUrn: $0, name: "made", outputDescription: "What it makes", isSequence: true)
         }
         (outputs, sender) = try recordedOutputs(listing.urn, listingManifest)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         sent = starts(sender)
         XCTAssertEqual(sent.count, 1, "\(sent)")
         XCTAssertNil(sent.first?.output)
@@ -284,7 +289,7 @@ final class ResponseOutputsTests: XCTestCase {
             CapOutput(mediaUrn: $0, name: "made", outputDescription: "What it makes", optional: true)
         }
         (outputs, sender) = try recordedOutputs(maybe.urn, maybeManifest)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         XCTAssertTrue(sender.snapshot().isEmpty)
 
         // A request made from a bare stream has an output nothing is known of:
@@ -292,7 +297,7 @@ final class ResponseOutputsTests: XCTestCase {
         let bareSender = RecordingFrameSender()
         let bare = Bifaci.OutputStream(sender: bareSender, streamId: "bare", mediaUrn: "media:",
                                        requestId: .newUUID(), routingId: nil, maxChunk: DEFAULT_MAX_CHUNK)
-        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: .undeclared(bare), peer: NoPeerInvoker())
+        try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: .undeclared(bare), peer: NoPeerInvoker(), network: fullNetwork())
         XCTAssertTrue(bareSender.snapshot().isEmpty)
     }
 

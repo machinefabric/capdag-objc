@@ -58,7 +58,7 @@ final class CborSyncRosterTests: XCTestCase {
         let engineToHost = Pipe()
         let hostToEngine = Pipe()
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
 
         // Drive the host run loop. It emits the initial RelayNotify, then a
         // fresh one on every `syncDiscoveryOutcomes` call.
@@ -131,7 +131,7 @@ final class CborSyncRosterTests: XCTestCase {
         let entry = versionDir.appendingPathComponent("bin")
         try Data("#!/bin/sh\n".utf8).write(to: entry)
 
-        let host = CartridgeHost()
+        let host = CartridgeHost.withFullPolicy()
         host.registerCartridge(path: entry.path, cartridgeDir: versionDir.path, capGroups: [])
         // Pretend it started: retirement only has to make a decision about a
         // LIVE process.
