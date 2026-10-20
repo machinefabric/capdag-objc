@@ -1,5 +1,5 @@
 {
-  "originHash" : "3ff099c523239fadf1d7c28cd931ce9d4713a0bbdafb9df8304b8d2b35e59a1c",
+  "originHash" : "ef8c7f367c4c984a1dd066bd1238d14ec8e60740f11fd459760e6367d7092011",
   "pins" : [
     {
       "identity" : "glob",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/machinefabric/lungo-swift.git",
       "state" : {
-        "revision" : "8e8f81a5800d34c51c2132f638d0286324975f33",
-        "version" : "1.112.74"
+        "revision" : "cb09b4aa147cb7170dd1bd3a40f0c27f8f3dde05",
+        "version" : "1.115.34"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/machinefabric/tagged-urn-objc.git",
       "state" : {
-        "revision" : "a757b1bc9543a8bf6ed6a64c137d36df97b7b01c",
-        "version" : "1.132.143"
+        "revision" : "1f79980c64727d41a2289defd1621e3adab3b400",
+        "version" : "1.135.90"
       }
     }
   ],
