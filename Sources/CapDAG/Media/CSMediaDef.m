@@ -8,6 +8,7 @@
 #import "CSCap.h"
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
+#import "CSDim.h"
 @import TaggedUrn;
 
 NSErrorDomain const CSMediaDefErrorDomain = @"CSMediaDefErrorDomain";
@@ -192,6 +193,7 @@ NSString *CSGetProfileURL(NSString *profileName) {
 @property (nonatomic, readwrite, nullable) NSString *title;
 @property (nonatomic, readwrite, nullable) NSString *descriptionText;
 @property (nonatomic, readwrite, nullable) NSString *documentation;
+@property (nonatomic, readwrite) NSArray<CSDimRef *> *dims;
 @property (nonatomic, readwrite, nullable) NSString *mediaUrn;
 @property (nonatomic, readwrite, nullable) CSMediaValidation *validation;
 @property (nonatomic, readwrite, nullable) NSDictionary *metadata;
@@ -366,6 +368,7 @@ BOOL CSMediaUrnIsModelSpec(NSString *mediaUrn) {
     spec.title = title;
     spec.descriptionText = descriptionText;
     spec.documentation = documentation;
+    spec.dims = @[];
     spec.validation = validation;
     spec.metadata = metadata;
     spec.extensions = extensions ?: @[];
@@ -463,6 +466,22 @@ CSMediaDef * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
         documentation = (NSString *)documentationField;
     }
 
+    // The dims the media def was built from; an entry with a key this capdag
+    // does not know is refused, never dropped.
+    NSError *dimsError = nil;
+    NSArray<CSDimRef *> *dims = [CSDimRef refsFromField:def[@"dims"]
+                                                  owner:[NSString stringWithFormat:@"media def '%@'", mediaUrn]
+                                                  error:&dimsError];
+    if (!dims) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSMediaDefErrorDomain
+                                         code:CSMediaDefErrorUnresolvableMediaUrn
+                                     userInfo:@{NSLocalizedDescriptionKey: dimsError.localizedDescription,
+                                                NSUnderlyingErrorKey: dimsError}];
+        }
+        return nil;
+    }
+
     CSMediaValidation *validation = nil;
     NSDictionary *validationDict = def[@"validation"];
     if (validationDict && [validationDict isKindOfClass:[NSDictionary class]]) {
@@ -502,6 +521,7 @@ CSMediaDef * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
                                              metadata:metadata
                                            extensions:extensions];
     spec.mediaUrn = mediaUrn;
+    spec.dims = dims;
     return spec;
 }
 

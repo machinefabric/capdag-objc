@@ -436,6 +436,7 @@ FOUNDATION_EXPORT NSString * const CSOutputCarriesInput;
 @end
 
 @class CSMediaDef;
+@class CSDimRef;
 
 #pragma mark - CSCap
 
@@ -469,7 +470,19 @@ FOUNDATION_EXPORT NSString * const CSOutputCarriesInput;
 /// cap is useful. Authored as a triple-quoted literal string in the
 /// source TOML so newlines and markdown punctuation pass through
 /// unchanged.
+///
+/// Only what is specific to this cap: what the dims it was built from mean is
+/// documented with each dim (see `dims`).
 @property (nonatomic, readonly, nullable) NSString *documentation;
+
+/// The dims this cap was built from, and the value chosen from each, in the
+/// order its source references them (JSON: `dims`). Each dim is published on
+/// its own (`-[CSFabricRegistry getDim:completion:]`) with its documentation
+/// and each value's; a reader shows that beside `documentation`. Empty when the
+/// cap was built from no dim, and then omitted from serialization. Names each
+/// dim at most once (`CSCheckDimRefs`). Descriptive only: matching and
+/// dispatch never read it.
+@property (nonatomic, copy) NSArray<CSDimRef *> *dims;
 
 /// Optional metadata as key-value pairs
 @property (nonatomic, readonly) NSDictionary<NSString *, NSString *> *metadata;

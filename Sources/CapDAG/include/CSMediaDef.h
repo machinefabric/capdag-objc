@@ -19,6 +19,7 @@
 @class CSCapUrn;
 @class CSMediaValidation;
 @class CSFabricRegistry;
+@class CSDimRef;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -225,7 +226,17 @@ FOUNDATION_EXPORT NSString *CSGetProfileURL(NSString *profileName);
 /// and anywhere else a rich-text explanation of the media def is
 /// useful. Authored as a triple-quoted literal string in the source
 /// TOML so newlines and markdown punctuation pass through unchanged.
+///
+/// Only what is specific to this media def: what the dims it was built from
+/// mean is documented with each dim (see `dims`).
 @property (nonatomic, readonly, nullable) NSString *documentation;
+
+/// The dims this media def was built from, and the value chosen from each, in
+/// the order its source references them (JSON: `dims`, absent when empty).
+/// Each dim is published on its own (`-[CSFabricRegistry getDim:completion:]`);
+/// a reader shows its documentation beside `documentation`. Empty when built
+/// from no dim.
+@property (nonatomic, readonly) NSArray<CSDimRef *> *dims;
 
 /// Optional validation rules (inherent to the semantic type)
 @property (nonatomic, readonly, nullable) CSMediaValidation *validation;

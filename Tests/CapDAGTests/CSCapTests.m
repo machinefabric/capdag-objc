@@ -15,6 +15,7 @@
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 #import "CSCapValidator.h"
+#import "CSDim.h"
 
 @interface CSCapTests : XCTestCase
 
@@ -1391,6 +1392,47 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     } error:&error];
     XCTAssertNil(output, @"an unknown output field must be refused");
     XCTAssertTrue([error.localizedDescription containsString:@"windowed"], @"%@", error);
+}
+
+static NSDictionary *capJSON(NSString *json) {
+    return [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+}
+
+// TEST1969: a cap's `dims` — the dims it was built from and the value chosen
+// from each — survive a round-trip in order, under the wire key the registry
+// publishes; a cap built from no dim carries no `dims` key; an entry with a key
+// this capdag does not know is refused like an argument's, and so is one dim
+// named twice. A cartridge re-serializes the caps it declares, so a dropped
+// `dims` would leave its copy without them.
+- (void)test1969_capDimsRoundTripInOrderAndRefuseWhatTheyCannotHold {
+    NSString *json = @"{\"urn\":\"cap:ask;constrained;in=\\\"media:enc=utf-8\\\";language=en;out=\\\"media:enc=utf-8\\\"\",\"version\":3,\"title\":\"Ask\",\"aliases\":[\"ask-en\"],\"documentation\":\"Only about asking.\",\"dims\":[{\"dim\":\"constrained\",\"value\":\"constrained\"},{\"dim\":\"language\",\"value\":\"en\"}]}";
+    NSError *error = nil;
+    CSCap *cap = [CSCap capWithDictionary:capJSON(json) error:&error];
+    XCTAssertNotNil(cap, @"a cap with dims parses: %@", error);
+    NSArray *expected = @[[CSDimRef refWithDim:@"constrained" value:@"constrained"], [CSDimRef refWithDim:@"language" value:@"en"]];
+    XCTAssertEqualObjects(cap.dims, expected);
+    NSDictionary *back = [NSJSONSerialization JSONObjectWithData:[NSJSONSerialization dataWithJSONObject:[cap toDictionary] options:0 error:nil]
+                                                         options:0 error:nil];
+    XCTAssertEqualObjects(back[@"dims"], (@[@{@"dim": @"constrained", @"value": @"constrained"}, @{@"dim": @"language", @"value": @"en"}]));
+    CSCap *again = [CSCap capWithDictionary:back error:&error];
+    XCTAssertEqualObjects(again.dims, cap.dims, @"%@", error);
+    XCTAssertEqualObjects([cap copy], cap);
+    XCTAssertEqualObjects([[cap copy] dims], expected);
+
+    CSCap *bare = [CSCap capWithUrn:[CSCapUrn fromString:@"cap:effect=none" error:nil] title:@"Identity" aliases:@[@"identity"]];
+    XCTAssertNil([bare toDictionary][@"dims"]);
+
+    NSString *extra = [json stringByReplacingOccurrencesOfString:@"{\"dim\":\"language\",\"value\":\"en\"}"
+                                                      withString:@"{\"dim\":\"language\",\"value\":\"en\",\"version\":1}"];
+    error = nil;
+    XCTAssertNil([CSCap capWithDictionary:capJSON(extra) error:&error], @"an unknown dims key is refused");
+    XCTAssertTrue([error.localizedDescription containsString:@"version"], @"%@", error);
+
+    NSString *twice = [json stringByReplacingOccurrencesOfString:@"{\"dim\":\"constrained\",\"value\":\"constrained\"}"
+                                                      withString:@"{\"dim\":\"language\",\"value\":\"es\"}"];
+    error = nil;
+    XCTAssertNil([CSCap capWithDictionary:capJSON(twice) error:&error], @"one dim named twice is refused");
+    XCTAssertTrue([error.localizedDescription containsString:@"dim 'language' is named more than once"], @"%@", error);
 }
 
 // TEST8066: a void-input cap has scalar input cardinality without inventing an arg.

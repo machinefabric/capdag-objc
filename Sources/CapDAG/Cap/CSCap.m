@@ -6,6 +6,7 @@
 //
 
 #import "CSCap.h"
+#import "CSDim.h"
 #import "CSMediaDef.h"
 #import "CSMediaUrn.h"
 
@@ -1058,6 +1059,13 @@ NSString * const CSOutputCarriesInput = @"input";
     if ([documentationField isKindOfClass:[NSString class]] && [(NSString *)documentationField length] > 0) {
         documentation = (NSString *)documentationField;
     }
+    // The dims the cap was built from. Each entry refuses a key this capdag
+    // does not know, and a dim is named at most once: a definition cannot
+    // have been built with two values of one dim.
+    NSArray<CSDimRef *> *dims = [CSDimRef refsFromField:dictionary[@"dims"]
+                                                  owner:[NSString stringWithFormat:@"cap '%@'", [capUrn toString]]
+                                                  error:error];
+    if (!dims) return nil;
     NSDictionary *metadata = dictionary[@"metadata"] ?: @{};
     NSDictionary *metadataJSON = dictionary[@"metadata_json"];
 
@@ -1139,6 +1147,7 @@ NSString * const CSOutputCarriesInput = @"input";
     cap->_supportedModelTypes = [supportedModelTypes copy];
     cap->_defaultModelSpec = [defaultModelSpec copy];
     cap->_version = version;
+    cap->_dims = dims;
     return cap;
 }
 
@@ -1164,6 +1173,12 @@ NSString * const CSOutputCarriesInput = @"input";
     // match the Rust serializer (which uses skip_serializing_if).
     if (self.documentation) {
         dict[@"documentation"] = self.documentation;
+    }
+
+    // Emit `dims` only when the cap was built from some; absent ⇒ none,
+    // exactly as the registry publishes it.
+    if (self.dims.count > 0) {
+        dict[@"dims"] = [CSDimRef dictionariesFromRefs:self.dims];
     }
 
     dict[@"metadata"] = self.metadata ?: @{};
@@ -1274,6 +1289,9 @@ NSString * const CSOutputCarriesInput = @"input";
     if ((self.documentation == nil) != (other.documentation == nil)) return NO;
     if (self.documentation && ![self.documentation isEqualToString:other.documentation]) return NO;
 
+    // Dims, in order
+    if (![self.dims isEqualToArray:other.dims]) return NO;
+
     // Metadata dictionary
     if (![self.metadata isEqualToDictionary:other.metadata]) return NO;
 
@@ -1309,6 +1327,7 @@ NSString * const CSOutputCarriesInput = @"input";
     hash ^= [self.aliases hash];
     hash ^= (NSUInteger)self.isAbstract;
     hash ^= [self.documentation hash];
+    hash ^= [self.dims hash];
     hash ^= [self.metadata hash];
     hash ^= [self.args hash];
     hash ^= [self.outputs hash];
@@ -1338,6 +1357,7 @@ NSString * const CSOutputCarriesInput = @"input";
     copy->_supportedModelTypes = [self.supportedModelTypes copy];
     copy->_defaultModelSpec = [self.defaultModelSpec copy];
     copy->_version = self.version;
+    copy->_dims = [self.dims copy];
     return copy;
 }
 
@@ -1348,6 +1368,7 @@ NSString * const CSOutputCarriesInput = @"input";
     [coder encodeBool:self.isAbstract forKey:@"abstract"];
     [coder encodeObject:self.capDescription forKey:@"capDescription"];
     [coder encodeObject:self.documentation forKey:@"documentation"];
+    [coder encodeObject:self.dims forKey:@"dims"];
     [coder encodeObject:self.metadata forKey:@"metadata"];
     [coder encodeObject:self.args forKey:@"args"];
     [coder encodeObject:self.outputs forKey:@"outputs"];
@@ -1393,6 +1414,9 @@ NSString * const CSOutputCarriesInput = @"input";
     cap->_supportedModelTypes = supportedModelTypes ?: @[];
     cap->_defaultModelSpec = defaultModelSpec;
     cap->_version = [[coder decodeObjectOfClass:[NSNumber class] forKey:@"version"] unsignedIntValue];
+    NSArray<CSDimRef *> *dims = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSDimRef class], nil] forKey:@"dims"];
+    if (!dims) return nil;
+    cap->_dims = dims;
     return cap;
 }
 
@@ -1431,6 +1455,7 @@ NSString * const CSOutputCarriesInput = @"input";
     cap->_isAbstract = NO;
     cap->_capDescription = [description copy];
     cap->_documentation = [documentation copy];
+    cap->_dims = @[];
     cap->_metadata = [metadata copy];
     cap->_args = [args copy];
     cap->_outputs = [outputs copy];

@@ -3,16 +3,49 @@
 //  CapDAG
 //
 //  Unified Fabric Registry — replaces what used to be a separate
-//  cap registry and media-URN registry. Holds cap definitions and
-//  media defs together with a single HTTP client and one disk
-//  cache root (`caps/` and `media/` subdirectories).
+//  cap registry and media-URN registry. Holds cap definitions, media
+//  defs, aliases and dims together with a single HTTP client and one
+//  disk cache root (`caps/`, `media/`, `aliases/` and `dims/`
+//  subdirectories).
 //
 
 #import <Foundation/Foundation.h>
 
-@class CSCap, CSCapUrn;
+@class CSCap, CSCapUrn, CSStoredDim;
 
 NS_ASSUME_NONNULL_BEGIN
+
+/// The domain of every error this registry reports.
+extern NSErrorDomain const CSFabricRegistryErrorDomain;
+
+/// The codes of the registry's dim errors (domain
+/// `CSFabricRegistryErrorDomain`). The reference's error kind is named with
+/// each.
+typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryDimErrorCode) {
+    /// ValidationError: a string that is no dim name was asked for.
+    CSFabricRegistryErrorInvalidDimName = 1050,
+    /// NotFound: the registry is pinned at v0, where there are no dims.
+    CSFabricRegistryErrorDimAtV0 = 1051,
+    /// NotFound: the pinned manifest does not list the dim. Decided before
+    /// any fetch.
+    CSFabricRegistryErrorDimNotInManifest = 1052,
+    /// ParseError: a dim body the registry served is not the dim asked for
+    /// (unparseable, an unknown field, another name, another version).
+    CSFabricRegistryErrorDimParse = 1053,
+    /// ValidationError: a dim body does not hold (`-[CSStoredDim validate:]`).
+    CSFabricRegistryErrorDimInvalid = 1054,
+    /// ValidationError: a definition names a value its dim does not declare.
+    CSFabricRegistryErrorDimValueUndeclared = 1055,
+    /// ValidationError: a definition's `dims` names a dim twice, or a non-dim.
+    CSFabricRegistryErrorDimRefsInvalid = 1056,
+    /// NotFound: a dim a definition names could not be fetched.
+    CSFabricRegistryErrorDimUnavailable = 1057,
+    /// NotFound: the registry has no object at the dim's address.
+    CSFabricRegistryErrorDimHTTPNotFound = 1058,
+    /// The manifest is not one this library reads (for one, it has no `dims`
+    /// map).
+    CSFabricRegistryErrorManifestInvalid = 1059,
+};
 
 /// The kind of thing a fabric alias resolves to. An alias target is always a
 /// URN; the kind is determined by the URN prefix.
@@ -88,6 +121,11 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
  * references (in_spec, out_spec, every arg.media_urn, every stdin
  * source, output.media_urn) has also been successfully fetched. The
  * bare `media:` wildcard is excluded from the recursive fetch.
+ *
+ * A cap or media def is likewise cached only once every dim it names
+ * (`dims`) is cached, at the version the manifest pins, with the value it
+ * names — so a reader holding a cached definition can always read the
+ * documentation of the dims it was built from (`getCachedDim:`).
  *
  * Extension lookups (mediaUrnsForExtension:) consult the in-memory
  * media-def cache: extensions become known as their owning specs
@@ -235,12 +273,38 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
 /// and register its defver in the manifest (test helper).
 - (void)insertCachedAliasForTest:(NSDictionary *)alias;
 
+// MARK: Dim surface
+
+/// A dim's definition — its title, documentation and values, each value with
+/// its own — by name, at the version the pinned manifest names: from the
+/// cache, else fetched from the registry (`dims/<sha256-of-name>/<defver>.json`)
+/// and cached. A string that is no dim name is refused
+/// (`CSFabricRegistryErrorInvalidDimName`); a name the manifest does not list is
+/// `CSFabricRegistryErrorDimNotInManifest`, decided before any fetch.
+- (void)getDim:(NSString *)name
+    completion:(void (^)(CSStoredDim *_Nullable dim, NSError *_Nullable error))completion;
+
+/// Synchronous, in-memory-only dim lookup. Every dim a cached cap or media def
+/// names is cached with it, so a reader holding a definition from this registry
+/// finds its dims here.
+- (nullable CSStoredDim *)getCachedDim:(NSString *)name;
+
+/// Look up a dim name's pinned defver under the manifest without fetching the
+/// body. Returns 0 and writes *error at v0 or when the manifest does not list
+/// the name.
+- (uint32_t)dimDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error;
+
+/// Insert a dim directly into the in-memory cache and register its defver in
+/// the manifest, bypassing the network (test helper; mirrors
+/// insertCachedAliasForTest:).
+- (void)insertCachedDimForTest:(CSStoredDim *)dim;
+
 /// Insert a cap directly into the in-memory cap cache and register its defver
 /// in the manifest (test helper).
 - (void)insertCachedCapForTest:(CSCap *)cap;
 
 /// The registry-snapshot manifest as a dict ({version,previous,caps,media,
-/// aliases}). Test/diagnostic surface.
+/// aliases,dims}). Test/diagnostic surface.
 - (NSDictionary *)manifestDictionary;
 
 // MARK: Cache lifecycle

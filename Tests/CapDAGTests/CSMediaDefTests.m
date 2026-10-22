@@ -6,6 +6,7 @@
 #import <XCTest/XCTest.h>
 #import "CSMediaDef.h"
 #import "CSFabricRegistry.h"
+#import "CSDim.h"
 
 @interface CSMediaDefTests : XCTestCase
 @end
@@ -379,6 +380,36 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertNotNil(resolved);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertEqualObjects(resolved.profile, @"https://custom.example.com/str");
+}
+
+// TEST1970: a media def's `dims` survive from the registry body through the
+// stored def to the resolved CSMediaDef and back to the wire, in order; a media
+// def built from no dim carries none; an entry with a key this capdag does not
+// know is refused. (CSMediaDef has no JSON form of its own here: the stored def
+// is the registry's JSON, and the dims' wire form is CSDimRef's.)
+- (void)test1970_mediaDefDimsSurviveAndRefuseUnknownKeys {
+    NSString *body = @"{\"urn\":\"media:document;ext=pdf\",\"version\":2,\"media_type\":\"application/pdf\",\"title\":\"PDF Document\",\"documentation\":\"Only about PDFs.\",\"dims\":[{\"dim\":\"file-type\",\"value\":\"pdf\"},{\"dim\":\"medium\",\"value\":\"document\"}],\"extensions\":[\"pdf\"]}";
+    NSDictionary *stored = [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    NSArray *expected = @[[CSDimRef refWithDim:@"file-type" value:@"pdf"], [CSDimRef refWithDim:@"medium" value:@"document"]];
+    CSFabricRegistry *registry = registryWithSpecs(@[stored]);
+    XCTAssertEqualObjects([registry getCachedMediaDef:@"media:document;ext=pdf"][@"dims"], stored[@"dims"]);
+    NSError *error = nil;
+    CSMediaDef *def = CSResolveMediaUrn(@"media:document;ext=pdf", registry, &error);
+    XCTAssertNotNil(def, @"%@", error);
+    XCTAssertEqualObjects(def.dims, expected);
+    NSArray *wire = [CSDimRef dictionariesFromRefs:def.dims];
+    XCTAssertEqualObjects(wire, (@[@{@"dim": @"file-type", @"value": @"pdf"}, @{@"dim": @"medium", @"value": @"document"}]));
+    XCTAssertEqualObjects([CSDimRef refsFromField:wire owner:@"media def 'media:document;ext=pdf'" error:&error], expected, @"%@", error);
+
+    CSMediaDef *bare = CSResolveMediaUrn(@"media:void", registryWithSpecs(@[@{@"urn": @"media:void", @"media_type": @"application/x-void", @"title": @"Void"}]), &error);
+    XCTAssertNotNil(bare, @"%@", error);
+    XCTAssertEqualObjects(bare.dims, @[]);
+
+    NSString *extra = [body stringByReplacingOccurrencesOfString:@"\"value\":\"pdf\"}" withString:@"\"value\":\"pdf\",\"title\":\"PDF\"}"];
+    NSDictionary *extraStored = [NSJSONSerialization JSONObjectWithData:[extra dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    error = nil;
+    XCTAssertNil(CSResolveMediaUrn(@"media:document;ext=pdf", registryWithSpecs(@[extraStored]), &error), @"an unknown dims key is refused");
+    XCTAssertTrue([error.localizedDescription containsString:@"title"], @"%@", error);
 }
 
 @end

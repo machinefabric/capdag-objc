@@ -9,10 +9,15 @@
 //    - cachedSpecs: in-memory map of normalised media URN → spec dict.
 //    - extensionIndex: lowercase extension → array of URNs, populated
 //      as media defs land in cachedSpecs.
+//    - cachedAliases / cachedDims: name → stored alias / dim, versioned-only.
 //
 //  Atomic cap fetch: getCapWithUrn: refuses to cache a cap until every
 //  media URN it references has also been successfully fetched. The bare
 //  `media:` wildcard is excluded from the recursive fetch.
+//
+//  A cap or media def is likewise cached only once every dim it names
+//  (`dims`) is cached, at the version the manifest pins, with the value it
+//  names (ensureDimsCached:owner:completion:).
 //
 
 #import "CSFabricRegistry.h"
@@ -21,7 +26,16 @@
 #import "CSCap.h"
 #import "CSCapUrn.h"
 #import "CSMediaUrn.h"
+#import "CSDim.h"
 #import <CommonCrypto/CommonDigest.h>
+
+NSErrorDomain const CSFabricRegistryErrorDomain = @"CSFabricRegistryError";
+
+static NSError *CSRegistryError(NSInteger code, NSString *message, NSError *_Nullable underlying) {
+    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithObject:message forKey:NSLocalizedDescriptionKey];
+    if (underlying) info[NSUnderlyingErrorKey] = underlying;
+    return [NSError errorWithDomain:CSFabricRegistryErrorDomain code:code userInfo:info];
+}
 
 static NSString * const DEFAULT_REGISTRY_BASE_URL = @"https://fabric.capdag.com";
 static const NSTimeInterval CACHE_DURATION_HOURS = 24.0;
@@ -173,20 +187,24 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 @property (nonatomic, strong) NSString *capsCacheDirectory;
 @property (nonatomic, strong) NSString *mediaCacheDirectory;
 @property (nonatomic, strong) NSString *aliasesCacheDirectory;
+@property (nonatomic, strong) NSString *dimsCacheDirectory;
 @property (nonatomic, strong) NSString *manifestsCacheDirectory;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, CSCap *> *cachedCaps;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedSpecs;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedAliases;
+// Dim name → stored dim, filtered to the pinned manifest's defvers.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, CSStoredDim *> *cachedDims;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *extensionIndex;
 @property (nonatomic, strong) NSLock *cacheLock;
 @property (nonatomic, strong, readwrite) CSFabricRegistryConfig *config;
 // Manifest pin. manifestVersion == 0 ⇒ legacy v0 / flat-path mode (no manifest
-// consulted). >= 1 ⇒ manifest-driven (alias resolution requires >= 1). The
-// three maps are name/urn → defver, mirroring the Rust Manifest.
+// consulted). >= 1 ⇒ manifest-driven (alias and dim resolution require >= 1).
+// The four maps are name/urn → defver, mirroring the Rust Manifest.
 @property (nonatomic) uint32_t manifestVersion;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestCaps;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestMedia;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestAliases;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestDims;
 @end
 
 @implementation CSFabricRegistry
@@ -243,17 +261,20 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         _capsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"caps"];
         _mediaCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"media"];
         _aliasesCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"aliases"];
+        _dimsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"dims"];
         _manifestsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"manifests"];
 
         NSFileManager *fm = [NSFileManager defaultManager];
         [fm createDirectoryAtPath:_capsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
         [fm createDirectoryAtPath:_mediaCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
         [fm createDirectoryAtPath:_aliasesCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+        [fm createDirectoryAtPath:_dimsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
         [fm createDirectoryAtPath:_manifestsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
 
         _cachedCaps = [[NSMutableDictionary alloc] init];
         _cachedSpecs = [[NSMutableDictionary alloc] init];
         _cachedAliases = [[NSMutableDictionary alloc] init];
+        _cachedDims = [[NSMutableDictionary alloc] init];
         _extensionIndex = [[NSMutableDictionary alloc] init];
         _cacheLock = [[NSLock alloc] init];
 
@@ -275,6 +296,7 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         _manifestCaps = [[NSMutableDictionary alloc] init];
         _manifestMedia = [[NSMutableDictionary alloc] init];
         _manifestAliases = [[NSMutableDictionary alloc] init];
+        _manifestDims = [[NSMutableDictionary alloc] init];
 
         // Bootstrap the manifest BEFORE hydrating the on-disk caches, mirroring
         // Rust with_config_and_manifest_version: the manifest's per-URN defvers
@@ -293,11 +315,13 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         [self loadAllCachedCaps];
         [self loadAllCachedMediaDefs];
         [self loadAllCachedAliases];
+        [self loadAllCachedDims];
         // Filter the loaded caches to the pinned manifest's defvers (v >= 1):
         // only retain a cached entry whose own version matches the defver the
         // manifest pins its URN at. A v0-flat or stale-version blob left on disk
-        // from a different snapshot must never satisfy a v >= 1 lookup. Mirrors
-        // the retain() pass in Rust's constructor.
+        // from a different snapshot must never satisfy a v >= 1 lookup. Then
+        // keep a cap or media def only when every dim it names survived. Mirrors
+        // retain_pinned in Rust's constructor.
         [self filterCachesToManifest];
     }
     return self;
@@ -389,15 +413,17 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:cached options:0 error:&parseErr];
             uint32_t cachedVersion = [json isKindOfClass:[NSDictionary class]]
                 ? (uint32_t)[json[@"version"] unsignedIntValue] : 0;
-            if ([json isKindOfClass:[NSDictionary class]] && cachedVersion == self.manifestVersion) {
-                [self ingestManifestDictionary:json];
+            NSError *ingestErr = nil;
+            if ([json isKindOfClass:[NSDictionary class]] && cachedVersion == self.manifestVersion
+                && [self ingestManifestDictionary:json error:&ingestErr]) {
                 return;
             }
             // A cached manifest whose version disagrees with the file name (or
-            // that no longer parses) is corrupt; drop it and re-fetch from the
-            // network rather than trusting the wrong snapshot.
-            NSLog(@"[CSFabricRegistry] cached manifest at %@ did not parse or reported version %u (expected %u); re-fetching",
-                  cacheFile, cachedVersion, self.manifestVersion);
+            // that no longer parses, or is not a manifest this library reads)
+            // is corrupt; drop it and re-fetch from the network rather than
+            // trusting the wrong snapshot.
+            NSLog(@"[CSFabricRegistry] cached manifest at %@ did not parse, reported version %u (expected %u) or was refused (%@); re-fetching",
+                  cacheFile, cachedVersion, self.manifestVersion, ingestErr.localizedDescription ?: @"-");
             [fm removeItemAtPath:cacheFile error:nil];
         }
     }
@@ -453,21 +479,45 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
                            self.manifestVersion, fetchedVersion];
     }
 
-    [self ingestManifestDictionary:manifest];
+    NSError *ingestErr = nil;
+    if (![self ingestManifestDictionary:manifest error:&ingestErr]) {
+        [NSException raise:@"CSFabricRegistryManifestUnavailable"
+                    format:@"Manifest v%u at %@ is refused: %@",
+                           self.manifestVersion, urlString, ingestErr.localizedDescription];
+    }
     [body writeToFile:cacheFile atomically:YES];
 }
 
 // Replace the in-memory manifest maps with the snapshot's `caps`/`media`/
-// `aliases` URN→defver mappings. The published manifest is the single source of
-// truth for which URNs belong to the snapshot and at which defver each resolves.
-- (void)ingestManifestDictionary:(NSDictionary *)manifest {
+// `aliases`/`dims` URN→defver mappings. The published manifest is the single
+// source of truth for which URNs belong to the snapshot and at which defver each
+// resolves. `dims` is required: a manifest without it is not one this library
+// reads, and is refused (NO + *error) without touching the maps.
+- (BOOL)ingestManifestDictionary:(NSDictionary *)manifest error:(NSError *_Nullable *_Nullable)error {
     NSDictionary *caps = manifest[@"caps"];
     NSDictionary *media = manifest[@"media"];
     NSDictionary *aliases = manifest[@"aliases"];
+    id dims = manifest[@"dims"];
+    if (![dims isKindOfClass:[NSDictionary class]]) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+            @"manifest v%@ %@ 'dims' map (dim name -> defver); every manifest names the dims of its snapshot",
+            manifest[@"version"], dims ? @"has a malformed" : @"has no"], nil);
+        return NO;
+    }
+    for (id name in (NSDictionary *)dims) {
+        id defver = ((NSDictionary *)dims)[name];
+        if (![name isKindOfClass:[NSString class]] || ![defver isKindOfClass:[NSNumber class]]) {
+            if (error) *error = CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+                @"manifest v%@ 'dims' entry '%@' is not a dim name mapped to a defver", manifest[@"version"], name], nil);
+            return NO;
+        }
+    }
     [self.cacheLock lock];
     [self.manifestCaps removeAllObjects];
     [self.manifestMedia removeAllObjects];
     [self.manifestAliases removeAllObjects];
+    [self.manifestDims removeAllObjects];
+    [self.manifestDims addEntriesFromDictionary:dims];
     if ([caps isKindOfClass:[NSDictionary class]]) {
         [self.manifestCaps addEntriesFromDictionary:caps];
     }
@@ -478,13 +528,17 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         [self.manifestAliases addEntriesFromDictionary:aliases];
     }
     [self.cacheLock unlock];
+    return YES;
 }
 
 // After hydrating the on-disk caches, drop any entry whose version does NOT
 // match the defver the manifest pins its URN at — a stale-snapshot or v0-flat
 // blob must never satisfy a v >= 1 lookup. At v0 the manifest is empty and the
-// alias cache is cleared (aliases are a versioned-regime concept). Mirrors the
-// retain() pass in the Rust/py constructors.
+// alias and dim caches are cleared (aliases and dims are versioned-regime
+// concepts). Then keep a cap or media def only when every dim it names
+// survived with the value it names: one whose dims did not is dropped here and
+// fetched again, with its dims, when it is next asked for — so a cached
+// definition always has its dims cached. Mirrors Rust retain_pinned.
 - (void)filterCachesToManifest {
     [self.cacheLock lock];
     if (self.manifestVersion >= 1) {
@@ -514,18 +568,48 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
                 [self.cachedAliases removeObjectForKey:name];
             }
         }
-        // The extension index is derived from cachedSpecs; rebuild it so it
-        // reflects only the retained specs.
-        [self.extensionIndex removeAllObjects];
-        [self.cacheLock unlock];
-        for (NSDictionary *spec in [self.cachedSpecs allValues]) {
-            [self indexExtensionsForSpec:spec urn:spec[@"urn"]];
+        for (NSString *name in [self.cachedDims allKeys]) {
+            uint32_t pinned = (uint32_t)[self.manifestDims[name] unsignedIntValue];
+            if (pinned != self.cachedDims[name].version) {
+                [self.cachedDims removeObjectForKey:name];
+            }
         }
-        return;
+    } else {
+        // v0: aliases and dims never exist on the flat path.
+        [self.cachedAliases removeAllObjects];
+        [self.cachedDims removeAllObjects];
     }
-    // v0: aliases never exist on the flat path.
-    [self.cachedAliases removeAllObjects];
+    for (NSString *urn in [self.cachedCaps allKeys]) {
+        if (![self dimRefs:self.cachedCaps[urn].dims resolveIn:self.cachedDims]) {
+            [self.cachedCaps removeObjectForKey:urn];
+        }
+    }
+    for (NSString *urn in [self.cachedSpecs allKeys]) {
+        NSArray<CSDimRef *> *refs = [CSDimRef refsFromField:self.cachedSpecs[urn][@"dims"]
+                                                       owner:[NSString stringWithFormat:@"media def '%@'", urn]
+                                                       error:nil];
+        if (!refs || ![self dimRefs:refs resolveIn:self.cachedDims]) {
+            [self.cachedSpecs removeObjectForKey:urn];
+        }
+    }
+    // The extension index is derived from cachedSpecs; rebuild it so it
+    // reflects only the retained specs.
+    [self.extensionIndex removeAllObjects];
+    NSArray<NSDictionary *> *retainedSpecs = [self.cachedSpecs allValues];
     [self.cacheLock unlock];
+    for (NSDictionary *spec in retainedSpecs) {
+        [self indexExtensionsForSpec:spec urn:spec[@"urn"]];
+    }
+}
+
+// Whether every dim `refs` names is in `cached` with the value it names.
+// Mirrors Rust dims_resolve_in.
+- (BOOL)dimRefs:(NSArray<CSDimRef *> *)refs resolveIn:(NSDictionary<NSString *, CSStoredDim *> *)cached {
+    for (CSDimRef *ref in refs) {
+        CSStoredDim *dim = cached[ref.dim];
+        if (!dim || ![dim valueNamed:ref.value]) return NO;
+    }
+    return YES;
 }
 
 // MARK: - Defver resolution (manifest pin)
@@ -790,13 +874,7 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         return;
     }
 
-    [self fetchMediaDefFromRegistry:urn completion:^(NSDictionary *spec, NSError *error) {
-        if (spec) {
-            [self saveMediaDefToCache:spec];
-            [self insertMediaDefInMemory:spec];
-        }
-        completion(spec, error);
-    }];
+    [self fetchMediaDefAtomic:urn completion:completion];
 }
 
 - (NSDictionary *)getCachedMediaDef:(NSString *)urn {
@@ -883,11 +961,12 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     [self.cachedCaps removeAllObjects];
     [self.cachedSpecs removeAllObjects];
     [self.cachedAliases removeAllObjects];
+    [self.cachedDims removeAllObjects];
     [self.extensionIndex removeAllObjects];
     [self.cacheLock unlock];
 
     NSFileManager *fm = [NSFileManager defaultManager];
-    // Clear the per-object caches (caps/media/aliases) but PRESERVE the manifest
+    // Clear the per-object caches (caps/media/aliases/dims) but PRESERVE the manifest
     // cache: the registry stays pinned and usable after a clear, and re-fetching
     // every object lazily must still resolve defvers from the same snapshot. The
     // in-memory manifest maps are likewise left intact (cleared only by a new
@@ -895,9 +974,11 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     [fm removeItemAtPath:self.capsCacheDirectory error:nil];
     [fm removeItemAtPath:self.mediaCacheDirectory error:nil];
     [fm removeItemAtPath:self.aliasesCacheDirectory error:nil];
+    [fm removeItemAtPath:self.dimsCacheDirectory error:nil];
     [fm createDirectoryAtPath:self.capsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
     [fm createDirectoryAtPath:self.mediaCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
     [fm createDirectoryAtPath:self.aliasesCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+    [fm createDirectoryAtPath:self.dimsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
     [fm createDirectoryAtPath:self.manifestsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
 }
 
@@ -958,11 +1039,52 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
                 completion(nil, normError);
                 return;
             }
-            [self saveCapToCache:cap];
-            [self.cacheLock lock];
-            self.cachedCaps[normalized] = cap;
-            [self.cacheLock unlock];
-            completion(cap, nil);
+            // Every dim the cap names, at its pinned version, with the value
+            // named.
+            [self ensureDimsCached:cap.dims
+                             owner:[NSString stringWithFormat:@"cap '%@'", normalized]
+                        completion:^(NSError *dimError) {
+                if (dimError) {
+                    completion(nil, dimError);
+                    return;
+                }
+                // All referenced media defs and dims in cache. Write the cap.
+                [self saveCapToCache:cap];
+                [self.cacheLock lock];
+                self.cachedCaps[normalized] = cap;
+                [self.cacheLock unlock];
+                completion(cap, nil);
+            }];
+        }];
+    }];
+}
+
+// Atomic media-def fetch: the media def is cached only once every dim it names
+// is cached (ensureDimsCached:owner:completion:). A `dims` entry this capdag
+// cannot hold refuses the body. Mirrors Rust fetch_one_media_def.
+- (void)fetchMediaDefAtomic:(NSString *)urn
+                 completion:(void (^)(NSDictionary *_Nullable spec, NSError *_Nullable error))completion {
+    [self fetchMediaDefFromRegistry:urn completion:^(NSDictionary *spec, NSError *error) {
+        if (!spec) {
+            completion(nil, error);
+            return;
+        }
+        NSString *owner = [NSString stringWithFormat:@"media def '%@'", [self normalizeMediaUrn:urn error:nil] ?: urn];
+        NSError *dimsError = nil;
+        NSArray<CSDimRef *> *dims = [CSDimRef refsFromField:spec[@"dims"] owner:owner error:&dimsError];
+        if (!dims) {
+            completion(nil, CSRegistryError(1001, [NSString stringWithFormat:
+                @"Failed to parse registry response for %@: %@", owner, dimsError.localizedDescription], dimsError));
+            return;
+        }
+        [self ensureDimsCached:dims owner:owner completion:^(NSError *dimError) {
+            if (dimError) {
+                completion(nil, dimError);
+                return;
+            }
+            [self saveMediaDefToCache:spec];
+            [self insertMediaDefInMemory:spec];
+            completion(spec, nil);
         }];
     }];
 }
@@ -993,11 +1115,7 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
             continue;
         }
 
-        [self fetchMediaDefFromRegistry:mediaUrn completion:^(NSDictionary *spec, NSError *error) {
-            if (spec) {
-                [self saveMediaDefToCache:spec];
-                [self insertMediaDefInMemory:spec];
-            }
+        [self fetchMediaDefAtomic:mediaUrn completion:^(NSDictionary *spec, NSError *error) {
             @synchronized (guard) {
                 if (error && !firstError) {
                     firstError = error;
@@ -1227,6 +1345,38 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         if (![name isKindOfClass:[NSString class]]) continue;
         [self.cacheLock lock];
         self.cachedAliases[name] = alias;
+        [self.cacheLock unlock];
+    }
+}
+
+// Load the dim cache (`dims/<sha>/<defver>.json`, each `{"dim": <body>,
+// "cached_at", "ttl_hours"}`). Dims are versioned-only — no v0 flat path, no
+// TTL (a published defver is immutable). A cached body this library cannot
+// hold is dropped like an unparseable one, and fetched anew. Of two cached
+// versions of one dim, the one the manifest pins is kept. Mirrors Rust
+// load_all_cached_dims.
+- (void)loadAllCachedDims {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray<NSString *> *files = [self cachedJSONFilePathsInDir:self.dimsCacheDirectory];
+    for (NSString *filePath in files) {
+        NSData *data = [NSData dataWithContentsOfFile:filePath];
+        if (!data) continue;
+        NSError *err = nil;
+        id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&err];
+        id body = [json isKindOfClass:[NSDictionary class]] ? json[@"dim"] : nil;
+        CSStoredDim *dim = [body isKindOfClass:[NSDictionary class]] ? [CSStoredDim dimWithDictionary:body error:&err] : nil;
+        if (!dim || ![dim validate:&err]) {
+            NSLog(@"[CSFabricRegistry] dropping dim cache file %@: %@", filePath,
+                  err.localizedDescription ?: @"not a dim cache entry");
+            [fm removeItemAtPath:filePath error:nil];
+            continue;
+        }
+        [self.cacheLock lock];
+        CSStoredDim *held = self.cachedDims[dim.name];
+        uint32_t pinned = (uint32_t)[self.manifestDims[dim.name] unsignedIntValue];
+        if (!(held && held.version == pinned)) {
+            self.cachedDims[dim.name] = dim;
+        }
         [self.cacheLock unlock];
     }
 }
@@ -1461,6 +1611,229 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     [self.cacheLock unlock];
 }
 
+// MARK: - Dim surface
+
+// Resolve a dim name to its defver under the pinned manifest. Dims exist only in
+// the versioned regime: at v0 any dim lookup is a hard NotFound. At v >= 1 the
+// name must be in the manifest's `dims` map. Mirrors Rust dim_defver.
+- (uint32_t)dimDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error {
+    [self.cacheLock lock];
+    uint32_t mv = self.manifestVersion;
+    NSNumber *defver = self.manifestDims[name];
+    [self.cacheLock unlock];
+    if (mv == 0) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimAtV0, [NSString stringWithFormat:
+            @"dim '%@' cannot resolve: registry is pinned at v0 (dims are a versioned-regime concept)", name], nil);
+        return 0;
+    }
+    if (!defver) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimNotInManifest, [NSString stringWithFormat:
+            @"dim '%@' is not part of manifest v%u", name, mv], nil);
+        return 0;
+    }
+    return (uint32_t)[defver unsignedIntValue];
+}
+
+- (void)getDim:(NSString *)name
+    completion:(void (^)(CSStoredDim *_Nullable dim, NSError *_Nullable error))completion {
+    if (!CSIsDimName(name)) {
+        completion(nil, CSRegistryError(CSFabricRegistryErrorInvalidDimName,
+            [NSString stringWithFormat:@"'%@' is not a dim name", name], nil));
+        return;
+    }
+    CSStoredDim *cached = [self getCachedDim:name];
+    if (cached) {
+        completion(cached, nil);
+        return;
+    }
+    NSError *defverError = nil;
+    uint32_t defver = [self dimDefverFor:name error:&defverError];
+    if (defverError) {
+        completion(nil, defverError);
+        return;
+    }
+    [self fetchDimFromRegistry:name defver:defver completion:completion];
+}
+
+- (nullable CSStoredDim *)getCachedDim:(NSString *)name {
+    [self.cacheLock lock];
+    CSStoredDim *dim = self.cachedDims[name];
+    [self.cacheLock unlock];
+    return dim;
+}
+
+- (void)insertCachedDimForTest:(CSStoredDim *)dim {
+    [self.cacheLock lock];
+    self.cachedDims[dim.name] = dim;
+    if (self.manifestVersion >= 1) {
+        self.manifestDims[dim.name] = @(dim.version);
+    }
+    [self.cacheLock unlock];
+}
+
+// The registry URL of a dim at a defver: `<base>/dims/<sha256-of-name>/<defver>.json`.
+// Dims are versioned-only. Mirrors the URL half of Rust dim_url_and_cache_path.
+- (NSString *)dimURLForName:(NSString *)name defver:(uint32_t)defver {
+    return [self objectURLForKind:@"dims" digest:[self sha256HexForString:name] defver:defver];
+}
+
+// The cache file of a dim at a defver: `<cache>/dims/<sha256-of-name>/<defver>.json`.
+// Mirrors the cache-path half of Rust dim_url_and_cache_path.
+- (NSString *)dimCacheFileForName:(NSString *)name defver:(uint32_t)defver {
+    return [self cacheFileInDir:self.dimsCacheDirectory digest:[self sha256HexForString:name] defver:defver];
+}
+
+// A dim body as a registry served it, for the dim `name` at `defver`: parsed
+// (unknown fields refused), named and versioned as requested, and holding
+// (-[CSStoredDim validate:]). Mirrors Rust checked_dim.
+- (nullable CSStoredDim *)checkedDimFromData:(NSData *)data
+                                        name:(NSString *)name
+                                      defver:(uint32_t)defver
+                                       error:(NSError *_Nullable *_Nullable)error {
+    NSError *parseError = nil;
+    id json = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError] : nil;
+    CSStoredDim *dim = [json isKindOfClass:[NSDictionary class]] ? [CSStoredDim dimWithDictionary:json error:&parseError] : nil;
+    if (!dim) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimParse, [NSString stringWithFormat:
+            @"Failed to parse dim '%@': %@", name, parseError.localizedDescription ?: @"not a JSON object"], parseError);
+        return nil;
+    }
+    if (![dim.name isEqualToString:name]) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimParse, [NSString stringWithFormat:
+            @"dim object name '%@' does not match requested name '%@'", dim.name, name], nil);
+        return nil;
+    }
+    if (dim.version != defver) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimParse, [NSString stringWithFormat:
+            @"dim '%@' object reports version %u but manifest pins defver %u", dim.name, dim.version, defver], nil);
+        return nil;
+    }
+    NSError *validateError = nil;
+    if (![dim validate:&validateError]) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimInvalid, validateError.localizedDescription, validateError);
+        return nil;
+    }
+    return dim;
+}
+
+// Fetch a single dim body at its pinned defver, check it, and cache it in memory
+// and on disk. A registry that serves another object is a hard error, never
+// silently accepted. Mirrors Rust fetch_one_dim.
+- (void)fetchDimFromRegistry:(NSString *)name
+                      defver:(uint32_t)defver
+                  completion:(void (^)(CSStoredDim *_Nullable dim, NSError *_Nullable error))completion {
+    if (defver < 1) {
+        completion(nil, CSRegistryError(CSFabricRegistryErrorDimNotInManifest, [NSString stringWithFormat:
+            @"dim '%@' has non-positive defver %u; dims are versioned-only", name, defver], nil));
+        return;
+    }
+    NSString *urlString = [self dimURLForName:name defver:defver];
+    NSURL *url = [NSURL URLWithString:urlString];
+    NSURLSessionDataTask *task = [self.session dataTaskWithURL:url
+                                             completionHandler:^(NSData *data, NSURLResponse *response, NSError *netError) {
+        if (netError) {
+            completion(nil, CSRegistryError(CSFabricRegistryErrorDimUnavailable, [NSString stringWithFormat:
+                @"Failed to fetch dim '%@': %@", name, netError.localizedDescription], netError));
+            return;
+        }
+        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
+        if (http.statusCode != 200) {
+            completion(nil, CSRegistryError(CSFabricRegistryErrorDimHTTPNotFound, [NSString stringWithFormat:
+                @"dim '%@' not found in registry (HTTP %ld) at %@", name, (long)http.statusCode, urlString], nil));
+            return;
+        }
+        NSError *checkError = nil;
+        CSStoredDim *dim = [self checkedDimFromData:data name:name defver:defver error:&checkError];
+        if (!dim) {
+            completion(nil, checkError);
+            return;
+        }
+        NSDictionary *entry = @{
+            @"dim": [dim toDictionary],
+            @"cached_at": @([[NSDate date] timeIntervalSince1970]),
+            @"ttl_hours": @(CACHE_DURATION_HOURS),
+        };
+        NSError *writeError = nil;
+        NSString *cacheFile = [self dimCacheFileForName:name defver:defver];
+        NSData *serialized = [NSJSONSerialization dataWithJSONObject:entry options:NSJSONWritingPrettyPrinted error:&writeError];
+        if (!serialized || ![serialized writeToFile:cacheFile options:NSDataWritingAtomic error:&writeError]) {
+            completion(nil, CSRegistryError(CSFabricRegistryErrorDimUnavailable, [NSString stringWithFormat:
+                @"Failed to write dim cache file %@: %@", cacheFile, writeError.localizedDescription], writeError));
+            return;
+        }
+        [self.cacheLock lock];
+        self.cachedDims[dim.name] = dim;
+        [self.cacheLock unlock];
+        completion(dim, nil);
+    }];
+    [task resume];
+}
+
+// Make sure every dim a definition names is cached, fetching the ones that are
+// not at the defver the manifest pins, and that each names a value the dim
+// declares. `owner` names the definition in errors. Nothing about the
+// definition itself is cached here: its fetcher caches it only once this
+// succeeds. A dim the manifest does not list is refused before any fetch.
+// Mirrors Rust ensure_dims_cached.
+- (void)ensureDimsCached:(NSArray<CSDimRef *> *)refs
+                   owner:(NSString *)owner
+              completion:(void (^)(NSError *_Nullable error))completion {
+    NSError *refsError = nil;
+    if (!CSCheckDimRefs(refs, &refsError)) {
+        completion(CSRegistryError(CSFabricRegistryErrorDimRefsInvalid, [NSString stringWithFormat:
+            @"%@ dims: %@", owner, refsError.localizedDescription], refsError));
+        return;
+    }
+    [self ensureDimsCached:refs fromIndex:0 owner:owner completion:completion];
+}
+
+- (void)ensureDimsCached:(NSArray<CSDimRef *> *)refs
+               fromIndex:(NSUInteger)index
+                   owner:(NSString *)owner
+              completion:(void (^)(NSError *_Nullable error))completion {
+    if (index == refs.count) {
+        completion(nil);
+        return;
+    }
+    CSDimRef *ref = refs[index];
+    void (^holdValue)(CSStoredDim *) = ^(CSStoredDim *dim) {
+        if (![dim valueNamed:ref.value]) {
+            completion(CSRegistryError(CSFabricRegistryErrorDimValueUndeclared, [NSString stringWithFormat:
+                @"%@ names value '%@' of dim '%@', which the dim does not declare", owner, ref.value, ref.dim], nil));
+            return;
+        }
+        [self ensureDimsCached:refs fromIndex:index + 1 owner:owner completion:completion];
+    };
+    [self.cacheLock lock];
+    CSStoredDim *cached = self.cachedDims[ref.dim];
+    NSNumber *defver = self.manifestDims[ref.dim];
+    uint32_t mv = self.manifestVersion;
+    [self.cacheLock unlock];
+    if (cached) {
+        holdValue(cached);
+        return;
+    }
+    if (mv == 0) {
+        completion(CSRegistryError(CSFabricRegistryErrorDimAtV0, [NSString stringWithFormat:
+            @"%@ names dim '%@', but the registry is pinned at v0 (dims are a versioned-regime concept)", owner, ref.dim], nil));
+        return;
+    }
+    if (!defver) {
+        completion(CSRegistryError(CSFabricRegistryErrorDimNotInManifest, [NSString stringWithFormat:
+            @"%@ names dim '%@', which is not in manifest v%u", owner, ref.dim, mv], nil));
+        return;
+    }
+    [self fetchDimFromRegistry:ref.dim defver:(uint32_t)[defver unsignedIntValue]
+                    completion:^(CSStoredDim *dim, NSError *error) {
+        if (!dim) {
+            completion(CSRegistryError(CSFabricRegistryErrorDimUnavailable, [NSString stringWithFormat:
+                @"%@ names dim '%@', which could not be fetched: %@", owner, ref.dim, error.localizedDescription], error));
+            return;
+        }
+        holdValue(dim);
+    }];
+}
+
 - (void)insertCachedCapForTest:(CSCap *)cap {
     if (cap.version == 0 && self.manifestVersion >= 1) {
         cap.version = self.manifestVersion;
@@ -1487,6 +1860,7 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         @"caps": [self.manifestCaps copy],
         @"media": [self.manifestMedia copy],
         @"aliases": [self.manifestAliases copy],
+        @"dims": [self.manifestDims copy],
     };
     [self.cacheLock unlock];
     return dict;

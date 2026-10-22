@@ -6,4 +6,4 @@
 // `scripts/lib/config.sh` refuses to build while this file says another.
 #import <stdint.h>
 
-const uint32_t CSBakedFabricManifestVersion = 10;
+const uint32_t CSBakedFabricManifestVersion = 11;
