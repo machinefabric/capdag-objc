@@ -14,8 +14,8 @@ import Foundation
 //   * It could not get an answer — `.offline`, `.unreachable`, `.httpError`,
 //     `.malformed`. We do not know what the registry says. Retrying, or
 //     changing a setting, may change the answer.
-//   * It got an answer and refused it — `.unsigned`, `.untrusted`,
-//     `.unverifiable`. We know what the registry says and we will not act on
+//   * It got an answer and refused it — `.unchartered`, `.unsigned`,
+//     `.untrusted`, `.unverifiable`. We know what the registry says and we will not act on
 //     it. Retrying changes nothing.
 //
 // Those two groups have opposite remedies, which is the whole reason the
@@ -56,6 +56,11 @@ public enum RegistryVerdictState: String, Codable, Hashable, Sendable, CaseItera
     case httpError = "http_error"
     /// The registry answered with a body this build cannot read as a manifest.
     case malformed
+    /// Nothing is at `<anchor>/charter.json` — the URL is not a registry
+    /// MachineFabric chartered, and nothing it serves is used. A charter that
+    /// IS there and is refused is `.untrusted` or `.unverifiable`, with a
+    /// `charter_` reason.
+    case unchartered
     /// No signature sidecar where one is required. An unsigned registry is
     /// refused rather than trusted.
     case unsigned
@@ -89,7 +94,7 @@ public enum RegistryVerdictState: String, Codable, Hashable, Sendable, CaseItera
     /// not having got one. A refusal will not change on retry.
     public var isTrustFailure: Bool {
         switch self {
-        case .unsigned, .untrusted, .unverifiable: return true
+        case .unchartered, .unsigned, .untrusted, .unverifiable: return true
         case .verified, .pending, .offline, .unreachable, .httpError, .malformed, .unenforced: return false
         }
     }
@@ -100,7 +105,7 @@ public enum RegistryVerdictState: String, Codable, Hashable, Sendable, CaseItera
     public var isTransient: Bool {
         switch self {
         case .pending, .unreachable, .httpError, .malformed: return true
-        case .verified, .offline, .unsigned, .untrusted, .unverifiable, .unenforced: return false
+        case .verified, .offline, .unchartered, .unsigned, .untrusted, .unverifiable, .unenforced: return false
         }
     }
 }
@@ -149,7 +154,7 @@ extension RegistryVerdictState {
         case .unreachable: return .checkNetwork
         case .httpError, .malformed: return .retryLater
         case .unverifiable: return .updateClient
-        case .unsigned, .untrusted: return .doNotProceed
+        case .unchartered, .unsigned, .untrusted: return .doNotProceed
         }
     }
 }
@@ -174,6 +179,32 @@ public enum ChainFailureReason: String, Codable, Hashable, Sendable, CaseIterabl
     case keyIDMismatch = "key_id_mismatch"
     case noAuthorizingCertificate = "no_authorizing_certificate"
     case manifestSignatureInvalid = "manifest_signature_invalid"
+    /// The registry's charter is not a charter document, or breaks its shape.
+    case charterMalformed = "charter_malformed"
+    /// The charter declares a format this build does not read.
+    case charterUnsupportedFormat = "charter_unsupported_format"
+    /// The charter's signature does not verify over its bytes.
+    case charterSignatureInvalid = "charter_signature_invalid"
+    /// The charter is for another anchor than the one asked.
+    case charterAnchorMismatch = "charter_anchor_mismatch"
+    /// The charter is for another kind of registry.
+    case charterKindMismatch = "charter_kind_mismatch"
+    /// The charter's registry is signed under another environment than this
+    /// build verifies.
+    case charterEnvironmentMismatch = "charter_environment_mismatch"
+    /// The cartridge registry's charter names another fabric than the one this
+    /// client resolves caps against.
+    case charterFabricMismatch = "charter_fabric_mismatch"
+    /// The charter is issued in the future.
+    case charterNotYetValid = "charter_not_yet_valid"
+    /// The charter's own validity has ended.
+    case charterExpired = "charter_expired"
+    /// A stored charter is in a folder not named for its slug.
+    case charterFolderMismatch = "charter_folder_mismatch"
+    /// The charter names a slug another registry's charter already holds.
+    /// Charters are unique by slug where they are issued; two with one slug is
+    /// an invalid state, and neither is given the other's folder.
+    case charterSlugTaken = "charter_slug_taken"
 }
 
 extension RegistryVerdictState {
@@ -187,11 +218,14 @@ extension RegistryVerdictState {
     public static func forChainFailure(_ reason: ChainFailureReason) -> RegistryVerdictState {
         switch reason {
         case .malformedEnvelope, .unsupportedEnvelopeFormat, .malformedCertificate,
-             .unsupportedCertificateFormat, .emptyCertificateList:
+             .unsupportedCertificateFormat, .emptyCertificateList, .charterMalformed,
+             .charterUnsupportedFormat:
             return .unverifiable
         case .insufficientRootSignatures, .expiredCertificate, .notYetValidCertificate,
              .environmentMismatch, .keyIDMismatch, .noAuthorizingCertificate,
-             .manifestSignatureInvalid:
+             .manifestSignatureInvalid, .charterSignatureInvalid, .charterAnchorMismatch,
+             .charterKindMismatch, .charterEnvironmentMismatch, .charterFabricMismatch,
+             .charterNotYetValid, .charterExpired, .charterFolderMismatch, .charterSlugTaken:
             return .untrusted
         }
     }
@@ -309,7 +343,7 @@ public struct RegistryVerdict: Codable, Hashable, Sendable {
     }
 
     /// A state that carries only a detail line: `.offline`, `.unreachable`,
-    /// `.malformed`, `.unsigned`. The other states have their own factories
+    /// `.malformed`, `.unchartered`, `.unsigned`. The other states have their own factories
     /// because they require more, and this refuses them rather than letting a
     /// caller build a verdict missing what it needs.
     public static func stated(
@@ -319,7 +353,7 @@ public struct RegistryVerdict: Codable, Hashable, Sendable {
         checkedAtUnixSeconds: Int64
     ) throws -> RegistryVerdict {
         switch state {
-        case .offline, .unreachable, .malformed, .unsigned:
+        case .offline, .unreachable, .malformed, .unchartered, .unsigned:
             break
         case .verified, .pending, .unenforced:
             throw RegistryVerdictError.statesNoFailureButCarriesDetail(state, detail)

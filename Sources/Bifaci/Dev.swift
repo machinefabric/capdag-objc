@@ -288,7 +288,7 @@ public func devVersionDir(
     version: String
 ) -> String {
     var path = userCartridgeDir as NSString
-    for component in [cartridgeDevSlug, "v\(registryVersion)", channel, name, version] {
+    for component in [CSCharterDevSlug, "v\(registryVersion)", channel, name, version] {
         path = path.appendingPathComponent(component) as NSString
     }
     return path as String
@@ -445,7 +445,7 @@ public func findDevCapByAlias(
     registryVersion: UInt32,
     alias: String
 ) throws -> (cap: CapDefinition, versionDir: String)? {
-    let devRoot = ((userCartridgeDir as NSString).appendingPathComponent(cartridgeDevSlug)
+    let devRoot = ((userCartridgeDir as NSString).appendingPathComponent(CSCharterDevSlug)
         as NSString).appendingPathComponent("v\(registryVersion)")
     let fm = FileManager.default
 
@@ -459,7 +459,7 @@ public func findDevCapByAlias(
 
         let cj: CartridgeJson
         do {
-            cj = try CartridgeJson.readFromDir(versionDir, expectedSlug: cartridgeDevSlug)
+            cj = try CartridgeJson.readFromDir(versionDir, folder: .dev)
         } catch {
             throw DevError.io(
                 "the dev install at '\(versionDir)' has an unreadable cartridge.json: \(error)")

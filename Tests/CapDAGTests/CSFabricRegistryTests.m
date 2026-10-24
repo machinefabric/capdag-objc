@@ -8,6 +8,7 @@
 #import <XCTest/XCTest.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "CSFabricRegistry.h"
+#import "CSCharter.h"
 #import "CSFabricManifestVersion.h"
 #import "CSCap.h"
 #import "CSCapUrn.h"
@@ -28,41 +29,25 @@
 - (NSString *)objectURLForKind:(NSString *)kind digest:(NSString *)digest defver:(uint32_t)defver;
 @end
 
-// Per-cap URL construction. The new scheme uses /caps/<sha256>,
-// where the hash is computed over the canonical URN's UTF-8 bytes.
-// This replicates the construction logic from CSFabricRegistry.
-static NSString *buildRegistryURL(NSString *urn) {
-    NSString *registryBaseURL = @"https://fabric.capdag.com";
-
-    // Normalize the cap URN using the proper parser
-    NSString *normalizedUrn = urn;
-    NSError *parseError = nil;
-    CSCapUrn *parsedUrn = [CSCapUrn fromString:urn error:&parseError];
-    if (parsedUrn) {
-        normalizedUrn = [parsedUrn toString];
-    }
-
-    NSData *data = [normalizedUrn dataUsingEncoding:NSUTF8StringEncoding];
-    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
-    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
-        [hex appendFormat:@"%02x", digest[i]];
-    }
-    return [NSString stringWithFormat:@"%@/caps/%@", registryBaseURL, hex];
+// The per-cap URL at defver 1, from the charter's `definition` location of a
+// test registry — built through the registry's own object-path rule, as
+// production builds it. nil for a URN that does not parse.
+static NSString *_Nullable buildRegistryURL(NSString *urn) {
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
+    NSString *normalized = [registry normalizeCapUrn:urn error:nil];
+    if (!normalized) return nil;
+    return [registry objectURLForKind:@"caps" digest:[registry sha256HexForString:normalized] defver:1];
 }
 
 @implementation CSFabricRegistryTests
 
-// TEST1899: a media def published under a manifest (v >= 1) resolves to the
-// VERSIONED object path `/media/<sha>/<defver>.json`, never the legacy flat path
-// `/media/<sha>`. The flat path is the pre-manifest (v0) layout; a registry that
-// silently runs in v0 mode fetches it and 404s every lookup against a versioned
-// registry — the exact regression where the app's media-title resolver hit
-// `/media/<sha>` on a staging-v1 registry and logged "Media def … not found
-// (HTTP 404)". This pins BOTH the URL rule and the manifest-driven defver
-// resolution. Mirrors the Rust reference's
-// test0144_media_def_resolves_to_versioned_object_path_under_manifest.
+// TEST1899: a media def resolves to the charter's `definition` location at the
+// defver its manifest pins — `/media/<sha>/<defver>.json` in the publisher's
+// layout. There is no other path: the pre-manifest flat layout is gone, and a
+// client that composed one would 404 every lookup, as the app's media-title
+// resolver once did against a staging-v1 registry. This pins BOTH the URL rule
+// and the manifest-driven defver resolution. Mirrors the Rust reference's
+// test1899_media_def_resolves_to_versioned_object_path_under_manifest.
 - (void)test1899_mediaDefResolvesToVersionedObjectPathUnderManifest {
     // The pin is baked, never read from the process environment: reproduce the
     // exact failure environment (NO MFR_FABRIC_MANIFEST_VERSION) and confirm the
@@ -71,29 +56,23 @@ static NSString *buildRegistryURL(NSString *urn) {
         @"the baked fabric manifest version must be >= 1; v0 is never a valid target");
     unsetenv("MFR_FABRIC_MANIFEST_VERSION");
 
-    // 1. Object-path rule: defver >= 1 → versioned; defver 0 → flat.
+    // 1. Object-path rule: the charter's definition location, at the defver.
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest]; // pinned at manifest v1
     XCTAssertGreaterThanOrEqual(registry.manifestVersion, 1u,
         @"the production registry must be pinned at manifest v >= 1, never the legacy v0 flat-path mode");
 
     NSString *urn = @"media:enc=utf-8;ext=md";
     NSString *digest = [registry sha256HexForString:urn];
-    // Assert against the registry's OWN configured base URL, not a hardcoded
-    // host: under a workspace test run against staging the process env points the default config
-    // at fabric-staging.capdag.com, and the URL rule (versioned vs flat) is
-    // independent of which origin is configured. Mirrors the Rust test, which
-    // builds the expected URL from config.registry_base_url.
-    NSString *base = registry.config.registryBaseURL;
+    // Assert against the registry's OWN anchor, not a hardcoded host: under a
+    // workspace test run against staging the process env points the default
+    // config at the staging fabric, and the URL rule is independent of which
+    // registry is configured.
+    NSString *base = registry.charter.anchor;
 
     NSString *versioned = [registry objectURLForKind:@"media" digest:digest defver:1];
     XCTAssertEqualObjects(versioned,
         ([NSString stringWithFormat:@"%@/media/%@/1.json", base, digest]),
         @"a def at manifest defver 1 must resolve to the versioned object path");
-
-    NSString *flat = [registry objectURLForKind:@"media" digest:digest defver:0];
-    XCTAssertEqualObjects(flat,
-        ([NSString stringWithFormat:@"%@/media/%@", base, digest]),
-        @"defver 0 is the legacy flat path — the wrong target for a versioned registry");
 
     // 2. Manifest-driven defver: a media def seeded under a v >= 1 manifest
     // resolves to its pinned defver (versioned), never 0.
@@ -176,17 +155,19 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertEqualObjects(urlA, urlB, @"Equivalent URNs must hash to the same registry key");
 }
 
-/// TEST141: URL has the right shape — protocol, host, /caps/ prefix,
-/// 64 hex chars, no extension.
+/// TEST141: URL has the right shape — /caps/ prefix, 64 hex chars, and the
+/// defver as the last segment.
 - (void)test141_perCapURLShape {
     NSString *registryURL = buildRegistryURL(@"cap:in=\"media:listing-id\";use-grinder;out=\"media:task;id\"");
 
     NSURL *url = [NSURL URLWithString:registryURL];
     XCTAssertNotNil(url, @"Generated URL must be valid");
-    XCTAssertEqualObjects(url.host, @"fabric.capdag.com", @"Default host is fabric.capdag.com");
-    XCTAssertTrue([url.path hasPrefix:@"/caps/"]);
-    NSString *hashPart = [url.path stringByReplacingOccurrencesOfString:@"/caps/" withString:@""];
-    XCTAssertEqual(hashPart.length, 64u, @"SHA-256 hex digest is 64 characters");
+    NSRange caps = [url.path rangeOfString:@"/caps/"];
+    XCTAssertNotEqual(caps.location, (NSUInteger)NSNotFound);
+    NSArray<NSString *> *rest = [[url.path substringFromIndex:NSMaxRange(caps)] componentsSeparatedByString:@"/"];
+    XCTAssertEqual(rest.count, 2u, @"the URL is /caps/<hash>/<defver>.json: %@", registryURL);
+    XCTAssertEqual(rest.firstObject.length, 64u, @"SHA-256 hex digest is 64 characters");
+    XCTAssertEqualObjects(rest.lastObject, @"1.json", @"the defver is the last segment");
 }
 
 /// TEST142: Different tag orders normalise to the same URL — the
@@ -197,35 +178,54 @@ static NSString *buildRegistryURL(NSString *urn) {
     XCTAssertEqualObjects(url1, url2, @"Different tag orders should produce the same URL");
 }
 
-// TEST1893: cache root namespaced per registry origin — prod and staging serve
-// different bytes for the same URN/version, so they must never share a cache
-// root; the same origin must map to a stable (deterministic) root or caching
-// never hits; and the final path component is exactly slugFor(url) under the
-// shared "capdag" cache directory — one slug scheme across the codebase. The
-// old origin-blind code rooted every origin at the same "capdag" directory,
-// which makes the prod≠staging assertion below fail.
-- (void)test1893_cacheRootIsNamespacedPerRegistryOrigin {
-    NSString *prod = [CSFabricRegistry defaultCacheRootForRegistryURL:@"https://fabric.capdag.com"];
-    NSString *staging = [CSFabricRegistry defaultCacheRootForRegistryURL:@"https://fabric-staging.capdag.com"];
-    NSString *stagingAgain = [CSFabricRegistry defaultCacheRootForRegistryURL:@"https://fabric-staging.capdag.com"];
+// TEST1893: a fabric's cache folder is its CHARTER's slug, and a charter stored
+// there is what an offline client finds its fabric by — matched by anchor,
+// never by folder name. A prod-populated cache can therefore never satisfy a
+// staging lookup: two registries have two charters and two slugs, whatever
+// their URLs look like.
+- (void)test1893_cacheFolderIsTheChartersSlugAndFoundByAnchor {
+    NSString *cache = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                       [@"capdag-1893-" stringByAppendingString:[NSUUID UUID].UUIDString]];
+    void (^store)(NSString *, NSString *, NSString *) = ^(NSString *anchor, NSString *slug, NSString *manifest) {
+        NSMutableDictionary *fields = [[[CSFabricRegistry publisherLayoutCharterForAnchor:anchor slug:slug]
+                                        dictionaryRepresentation] mutableCopy];
+        if (manifest) {
+            NSMutableDictionary *locations = [fields[@"locations"] mutableCopy];
+            locations[@"manifest"] = manifest;
+            fields[@"locations"] = locations;
+        }
+        NSData *body = [NSJSONSerialization dataWithJSONObject:fields options:0 error:nil];
+        NSError *error = nil;
+        CSCharter *charter = [CSCharter charterWithData:body error:&error];
+        XCTAssertNotNil(charter, @"%@", error);
+        CSFetchedCharter *fetched = [[CSFetchedCharter alloc] initWithCharter:charter body:body
+                                                                    signature:[@"sig" dataUsingEncoding:NSUTF8StringEncoding]];
+        XCTAssertTrue([fetched storeInFolder:[cache stringByAppendingPathComponent:slug] error:&error], @"%@", error);
+    };
+    NSString *anchor = @"https://registry.example/fabric";
+    // Another fabric's folder is beside it, with its own charter, and is not
+    // taken for it; nor is a folder named like this anchor's host.
+    store(@"https://fabric.capdag.com", @"fabric.capdag.com", nil);
+    [[NSFileManager defaultManager] createDirectoryAtPath:[cache stringByAppendingPathComponent:@"registry.example"]
+                              withIntermediateDirectories:YES attributes:nil error:nil];
+    store(anchor, @"example-fabric", [anchor stringByAppendingString:@"/m/{manifest_version}"]);
 
-    XCTAssertNotNil(prod);
-    XCTAssertNotNil(staging);
-
-    XCTAssertNotEqualObjects(prod, staging,
-        @"prod and staging must not share a cache root — they serve different bytes for the same URN/version");
-    XCTAssertEqualObjects(staging, stagingAgain,
-        @"the same registry origin must map to a stable cache root, or caching never hits");
-
-    // The final path component is exactly the cartridge-registry slug of the
-    // origin URL — one slug scheme across the codebase.
-    NSString *slug = CSSlugForRegistryURL(@"https://fabric-staging.capdag.com");
-    XCTAssertEqualObjects([staging lastPathComponent], slug,
-        @"cache root must end in slugFor(registryURL)");
-
-    // And the parent of that slug is the shared "capdag" cache directory.
-    XCTAssertEqualObjects([[staging stringByDeletingLastPathComponent] lastPathComponent], @"capdag",
-        @"the per-origin slug must live under the capdag cache directory");
+    // A session with no network: the stored charter is found without it.
+    NSURLSessionConfiguration *offline = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    offline.protocolClasses = @[];
+    offline.timeoutIntervalForResource = 1;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:offline];
+    NSError *error = nil;
+    CSCharter *found = [CSFabricRegistry resolveCharterForAnchor:anchor cacheRoot:cache session:session error:&error];
+    XCTAssertNotNil(found, @"the stored charter is found offline, by its anchor: %@", error);
+    XCTAssertEqualObjects(found.slug, @"example-fabric");
+    XCTAssertEqualObjects([found locationNamed:@"manifest" values:@{@"manifest_version": @"11"} error:nil],
+                          @"https://registry.example/fabric/m/11",
+                          @"the manifest is where the charter says, not where a URL convention would put it");
+    CSCharter *other = [CSFabricRegistry resolveCharterForAnchor:@"https://fabric.capdag.com" cacheRoot:cache
+                                                         session:session error:&error];
+    XCTAssertEqualObjects(other.slug, @"fabric.capdag.com", @"each anchor finds its own charter");
+    [[NSFileManager defaultManager] removeItemAtPath:cache error:nil];
 }
 
 // TEST6396: A malformed cap URN must FAIL HARD — surfaced as an NSError, not

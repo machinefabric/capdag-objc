@@ -7,9 +7,10 @@ import CapDAG
 //
 // Mirrors `capdag/src/cartridge_discovery.rs` scan-all tests: TEST1875-1878.
 //
-// The scanner enumerates every slug folder on disk (full macOS parity) and
-// validates each cartridge in place against the slug folder it sits under
-// (the three-place rule) and the host's channel.
+// The scanner enumerates every registry folder on disk (full macOS parity)
+// and validates each cartridge in place against the registry folder it sits
+// under — as the charter stored there names it (the charter rule) — and the
+// host's channel.
 // =============================================================================
 
 @available(macOS 10.15.4, iOS 13.4, *)
@@ -73,10 +74,30 @@ final class CartridgeDiscoveryTests: XCTestCase {
         """
     }
 
-    /// The registry slug for a fixed URL, so tests can place a registry
-    /// cartridge under the folder that matches its declared registry_url.
-    private func registrySlugFor(_ url: String) -> String {
-        slugFor(url)
+    private let cartridgesAnchor = "https://registry.example/cartridges"
+    private let cartridgesSlug = "example-cartridges"
+
+    /// Store the example registry's charter in `{root}/{folder}`, as an
+    /// installer does — written directly, so a test can store it under another
+    /// name than its slug. The signature is opaque here: this mirror carries it
+    /// and never reads it.
+    private func storeCharter(root: String, folder: String) throws {
+        let charter: [String: Any] = [
+            "format": CSCharterFormat,
+            "anchor": cartridgesAnchor,
+            "kind": "cartridges",
+            "slug": cartridgesSlug,
+            "environment": "prod",
+            "locations": ["manifest": "\(cartridgesAnchor)/v{registry_version}/manifest"],
+            "fabric": "https://registry.example/fabric",
+            "issued_at": 1_792_800_000,
+            "not_after": NSNull(),
+        ]
+        let dir = (root as NSString).appendingPathComponent(folder)
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: charter)
+            .write(to: URL(fileURLWithPath: (dir as NSString).appendingPathComponent(CSCharterFile)))
+        try Data("sig".utf8).write(to: URL(fileURLWithPath: (dir as NSString).appendingPathComponent(CSCharterSigFile)))
     }
 
     private func registryCartridgeJSON(_ url: String, _ channel: String, _ fmv: UInt32) -> String {
@@ -101,16 +122,17 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1875
 
-    // TEST1875: scan-all — a registry slug folder AND the dev slot present on disk are BOTH scanned, regardless of the host's own baked registry. The dev cartridge (null registry under dev/) and the registry cartridge (its url hashing to its slug folder) each reach their probe. Both fixtures lack a real bifaci binary, so both end at HandshakeFailed — proving discovery REACHED them (was not filtered out by a registry pin), which is the behavior under test. A registry-pin rejection would instead surface BadInstallation and never probe.
+    // TEST1875: scan-all — a chartered registry folder AND the dev slot present on disk are BOTH scanned, regardless of the host's own baked registry. The dev cartridge (null registry under dev/) and the registry cartridge (its url the anchor of its folder's charter) each reach their probe. Both fixtures lack a real bifaci binary, so both end at HandshakeFailed — proving discovery REACHED them (was not filtered out by a registry pin), which is the behavior under test. A registry-pin rejection would instead surface BadInstallation and never probe.
     func test1875_scanAllReachesBothDevAndRegistrySlugs() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
-        let url = "https://cartridges.example.com/manifest"
-        let rslug = registrySlugFor(url)
+        try storeCharter(root: root, folder: cartridgesSlug)
+        let url = cartridgesAnchor
+        let rslug = cartridgesSlug
         // Host baked for a DIFFERENT registry than the on-disk registry cartridge.
         let host = DiscoveryIdentity(
             channel: .nightly,
-            registryURL: "https://other.example.com/manifest",
+            registryURL: "https://other.example.com/cartridges",
             fabricManifestVersion: 1,
             cartridgeRegistryVersion: CSBakedCartridgeRegistryVersion,
             bundle: .none("this directory is not a build's bundle")
@@ -134,8 +156,9 @@ final class CartridgeDiscoveryTests: XCTestCase {
     func test1876_otherChannelSubtreeIsSkipped() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
-        let url = "https://cartridges.example.com/manifest"
-        let rslug = registrySlugFor(url)
+        try storeCharter(root: root, folder: cartridgesSlug)
+        let url = cartridgesAnchor
+        let rslug = cartridgesSlug
         try installFixture(root: root, slug: rslug, channelFolder: "release", name: "regcart", version: "1.0.0", cartridgeJSON: registryCartridgeJSON(url, "release", 1), entry: "cart")
 
         let out = try discoverCartridges(root, identity: nightlyDevIdentity())
@@ -144,17 +167,48 @@ final class CartridgeDiscoveryTests: XCTestCase {
 
     // MARK: - TEST1877
 
-    // TEST1877: a registry cartridge hand-copied under the WRONG registry slug folder fails the three-place rule (BadInstallation) — scan-all does not mean "accept anywhere", placement must still be self-consistent.
+    // TEST1877: a registry cartridge hand-copied into the folder of ANOTHER registry fails the charter rule (Misplaced) — scan-all does not mean "accept anywhere", placement must still be self-consistent.
     func test1877_registryCartridgeUnderWrongSlugIsBadInstall() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
-        let url = "https://cartridges.example.com/manifest"
-        let wrongSlug = registrySlugFor("https://somewhere-else.example.com/manifest")
-        let json = registryCartridgeJSON(url, "nightly", 1)
-        try installFixture(root: root, slug: wrongSlug, channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
+        try storeCharter(root: root, folder: cartridgesSlug)
+        let json = registryCartridgeJSON("https://somewhere-else.example/cartridges", "nightly", 1)
+        try installFixture(root: root, slug: cartridgesSlug, channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
 
         let out = try discoverCartridges(root, identity: nightlyDevIdentity())
         expectIncompatible(out, .misplaced)
+    }
+
+    // MARK: - TEST12923
+
+    // TEST12923: a registry folder is what its stored charter proves, never what its name says. The same cartridge, recording the same anchor, is misplaced in a folder with no charter and in a folder whose charter is stored under another name; it reaches its probe only in the folder its charter names.
+    func test12923_aRegistryFolderIsProvenByItsCharterNotItsName() throws {
+        let json = registryCartridgeJSON(cartridgesAnchor, "nightly", 1)
+
+        // A folder named for the registry, holding no charter.
+        let unchartered = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: unchartered) }
+        try installFixture(root: unchartered, slug: cartridgesSlug, channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
+        let bare = try discoverCartridges(unchartered, identity: nightlyDevIdentity())
+        expectIncompatible(bare, .misplaced)
+        if case let .incompatible(_, _, _, _, _, error) = bare.first {
+            XCTAssertTrue(error.message.contains("no charter that reads"), error.message)
+        }
+
+        // The registry's charter, stored in a folder of another name.
+        let renamed = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: renamed) }
+        try storeCharter(root: renamed, folder: "cartridges.example.com")
+        try installFixture(root: renamed, slug: "cartridges.example.com", channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
+        expectIncompatible(try discoverCartridges(renamed, identity: nightlyDevIdentity()), .misplaced)
+
+        // Its charter, in the folder the charter names: placement holds, and
+        // discovery goes on to probe the (fake) binary.
+        let placed = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: placed) }
+        try storeCharter(root: placed, folder: cartridgesSlug)
+        try installFixture(root: placed, slug: cartridgesSlug, channelFolder: "nightly", name: "cart", version: "1.0.0", cartridgeJSON: json, entry: "cart")
+        expectIncompatible(try discoverCartridges(placed, identity: nightlyDevIdentity()), .handshakeFailed)
     }
 
     // MARK: - TEST1878 / TEST1928

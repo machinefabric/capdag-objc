@@ -11,7 +11,7 @@
 
 #import <Foundation/Foundation.h>
 
-@class CSCap, CSCapUrn, CSStoredDim;
+@class CSCap, CSCapUrn, CSStoredDim, CSCharter;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -73,43 +73,25 @@ NSString *_Nullable CSNormalizeAliasName(NSString *name, NSError *_Nullable *_Nu
 /// cap or media URN; returns NO for anything else.
 BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKind);
 
-/// Reserved on-disk slug for an absent registry (a dev cartridge). The literal
-/// "dev" can never collide with the 16-char hex slug space — distinguishable by
-/// length alone. Mirrors Rust `cartridge_slug::DEV_SLUG`.
-extern NSString * const CSCartridgeDevSlug;
-
-/// Number of hex characters in a registry slug. Must match Rust's
-/// `cartridge_slug::SLUG_HEX_LEN` so the slug is byte-identical cross-mirror.
-extern const NSUInteger CSCartridgeSlugHexLen;
-
-/// Deterministic on-disk slug for a registry URL — the same scheme the
-/// cartridge registry layout uses. `nil` → the literal `CSCartridgeDevSlug`.
-/// Non-nil → the first `CSCartridgeSlugHexLen` lowercase hex chars of
-/// sha256(url UTF-8 bytes). The URL is hashed verbatim (no normalization), so
-/// any byte difference yields a different slug. Mirrors Rust
-/// `cartridge_slug::slug_for`.
-NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
-
 /**
- * CSFabricRegistryConfig holds configuration for the unified registry.
+ * CSFabricRegistryConfig: what a fabric registry client is asked to use.
+ *
+ * The ANCHOR names the registry and is all a client is told; where its
+ * manifest and definitions are, and the folder its cache lives in, come from
+ * the registry's charter. Sources, in priority order: +configWithAnchor:, then
+ * CDG_FABRIC_REGISTRY_URL, then MachineFabric's production fabric.
  */
 @interface CSFabricRegistryConfig : NSObject
 
-/** Base URL for the registry API (e.g., "https://fabric.capdag.com") */
-@property (nonatomic, copy) NSString *registryBaseURL;
+/** The anchor of the fabric registry (e.g. "https://fabric.capdag.com"). */
+@property (nonatomic, copy) NSString *anchor;
 
-/** Base URL for schema profiles (defaults to {registryBaseURL}/schema) */
-@property (nonatomic, copy) NSString *schemaBaseURL;
-
-/// Defaults from environment variables CDG_FABRIC_REGISTRY_URL and
-/// CDG_SCHEMA_BASE_URL, falling back to https://fabric.capdag.com.
+/// The anchor from CDG_FABRIC_REGISTRY_URL, falling back to
+/// https://fabric.capdag.com.
 + (instancetype)defaultConfig;
 
-/// Custom registry URL; schema URL is set to {registryURL}/schema.
-+ (instancetype)configWithRegistryURL:(NSString *)registryURL;
-
-/// Custom registry and schema URLs.
-+ (instancetype)configWithRegistryURL:(NSString *)registryURL schemaURL:(NSString *)schemaURL;
+/// The fabric registry chartered at `anchor`.
++ (instancetype)configWithAnchor:(NSString *)anchor;
 
 @end
 
@@ -147,28 +129,51 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL);
 /** The current registry configuration */
 @property (nonatomic, readonly) CSFabricRegistryConfig *config;
 
+/// The charter of the registry this client reads: its slug names the cache
+/// folder, and its locations are where every object is fetched from.
+@property (nonatomic, readonly) CSCharter *charter;
+
 /// Initialize with default configuration.
 - (instancetype)init;
 
-/// Initialize with the supplied configuration.
+/// Initialize with the supplied configuration. The registry's charter is
+/// resolved first — the one stored in the cache when one is stored for this
+/// anchor, else fetched from the anchor and stored — and everything after it
+/// is read from the charter. Blocks on the network when the charter or the
+/// pinned manifest is not cached, and raises when neither disk nor network
+/// supplies them.
 - (instancetype)initWithConfig:(CSFabricRegistryConfig *)config;
 
-/// Initialize with a custom registry URL.
-- (instancetype)initWithRegistryURL:(NSString *)registryURL;
+/// Initialize against the fabric registry chartered at `anchor`.
+- (instancetype)initWithAnchor:(NSString *)anchor;
 
 /// Test constructor: empty registry pinned at manifest v1 so test helpers flow
-/// caps/media/aliases into the manifest at their declared version.
+/// caps/media/aliases into the manifest at their declared version. Its charter
+/// is +publisherLayoutCharterForAnchor:slug: of the default anchor, and it
+/// never touches the network.
 - (instancetype)initForTest;
 
-/// The on-disk cache root for a given registry origin:
-/// `<NSCachesDirectory>/capdag/<CSSlugForRegistryURL(registryBaseURL)>`.
-///
-/// The cache holds per-cap and per-media JSON keyed by URN-hash — values that
-/// DIFFER between registry origins (staging serves different bytes than prod
-/// for the same URN/version). Namespacing by the slug of the base URL keeps two
-/// origins from ever sharing a cache slot, so a prod-populated cache can never
-/// satisfy a staging lookup (or vice versa). Network-free; exposed for tests.
-+ (NSString *)defaultCacheRootForRegistryURL:(NSString *)registryBaseURL;
+/// The directory every registry's cache folder lives under:
+/// `<NSCachesDirectory>/capdag`. A registry's own folder is its charter's
+/// slug, so two registries never share one, whatever their URLs look like — a
+/// cache populated from one fabric can never satisfy lookups against another,
+/// which serves DIFFERENT bytes for the same URN and version.
++ (NSString *)capdagCacheRoot;
+
+/// The charter of a fabric published at `anchor` the way the publisher lays a
+/// fabric out (`fabric/src/fabric.js`), named `slug`. For a registry that is
+/// never fetched: the test constructors, and tests of where things are.
++ (CSCharter *)publisherLayoutCharterForAnchor:(NSString *)anchor slug:(NSString *)slug;
+
+/// The charter of the fabric registry at `anchor`: the one stored under
+/// `cacheRoot` for it, else fetched from the anchor and stored in the folder
+/// its slug names. A fabric's contents carry no signature, so no content
+/// environment is expected of its charter. Mirrors Rust `resolve_charter`
+/// (which also verifies the signature; see CSCharter.h).
++ (nullable CSCharter *)resolveCharterForAnchor:(NSString *)anchor
+                                      cacheRoot:(NSString *)cacheRoot
+                                        session:(NSURLSession *)session
+                                          error:(NSError *_Nullable *_Nullable)error;
 
 // MARK: Cap surface
 

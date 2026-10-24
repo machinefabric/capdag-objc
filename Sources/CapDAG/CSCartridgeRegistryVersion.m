@@ -1,5 +1,6 @@
-// The cartridge registry version this build speaks: the `/v<N>/` path of the
-// registry manifest and the `{slug}/v<N>/{channel}/…` cartridge layout.
+// The cartridge registry version this build speaks: the `{registry_version}`
+// a registry charter's manifest location is filled with, and the
+// `{slug}/v<N>/{channel}/…` cartridge layout.
 //
 // The same value as `schemas/cartridge-registry/registry-version.txt`, which
 // Rust bakes from at build time; Go and Python hold it as a constant as this
@@ -7,4 +8,4 @@
 // and `scripts/lib/config.sh` refuses to build while this file says another.
 #import <stdint.h>
 
-const uint32_t CSBakedCartridgeRegistryVersion = 3;
+const uint32_t CSBakedCartridgeRegistryVersion = 4;

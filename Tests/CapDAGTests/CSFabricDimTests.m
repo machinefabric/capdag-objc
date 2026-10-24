@@ -9,13 +9,15 @@
 //
 //  The reference proves "decided before any fetch" with an offline registry.
 //  This registry has no offline switch, so these tests point it at a registry
-//  that cannot be reached (127.0.0.1:9, the discard port): a fetch would fail
-//  with CSFabricRegistryErrorDimUnavailable, never the error asserted.
+//  chartered where nothing can be reached (127.0.0.1:9, the discard port): a
+//  fetch would fail with CSFabricRegistryErrorDimUnavailable, never the error
+//  asserted.
 //
 
 #import <XCTest/XCTest.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "CSFabricRegistry.h"
+#import "CSCharter.h"
 #import "CSDim.h"
 #import "CSCap.h"
 #import "CSCapUrn.h"
@@ -24,9 +26,10 @@
 /// header): the designated initializer, manifest ingestion, the dim object
 /// address, the dim body check and the definition admission rule.
 @interface CSFabricRegistry (CSFabricDimTestsInternal)
-- (instancetype)initWithConfig:(CSFabricRegistryConfig *)config
-               manifestVersion:(uint32_t)manifestVersion
-          bootstrapFromNetwork:(BOOL)bootstrapFromNetwork;
+- (instancetype)initWithCharter:(CSCharter *)charter
+                         config:(CSFabricRegistryConfig *)config
+                manifestVersion:(uint32_t)manifestVersion
+           bootstrapFromNetwork:(BOOL)bootstrapFromNetwork;
 - (BOOL)ingestManifestDictionary:(NSDictionary *)manifest error:(NSError *_Nullable *_Nullable)error;
 - (NSString *)dimURLForName:(NSString *)name defver:(uint32_t)defver;
 - (NSString *)dimCacheFileForName:(NSString *)name defver:(uint32_t)defver;
@@ -89,19 +92,27 @@ static NSData *jsonData(id object) {
     [super tearDown];
 }
 
-/// A registry origin no fetch can reach, with a cache root of its own (removed
-/// in tearDown).
-- (NSString *)unreachableOrigin:(NSString *)tag {
-    NSString *url = [NSString stringWithFormat:@"http://127.0.0.1:9/capdag-dim-tests/%@-%@", tag, [NSUUID UUID].UUIDString];
-    [self.cacheRoots addObject:[CSFabricRegistry defaultCacheRootForRegistryURL:url]];
-    return url;
+/// The charter of a fabric registry no fetch can reach, with a slug — and so a
+/// cache folder — of its own (removed in tearDown).
+- (CSCharter *)unreachableCharter:(NSString *)tag {
+    NSString *unique = [[NSUUID UUID].UUIDString lowercaseString];
+    NSString *anchor = [NSString stringWithFormat:@"https://127.0.0.1:9/capdag-dim-tests/%@-%@", tag, unique];
+    NSString *slug = [NSString stringWithFormat:@"dim-tests-%@-%@", tag, unique];
+    [self.cacheRoots addObject:[[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:slug]];
+    return [CSFabricRegistry publisherLayoutCharterForAnchor:anchor slug:slug];
 }
 
-/// An empty registry pinned at `version`, at an origin no fetch can reach.
+/// A registry over `charter`, pinned at `version`.
+- (CSFabricRegistry *)registryOver:(CSCharter *)charter version:(uint32_t)version bootstrap:(BOOL)bootstrap {
+    return [[CSFabricRegistry alloc] initWithCharter:charter
+                                              config:[CSFabricRegistryConfig configWithAnchor:charter.anchor]
+                                     manifestVersion:version
+                                bootstrapFromNetwork:bootstrap];
+}
+
+/// An empty registry pinned at `version`, chartered where no fetch can reach.
 - (CSFabricRegistry *)unreachableRegistry:(NSString *)tag version:(uint32_t)version {
-    return [[CSFabricRegistry alloc] initWithConfig:[CSFabricRegistryConfig configWithRegistryURL:[self unreachableOrigin:tag]]
-                                    manifestVersion:version
-                               bootstrapFromNetwork:NO];
+    return [self registryOver:[self unreachableCharter:tag] version:version bootstrap:NO];
 }
 
 // TEST1966: the manifest carries a `dims` map (name -> defver), and a manifest
@@ -167,14 +178,12 @@ static NSData *jsonData(id object) {
 // version, with no field this library does not know, and must hold (values
 // present, names unique).
 - (void)test1968_ADimObjectIsTheDimAndVersionAskedFor {
-    NSString *origin = [self unreachableOrigin:@"1968"];
-    CSFabricRegistry *reg = [[CSFabricRegistry alloc] initWithConfig:[CSFabricRegistryConfig configWithRegistryURL:origin]
-                                                     manifestVersion:1
-                                                bootstrapFromNetwork:NO];
+    CSCharter *charter = [self unreachableCharter:@"1968"];
+    CSFabricRegistry *reg = [self registryOver:charter version:1 bootstrap:NO];
     NSString *hash = sha256Hex(@"language");
     XCTAssertEqualObjects([reg dimURLForName:@"language" defver:3],
-                          ([NSString stringWithFormat:@"%@/dims/%@/3.json", origin, hash]));
-    NSString *root = [CSFabricRegistry defaultCacheRootForRegistryURL:origin];
+                          ([NSString stringWithFormat:@"%@/dims/%@/3.json", charter.anchor, hash]));
+    NSString *root = [[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:charter.slug];
     XCTAssertEqualObjects([reg dimCacheFileForName:@"language" defver:3],
                           ([[[root stringByAppendingPathComponent:@"dims"] stringByAppendingPathComponent:hash]
                             stringByAppendingPathComponent:@"3.json"]));
@@ -236,8 +245,8 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
 // is kept only when every dim it names survives with the value it names. At v0
 // there are no dims.
 - (void)test1971_TheDiskCacheKeepsDefinitionsOnlyWithTheirPinnedDims {
-    NSString *origin = [self unreachableOrigin:@"1971"];
-    NSString *root = [CSFabricRegistry defaultCacheRootForRegistryURL:origin];
+    CSCharter *charter = [self unreachableCharter:@"1971"];
+    NSString *root = [[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:charter.slug];
     NSArray<NSString *> *capUrns = @[@"cap:a;in=media:;out=media:", @"cap:b;in=media:;out=media:", @"cap:c;in=media:;out=media:"];
     NSArray *capDims = @[dimsJSON(@[@[@"medium", @"text"]]), dimsJSON(@[@[@"language", @"en"]]), @[]];
     NSMutableDictionary *manifestCaps = [NSMutableDictionary dictionary];
@@ -266,9 +275,7 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
                 @"aliases": @{}, @"dims": @{@"language": @2, @"medium": @1}});
 
     // Bootstraps from the cached manifest, then hydrates the disk cache.
-    CSFabricRegistry *reg = [[CSFabricRegistry alloc] initWithConfig:[CSFabricRegistryConfig configWithRegistryURL:origin]
-                                                     manifestVersion:11
-                                                bootstrapFromNetwork:YES];
+    CSFabricRegistry *reg = [self registryOver:charter version:11 bootstrap:YES];
     XCTAssertNil([reg getCachedDim:@"language"], @"a dim at another version is dropped");
     XCTAssertEqualObjects([reg getCachedDim:@"medium"].name, @"medium");
     XCTAssertTrue([reg capExists:capUrns[0]], @"a cap whose dim survived is kept");
@@ -277,9 +284,7 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
     XCTAssertNotNil([reg getCachedMediaDef:@"media:x"]);
     XCTAssertNil([reg getCachedMediaDef:@"media:y"], @"a value the dim lacks drops the definition");
 
-    CSFabricRegistry *v0 = [[CSFabricRegistry alloc] initWithConfig:[CSFabricRegistryConfig configWithRegistryURL:origin]
-                                                    manifestVersion:0
-                                               bootstrapFromNetwork:NO];
+    CSFabricRegistry *v0 = [self registryOver:charter version:0 bootstrap:NO];
     XCTAssertNil([v0 getCachedDim:@"medium"], @"v0 has no dims");
     XCTAssertFalse([v0 capExists:capUrns[0]], @"so a cap naming one is not held at v0");
 }

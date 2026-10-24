@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import CapDAG
 
 // MARK: - Identity
 
@@ -52,14 +53,6 @@ public struct DiscoveryIdentity {
         self.fabricManifestVersion = fabricManifestVersion
         self.cartridgeRegistryVersion = cartridgeRegistryVersion
         self.bundle = bundle
-    }
-
-    /// On-disk top-level slug for THIS host's own baked registry (`dev` when
-    /// `registryURL` is nil). Discovery enumerates every slug folder on disk
-    /// and validates each cartridge against the folder it sits under; this
-    /// helper is retained for callers that need the host's own slug.
-    public func slug() -> String {
-        slugFor(registryURL)
     }
 }
 
@@ -179,10 +172,11 @@ public func discoverCartridges(_ cartridgesRoot: String, identity: DiscoveryIden
         return discovered
     }
 
-    // Scan EVERY slug folder present on disk — full macOS parity. The host's
-    // baked registry does NOT restrict which slugs are scanned; each cartridge
-    // is validated in place against the slug folder it sits under. The channel
-    // folder IS still pinned to the host's channel.
+    // Scan EVERY registry folder present on disk — full macOS parity. The
+    // host's baked registry does NOT restrict which folders are scanned; each
+    // cartridge is validated in place against the registry folder it sits
+    // under, as the charter stored there names it. The channel folder IS
+    // still pinned to the host's channel.
     let slugNames: [String]
     do {
         slugNames = try fm.contentsOfDirectory(atPath: cartridgesRoot)
@@ -196,6 +190,16 @@ public func discoverCartridges(_ cartridgesRoot: String, identity: DiscoveryIden
         guard fm.fileExists(atPath: slugDir, isDirectory: &slugIsDir), slugIsDir.boolValue else {
             continue
         }
+        // The folder is what its stored charter names, never what its own name
+        // says. A folder whose charter is missing or refused still has its
+        // cartridges surfaced — each as misplaced, with the reason — so the
+        // operator sees what is there and why none of it runs.
+        let folder: Result<RegistryFolder, Error>
+        do {
+            folder = .success(try RegistryFolder.open(slugDir))
+        } catch {
+            folder = .failure(error)
+        }
         // {slug}/v{cartridgeRegistryVersion}/{channel}/… — the registry regime
         // version is a path level pinned to the host's version (like channel).
         let versionDir = (slugDir as NSString).appendingPathComponent("v\(identity.cartridgeRegistryVersion)")
@@ -205,18 +209,20 @@ public func discoverCartridges(_ cartridgesRoot: String, identity: DiscoveryIden
             // This slug has no subtree for the host's (version, channel) — skip.
             continue
         }
-        try scanChannelRoot(scanRoot: scanRoot, expectedSlug: slugName, identity: identity, discovered: &discovered)
+        try scanChannelRoot(scanRoot: scanRoot, slugDir: slugDir, folder: folder, identity: identity, discovered: &discovered)
     }
 
     return discovered
 }
 
 /// Scan one `{slug}/{channel}/` root: classify each cartridge name directory's
-/// newest version against the host identity and the slug folder it sits under.
+/// newest version against the host identity and the registry folder it sits
+/// under — opened through the charter stored in it, or why it could not be.
 @available(macOS 10.15.4, iOS 13.4, *)
 private func scanChannelRoot(
     scanRoot: String,
-    expectedSlug: String,
+    slugDir: String,
+    folder: Result<RegistryFolder, Error>,
     identity: DiscoveryIdentity,
     discovered: inout [DiscoveredCartridge]
 ) throws {
@@ -267,13 +273,36 @@ private func scanChannelRoot(
         let pathDerivedVersion = (versionDir as NSString).lastPathComponent
         let detectedAt = unixSecondsNow()
 
-        // read_from_dir enforces the three-place rule against the ACTUAL slug
-        // folder: the cartridge's declared registry_url must hash to it.
+        // A folder with no charter that reads makes every cartridge in it
+        // misplaced, for the charter's reason.
+        let registryFolder: RegistryFolder
+        switch folder {
+        case .success(let opened):
+            registryFolder = opened
+        case .failure(let error):
+            discovered.append(.incompatible(
+                versionDir: versionDir,
+                id: pathDerivedName,
+                channel: identity.channel,
+                registryURL: identity.registryURL,
+                version: pathDerivedVersion,
+                error: CartridgeAttachmentError(
+                    kind: .misplaced,
+                    message: "the registry folder \(slugDir) has no charter that reads: \(error.localizedDescription)",
+                    detectedAtUnixSeconds: detectedAt
+                )
+            ))
+            continue
+        }
+
+        // read_from_dir enforces the charter rule against the folder the
+        // cartridge ACTUALLY sits in: its declared registry_url must be the
+        // folder's anchor.
         let cj: CartridgeJson
         do {
-            cj = try CartridgeJson.readFromDir(versionDir, expectedSlug: expectedSlug)
+            cj = try CartridgeJson.readFromDir(versionDir, folder: registryFolder)
         } catch let e as CartridgeJsonError {
-            let kind: CartridgeAttachmentErrorKind = e.isRegistrySlugMismatch ? .misplaced : .manifestInvalid
+            let kind: CartridgeAttachmentErrorKind = e.isRegistryFolderMismatch ? .misplaced : .manifestInvalid
             discovered.append(.incompatible(
                 versionDir: versionDir,
                 id: pathDerivedName,
@@ -282,7 +311,7 @@ private func scanChannelRoot(
                 version: pathDerivedVersion,
                 error: CartridgeAttachmentError(
                     kind: kind,
-                    message: "cartridge.json failed to load under slug '\(expectedSlug)': \(e)",
+                    message: "cartridge.json failed to load in the registry folder '\(registryFolder.slug)': \(e)",
                     detectedAtUnixSeconds: detectedAt
                 )
             ))
@@ -303,42 +332,6 @@ private func scanChannelRoot(
                 )
             ))
             continue
-        }
-
-        // Scheme check is per-cartridge: a registry cartridge must use https.
-        if let url = cj.registryURL {
-            switch validateRegistryURLScheme(url, devMode: false) {
-            case .ok:
-                break
-            case .nonHTTPS(let scheme):
-                discovered.append(.incompatible(
-                    versionDir: versionDir,
-                    id: cj.name,
-                    channel: cj.channel,
-                    registryURL: cj.registryURL,
-                    version: cj.version,
-                    error: CartridgeAttachmentError(
-                        kind: .incompatible,
-                        message: "registry_url uses '\(scheme)' scheme, must be https in non-dev builds. Rebuild the cartridge with an https registry URL.",
-                        detectedAtUnixSeconds: detectedAt
-                    )
-                ))
-                continue
-            case .notAURL(let bad):
-                discovered.append(.incompatible(
-                    versionDir: versionDir,
-                    id: cj.name,
-                    channel: cj.channel,
-                    registryURL: cj.registryURL,
-                    version: cj.version,
-                    error: CartridgeAttachmentError(
-                        kind: .incompatible,
-                        message: "registry_url '\(bad)' is not a well-formed URL.",
-                        detectedAtUnixSeconds: detectedAt
-                    )
-                ))
-                continue
-            }
         }
 
         if cj.fabricManifestVersion != identity.fabricManifestVersion {

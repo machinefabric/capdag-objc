@@ -142,31 +142,8 @@ NSString * const CSMediaCsvList = @"media:fmt=csv;list;record";
 // SCHEMA URL CONFIGURATION
 // ============================================================================
 
+// Base URL for capdag schemas.
 static NSString * const CSDefaultSchemaBase = @"https://capdag.com/schema";
-
-/**
- * Get the schema base URL from environment variables or default
- *
- * Checks in order:
- * 1. CDG_SCHEMA_BASE_URL environment variable
- * 2. CDG_FABRIC_REGISTRY_URL environment variable + "/schema"
- * 3. Default: "https://capdag.com/schema"
- */
-NSString *CSGetSchemaBaseURL(void) {
-    NSDictionary *env = [[NSProcessInfo processInfo] environment];
-
-    NSString *schemaURL = env[@"CDG_SCHEMA_BASE_URL"];
-    if (schemaURL.length > 0) {
-        return schemaURL;
-    }
-
-    NSString *registryURL = env[@"CDG_FABRIC_REGISTRY_URL"];
-    if (registryURL.length > 0) {
-        return [registryURL stringByAppendingString:@"/schema"];
-    }
-
-    return CSDefaultSchemaBase;
-}
 
 /**
  * Get a profile URL for the given profile name
@@ -175,7 +152,7 @@ NSString *CSGetSchemaBaseURL(void) {
  * @return The full profile URL
  */
 NSString *CSGetProfileURL(NSString *profileName) {
-    return [NSString stringWithFormat:@"%@/%@", CSGetSchemaBaseURL(), profileName];
+    return [NSString stringWithFormat:@"%@/%@", CSDefaultSchemaBase, profileName];
 }
 
 // ============================================================================

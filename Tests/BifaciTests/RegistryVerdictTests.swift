@@ -13,7 +13,7 @@ final class RegistryVerdictTests: XCTestCase {
     func test8150_stateWireNamesMatchTheMirrors() {
         let expected = [
             "verified", "pending", "offline", "unreachable",
-            "http_error", "malformed", "unsigned", "untrusted", "unverifiable", "unenforced",
+            "http_error", "malformed", "unchartered", "unsigned", "untrusted", "unverifiable", "unenforced",
         ]
         XCTAssertEqual(RegistryVerdictState.allCases.map(\.rawValue), expected)
         let reasons = [
@@ -22,6 +22,10 @@ final class RegistryVerdictTests: XCTestCase {
             "insufficient_root_signatures", "expired_certificate", "not_yet_valid_certificate",
             "environment_mismatch", "key_id_mismatch", "no_authorizing_certificate",
             "manifest_signature_invalid",
+            "charter_malformed", "charter_unsupported_format", "charter_signature_invalid",
+            "charter_anchor_mismatch", "charter_kind_mismatch", "charter_environment_mismatch",
+            "charter_fabric_mismatch", "charter_not_yet_valid", "charter_expired",
+            "charter_folder_mismatch", "charter_slug_taken",
         ]
         XCTAssertEqual(ChainFailureReason.allCases.map(\.rawValue), reasons)
     }
@@ -31,7 +35,8 @@ final class RegistryVerdictTests: XCTestCase {
     func test8151_unreadableFormatIsUnverifiableAndRejectedKeyIsUntrusted() {
         for unevaluable: ChainFailureReason in [
             .malformedEnvelope, .unsupportedEnvelopeFormat, .malformedCertificate,
-            .unsupportedCertificateFormat, .emptyCertificateList,
+            .unsupportedCertificateFormat, .emptyCertificateList, .charterMalformed,
+            .charterUnsupportedFormat,
         ] {
             XCTAssertEqual(
                 RegistryVerdictState.forChainFailure(unevaluable), .unverifiable,
@@ -41,7 +46,9 @@ final class RegistryVerdictTests: XCTestCase {
         for judged: ChainFailureReason in [
             .insufficientRootSignatures, .expiredCertificate, .notYetValidCertificate,
             .environmentMismatch, .keyIDMismatch, .noAuthorizingCertificate,
-            .manifestSignatureInvalid,
+            .manifestSignatureInvalid, .charterSignatureInvalid, .charterAnchorMismatch,
+            .charterKindMismatch, .charterEnvironmentMismatch, .charterFabricMismatch,
+            .charterNotYetValid, .charterExpired, .charterFolderMismatch, .charterSlugTaken,
         ] {
             XCTAssertEqual(
                 RegistryVerdictState.forChainFailure(judged), .untrusted,

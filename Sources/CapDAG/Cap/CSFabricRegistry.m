@@ -21,6 +21,7 @@
 //
 
 #import "CSFabricRegistry.h"
+#import "CSCharter.h"
 #import "CSCapValidator.h"
 #import "CSFabricManifestVersion.h"
 #import "CSCap.h"
@@ -37,7 +38,9 @@ static NSError *CSRegistryError(NSInteger code, NSString *message, NSError *_Nul
     return [NSError errorWithDomain:CSFabricRegistryErrorDomain code:code userInfo:info];
 }
 
-static NSString * const DEFAULT_REGISTRY_BASE_URL = @"https://fabric.capdag.com";
+// The anchor of MachineFabric's production fabric, used when nothing names
+// another. Only the anchor: where its objects are is read from its charter.
+static NSString * const DEFAULT_FABRIC_ANCHOR = @"https://fabric.capdag.com";
 static const NSTimeInterval CACHE_DURATION_HOURS = 24.0;
 static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
@@ -46,26 +49,13 @@ static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 @implementation CSFabricRegistryConfig
 
 + (instancetype)defaultConfig {
-    CSFabricRegistryConfig *config = [[CSFabricRegistryConfig alloc] init];
-    NSDictionary *env = [[NSProcessInfo processInfo] environment];
-    NSString *registryURL = env[@"CDG_FABRIC_REGISTRY_URL"];
-    NSString *schemaURL = env[@"CDG_SCHEMA_BASE_URL"];
-    config.registryBaseURL = registryURL ?: DEFAULT_REGISTRY_BASE_URL;
-    config.schemaBaseURL = schemaURL ?: [config.registryBaseURL stringByAppendingString:@"/schema"];
-    return config;
+    NSString *anchor = [[NSProcessInfo processInfo] environment][@"CDG_FABRIC_REGISTRY_URL"];
+    return [self configWithAnchor:anchor.length > 0 ? anchor : DEFAULT_FABRIC_ANCHOR];
 }
 
-+ (instancetype)configWithRegistryURL:(NSString *)registryURL {
++ (instancetype)configWithAnchor:(NSString *)anchor {
     CSFabricRegistryConfig *config = [[CSFabricRegistryConfig alloc] init];
-    config.registryBaseURL = registryURL;
-    config.schemaBaseURL = [registryURL stringByAppendingString:@"/schema"];
-    return config;
-}
-
-+ (instancetype)configWithRegistryURL:(NSString *)registryURL schemaURL:(NSString *)schemaURL {
-    CSFabricRegistryConfig *config = [[CSFabricRegistryConfig alloc] init];
-    config.registryBaseURL = registryURL;
-    config.schemaBaseURL = schemaURL;
+    config.anchor = anchor;
     return config;
 }
 
@@ -130,27 +120,6 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     return NO;
 }
 
-// MARK: - Registry slug (cartridge-registry slug scheme)
-
-NSString * const CSCartridgeDevSlug = @"dev";
-const NSUInteger CSCartridgeSlugHexLen = 16;
-
-NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
-    if (registryURL == nil) {
-        return CSCartridgeDevSlug;
-    }
-    // Hash the URL verbatim — no normalization, scheme stripping, or slash
-    // trimming. Two URLs differing in any byte hash to distinct slugs.
-    NSData *data = [registryURL dataUsingEncoding:NSUTF8StringEncoding];
-    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
-    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
-        [hex appendFormat:@"%02x", digest[i]];
-    }
-    return [hex substringToIndex:CSCartridgeSlugHexLen];
-}
-
 // MARK: - Cache entries
 
 @interface CSCapCacheEntry : NSObject
@@ -197,8 +166,14 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *extensionIndex;
 @property (nonatomic, strong) NSLock *cacheLock;
 @property (nonatomic, strong, readwrite) CSFabricRegistryConfig *config;
-// Manifest pin. manifestVersion == 0 ⇒ legacy v0 / flat-path mode (no manifest
-// consulted). >= 1 ⇒ manifest-driven (alias and dim resolution require >= 1).
+@property (nonatomic, strong, readwrite) CSCharter *charter;
+// The charter's `manifest` and `definition` templates. Its shape check
+// guarantees each uses exactly the placeholders filled here, so filling one
+// cannot fail, and nothing composes a fabric URL any other way.
+@property (nonatomic, copy) NSString *manifestTemplate;
+@property (nonatomic, copy) NSString *definitionTemplate;
+// Manifest pin. >= 1 ⇒ manifest-driven; the test constructors may pin 0, where
+// no manifest is consulted and there are no aliases or dims.
 // The four maps are name/urn → defver, mirroring the Rust Manifest.
 @property (nonatomic) uint32_t manifestVersion;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestCaps;
@@ -209,55 +184,124 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 
 @implementation CSFabricRegistry
 
-+ (NSString *)defaultCacheRootForRegistryURL:(NSString *)registryBaseURL {
++ (NSString *)capdagCacheRoot {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-    NSString *cacheDir = [paths firstObject];
-    NSString *root = [cacheDir stringByAppendingPathComponent:@"capdag"];
-    return [root stringByAppendingPathComponent:CSSlugForRegistryURL(registryBaseURL)];
+    return [[paths firstObject] stringByAppendingPathComponent:@"capdag"];
+}
+
++ (CSCharter *)publisherLayoutCharterForAnchor:(NSString *)anchor slug:(NSString *)slug {
+    NSError *error = nil;
+    CSCharter *charter = [CSCharter charterWithDictionary:@{
+        @"format": CSCharterFormat,
+        @"anchor": anchor,
+        @"kind": CSRegistryKindName(CSRegistryKindFabric),
+        @"slug": slug,
+        @"environment": @"prod",
+        @"locations": @{
+            @"manifest": [anchor stringByAppendingString:@"/manifest/{manifest_version}.json"],
+            @"latest": [anchor stringByAppendingString:@"/manifest/latest.json"],
+            @"definition": [anchor stringByAppendingString:@"/{kind}/{urn_hash}/{version}.json"],
+        },
+        @"issued_at": @0,
+        @"not_after": [NSNull null],
+    } error:&error];
+    if (!charter) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"the publisher-layout charter has a charter's fields: %@", error.localizedDescription];
+    }
+    return charter;
+}
+
++ (nullable CSCharter *)resolveCharterForAnchor:(NSString *)anchor
+                                      cacheRoot:(NSString *)cacheRoot
+                                        session:(NSURLSession *)session
+                                          error:(NSError **)error {
+    CSCharter *stored = [CSCharter storedUnder:cacheRoot forAnchor:anchor kind:CSRegistryKindFabric folder:nil];
+    if (stored) return stored;
+    CSFetchedCharter *fetched = [CSFetchedCharter fetchFromAnchor:anchor kind:CSRegistryKindFabric session:session error:error];
+    if (!fetched) return nil;
+    NSString *folder = [cacheRoot stringByAppendingPathComponent:fetched.charter.slug];
+    NSError *storeError = nil;
+    if (![fetched storeInFolder:folder error:&storeError]) {
+        if (error) *error = CSRegistryError(1061, [NSString stringWithFormat:@"Failed to store the charter of %@ in %@: %@",
+                                                   anchor, folder, storeError.localizedDescription], storeError);
+        return nil;
+    }
+    return fetched.charter;
+}
+
++ (NSURLSession *)registrySession {
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
+    sessionConfig.timeoutIntervalForRequest = HTTP_TIMEOUT_SECONDS;
+    sessionConfig.timeoutIntervalForResource = HTTP_TIMEOUT_SECONDS;
+    return [NSURLSession sessionWithConfiguration:sessionConfig];
 }
 
 - (instancetype)init {
     return [self initWithConfig:[CSFabricRegistryConfig defaultConfig]];
 }
 
-- (instancetype)initWithRegistryURL:(NSString *)registryURL {
-    return [self initWithConfig:[CSFabricRegistryConfig configWithRegistryURL:registryURL]];
+- (instancetype)initWithAnchor:(NSString *)anchor {
+    return [self initWithConfig:[CSFabricRegistryConfig configWithAnchor:anchor]];
 }
 
 - (instancetype)initWithConfig:(CSFabricRegistryConfig *)config {
-    // The production path: pin at the baked manifest version and bootstrap the
-    // manifest from disk/network. Mirrors Rust with_config (which delegates to
+    // The production path: resolve the registry's charter, then pin at the
+    // baked manifest version and bootstrap the manifest from disk/network.
+    // Mirrors Rust with_config (which delegates to
     // with_config_and_manifest_version at the baked version).
-    return [self initWithConfig:config
-                manifestVersion:CSBakedFabricManifestVersion
-              bootstrapFromNetwork:YES];
+    NSError *error = nil;
+    CSCharter *charter = [[self class] resolveCharterForAnchor:config.anchor
+                                                     cacheRoot:[[self class] capdagCacheRoot]
+                                                       session:[[self class] registrySession]
+                                                         error:&error];
+    if (!charter) {
+        [NSException raise:@"CSFabricRegistryCharterUnavailable"
+                    format:@"the fabric registry %@ has no charter this client can use: %@",
+                           config.anchor, error.localizedDescription];
+    }
+    return [self initWithCharter:charter
+                          config:config
+                 manifestVersion:CSBakedFabricManifestVersion
+            bootstrapFromNetwork:YES];
 }
 
-// Designated initializer. `bootstrapFromNetwork == YES` mirrors Rust's
-// `with_config_and_manifest_version`: it loads `manifest/<N>.json` from the
+// Designated initializer, over a charter already resolved. Everything is read
+// from it: the cache folder is its slug, and the manifest and definitions are
+// where its locations say. `bootstrapFromNetwork == YES` mirrors Rust's
+// `with_config_and_manifest_version`: it loads the pinned manifest from the
 // local cache, else blocks on a network fetch, and fails hard if neither can
 // supply it. `bootstrapFromNetwork == NO` mirrors Rust's `new_for_test_*`: an
 // EMPTY manifest pinned at the requested version, no network, so test helpers
 // populate the manifest maps as they insert caps/media/aliases.
-- (instancetype)initWithConfig:(CSFabricRegistryConfig *)config
-               manifestVersion:(uint32_t)manifestVersion
-          bootstrapFromNetwork:(BOOL)bootstrapFromNetwork {
+- (instancetype)initWithCharter:(CSCharter *)charter
+                         config:(CSFabricRegistryConfig *)config
+                manifestVersion:(uint32_t)manifestVersion
+           bootstrapFromNetwork:(BOOL)bootstrapFromNetwork {
     self = [super init];
     if (self) {
         _config = config;
+        _charter = charter;
+        if (charter.kind != CSRegistryKindFabric) {
+            [NSException raise:@"CSFabricRegistryCharterUnavailable"
+                        format:@"%@ is chartered as a %@ registry, not a fabric",
+                               charter.anchor, CSRegistryKindName(charter.kind)];
+        }
+        for (NSString *name in @[@"manifest", @"definition"]) {
+            if (charter.locations[name] == nil) {
+                [NSException raise:@"CSFabricRegistryCharterUnavailable"
+                            format:@"the fabric charter of %@ declares no '%@' location", charter.anchor, name];
+            }
+        }
+        _manifestTemplate = [charter.locations[@"manifest"] copy];
+        _definitionTemplate = [charter.locations[@"definition"] copy];
+        _session = [[self class] registrySession];
 
-        NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
-        sessionConfig.timeoutIntervalForRequest = HTTP_TIMEOUT_SECONDS;
-        sessionConfig.timeoutIntervalForResource = HTTP_TIMEOUT_SECONDS;
-        _session = [NSURLSession sessionWithConfiguration:sessionConfig];
-
-        // Namespace the cache root by the registry origin. Prod and staging
-        // serve different bytes for the same URN/version; a single shared
-        // `capdag/` root would let a prod-populated cache satisfy a staging
-        // lookup (and vice versa), silently resolving against the wrong
-        // snapshot. The caps/ and media/ subdirs derive from this namespaced
-        // root so no cache is left origin-blind.
-        _cacheDirectory = [[self class] defaultCacheRootForRegistryURL:config.registryBaseURL];
+        // The cache folder is the charter's slug. Prod and staging serve
+        // different bytes for the same URN/version; two registries have two
+        // charters and two slugs, so a prod-populated cache can never satisfy a
+        // staging lookup. The caps/ and media/ subdirs derive from it.
+        _cacheDirectory = [[[self class] capdagCacheRoot] stringByAppendingPathComponent:charter.slug];
         _capsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"caps"];
         _mediaCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"media"];
         _aliasesCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"aliases"];
@@ -332,9 +376,11 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
 /// the manifest at their declared version — mirrors Rust new_for_test, which
 /// builds Manifest::empty(1) and never touches the network.
 - (instancetype)initForTest {
-    return [self initWithConfig:[CSFabricRegistryConfig defaultConfig]
-                manifestVersion:1
-           bootstrapFromNetwork:NO];
+    CSFabricRegistryConfig *config = [CSFabricRegistryConfig defaultConfig];
+    return [self initWithCharter:[[self class] publisherLayoutCharterForAnchor:config.anchor slug:@"test-fabric"]
+                          config:config
+                 manifestVersion:1
+            bootstrapFromNetwork:NO];
 }
 
 // MARK: - URN normalization helpers
@@ -428,8 +474,9 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
         }
     }
 
-    NSString *urlString = [NSString stringWithFormat:@"%@/manifest/%u.json",
-                           self.config.registryBaseURL, self.manifestVersion];
+    NSString *urlString = [self.manifestTemplate
+        stringByReplacingOccurrencesOfString:@"{manifest_version}"
+                                  withString:[NSString stringWithFormat:@"%u", self.manifestVersion]];
     NSURL *url = [NSURL URLWithString:urlString];
     if (!url) {
         [NSException raise:@"CSFabricRegistryManifestUnavailable"
@@ -687,26 +734,21 @@ NSString *CSSlugForRegistryURL(NSString *_Nullable registryURL) {
     return [self mediaDefver:outDefver forNormalized:normalized error:error];
 }
 
-// MARK: - Object-path construction (defver → versioned vs flat path)
+// MARK: - Object-path construction
 
-// Build the registry URL for a per-object path at the given defver. defver == 0
-// addresses the frozen v0 flat path (`<base>/<kind>/<sha>`); defver >= 1
-// addresses the versioned subpath (`<base>/<kind>/<sha>/<defver>.json`). Exact
-// mirror of the URL half of Rust cap_url_and_cache_path/media_url_and_cache_path.
+// The registry URL of one definition at the given defver, from the charter's
+// `definition` location: `kind` is caps, media, aliases or dims. Exact mirror
+// of the URL half of Rust cap_url_and_cache_path/media_url_and_cache_path.
 - (NSString *)objectURLForKind:(NSString *)kind digest:(NSString *)digest defver:(uint32_t)defver {
-    if (defver == 0) {
-        return [NSString stringWithFormat:@"%@/%@/%@", self.config.registryBaseURL, kind, digest];
-    }
-    return [NSString stringWithFormat:@"%@/%@/%@/%u.json", self.config.registryBaseURL, kind, digest, defver];
+    NSString *url = [self.definitionTemplate stringByReplacingOccurrencesOfString:@"{kind}" withString:kind];
+    url = [url stringByReplacingOccurrencesOfString:@"{urn_hash}" withString:digest];
+    return [url stringByReplacingOccurrencesOfString:@"{version}"
+                                          withString:[NSString stringWithFormat:@"%u", defver]];
 }
 
-// Build the on-disk cache file path mirroring the object-path structure: flat
-// `<dir>/<sha>.json` at defver 0, versioned `<dir>/<sha>/<defver>.json` at
-// defver >= 1. Mirrors the cache-path half of the Rust helpers.
+// The on-disk cache file of a definition: `<dir>/<sha>/<defver>.json`.
+// Mirrors the cache-path half of the Rust helpers.
 - (NSString *)cacheFileInDir:(NSString *)dir digest:(NSString *)digest defver:(uint32_t)defver {
-    if (defver == 0) {
-        return [dir stringByAppendingPathComponent:[digest stringByAppendingString:@".json"]];
-    }
     NSString *subdir = [dir stringByAppendingPathComponent:digest];
     [[NSFileManager defaultManager] createDirectoryAtPath:subdir withIntermediateDirectories:YES attributes:nil error:nil];
     return [subdir stringByAppendingPathComponent:[NSString stringWithFormat:@"%u.json", defver]];

@@ -2,111 +2,50 @@
 //  CartridgeJson.swift
 //  Bifaci
 //
-//  Cartridge install-context metadata (`cartridge.json`) + the registry
-//  slug mapping and registry-URL scheme validator. Mirrors
-//  `capdag/src/bifaci/cartridge_slug.rs` and `capdag/src/bifaci/cartridge_json.rs`.
+//  Cartridge install-context metadata (`cartridge.json`) and the registry
+//  folder it is installed in. Mirrors `capdag/src/bifaci/cartridge_json.rs`
+//  and the folder half of `capdag/src/bifaci/charter.rs`.
 //
 
 import Foundation
+import CapDAG
 
-// MARK: - Registry slug
+// MARK: - Registry folders
 
-/// Reserved folder name for cartridges with no registry (developer-built
-/// cartridges installed without `--registry`). A real registry authority is
-/// never the literal "dev".
-public let cartridgeDevSlug = "dev"
+/// What one top-level folder of a cartridge tree holds: the cartridges built
+/// with no registry, or a chartered registry's — named by the charter stored
+/// in it, never by its own name. The charter is read, not verified: this
+/// mirror carries no chain verification (see `CSCharter.h`).
+public enum RegistryFolder {
+    /// The reserved `dev` folder.
+    case dev
+    /// A registry's folder, named by its stored charter.
+    case chartered(CSCharter)
 
-/// The authority (host[:port]) of a registry URL: after `://` up to the next
-/// `/`, `?`, or `#` (path/query/fragment discarded).
-private func cartridgeAuthorityOf(_ url: String) -> Substring {
-    let afterScheme: Substring
-    if let r = url.range(of: "://") {
-        afterScheme = url[r.upperBound...]
-    } else {
-        afterScheme = url[...]
+    /// Open a top-level folder: `dev` by its reserved name, any other by the
+    /// cartridges charter stored in it.
+    public static func open(_ folder: String) throws -> RegistryFolder {
+        if (folder as NSString).lastPathComponent == CSCharterDevSlug {
+            return .dev
+        }
+        return .chartered(try CSCharter.stored(inFolder: folder, kind: .cartridges))
     }
-    if let idx = afterScheme.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
-        return afterScheme[..<idx]
-    }
-    return afterScheme
-}
 
-private func cartridgeIsAuthorityScalar(_ v: UInt32) -> Bool {
-    (v >= 97 && v <= 122) || (v >= 48 && v <= 57) || v == 46 || v == 45
-}
-
-/// Compute the on-disk slug for a registry URL. Mirrors
-/// capdag::cartridge_slug::slug_for byte-for-byte:
-///
-/// `nil` (a dev cartridge) → the literal `dev` slug.
-/// non-nil URL → a path-safe transform of the URL's authority (host[:port]):
-/// ASCII-lowercased, every character outside `[a-z0-9.-]` replaced by `-`.
-/// Depends ONLY on the authority — path (incl. the version segment), query,
-/// trailing slash, and host case do not change it.
-public func slugFor(_ registryURL: String?) -> String {
-    guard let url = registryURL else {
-        return cartridgeDevSlug
-    }
-    var out = String.UnicodeScalarView()
-    for scalar in cartridgeAuthorityOf(url).unicodeScalars {
-        var v = scalar.value
-        if v >= 65 && v <= 90 { v += 32 }  // ASCII A-Z -> a-z only
-        if cartridgeIsAuthorityScalar(v) {
-            out.append(Unicode.Scalar(v)!)
-        } else {
-            out.append("-")
+    /// The folder's name.
+    public var slug: String {
+        switch self {
+        case .dev: return CSCharterDevSlug
+        case .chartered(let charter): return charter.slug
         }
     }
-    return String(out)
-}
 
-/// True if `s` could be a valid slug for a non-dev registry: a non-empty
-/// path-safe authority string (`[a-z0-9.-]+`) that is not the dev sentinel.
-public func isRegistrySlug(_ s: String) -> Bool {
-    !s.isEmpty && s != cartridgeDevSlug
-        && s.unicodeScalars.allSatisfy { cartridgeIsAuthorityScalar($0.value) }
-}
-
-// MARK: - Registry-URL scheme validation
-
-/// Result of validating a non-null `registry_url` scheme. Mirrors the Rust
-/// `RegistryUrlSchemeResult`.
-public enum RegistryURLSchemeResult: Equatable {
-    /// URL is acceptable (dev-mode allows it, or scheme is `https`).
-    case ok
-    /// URL string didn't parse as a valid URL. Carries the offending string.
-    case notAURL(String)
-    /// URL parsed but scheme is not `https` and dev-mode is off. Carries the
-    /// offending scheme.
-    case nonHTTPS(scheme: String)
-}
-
-/// Validate that a non-null `registry_url` uses the `https` scheme — UNLESS
-/// `devMode` is set, in which case any well-formed URL is accepted (so
-/// developers can point at `http://localhost:port` during integration
-/// testing). The rule lives at the deepest layer so a caller can never
-/// bypass it by parsing the URL out of band. Dev cartridges
-/// (`registry_url == nil`) never go through this validator.
-public func validateRegistryURLScheme(_ url: String, devMode: Bool) -> RegistryURLSchemeResult {
-    // Cheap parse: split once on `://`. The rule is "scheme must be the
-    // literal bytes `https`"; full URL validation is the caller's job.
-    guard let range = url.range(of: "://") else {
-        return .notAURL(url)
+    /// The anchor every cartridge in the folder must record: nil for dev.
+    public var anchor: String? {
+        switch self {
+        case .dev: return nil
+        case .chartered(let charter): return charter.anchor
+        }
     }
-    let scheme = String(url[url.startIndex..<range.lowerBound])
-    let rest = String(url[range.upperBound...])
-    if rest.isEmpty {
-        return .notAURL(url)
-    }
-    if devMode {
-        // Dev mode: accept any well-formed scheme. We still require SOME
-        // scheme to be present (an empty scheme is malformed regardless).
-        return .ok
-    }
-    if scheme.lowercased() == "https" {
-        return .ok
-    }
-    return .nonHTTPS(scheme: scheme)
 }
 
 // MARK: - Install timestamps
@@ -204,11 +143,10 @@ public enum CartridgeJsonError: Error, CustomStringConvertible {
     case entryPointMissing(path: String, entry: String)
     case entryPointNotExecutable(path: String, entry: String)
     case entryPathEscape(path: String, entry: String)
-    /// The folder the cartridge.json was loaded from doesn't match the slug
-    /// derived from its declared `registry_url`. The three-place consistency
-    /// check: top-level folder, the provenance's `registry_url`, and the
-    /// cartridge's HELLO manifest must all agree.
-    case registrySlugMismatch(path: String, registryURL: String?, expectedSlug: String, actualSlug: String)
+    /// The charter rule, broken: the cartridge records another registry than
+    /// the one its folder's charter names (or a registry in dev, or none in a
+    /// registry's folder).
+    case registryFolderMismatch(path: String, registryURL: String?, folderSlug: String, holds: String)
 
     public var description: String {
         switch self {
@@ -226,15 +164,15 @@ public enum CartridgeJsonError: Error, CustomStringConvertible {
             return "cartridge.json at \(path): entry point '\(entry)' is not executable"
         case .entryPathEscape(let path, let entry):
             return "cartridge.json at \(path): entry path '\(entry)' escapes version directory"
-        case .registrySlugMismatch(let path, let registryURL, let expectedSlug, let actualSlug):
-            return "cartridge.json at \(path): registry slug mismatch — registry_url=\(String(describing: registryURL)) hashes to slug='\(expectedSlug)' but the directory tree placed it under '\(actualSlug)'"
+        case .registryFolderMismatch(let path, let registryURL, let folderSlug, let holds):
+            return "cartridge.json at \(path): registry_url=\(registryURL ?? "null"), but it sits in the folder '\(folderSlug)', which holds \(holds)"
         }
     }
 
-    /// True for the slug-mismatch case (used by discovery to choose the
+    /// True for the folder-mismatch case (used by discovery to choose the
     /// `misplaced` attachment-error kind vs `manifestInvalid`).
-    public var isRegistrySlugMismatch: Bool {
-        if case .registrySlugMismatch = self { return true }
+    public var isRegistryFolderMismatch: Bool {
+        if case .registryFolderMismatch = self { return true }
         return false
     }
 }
@@ -370,16 +308,15 @@ public struct CartridgeJson: Equatable, Sendable {
 
     /// Read and validate a `cartridge.json` from a version directory.
     ///
-    /// `expectedSlug` is the registry slug the host reached the version
-    /// directory through — the second-to-top-level folder name in
-    /// `{root}/{slug}/{channel}/{name}/{version}/`. Passing it in lets us
-    /// enforce the three-place rule (folder slug ⇔ provenance `registry_url`)
-    /// inside the parser.
+    /// `folder` is the top-level folder the host reached the version directory
+    /// through, already opened — dev, or a registry named by the charter
+    /// stored in it. Passing it in lets us enforce the charter rule (folder ⇔
+    /// provenance `registry_url`) inside the parser.
     ///
-    /// Validates: file exists + valid JSON; `slug_for(registryURL) ==
-    /// expectedSlug`; entry point does not escape the version directory;
-    /// entry point binary exists and is executable.
-    public static func readFromDir(_ versionDir: String, expectedSlug: String) throws -> CartridgeJson {
+    /// Validates: file exists + valid JSON; `registryURL` is the folder's
+    /// anchor, or nil in dev; entry point does not escape the version
+    /// directory; entry point binary exists and is executable.
+    public static func readFromDir(_ versionDir: String, folder: RegistryFolder) throws -> CartridgeJson {
         let jsonPath = (versionDir as NSString).appendingPathComponent("cartridge.json")
         let fm = FileManager.default
         guard fm.fileExists(atPath: jsonPath) else {
@@ -394,16 +331,17 @@ public struct CartridgeJson: Equatable, Sendable {
 
         let cj = try parse(data: data, path: jsonPath)
 
-        // Three-place consistency rule (places 1 + 2): the folder slug must
-        // match the slug derived from the provenance's registry_url. None+`dev`
-        // and Some(url)+slug(url) are the only valid pairings.
-        let derivedSlug = slugFor(cj.registryURL)
-        if derivedSlug != expectedSlug {
-            throw CartridgeJsonError.registrySlugMismatch(
+        // The charter rule (places 1 + 2): the cartridge records exactly the
+        // anchor its folder's charter states, or no registry in dev. Any other
+        // pairing — nil in a registry's folder, a URL in dev, or another
+        // registry's anchor — is an installer bug or a tampered tree.
+        if cj.registryURL != folder.anchor {
+            throw CartridgeJsonError.registryFolderMismatch(
                 path: jsonPath,
                 registryURL: cj.registryURL,
-                expectedSlug: derivedSlug,
-                actualSlug: expectedSlug
+                folderSlug: folder.slug,
+                holds: folder.anchor.map { "the registry chartered for \($0)" }
+                    ?? "the cartridges built with no registry"
             )
         }
 
@@ -430,9 +368,6 @@ public struct CartridgeJson: Equatable, Sendable {
 
     /// True when this cartridge was installed as a dev build (no registry URL).
     public var isDevInstall: Bool { registryURL == nil }
-
-    /// The on-disk slug this provenance must live under.
-    public var registrySlug: String { slugFor(registryURL) }
 
     /// Resolve the absolute path to the entry point binary.
     public func resolveEntryPoint(_ versionDir: String) -> String {
