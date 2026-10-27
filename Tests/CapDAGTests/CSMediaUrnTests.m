@@ -197,8 +197,8 @@
     NSError *e;
     // Has enc= → text-representable
     XCTAssertNotNil([[CSMediaUrn fromString:CSMediaString error:&e] getTag:@"enc"]);   // media:enc=utf-8
-    XCTAssertNotNil([[CSMediaUrn fromString:CSMediaBoolean error:&e] getTag:@"enc"]);  // media:bool;enc=utf-8
     // No enc= → not text-representable
+    XCTAssertNil([[CSMediaUrn fromString:CSMediaBoolean error:&e] getTag:@"enc"]);     // media:bool — its own kind
     XCTAssertNil([[CSMediaUrn fromString:CSMediaInteger error:&e] getTag:@"enc"]);     // media:integer;numeric
     XCTAssertNil([[CSMediaUrn fromString:CSMediaJson error:&e] getTag:@"enc"]);        // media:fmt=json;record
     XCTAssertNil([[CSMediaUrn fromString:CSMediaIdentity error:&e] getTag:@"enc"]);    // media:
@@ -245,7 +245,7 @@
 - (void)test547_is_audio {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaAudio error:&e] isAudio]);
-    XCTAssertTrue([[CSMediaUrn fromString:CSMediaAudioSpeech error:&e] isAudio]);
+    XCTAssertTrue([[CSMediaUrn fromString:CSMediaWav error:&e] isAudio]);
     XCTAssertTrue([[CSMediaUrn fromString:@"media:audio;ext=mp3" error:&e] isAudio]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaVideo error:&e] isAudio]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaPng error:&e] isAudio]);
@@ -325,7 +325,7 @@
 
     CSMediaUrn *boolUrn = [CSMediaUrn fromString:CSMediaBoolean error:&e];
     XCTAssertTrue([boolUrn isBool]);
-    XCTAssertNotNil([boolUrn getTag:@"enc"], @"media:bool;enc=utf-8 is text-representable");
+    XCTAssertNil([boolUrn getTag:@"enc"], @"media:bool is its own kind, not text");
     XCTAssertTrue([boolUrn isScalar]);
     XCTAssertFalse([boolUrn isNumeric]);
 
@@ -447,7 +447,8 @@
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaAvailabilityOutput error:&e];
     XCTAssertNotNil(urn);
-    XCTAssertNotNil([urn getTag:@"enc"], @"model-availability must be text-representable (enc=)");
+    XCTAssertEqualObjects([urn getTag:@"fmt"], @"json", @"model-availability is a JSON record");
+    XCTAssertNil([urn getTag:@"enc"], @"a JSON record is not also text");
     XCTAssertTrue([urn isRecord], @"model-availability must have record marker");
     CSMediaUrn *reparsed = [CSMediaUrn fromString:[urn toString] error:&e];
     XCTAssertTrue([urn conformsTo:reparsed], @"roundtrip must conform to original");
@@ -458,7 +459,8 @@
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaPathOutput error:&e];
     XCTAssertNotNil(urn);
-    XCTAssertNotNil([urn getTag:@"enc"], @"model-path must be text-representable (enc=)");
+    XCTAssertEqualObjects([urn getTag:@"fmt"], @"json", @"model-path is a JSON record");
+    XCTAssertNil([urn getTag:@"enc"], @"a JSON record is not also text");
     XCTAssertTrue([urn isRecord], @"model-path must have record marker");
     CSMediaUrn *reparsed = [CSMediaUrn fromString:[urn toString] error:&e];
     XCTAssertTrue([urn conformsTo:reparsed], @"roundtrip must conform to original");

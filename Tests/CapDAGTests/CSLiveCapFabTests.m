@@ -319,13 +319,13 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
     // Two caps: pdf→page and text(enc=utf-8)→decision
     CSCap *disbind = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf-8;page", @"disbind", @"Disbind PDF");
-    CSCap *choose = makeTestCap(@"media:enc=utf-8", @"media:enc=utf-8;decision;bool", @"choose", @"Make a Decision");
+    CSCap *choose = makeTestCap(@"media:enc=utf-8", @"media:decision;bool", @"choose", @"Make a Decision");
 
     [graph syncFromCaps:@[disbind, choose]];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8;decision;bool" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:decision;bool" error:&error];
 
     // With isSequence:NO (single PDF), should find direct path: disbind → choose (no ForEach)
     NSArray<CSStrand *> *scalarPaths = [graph findPathsToExactTarget:source target:target maxDepth:10 maxPaths:20 isSequence:NO];

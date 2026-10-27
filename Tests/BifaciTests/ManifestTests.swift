@@ -75,7 +75,7 @@ final class ManifestTests: XCTestCase {
                     sources: [.stdin("media:document;ext=pdf")]
                 ),
                 CapArg(
-                    mediaUrn: "media:chunk-size;numeric",
+                    mediaUrn: "media:chunk-size;integer;numeric",
                     name: "chunk_size",
                     required: false,
                     sources: [.cliFlag("--chunk-size")],
@@ -83,7 +83,7 @@ final class ManifestTests: XCTestCase {
                     defaultValue: .integer(400)
                 ),
                 CapArg(
-                    mediaUrn: "media:enc=utf-8;timestamps;bool",
+                    mediaUrn: "media:timestamps;bool",
                     name: "timestamps",
                     required: false,
                     sources: [.cliFlag("--timestamps")],

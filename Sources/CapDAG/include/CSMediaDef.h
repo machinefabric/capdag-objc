@@ -39,13 +39,13 @@ typedef NS_ERROR_ENUM(CSMediaDefErrorDomain, CSMediaDefError) {
 FOUNDATION_EXPORT NSString * const CSMediaString;       // media:enc=utf-8
 FOUNDATION_EXPORT NSString * const CSMediaInteger;      // media:integer;numeric
 FOUNDATION_EXPORT NSString * const CSMediaNumber;       // media:numeric
-FOUNDATION_EXPORT NSString * const CSMediaBoolean;      // media:bool;enc=utf-8
+FOUNDATION_EXPORT NSString * const CSMediaBoolean;      // media:bool
 FOUNDATION_EXPORT NSString * const CSMediaObject;       // media:record
 FOUNDATION_EXPORT NSString * const CSMediaList;          // media:list
 FOUNDATION_EXPORT NSString * const CSMediaStringList;    // media:enc=utf-8;list
 FOUNDATION_EXPORT NSString * const CSMediaIntegerList;   // media:integer;list;numeric
 FOUNDATION_EXPORT NSString * const CSMediaNumberList;    // media:list;numeric
-FOUNDATION_EXPORT NSString * const CSMediaBooleanList;   // media:bool;enc=utf-8;list
+FOUNDATION_EXPORT NSString * const CSMediaBooleanList;   // media:bool;list
 FOUNDATION_EXPORT NSString * const CSMediaObjectList;    // media:list;record
 FOUNDATION_EXPORT NSString * const CSMediaIdentity;       // media:
 FOUNDATION_EXPORT NSString * const CSMediaVoid;         // media:void
@@ -74,7 +74,6 @@ FOUNDATION_EXPORT NSString * const CSMediaMov;          // media:ext=mov;video
 FOUNDATION_EXPORT NSString * const CSMediaWebm;         // media:ext=webm;video
 FOUNDATION_EXPORT NSString * const CSMediaMkv;          // media:ext=mkv;video
 // Semantic AI input types
-FOUNDATION_EXPORT NSString * const CSMediaAudioSpeech;           // media:audio;ext=wav;speech
 FOUNDATION_EXPORT NSString * const CSMediaTextablePage;          // media:enc=utf-8;ext=txt;page;plain-text
 // Document types (PRIMARY naming - type IS the format)
 FOUNDATION_EXPORT NSString * const CSMediaPdf;          // media:document;ext=pdf
@@ -91,7 +90,7 @@ FOUNDATION_EXPORT NSString * const CSMediaJsonSchema;   // media:fmt=json;json-s
 FOUNDATION_EXPORT NSString * const CSMediaYaml;         // media:fmt=yaml;record
 // Semantic input types
 FOUNDATION_EXPORT NSString * const CSMediaModelSpec;    // media:enc=utf-8;model-spec (generic, modelcartridge)
-FOUNDATION_EXPORT NSString * const CSMediaModelRepo;    // media:enc=utf-8;model-repo;record
+FOUNDATION_EXPORT NSString * const CSMediaModelRepo;    // media:fmt=json;model-repo;record
 FOUNDATION_EXPORT NSString * const CSMediaHfToken;      // media:enc=utf-8;hf-token;secret
 FOUNDATION_EXPORT NSString * const CSMediaModelArchList;          // media:fmt=json;model-arch-list;record
 FOUNDATION_EXPORT NSString * const CSMediaModelSearchRequest;     // media:fmt=json;model-search-request;record
@@ -122,18 +121,18 @@ FOUNDATION_EXPORT NSString * const CSMediaMlxModelPath;    // media:enc=utf-8;ml
 // Semantic output types
 FOUNDATION_EXPORT NSString * const CSMediaImageDescription;   // media:enc=utf-8;ext=txt;image-description;plain-text
 FOUNDATION_EXPORT NSString * const CSMediaModelDim;        // media:integer;model-dim;numeric
-FOUNDATION_EXPORT NSString * const CSMediaDownloadOutput;  // media:download-result;enc=utf-8;record
-FOUNDATION_EXPORT NSString * const CSMediaListOutput;      // media:enc=utf-8;model-list;record
-FOUNDATION_EXPORT NSString * const CSMediaStatusOutput;    // media:enc=utf-8;model-status;record
-FOUNDATION_EXPORT NSString * const CSMediaContentsOutput;  // media:enc=utf-8;model-contents;record
-FOUNDATION_EXPORT NSString * const CSMediaAvailabilityOutput; // media:enc=utf-8;model-availability;record
-FOUNDATION_EXPORT NSString * const CSMediaPathOutput;      // media:enc=utf-8;model-path;record
-FOUNDATION_EXPORT NSString * const CSMediaEmbeddingVector; // media:embedding-vector;enc=utf-8;record
+FOUNDATION_EXPORT NSString * const CSMediaDownloadOutput;  // media:download-result;fmt=json;record
+FOUNDATION_EXPORT NSString * const CSMediaListOutput;      // media:fmt=json;model-list;record
+FOUNDATION_EXPORT NSString * const CSMediaStatusOutput;    // media:fmt=json;model-status;record
+FOUNDATION_EXPORT NSString * const CSMediaContentsOutput;  // media:fmt=json;model-contents;record
+FOUNDATION_EXPORT NSString * const CSMediaAvailabilityOutput; // media:fmt=json;model-availability;record
+FOUNDATION_EXPORT NSString * const CSMediaPathOutput;      // media:fmt=json;model-path;record
+FOUNDATION_EXPORT NSString * const CSMediaEmbeddingVector; // media:embedding-vector;fmt=json;record
 FOUNDATION_EXPORT NSString * const CSMediaCaptionOutput;   // media:enc=utf-8;image-caption;record
 // Canonical input/output of cap:save-as-txt — finalised plain text bound to
 // the `.txt` extension. See fabric/media/plain-text.toml.
 FOUNDATION_EXPORT NSString * const CSMediaPlainText;       // media:enc=utf-8;ext=txt;plain-text
-FOUNDATION_EXPORT NSString * const CSMediaTranscriptionOutput; // media:enc=utf-8;record;transcription
+FOUNDATION_EXPORT NSString * const CSMediaTranscriptOutput; // media:fmt=json;record;transcript
 FOUNDATION_EXPORT NSString * const CSMediaDecision;        // media:decision;fmt=json;record
 FOUNDATION_EXPORT NSString * const CSMediaAdapterSelection; // media:adapter-selection;fmt=json;record
 // Fabric registry lookup wire types (consumed/produced by cap:lookup-cap;fabric
