@@ -20,13 +20,13 @@ NSErrorDomain const CSMediaDefErrorDomain = @"CSMediaDefErrorDomain";
 NSString * const CSMediaString = @"media:enc=utf-8";
 NSString * const CSMediaInteger = @"media:integer;numeric";
 NSString * const CSMediaNumber = @"media:numeric";
-NSString * const CSMediaBoolean = @"media:bool;enc=utf-8";
+NSString * const CSMediaBoolean = @"media:bool";
 NSString * const CSMediaObject = @"media:record";
 NSString * const CSMediaList = @"media:list";
 NSString * const CSMediaStringList = @"media:enc=utf-8;list";
 NSString * const CSMediaIntegerList = @"media:integer;list;numeric";
 NSString * const CSMediaNumberList = @"media:list;numeric";
-NSString * const CSMediaBooleanList = @"media:bool;enc=utf-8;list";
+NSString * const CSMediaBooleanList = @"media:bool;list";
 NSString * const CSMediaObjectList = @"media:list;record";
 NSString * const CSMediaIdentity = @"media:";
 NSString * const CSMediaVoid = @"media:void";
@@ -55,7 +55,6 @@ NSString * const CSMediaMov = @"media:ext=mov;video";
 NSString * const CSMediaWebm = @"media:ext=webm;video";
 NSString * const CSMediaMkv = @"media:ext=mkv;video";
 // Semantic AI input types
-NSString * const CSMediaAudioSpeech = @"media:audio;ext=wav;speech";
 NSString * const CSMediaTextablePage = @"media:enc=utf-8;ext=txt;page;plain-text";
 // Document types (PRIMARY naming - type IS the format)
 NSString * const CSMediaPdf = @"media:document;ext=pdf";
@@ -72,7 +71,7 @@ NSString * const CSMediaJsonSchema = @"media:fmt=json;json-schema;record";
 NSString * const CSMediaYaml = @"media:fmt=yaml;record";
 // Semantic input types
 NSString * const CSMediaModelSpec = @"media:enc=utf-8;model-spec";
-NSString * const CSMediaModelRepo = @"media:enc=utf-8;model-repo;record";
+NSString * const CSMediaModelRepo = @"media:fmt=json;model-repo;record";
 NSString * const CSMediaHfToken = @"media:enc=utf-8;hf-token;secret";
 NSString * const CSMediaModelArchList = @"media:fmt=json;model-arch-list;record";
 NSString * const CSMediaModelSearchRequest = @"media:fmt=json;model-search-request;record";
@@ -100,16 +99,16 @@ NSString * const CSMediaMlxModelPath = @"media:enc=utf-8;mlx-model-path";
 // Semantic output types
 NSString * const CSMediaImageDescription = @"media:enc=utf-8;ext=txt;image-description;plain-text";
 NSString * const CSMediaModelDim = @"media:integer;model-dim;numeric";
-NSString * const CSMediaDownloadOutput = @"media:download-result;enc=utf-8;record";
-NSString * const CSMediaListOutput = @"media:enc=utf-8;model-list;record";
-NSString * const CSMediaStatusOutput = @"media:enc=utf-8;model-status;record";
-NSString * const CSMediaContentsOutput = @"media:enc=utf-8;model-contents;record";
-NSString * const CSMediaAvailabilityOutput = @"media:enc=utf-8;model-availability;record";
-NSString * const CSMediaPathOutput = @"media:enc=utf-8;model-path;record";
-NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;enc=utf-8;record";
+NSString * const CSMediaDownloadOutput = @"media:download-result;fmt=json;record";
+NSString * const CSMediaListOutput = @"media:fmt=json;model-list;record";
+NSString * const CSMediaStatusOutput = @"media:fmt=json;model-status;record";
+NSString * const CSMediaContentsOutput = @"media:fmt=json;model-contents;record";
+NSString * const CSMediaAvailabilityOutput = @"media:fmt=json;model-availability;record";
+NSString * const CSMediaPathOutput = @"media:fmt=json;model-path;record";
+NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;fmt=json;record";
 NSString * const CSMediaCaptionOutput = @"media:enc=utf-8;image-caption;record";
 NSString * const CSMediaPlainText = @"media:enc=utf-8;ext=txt;plain-text";
-NSString * const CSMediaTranscriptionOutput = @"media:enc=utf-8;record;transcription";
+NSString * const CSMediaTranscriptOutput = @"media:fmt=json;record;transcript";
 NSString * const CSMediaDecision = @"media:decision;fmt=json;record";
 NSString * const CSMediaAdapterSelection = @"media:adapter-selection;fmt=json;record";
 // Fabric registry lookup wire types
