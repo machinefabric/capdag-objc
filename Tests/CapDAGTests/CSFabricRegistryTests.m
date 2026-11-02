@@ -61,7 +61,7 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
     XCTAssertGreaterThanOrEqual(registry.manifestVersion, 1u,
         @"the production registry must be pinned at manifest v >= 1, never the legacy v0 flat-path mode");
 
-    NSString *urn = @"media:enc=utf-8;ext=md";
+    NSString *urn = @"media:enc=utf8;ext=md;plain-text";
     NSString *digest = [registry sha256HexForString:urn];
     // Assert against the registry's OWN anchor, not a hardcoded host: under a
     // workspace test run against staging the process env points the default
@@ -94,7 +94,7 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
     // the fail-hard contract that replaced the silent v0 fallback.
     NSError *missingError = nil;
     uint32_t missingDefver = 99;
-    XCTAssertFalse([registry mediaDefverFor:@"media:enc=utf-8;ext=zzz-not-in-snapshot"
+    XCTAssertFalse([registry mediaDefverFor:@"media:enc=utf8;ext=zzz-not-in-snapshot"
                                      defver:&missingDefver
                                       error:&missingError],
         @"a URN outside the manifest must NOT resolve to a defver");
@@ -118,8 +118,8 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
     
     // Test that registry checks if cap exists in cache
-    BOOL exists1 = [registry capExists:@"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata"];
-    BOOL exists2 = [registry capExists:@"cap:in=media:void;different;out=\"media:enc=utf-8;record\""];
+    BOOL exists1 = [registry capExists:@"cap:in=media:void;extract;out=\"media:enc=utf8;record\";target=metadata"];
+    BOOL exists2 = [registry capExists:@"cap:in=media:void;different;out=\"media:enc=utf8;record\""];
     
     // These should both be NO since cache is empty initially
     XCTAssertFalse(exists1);
@@ -131,7 +131,7 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
 /// Per-cap URLs use /caps/<sha256-hex> — no URN-grammar characters
 /// in the path, so no percent-encoding gymnastics.
 - (void)test6388_PerCapURLUsesSHA256 {
-    NSString *registryURL = buildRegistryURL(@"cap:in=media:string;test;out=\"media:enc=utf-8;record\"");
+    NSString *registryURL = buildRegistryURL(@"cap:in=media:string;test;out=\"media:enc=utf8;record\"");
 
     XCTAssertTrue([registryURL containsString:@"/caps/"], @"URL must use the /caps/ path prefix");
     XCTAssertFalse([registryURL containsString:@"cap:"] || [registryURL containsString:@"cap%3A"],
@@ -236,7 +236,7 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
 // (misleading) miss; this test asserts the truthful error and that the process
 // never crashes. Mirrors Rust test6396_malformed_cap_urn_fails_hard.
 - (void)test6396_malformedCapUrnFailsHard {
-    NSString *malformed = @"cap:coerce;in=\"media:integer;numeric\";out=media:enc=utf-8";
+    NSString *malformed = @"cap:coerce;in=\"media:integer;numeric\";out=media:enc=utf8";
 
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
 
@@ -271,12 +271,12 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
     
     XCTestExpectation *expectation = [self expectationWithDescription:@"Get cap definition"];
     
-    [registry getCapDefinition:@"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata" completion:^(CSRegistryCapDefinition *definition, NSError *error) {
+    [registry getCapDefinition:@"cap:in=media:void;extract;out=\"media:enc=utf8;record\";target=metadata" completion:^(CSRegistryCapDefinition *definition, NSError *error) {
         if (error) {
             NSLog(@"Skipping real registry test: %@", error);
         } else {
             XCTAssertNotNil(definition);
-            XCTAssertEqualObjects(definition.urn, @"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata");
+            XCTAssertEqualObjects(definition.urn, @"cap:in=media:void;extract;out=\"media:enc=utf8;record\";target=metadata");
             XCTAssertNotNil(definition.version);
             XCTAssertNotNil(definition.primaryAlias);
         }
@@ -291,7 +291,7 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
     CSRegistryValidator *validator = [CSRegistryValidator validator];
     
     NSError *error;
-    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=media:void;extract;out=\"media:enc=utf-8;record\";target=metadata" error:&error];
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:in=media:void;extract;out=\"media:enc=utf8;record\";target=metadata" error:&error];
     XCTAssertNotNil(urn);
     
     CSCap *cap = [CSCap capWithUrn:urn

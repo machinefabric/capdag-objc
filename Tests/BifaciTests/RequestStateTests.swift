@@ -71,7 +71,7 @@ final class RequestStateTests: XCTestCase {
         let ss = Frame.streamStart(
             reqId: rid,
             streamId: "s",
-            mediaUrn: "media:enc=utf-8",
+            mediaUrn: "media:enc=utf8",
             isSequence: false
         )
         table.recordFrame(k, direction: .inbound, frame: ss)
@@ -208,7 +208,7 @@ final class RequestStateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(table.get(k)).phase, .created)
 
         let rid = MessageId.uint(7)
-        let ss = Frame.streamStartUnbounded(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8")
+        let ss = Frame.streamStartUnbounded(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8")
         table.recordFrame(k, direction: .inbound, frame: ss)
         XCTAssertEqual(try XCTUnwrap(table.get(k)).phase, .streaming)
 

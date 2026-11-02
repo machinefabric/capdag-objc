@@ -349,13 +349,13 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             "cap_groups":[{"name":"default","caps":[\(identity),\(cap)]}]}
             """.utf8)
         }
-        let urn = #"cap:in=\"media:enc=utf-8\";compare;out=\"media:record\""#
+        let urn = #"cap:in=\"media:enc=utf8\";compare;out=\"media:record\""#
         func arg(_ media: String, _ name: String, stdin: String) -> String {
             #"{"media_urn":"\#(media)","name":"\#(name)","required":true,"sources":[{"stdin":"\#(stdin)"}]}"#
         }
         let output = #"{"media_urn":"media:record","name":"result","output_description":"The result"}"#
 
-        let good = #"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8"))],"outputs":[\#(output)]}"#
+        let good = #"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf8", "left", stdin: "media:enc=utf8"))],"outputs":[\#(output)]}"#
         let groups = try CartridgeHost.extractCapGroups(from: manifest(good))
         XCTAssertEqual(groups.first?.caps.count, 2, "a complete definition is accepted")
 
@@ -377,15 +377,15 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
             return ""
         }
         // Two arguments claim the main input.
-        var text = refused(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8")),\#(arg("media:enc=utf-8;other", "right", stdin: "media:enc=utf-8"))],"outputs":[\#(output)]}"#)
+        var text = refused(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf8", "left", stdin: "media:enc=utf8")),\#(arg("media:enc=utf8;other", "right", stdin: "media:enc=utf8"))],"outputs":[\#(output)]}"#)
         XCTAssertTrue(text.contains("RULE3"), text)
         // The output the cap URN states is not declared.
-        text = refused(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8"))]}"#)
+        text = refused(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf8", "left", stdin: "media:enc=utf8"))]}"#)
         XCTAssertTrue(text.contains("RULE21"), text)
 
         // An attached cartridge's record is not made from such a manifest either.
         XCTAssertNotNil(installedCartridgeRecordFromManifest(manifest(good)))
-        XCTAssertNil(installedCartridgeRecordFromManifest(manifest(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf-8", "left", stdin: "media:enc=utf-8"))]}"#)))
+        XCTAssertNil(installedCartridgeRecordFromManifest(manifest(#"{"urn":"\#(urn)","title":"Compare","aliases":["compare"],"args":[\#(arg("media:enc=utf8", "left", stdin: "media:enc=utf8"))]}"#)))
     }
 
     // TEST425: find_cartridge_for_cap returns None for unregistered cap

@@ -11,13 +11,13 @@ import XCTest
 import CapDAG
 import Foundation
 
-private let extractCap = #"cap:in="media:document;ext=pdf";extract;out="media:enc=utf-8;ext=txt""#
-private let summarizeCap = #"cap:in="media:enc=utf-8;ext=txt";summarize;out="media:enc=utf-8;summary""#
-private let concatCap = #"cap:in="media:enc=utf-8";concat;out="media:enc=utf-8;joined""#
-private let splitCap = #"cap:in="media:enc=utf-8;ext=txt";split;out="media:enc=utf-8;head""#
+private let extractCap = #"cap:in="media:document;ext=pdf";extract;out="media:enc=utf8;ext=txt;plain-text""#
+private let summarizeCap = #"cap:in="media:enc=utf8;ext=txt;plain-text";summarize;out="media:enc=utf8;summary""#
+private let concatCap = #"cap:in="media:enc=utf8";concat;out="media:enc=utf8;joined""#
+private let splitCap = #"cap:in="media:enc=utf8;ext=txt;plain-text";split;out="media:enc=utf8;head""#
 private let nowCap = #"cap:in="media:void";now;out="media:stamp""#
-private let contextUrn = "media:context;enc=utf-8"
-private let restUrn = "media:enc=utf-8;rest"
+private let contextUrn = "media:context;enc=utf8"
+private let restUrn = "media:enc=utf8;rest"
 
 /// The smallest definition of `capUrn`: its input on stdin unless it is void,
 /// and the output its URN states.
@@ -43,9 +43,9 @@ final class PlanCapRegistry: FabricRegistryProtocol, @unchecked Sendable {
         summarize.addArg(CSCapArg(mediaUrn: contextUrn, name: "context", required: false,
                                   sources: [CSArgSource.cliFlagSource("--context")]))
         let concat = try CSCap(urn: CSCapUrn.fromString(concatCap), title: "t", aliases: ["t"])
-        concat.addArg(CSCapArg(mediaUrn: "media:enc=utf-8", name: "input", required: true,
-                               sources: [CSArgSource.stdinSource(withMediaUrn: "media:enc=utf-8")]).asSequence(true))
-        concat.addOutput(CSCapOutput(mediaUrn: "media:enc=utf-8;joined", name: "output", outputDescription: "out"))
+        concat.addArg(CSCapArg(mediaUrn: "media:enc=utf8", name: "input", required: true,
+                               sources: [CSArgSource.stdinSource(withMediaUrn: "media:enc=utf8")]).asSequence(true))
+        concat.addOutput(CSCapOutput(mediaUrn: "media:enc=utf8;joined", name: "output", outputDescription: "out"))
         let split = try testCap(splitCap)
         split.addOutput(CSCapOutput(mediaUrn: restUrn, name: "rest", outputDescription: "the rest"))
         caps = [try testCap(extractCap), summarize, concat, split, try testCap(nowCap)]
@@ -70,7 +70,7 @@ private func testPlan() -> CSMachinePlan {
     plan.addNode(CSMachineNode.capNode("now", capUrn: nowCap))
     plan.addNode(CSMachineNode.capNode("split", capUrn: splitCap))
     plan.addNode(CSMachineNode.capOutputNode("split.rest", capNode: "split", outputMediaUrn: restUrn, outputName: "rest", carriesInput: false))
-    plan.addNode(CSMachineNode.collect("both", inputNodes: ["summarize", "split.rest"], outputMediaUrn: "media:enc=utf-8"))
+    plan.addNode(CSMachineNode.collect("both", inputNodes: ["summarize", "split.rest"], outputMediaUrn: "media:enc=utf8"))
     plan.addNode(CSMachineNode.capNode("concat", capUrn: concatCap))
     plan.addNode(CSMachineNode.outputNode("out", outputName: "result", sourceNode: "concat"))
     plan.addEdge(CSMachinePlanEdge.direct(from: "doc", to: "extract"))
@@ -123,10 +123,10 @@ final class OrchestratorTests: XCTestCase {
         let extract = try stepOf(graph, "extract")
         XCTAssertEqual(extract.inputs, [StepInput(streamUrn: "media:document;ext=pdf", source: .node("doc"))])
         XCTAssertEqual(extract.outputs, [])
-        XCTAssertEqual(extract.outMedia, "media:enc=utf-8;ext=txt")
+        XCTAssertEqual(extract.outMedia, "media:enc=utf8;ext=txt;plain-text")
 
         XCTAssertEqual(try stepOf(graph, "summarize").inputs, [
-            StepInput(streamUrn: "media:enc=utf-8;ext=txt", source: .node("extract")),
+            StepInput(streamUrn: "media:enc=utf8;ext=txt;plain-text", source: .node("extract")),
             StepInput(streamUrn: contextUrn, source: .node("now")),
         ])
 
@@ -137,14 +137,14 @@ final class OrchestratorTests: XCTestCase {
         XCTAssertEqual(split.producedNodes, ["split", "split.rest"])
 
         let concat = try stepOf(graph, "concat")
-        XCTAssertEqual(concat.inputs, [StepInput(streamUrn: "media:enc=utf-8", source: .gather(["summarize", "split.rest"]))])
+        XCTAssertEqual(concat.inputs, [StepInput(streamUrn: "media:enc=utf8", source: .gather(["summarize", "split.rest"]))])
         XCTAssertEqual(concat.sourceNodes, ["summarize", "split.rest"])
 
         // Every node a step reads or produces has its media; the plan's input
         // is there as what the graph is given.
         XCTAssertEqual(graph.nodes["doc"], "media:document;ext=pdf")
         XCTAssertEqual(graph.nodes["split.rest"], restUrn)
-        XCTAssertEqual(graph.nodes["concat"], "media:enc=utf-8;joined")
+        XCTAssertEqual(graph.nodes["concat"], "media:enc=utf8;joined")
         XCTAssertNil(graph.nodes["both"], "a gather is an input, not a node of the graph")
         XCTAssertNil(graph.nodes["out"])
 
@@ -152,17 +152,17 @@ final class OrchestratorTests: XCTestCase {
         // of the graph reads it, and what it reads is what the graph is given.
         let alone = try await stepsToResolvedGraph(testPlan(), stepIds: ["split"], registry: registry)
         XCTAssertEqual(alone.nodes, [
-            "split": "media:enc=utf-8;head",
+            "split": "media:enc=utf8;head",
             "split.rest": restUrn,
-            "extract": "media:enc=utf-8;ext=txt",
+            "extract": "media:enc=utf8;ext=txt;plain-text",
         ])
 
         // And a step that reads a step's other output from outside the graph
         // is given it under that output's own type.
         let gathering = try await stepsToResolvedGraph(testPlan(), stepIds: ["concat"], registry: registry)
         XCTAssertEqual(gathering.nodes, [
-            "concat": "media:enc=utf-8;joined",
-            "summarize": "media:enc=utf-8;summary",
+            "concat": "media:enc=utf8;joined",
+            "summarize": "media:enc=utf8;summary",
             "split.rest": restUrn,
         ])
     }
@@ -215,9 +215,9 @@ final class OrchestratorTests: XCTestCase {
             XCTAssertTrue(message.contains(expect), "\(message) does not say \(expect)", line: line)
         }
         await refused({ $0.addEdge(CSMachinePlanEdge.direct(from: "now", to: "summarize")) },
-                      "step 'summarize' is wired twice on input stream 'media:enc=utf-8;ext=txt'")
+                      "step 'summarize' is wired twice on input stream 'media:enc=utf8;ext=txt;plain-text'")
         // The same arg, its tags in another order.
-        await refused({ $0.addEdge(CSMachinePlanEdge.arg(from: "doc", to: "summarize", argUrn: "media:enc=utf-8;context")) },
+        await refused({ $0.addEdge(CSMachinePlanEdge.arg(from: "doc", to: "summarize", argUrn: "media:enc=utf8;context")) },
                       "step 'summarize' is wired twice on input stream")
         await refused({ $0.addEdge(CSMachinePlanEdge.iteration(from: "now", to: "summarize")) },
                       "step 'summarize' has an incoming Iteration edge from 'now'")

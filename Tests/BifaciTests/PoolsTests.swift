@@ -30,8 +30,8 @@ final class PoolsTests: XCTestCase {
     // and `all`, with capacities resolved by pool name uniformly.
     func test1521_declared_states_materialize_every_pool() throws {
         let declaredCaps = try caps([
-            "cap:generate;in=\"media:enc=utf-8\";out=\"media:enc=utf-8\"",
-            "cap:embed;in=\"media:enc=utf-8\";out=\"media:embeddings\"",
+            "cap:generate;in=\"media:enc=utf8\";out=\"media:enc=utf8\"",
+            "cap:embed;in=\"media:enc=utf8\";out=\"media:embeddings\"",
         ])
         let generate = declaredCaps[0]
         let embed = declaredCaps[1]
@@ -68,7 +68,7 @@ final class PoolsTests: XCTestCase {
     // pool named like a cap URN, an unknown member, a duplicate member, and
     // an unknown capacity key are each refused with the offender named.
     func test1522_pool_declaration_validation_refuses_illegal_shapes() throws {
-        let declaredCaps = try caps(["cap:generate;in=\"media:enc=utf-8\";out=\"media:enc=utf-8\""])
+        let declaredCaps = try caps(["cap:generate;in=\"media:enc=utf8\";out=\"media:enc=utf8\""])
         let generate = declaredCaps[0]
 
         XCTAssertThrowsError(

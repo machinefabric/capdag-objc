@@ -23,13 +23,13 @@ static CSFabricRegistry *testFabricRegistry(void) {
         @"extensions": @[@"pdf"],
     }];
     [registry addMediaDef:@{
-        @"urn": @"media:enc=utf-8;txt",
+        @"urn": @"media:enc=utf8;txt",
         @"media_type": @"text/plain",
         @"title": @"Text",
         @"extensions": @[@"txt"],
     }];
     [registry addMediaDef:@{
-        @"urn": @"media:fmt=json;record",
+        @"urn": @"media:enc=utf8;fmt=json;record",
         @"media_type": @"application/json",
         @"title": @"JSON",
         @"extensions": @[@"json"],
@@ -446,21 +446,21 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertFalse([scalarOpaque isRecord]);
 
     CSResolvedFile *listRecord = [CSResolvedFile fileWithPath:@"/y"
-                                                     mediaUrn:@"media:fmt=json;list;record"
+                                                     mediaUrn:@"media:enc=utf8;fmt=json;list;record"
                                                     sizeBytes:0
                                              contentStructure:CSContentStructureListRecord];
     XCTAssertTrue([listRecord isList]);
     XCTAssertTrue([listRecord isRecord]);
 
     CSResolvedFile *scalarRecord = [CSResolvedFile fileWithPath:@"/r"
-                                                       mediaUrn:@"media:fmt=json;record"
+                                                       mediaUrn:@"media:enc=utf8;fmt=json;record"
                                                       sizeBytes:0
                                                contentStructure:CSContentStructureScalarRecord];
     XCTAssertFalse([scalarRecord isList]);
     XCTAssertTrue([scalarRecord isRecord]);
 
     CSResolvedFile *listOpaque = [CSResolvedFile fileWithPath:@"/l"
-                                                     mediaUrn:@"media:enc=utf-8;list"
+                                                     mediaUrn:@"media:enc=utf8;list"
                                                     sizeBytes:0
                                              contentStructure:CSContentStructureListOpaque];
     XCTAssertTrue([listOpaque isList]);
@@ -471,16 +471,16 @@ static CSFabricRegistry *testFabricRegistry(void) {
 - (void)test1145_resolved_input_set_uses_equivalent_media_and_file_count_cardinality {
     // Single file with list-content URN: file count=1 → is_sequence=false, but homogeneous
     CSResolvedFile *singleListFile = [CSResolvedFile fileWithPath:@"/tmp/items.json"
-                                                         mediaUrn:@"media:application;fmt=json;list;record"
+                                                         mediaUrn:@"media:application;enc=utf8;fmt=json;list;record"
                                                         sizeBytes:42
                                                  contentStructure:CSContentStructureListRecord];
     CSResolvedInputSet *singleSet = [CSResolvedInputSet setWithFiles:@[singleListFile]
                                                           isSequence:NO
-                                                         commonMedia:@"media:application;fmt=json;list;record"];
+                                                         commonMedia:@"media:application;enc=utf8;fmt=json;list;record"];
     XCTAssertFalse(singleSet.isSequence,
                    @"single file must yield is_sequence=false even when content is a list");
     XCTAssertTrue([singleSet isHomogeneous]);
-    XCTAssertEqualObjects(singleSet.commonMedia, @"media:application;fmt=json;list;record");
+    XCTAssertEqualObjects(singleSet.commonMedia, @"media:application;enc=utf8;fmt=json;list;record");
 
     // Two files whose URNs are equivalent (different tag order) → homogeneous, is_sequence=true.
     // commonMedia is determined by the resolver, so this exercises the resolver's URN-equivalence path.
@@ -514,17 +514,17 @@ static CSFabricRegistry *testFabricRegistry(void) {
 // Mirror-specific: CSResolvedInputSet aggregates totalSize across files
 - (void)test6401_resolved_input_set_total_size {
     CSResolvedFile *file1 = [CSResolvedFile fileWithPath:@"/a.txt"
-                                                mediaUrn:@"media:ext=txt"
+                                                mediaUrn:@"media:ext=txt;plain-text"
                                                sizeBytes:100
                                         contentStructure:CSContentStructureScalarOpaque];
     CSResolvedFile *file2 = [CSResolvedFile fileWithPath:@"/b.txt"
-                                                mediaUrn:@"media:ext=txt"
+                                                mediaUrn:@"media:ext=txt;plain-text"
                                                sizeBytes:200
                                         contentStructure:CSContentStructureScalarOpaque];
 
     CSResolvedInputSet *set = [CSResolvedInputSet setWithFiles:@[file1, file2]
                                                     isSequence:YES
-                                                   commonMedia:@"media:ext=txt"];
+                                                   commonMedia:@"media:ext=txt;plain-text"];
 
     XCTAssertEqual([set totalSize], 300);
     XCTAssertTrue([set isHomogeneous]);
@@ -539,7 +539,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     CSMediaAdapterRegistry *adapters =
         [[CSMediaAdapterRegistry alloc] initWithFabricRegistry:self.registry];
 
-    NSArray<NSString *> *urns = @[@"media:fmt=json", @"media:fmt=yaml"];
+    NSArray<NSString *> *urns = @[@"media:enc=utf8;fmt=json", @"media:enc=utf8;fmt=yaml"];
     NSError *error = nil;
     XCTAssertTrue([adapters registerCapGroup:@"text-formats"
                                  adapterUrns:urns
@@ -556,7 +556,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
 
     // A partially-new group from the same owner registers only the new URN.
     // (Array literals are hoisted: a comma inside a macro argument splits it.)
-    NSArray<NSString *> *partiallyNew = @[@"media:fmt=json", @"media:fmt=toml"];
+    NSArray<NSString *> *partiallyNew = @[@"media:enc=utf8;fmt=json", @"media:fmt=toml"];
     BOOL partialOk = [adapters registerCapGroup:@"text-formats"
                                     adapterUrns:partiallyNew
                                     cartridgeId:@"txtcartridge"
@@ -565,7 +565,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertEqual(adapters.registeredAdapterCount, (NSUInteger)3);
 
     // Another cartridge claiming an identical URN is still ambiguity.
-    NSArray<NSString *> *claimed = @[@"media:fmt=json"];
+    NSArray<NSString *> *claimed = @[@"media:enc=utf8;fmt=json"];
     BOOL otherOk = [adapters registerCapGroup:@"text-formats"
                                   adapterUrns:claimed
                                   cartridgeId:@"other"

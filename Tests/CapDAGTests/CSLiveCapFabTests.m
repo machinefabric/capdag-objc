@@ -37,7 +37,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test1150_AddCapAndBasicTraversal {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap = makeTestCap(@"media:document;ext=pdf", @"media:digitized-text", @"extract_text", @"Extract Text");
+    CSCap *cap = makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"extract_text", @"Extract Text");
     [graph addCap:cap];
 
     XCTAssertEqual([graph edgeCount], 1u);
@@ -87,8 +87,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test1152_MultiStepPath {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap1 = makeTestCap(@"media:document;ext=pdf", @"media:digitized-text", @"extract", @"Extract");
-    CSCap *cap2 = makeTestCap(@"media:digitized-text", @"media:summary-text", @"summarize", @"Summarize");
+    CSCap *cap1 = makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"extract", @"Extract");
+    CSCap *cap2 = makeTestCap(@"media:digitized", @"media:summary-text", @"summarize", @"Summarize");
     [graph addCap:cap1];
     [graph addCap:cap2];
 
@@ -108,14 +108,14 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test1153_DeterministicOrdering {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap1 = makeTestCap(@"media:document;ext=pdf", @"media:digitized-text", @"extract_a", @"Extract A");
-    CSCap *cap2 = makeTestCap(@"media:document;ext=pdf", @"media:digitized-text", @"extract_b", @"Extract B");
+    CSCap *cap1 = makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"extract_a", @"Extract A");
+    CSCap *cap2 = makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"extract_b", @"Extract B");
     [graph addCap:cap1];
     [graph addCap:cap2];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:digitized-text" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:digitized" error:&error];
 
     // Run twice — same order
     NSArray *paths1 = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
@@ -134,8 +134,8 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
     NSArray *caps = @[
-        makeTestCap(@"media:document;ext=pdf", @"media:digitized-text", @"op1", @"Op1"),
-        makeTestCap(@"media:digitized-text", @"media:summary-text", @"op2", @"Op2"),
+        makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"op1", @"Op1"),
+        makeTestCap(@"media:digitized", @"media:summary-text", @"op2", @"Op2"),
     ];
     [graph syncFromCaps:caps];
 
@@ -144,7 +144,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
     // Sync again — should replace
     NSArray *newCaps = @[
-        makeTestCap(@"media:image", @"media:digitized-text", @"ocr", @"OCR"),
+        makeTestCap(@"media:image", @"media:digitized", @"ocr", @"OCR"),
     ];
     [graph syncFromCaps:newCaps];
 
@@ -219,12 +219,12 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test6653_typeMismatchPdfPng {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *cap = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
+    CSCap *cap = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf8", @"pdf2text", @"PDF to Text");
     [graph addCap:cap];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf8" error:&error];
 
     NSArray *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
     XCTAssertEqual(paths.count, 0u, @"Should NOT find path from PNG via PDF cap");
@@ -249,7 +249,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test6655_reachableTargetsTypeMatching {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    CSCap *pdfCap = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf-8", @"pdf2text", @"PDF to Text");
+    CSCap *pdfCap = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf8", @"pdf2text", @"PDF to Text");
     CSCap *pngCap = makeTestCap(@"media:ext=png;image", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
     [graph addCap:pdfCap];
     [graph addCap:pngCap];
@@ -261,11 +261,11 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(pngTargets.count, 1u, @"PNG should reach 1 target");
     XCTAssertEqualObjects(((CSReachableTargetInfo *)pngTargets[0]).mediaUrn, @"media:thumbnail");
 
-    // PDF should only reach text (media:enc=utf-8)
+    // PDF should only reach text (media:enc=utf8)
     CSMediaUrn *pdfSource = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
     NSArray *pdfTargets = [graph getReachableTargetsFromSource:pdfSource maxDepth:5 isSequence:NO];
     XCTAssertEqual(pdfTargets.count, 1u, @"PDF should reach 1 target");
-    XCTAssertEqualObjects(((CSReachableTargetInfo *)pdfTargets[0]).mediaUrn, @"media:enc=utf-8");
+    XCTAssertEqualObjects(((CSReachableTargetInfo *)pdfTargets[0]).mediaUrn, @"media:enc=utf8");
 }
 
 // TEST6656: Multi-step type chain enforcement
@@ -317,9 +317,9 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test6658_forEachWithSequenceInput {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
 
-    // Two caps: pdf→page and text(enc=utf-8)→decision
-    CSCap *disbind = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf-8;page", @"disbind", @"Disbind PDF");
-    CSCap *choose = makeTestCap(@"media:enc=utf-8", @"media:decision;bool", @"choose", @"Make a Decision");
+    // Two caps: pdf→page and text(enc=utf8)→decision
+    CSCap *disbind = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf8;page", @"disbind", @"Disbind PDF");
+    CSCap *choose = makeTestCap(@"media:enc=utf8", @"media:decision;bool", @"choose", @"Make a Decision");
 
     [graph syncFromCaps:@[disbind, choose]];
 
@@ -362,27 +362,27 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     CSLiveCapFab *graph = [CSLiveCapFab graph];
     NSError *error = nil;
     CSCap *concat = [CSCap capWithDictionary:@{
-        @"urn": @"cap:concat;in=\"media:enc=utf-8\";out=\"media:enc=utf-8;ext=txt\"",
+        @"urn": @"cap:concat;in=\"media:enc=utf8\";out=\"media:enc=utf8;ext=txt;plain-text\"",
         @"title": @"Concat Text",
         @"aliases": @[@"concat"],
         @"args": @[@{
-            @"media_urn": @"media:enc=utf-8",
+            @"media_urn": @"media:enc=utf8",
             @"name": @"texts",
             @"required": @YES,
             @"is_sequence": @YES,
-            @"sources": @[@{@"stdin": @"media:enc=utf-8"}],
+            @"sources": @[@{@"stdin": @"media:enc=utf8"}],
         }],
-        @"outputs": @[@{@"media_urn": @"media:enc=utf-8;ext=txt", @"name": @"text", @"output_description": @"The text"}],
+        @"outputs": @[@{@"media_urn": @"media:enc=utf8;ext=txt;plain-text", @"name": @"text", @"output_description": @"The text"}],
     } error:&error];
     XCTAssertNotNil(concat, @"%@", error);
     [graph addCap:concat];
-    [graph addCap:makeTestCap(@"media:enc=utf-8",
-                              @"media:enc=utf-8;summary",
+    [graph addCap:makeTestCap(@"media:enc=utf8",
+                              @"media:enc=utf8;summary",
                               @"summarize",
                               @"Summarize Text")];
 
-    CSMediaUrn *source = [CSMediaUrn fromString:@"media:enc=utf-8;page" error:&error];
-    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf-8;ext=txt" error:&error];
+    CSMediaUrn *source = [CSMediaUrn fromString:@"media:enc=utf8;page" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:enc=utf8;ext=txt;plain-text" error:&error];
     NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source
                                                         target:target
                                                       maxDepth:4
@@ -427,7 +427,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     // A specific cap should NOT be equivalent to identity
     CSCapUrnBuilder *specificBuilder = [CSCapUrnBuilder builder];
     [specificBuilder inSpec:@"media:document;ext=pdf"];
-    [specificBuilder outSpec:@"media:enc=utf-8;disbound-page;list"];
+    [specificBuilder outSpec:@"media:enc=utf8;disbound-page;list"];
     [specificBuilder tag:@"op" value:@"disbind"];
     CSCapUrn *built = [specificBuilder build:&error];
     XCTAssertNotNil(built);
@@ -442,21 +442,21 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 // with that output's cardinality. An output that carries the input has no
 // type of its own and no edge; the main output's edge is the cap's.
 - (void)test12847_aCapsOtherOutputsAreReachableByPlanning {
-    CSCap *split = makeTestCap(@"media:enc=utf-8;ext=txt", @"media:enc=utf-8;head", @"split", @"Split");
+    CSCap *split = makeTestCap(@"media:enc=utf8;ext=txt;plain-text", @"media:enc=utf8;head", @"split", @"Split");
     [split setOutputs:@[
-        [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;head" name:@"head" outputDescription:@"the head"],
-        [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;rest" name:@"rest" outputDescription:@"the rest"],
-        [[CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;part" name:@"parts" outputDescription:@"the parts"] outputAsSequence:YES],
-        [[CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;same" name:@"same" outputDescription:@"the input"] outputCarryingInput],
+        [CSCapOutput outputWithMediaUrn:@"media:enc=utf8;head" name:@"head" outputDescription:@"the head"],
+        [CSCapOutput outputWithMediaUrn:@"media:enc=utf8;rest" name:@"rest" outputDescription:@"the rest"],
+        [[CSCapOutput outputWithMediaUrn:@"media:enc=utf8;part" name:@"parts" outputDescription:@"the parts"] outputAsSequence:YES],
+        [[CSCapOutput outputWithMediaUrn:@"media:enc=utf8;same" name:@"same" outputDescription:@"the input"] outputCarryingInput],
     ]];
-    CSCap *count = makeTestCap(@"media:enc=utf-8;rest", @"media:integer;numeric", @"count", @"Count");
+    CSCap *count = makeTestCap(@"media:enc=utf8;rest", @"media:integer;numeric", @"count", @"Count");
     CSLiveCapFab *graph = [CSLiveCapFab graph];
     [graph addCap:split];
     [graph addCap:count];
     XCTAssertEqual([graph edgeCount], 4u, @"split: head, rest, parts; count: one");
 
     CSMediaUrn *(^media)(NSString *) = ^CSMediaUrn *(NSString *text) { return [CSMediaUrn fromString:text error:nil]; };
-    CSMediaUrn *text = media(@"media:enc=utf-8;ext=txt");
+    CSMediaUrn *text = media(@"media:enc=utf8;ext=txt;plain-text");
     CSStrandStep *(^onlyStep)(NSString *) = ^CSStrandStep *(NSString *target) {
         NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:text target:media(target) maxDepth:3 maxPaths:10 isSequence:NO];
         XCTAssertEqual(paths.count, 1u, @"one path to %@", target);
@@ -464,17 +464,17 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
         return paths.firstObject.steps.firstObject;
     };
 
-    XCTAssertNil(onlyStep(@"media:enc=utf-8;head").outputUrn);
+    XCTAssertNil(onlyStep(@"media:enc=utf8;head").outputUrn);
 
-    CSStrandStep *rest = onlyStep(@"media:enc=utf-8;rest");
+    CSStrandStep *rest = onlyStep(@"media:enc=utf8;rest");
     XCTAssertEqualObjects(rest.capUrn, [split.capUrn toString]);
-    XCTAssertEqualObjects(rest.outputUrn, @"media:enc=utf-8;rest");
+    XCTAssertEqualObjects(rest.outputUrn, @"media:enc=utf8;rest");
     XCTAssertFalse(rest.outputIsSequence);
-    XCTAssertEqualObjects(rest.toSpec, @"media:enc=utf-8;rest", @"the output's own type, not the effect's");
+    XCTAssertEqualObjects(rest.toSpec, @"media:enc=utf8;rest", @"the output's own type, not the effect's");
 
-    XCTAssertTrue(onlyStep(@"media:enc=utf-8;part").outputIsSequence, @"the output's own cardinality");
+    XCTAssertTrue(onlyStep(@"media:enc=utf8;part").outputIsSequence, @"the output's own cardinality");
 
-    XCTAssertEqual([graph findPathsToExactTarget:text target:media(@"media:enc=utf-8;same") maxDepth:3 maxPaths:10 isSequence:NO].count, 0u,
+    XCTAssertEqual([graph findPathsToExactTarget:text target:media(@"media:enc=utf8;same") maxDepth:3 maxPaths:10 isSequence:NO].count, 0u,
                    @"a carried output is reached by no edge");
 
     // Through another output and on.
@@ -482,7 +482,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(paths.count, 1u);
     NSArray<CSStrandStep *> *steps = paths.firstObject.steps;
     XCTAssertEqual(steps.count, 2u);
-    XCTAssertEqualObjects(steps.firstObject.outputUrn, @"media:enc=utf-8;rest");
+    XCTAssertEqualObjects(steps.firstObject.outputUrn, @"media:enc=utf8;rest");
     XCTAssertNil(steps.lastObject.outputUrn);
 }
 

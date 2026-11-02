@@ -160,7 +160,7 @@ final class CartridgeRuntimeTests: XCTestCase {
                 return frames[index]
             }
         }
-        let start = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:enc=utf-8")
+        let start = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:enc=utf8")
 
         // A request's input, ended mid-stream.
         let cut = demuxMultiStream(frameIterator: iterate([start, chunk])).makeIterator()
@@ -186,7 +186,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         // A peer response, stopped before its END.
         let response = demuxPeerResponse(
             responseRx: iterate([
-                Frame.streamStart(reqId: rid, streamId: "r", mediaUrn: "media:enc=utf-8"),
+                Frame.streamStart(reqId: rid, streamId: "r", mediaUrn: "media:enc=utf8"),
                 Frame.chunk(reqId: rid, streamId: "r", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)),
             ])
         )
@@ -411,16 +411,16 @@ final class CartridgeRuntimeTests: XCTestCase {
 
     // TEST261: Test extract_effective_payload with CBOR content extracts matching argument value
     func test261_extractEffectivePayloadCborMatch() throws {
-        // Build CBOR: [{media_urn: "media:enc=utf-8;string", value: bytes("hello")}]
+        // Build CBOR: [{media_urn: "media:enc=utf8;string", value: bytes("hello")}]
         let cborArray: CBOR = .array([
             .map([
-                .utf8String("media_urn"): .utf8String("media:enc=utf-8;string"),
+                .utf8String("media_urn"): .utf8String("media:enc=utf8;string"),
                 .utf8String("value"): .byteString([UInt8]("hello".utf8))
             ])
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:enc=utf-8;string\";test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:enc=utf8;string\";test;out=\"media:void\"", args: [])
         let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
         // NEW REGIME: result is full CBOR array; extract value from matching argument
         guard let decoded = try CBOR.decode([UInt8](result)),
@@ -443,7 +443,7 @@ final class CartridgeRuntimeTests: XCTestCase {
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:enc=utf-8;string\";test;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:enc=utf8;string\";test;out=\"media:void\"", args: [])
         XCTAssertThrowsError(try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)) { error in
             if let runtimeError = error as? CartridgeRuntimeError,
                case .deserializationError(let msg) = runtimeError {
@@ -481,24 +481,24 @@ final class CartridgeRuntimeTests: XCTestCase {
     func test272_extractEffectivePayloadMultipleArgs() throws {
         let cborArray: CBOR = .array([
             .map([
-                .utf8String("media_urn"): .utf8String("media:enc=utf-8;other-type"),
+                .utf8String("media_urn"): .utf8String("media:enc=utf8;other-type"),
                 .utf8String("value"): .byteString([UInt8]("wrong".utf8))
             ]),
             .map([
-                .utf8String("media_urn"): .utf8String("media:enc=utf-8;model-spec"),
+                .utf8String("media_urn"): .utf8String("media:enc=utf8;model-spec"),
                 .utf8String("value"): .byteString([UInt8]("correct".utf8))
             ]),
         ])
         let payload = Data(cborArray.encode())
 
-        let cap = makeTestCap(urn: "cap:in=\"media:enc=utf-8;model-spec\";infer;out=\"media:void\"", args: [])
+        let cap = makeTestCap(urn: "cap:in=\"media:enc=utf8;model-spec\";infer;out=\"media:void\"", args: [])
         let result = try extractEffectivePayload(payload: payload, contentType: "application/cbor", cap: cap, isCliMode: false)
         // Handler matches against in_spec to find main input.
         guard let decoded = try CBOR.decode([UInt8](result)),
               case .array(let arr) = decoded
         else { return XCTFail("Expected CBOR array") }
         XCTAssertEqual(arr.count, 2)
-        let inSpec = try CSMediaUrn.fromString("media:enc=utf-8;model-spec")
+        let inSpec = try CSMediaUrn.fromString("media:enc=utf8;model-spec")
         var found: [UInt8]? = nil
         for arg in arr {
             guard case .map(let m) = arg else { continue }
@@ -661,17 +661,17 @@ final class CapArgumentValueTests: XCTestCase {
     // TEST274: Test CapArgumentValue::new stores media_urn and raw byte value
     func test274_capArgumentValueNew() {
         let arg = CapArgumentValue(
-            mediaUrn: "media:enc=utf-8;model-spec",
+            mediaUrn: "media:enc=utf8;model-spec",
             value: "gpt-4".data(using: .utf8)!
         )
-        XCTAssertEqual(arg.mediaUrn, "media:enc=utf-8;model-spec")
+        XCTAssertEqual(arg.mediaUrn, "media:enc=utf8;model-spec")
         XCTAssertEqual(arg.value, "gpt-4".data(using: .utf8)!)
     }
 
     // TEST275: Test CapArgumentValue::from_str converts string to UTF-8 bytes
     func test275_capArgumentValueFromStr() {
-        let arg = CapArgumentValue.fromString(mediaUrn: "media:enc=utf-8;string", value: "hello world")
-        XCTAssertEqual(arg.mediaUrn, "media:enc=utf-8;string")
+        let arg = CapArgumentValue.fromString(mediaUrn: "media:enc=utf8;string", value: "hello world")
+        XCTAssertEqual(arg.mediaUrn, "media:enc=utf8;string")
         XCTAssertEqual(arg.value, "hello world".data(using: .utf8)!)
     }
 
@@ -829,7 +829,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Process PDF",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:document;ext=pdf"), .positional(0)]
             )]
@@ -868,7 +868,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.positional(0)]  // NO stdin source!
             )]
@@ -897,7 +897,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Process",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:document;ext=pdf"), .cliFlag("--file")]
             )]
@@ -934,7 +934,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Batch",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 isSequence: true,
                 sources: [.stdin("media:"), .positional(0)]
@@ -960,7 +960,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:document;ext=pdf"),
@@ -995,7 +995,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:"), .positional(0)]
             )]
@@ -1023,7 +1023,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:"), .positional(0)]
             )]
@@ -1041,13 +1041,13 @@ final class CborFilePathConversionTests: XCTestCase {
     func test343_non_file_path_args_unaffected() throws {
         // The stdin argument is the cap's input (RULE15).
         let cap = createCap(
-            urn: "cap:in=\"media:enc=utf-8;model-spec\";test;out=\"media:void\"",
+            urn: "cap:in=\"media:enc=utf8;model-spec\";test;out=\"media:void\"",
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;model-spec",  // NOT file-path
+                mediaUrn: "media:enc=utf8;model-spec",  // NOT file-path
                 required: true,
-                sources: [.stdin("media:enc=utf-8;model-spec"), .positional(0)]
+                sources: [.stdin("media:enc=utf8;model-spec"), .positional(0)]
             )]
         )
 
@@ -1069,7 +1069,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:"),
@@ -1101,7 +1101,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:"), .positional(0)]
             )]
@@ -1137,7 +1137,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:"),
@@ -1182,7 +1182,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:"), .positional(0)]
             )]
@@ -1209,7 +1209,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.positional(0), .stdin("media:")]
             )]
@@ -1237,7 +1237,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .cliFlag("--file"),  // First (not provided)
@@ -1274,11 +1274,11 @@ final class CborFilePathConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: testFile) }
 
         let cap = createCap(
-            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:enc=utf-8;result\"",
+            urn: "cap:in=\"media:document;ext=pdf\";process;out=\"media:enc=utf8;result\"",
             title: "Process PDF",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:document;ext=pdf"), .positional(0)]
             )]
@@ -1314,7 +1314,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: false,
                 isSequence: true,
                 sources: [.stdin("media:")]
@@ -1323,7 +1323,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // CBOR-mode payload: value is an empty Array.
         let arg: CBOR = .map([
-            .utf8String("media_urn"): .utf8String("media:enc=utf-8;file-path"),
+            .utf8String("media_urn"): .utf8String("media:enc=utf8;file-path"),
             .utf8String("value"): .array([])
         ])
         let payload = Data(CBOR.array([arg]).encode())
@@ -1353,7 +1353,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:"),
@@ -1381,14 +1381,14 @@ final class CborFilePathConversionTests: XCTestCase {
     // TEST353: CBOR payload format matches between CLI and CBOR mode
     func test353_cbor_payload_format_consistency() throws {
         let cap = createCap(
-            urn: "cap:in=\"media:enc=utf-8;text\";test;out=\"media:void\"",
+            urn: "cap:in=\"media:enc=utf8;text\";test;out=\"media:void\"",
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;text",
+                mediaUrn: "media:enc=utf8;text",
                 required: true,
                 sources: [
-                    .stdin("media:enc=utf-8;text"),
+                    .stdin("media:enc=utf8;text"),
                     .positional(0)
                 ]
             )]
@@ -1428,7 +1428,7 @@ final class CborFilePathConversionTests: XCTestCase {
             XCTFail("Should have media_urn key with string value")
             return
         }
-        XCTAssertEqual(urnStr, "media:enc=utf-8;text")
+        XCTAssertEqual(urnStr, "media:enc=utf8;text")
 
         // Check value key
         let valueKey = CBOR.utf8String("value")
@@ -1449,7 +1449,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:"), .positional(0)]
             )]
@@ -1485,7 +1485,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 isSequence: true,
                 sources: [
@@ -1524,7 +1524,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 isSequence: true,
                 sources: [.stdin("media:"), .positional(0)]
@@ -1536,7 +1536,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Build CBOR payload with Array of patterns (CBOR mode allows arrays).
         let arg: CBOR = .map([
-            .utf8String("media_urn"): .utf8String("media:enc=utf-8;file-path"),
+            .utf8String("media_urn"): .utf8String("media:enc=utf8;file-path"),
             .utf8String("value"): .array([.utf8String(pattern1), .utf8String(pattern2)])
         ])
         let payload = Data(CBOR.array([arg]).encode())
@@ -1582,7 +1582,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:"),
@@ -1616,7 +1616,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["test"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:"),
@@ -1642,7 +1642,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Test",
             aliases: ["batch"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 isSequence: true,
                 sources: [.stdin("media:"), .positional(0)]
@@ -1651,7 +1651,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Invalid glob pattern (unclosed bracket) sent in CBOR mode.
         let arg: CBOR = .map([
-            .utf8String("media_urn"): .utf8String("media:enc=utf-8;file-path"),
+            .utf8String("media_urn"): .utf8String("media:enc=utf8;file-path"),
             .utf8String("value"): .utf8String("[invalid")
         ])
         let payload = Data(CBOR.array([arg]).encode())
@@ -1675,7 +1675,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Process",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:document;ext=pdf"),
@@ -1887,7 +1887,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Process",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [
                     .stdin("media:document;ext=pdf"),
@@ -2064,7 +2064,7 @@ final class CborFilePathConversionTests: XCTestCase {
             title: "Process",
             aliases: ["process"],
             args: [createArg(
-                mediaUrn: "media:enc=utf-8;file-path",
+                mediaUrn: "media:enc=utf8;file-path",
                 required: true,
                 sources: [.stdin("media:document;ext=pdf")]
             )]
@@ -2072,7 +2072,7 @@ final class CborFilePathConversionTests: XCTestCase {
 
         // Build CBOR arguments with file-path URN.
         let arg: CBOR = .map([
-            .utf8String("media_urn"): .utf8String("media:enc=utf-8;file-path"),
+            .utf8String("media_urn"): .utf8String("media:enc=utf8;file-path"),
             .utf8String("value"): .byteString([UInt8](testFile.path.utf8))
         ])
         let payload = Data(CBOR.array([arg]).encode())

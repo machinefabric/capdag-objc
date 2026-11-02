@@ -21,7 +21,7 @@
 
 static CSCap *buildExtractCap(void) {
     NSError *e = nil;
-    CSCapUrn *urn = [CSCapUrn fromString:@"cap:extract;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8\"" error:&e];
+    CSCapUrn *urn = [CSCapUrn fromString:@"cap:extract;in=\"media:document;ext=pdf\";out=\"media:enc=utf8\"" error:&e];
     return [CSCap capWithUrn:urn
                        title:@"extract"
                      aliases:@[@"extract"]
@@ -47,17 +47,17 @@ static CSCap *buildExtractCap(void) {
 
 // TEST1881: URN-vs-alias detection keys purely on the presence of ':'. The whole design rests on this discriminator being exact.
 - (void)test1881_TokenURNvsAliasDetection {
-    XCTAssertTrue(CSTokenIsURN(@"cap:in=\"media:document;ext=pdf\";extract;out=\"media:enc=utf-8\""));
-    XCTAssertTrue(CSTokenIsURN(@"media:fmt=json;record"));
+    XCTAssertTrue(CSTokenIsURN(@"cap:in=\"media:document;ext=pdf\";extract;out=\"media:enc=utf8\""));
+    XCTAssertTrue(CSTokenIsURN(@"media:enc=utf8;fmt=json;record"));
     XCTAssertFalse(CSTokenIsURN(@"pdf2text"));
     XCTAssertTrue(CSIsAliasToken(@"pdf2text"));
-    XCTAssertFalse(CSIsAliasToken(@"media:enc=utf-8"));
+    XCTAssertFalse(CSIsAliasToken(@"media:enc=utf8"));
 }
 
 // TEST1882: alias target classification distinguishes cap from media by prefix and rejects a non-URN target. The typed-boundary enforcement in the registry depends on this.
 - (void)test1882_ClassifyAliasTargetByPrefix {
     CSAliasTargetKind kind;
-    XCTAssertTrue(CSClassifyAliasTarget(@"media:fmt=json;record", &kind));
+    XCTAssertTrue(CSClassifyAliasTarget(@"media:enc=utf8;fmt=json;record", &kind));
     XCTAssertEqual(kind, CSAliasTargetKindMedia);
 
     XCTAssertTrue(CSClassifyAliasTarget(@"cap:effect=patch;in=\"media:image\";name;out=\"media:ext=png;image\"", &kind));
@@ -70,7 +70,7 @@ static CSCap *buildExtractCap(void) {
 - (void)test1887_ManifestRoundTripsAliases {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
     [reg insertCachedAliasForTest:@{@"name": @"pdf2text", @"target": @"cap:effect=none", @"version": @3}];
-    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
+    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:enc=utf8;fmt=json;record", @"version": @1}];
     NSDictionary *m = [reg manifestDictionary];
     NSDictionary *aliases = m[@"aliases"];
     XCTAssertEqualObjects(aliases[@"pdf2text"], @3);
@@ -80,18 +80,18 @@ static CSCap *buildExtractCap(void) {
 // TEST1888: resolve_alias returns the alias target untyped. Seeding a media alias and resolving it yields the media URN; a malformed alias name is rejected before any lookup.
 - (void)test1888_ResolveAliasReturnsTarget {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
-    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
+    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:enc=utf8;fmt=json;record", @"version": @1}];
 
     XCTestExpectation *e1 = [self expectationWithDescription:@"lower"];
     [reg resolveAlias:@"jsondoc" completion:^(NSString *target, NSError *error) {
         XCTAssertNil(error);
-        XCTAssertEqualObjects(target, @"media:fmt=json;record");
+        XCTAssertEqualObjects(target, @"media:enc=utf8;fmt=json;record");
         [e1 fulfill];
     }];
     XCTestExpectation *e2 = [self expectationWithDescription:@"mixed-case"];
     [reg resolveAlias:@"JSONDoc" completion:^(NSString *target, NSError *error) {
         XCTAssertNil(error);
-        XCTAssertEqualObjects(target, @"media:fmt=json;record");
+        XCTAssertEqualObjects(target, @"media:enc=utf8;fmt=json;record");
         [e2 fulfill];
     }];
     XCTestExpectation *e3 = [self expectationWithDescription:@"malformed"];
@@ -105,7 +105,7 @@ static CSCap *buildExtractCap(void) {
 // TEST1889: resolve alias typed enforces the expected kind.
 - (void)test1889_ResolveAliasTypedEnforcesKind {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
-    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
+    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:enc=utf8;fmt=json;record", @"version": @1}];
 
     XCTestExpectation *ok = [self expectationWithDescription:@"media ok"];
     [reg resolveAliasTyped:@"jsondoc" expected:CSAliasTargetKindMedia completion:^(NSString *target, NSError *error) {
@@ -140,7 +140,7 @@ static CSCap *buildExtractCap(void) {
         [ok fulfill];
     }];
 
-    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
+    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:enc=utf8;fmt=json;record", @"version": @1}];
     XCTestExpectation *bad = [self expectationWithDescription:@"media alias at getCap"];
     [reg getCapWithUrn:@"jsondoc" completion:^(CSCap *got, NSError *error) {
         XCTAssertNotNil(error, @"a media alias at getCap must fail hard");
@@ -152,18 +152,18 @@ static CSCap *buildExtractCap(void) {
 // TEST1891: get_media_def accepts a media alias and returns the aliased spec; a cap alias passed to get_media_def fails hard.
 - (void)test1891_GetMediaDefViaAliasAndTypeMismatch {
     CSFabricRegistry *reg = [[CSFabricRegistry alloc] initForTest];
-    [reg addMediaDef:@{@"urn": @"media:fmt=json;record", @"media_type": @"application/json", @"title": @"JSON"}];
-    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:fmt=json;record", @"version": @1}];
+    [reg addMediaDef:@{@"urn": @"media:enc=utf8;fmt=json;record", @"media_type": @"application/json", @"title": @"JSON"}];
+    [reg insertCachedAliasForTest:@{@"name": @"jsondoc", @"target": @"media:enc=utf8;fmt=json;record", @"version": @1}];
 
     XCTestExpectation *ok = [self expectationWithDescription:@"media alias"];
     [reg getMediaDef:@"jsondoc" completion:^(NSDictionary *spec, NSError *error) {
         XCTAssertNil(error);
-        XCTAssertEqualObjects(spec[@"urn"], @"media:fmt=json;record");
+        XCTAssertEqualObjects(spec[@"urn"], @"media:enc=utf8;fmt=json;record");
         [ok fulfill];
     }];
 
     [reg insertCachedAliasForTest:@{@"name": @"pdf2text",
-                                    @"target": @"cap:extract;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8\"",
+                                    @"target": @"cap:extract;in=\"media:document;ext=pdf\";out=\"media:enc=utf8\"",
                                     @"version": @1}];
     XCTestExpectation *bad = [self expectationWithDescription:@"cap alias at getMediaDef"];
     [reg getMediaDef:@"pdf2text" completion:^(NSDictionary *spec, NSError *error) {

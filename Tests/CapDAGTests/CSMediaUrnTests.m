@@ -40,26 +40,26 @@
 // TEST854: LUB keeps common tags, drops differing ones
 - (void)test854_lub_partial_overlap {
     NSError *error;
-    CSMediaUrn *jsonText = [CSMediaUrn fromString:@"media:enc=utf-8;fmt=json" error:&error];
-    CSMediaUrn *csvText = [CSMediaUrn fromString:@"media:enc=utf-8;fmt=csv" error:&error];
+    CSMediaUrn *jsonText = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json" error:&error];
+    CSMediaUrn *csvText = [CSMediaUrn fromString:@"media:enc=utf8;fmt=csv" error:&error];
     XCTAssertNotNil(jsonText);
     XCTAssertNotNil(csvText);
     CSMediaUrn *lub = [CSMediaUrn lub:@[jsonText, csvText]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf-8" error:&error];
+    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should be media:enc=utf-8 but got %@", [lub toString]);
+        @"LUB should be media:enc=utf8 but got %@", [lub toString]);
 }
 
 // TEST855: LUB of list and non-list drops list tag
 - (void)test855_lub_list_vs_scalar {
     NSError *error;
-    CSMediaUrn *jsonList = [CSMediaUrn fromString:@"media:fmt=json;list" error:&error];
-    CSMediaUrn *jsonScalar = [CSMediaUrn fromString:@"media:fmt=json" error:&error];
+    CSMediaUrn *jsonList = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json;list" error:&error];
+    CSMediaUrn *jsonScalar = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json" error:&error];
     XCTAssertNotNil(jsonList);
     XCTAssertNotNil(jsonScalar);
     CSMediaUrn *lub = [CSMediaUrn lub:@[jsonList, jsonScalar]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:fmt=json" error:&error];
+    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
         @"LUB should drop list tag, got %@", [lub toString]);
@@ -86,17 +86,17 @@
 // TEST858: LUB with three+ inputs narrows correctly
 - (void)test858_lub_three_inputs {
     NSError *error;
-    CSMediaUrn *a = [CSMediaUrn fromString:@"media:enc=utf-8;fmt=json;list;record" error:&error];
-    CSMediaUrn *b = [CSMediaUrn fromString:@"media:enc=utf-8;fmt=csv;list;record" error:&error];
-    CSMediaUrn *c = [CSMediaUrn fromString:@"media:enc=utf-8;fmt=ndjson;list" error:&error];
+    CSMediaUrn *a = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json;list;record" error:&error];
+    CSMediaUrn *b = [CSMediaUrn fromString:@"media:enc=utf8;fmt=csv;list;record" error:&error];
+    CSMediaUrn *c = [CSMediaUrn fromString:@"media:enc=utf8;fmt=ndjson;list" error:&error];
     XCTAssertNotNil(a);
     XCTAssertNotNil(b);
     XCTAssertNotNil(c);
     CSMediaUrn *lub = [CSMediaUrn lub:@[a, b, c]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf-8;list" error:&error];
+    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8;list" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should be media:enc=utf-8;list but got %@", [lub toString]);
+        @"LUB should be media:enc=utf8;list but got %@", [lub toString]);
 }
 
 // TEST859: LUB with valued tags (non-marker) that differ
@@ -138,7 +138,7 @@
     XCTAssertTrue([[CSMediaUrn fromString:@"media:custom;record" error:&e] isRecord]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaJson error:&e] isRecord]);
     // Without record marker
-    XCTAssertFalse([[CSMediaUrn fromString:@"media:enc=utf-8" error:&e] isRecord]);
+    XCTAssertFalse([[CSMediaUrn fromString:@"media:enc=utf8" error:&e] isRecord]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaString error:&e] isRecord]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isRecord]);
 }
@@ -151,7 +151,7 @@
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaNumber error:&e] isScalar]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaBoolean error:&e] isScalar]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaObject error:&e] isScalar]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:enc=utf-8" error:&e] isScalar]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:enc=utf8" error:&e] isScalar]);
     // With list marker
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaStringList error:&e] isScalar]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObjectList error:&e] isScalar]);
@@ -175,7 +175,7 @@
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaString error:&e] isOpaque]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaStringList error:&e] isOpaque]);
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaPdf error:&e] isOpaque]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:enc=utf-8" error:&e] isOpaque]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:enc=utf8" error:&e] isOpaque]);
     // With record marker
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObject error:&e] isOpaque]);
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaJson error:&e] isOpaque]);
@@ -186,24 +186,47 @@
 - (void)test066_is_json {
     NSError *e;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaJson error:&e] isJson]);
-    XCTAssertTrue([[CSMediaUrn fromString:@"media:custom;fmt=json" error:&e] isJson]);
+    XCTAssertTrue([[CSMediaUrn fromString:@"media:custom;enc=utf8;fmt=json" error:&e] isJson]);
     // record alone does not mean JSON
     XCTAssertFalse([[CSMediaUrn fromString:CSMediaObject error:&e] isJson]);
-    XCTAssertFalse([[CSMediaUrn fromString:@"media:enc=utf-8" error:&e] isJson]);
+    XCTAssertFalse([[CSMediaUrn fromString:@"media:enc=utf8" error:&e] isJson]);
 }
 
-// TEST067: Text-representability is now carried by the orthogonal `enc=` tag (the old `textable` marker and is_text() are gone). A media is "text" iff it declares an encoding. enc is orthogonal to format/numeric, so only media that actually carry enc= are text.
+// TEST067: A media is characters iff it declares an encoding (`enc=`). Every textual value carries it — free text and the textual serializations alike (a JSON record is UTF-8) — while a boolean, a number, an image and the top type do not. Whether text is written to be read is `plain-text`'s to say (TEST1973), never enc's.
 - (void)test067_is_text {
     NSError *e;
-    // Has enc= → text-representable
-    XCTAssertNotNil([[CSMediaUrn fromString:CSMediaString error:&e] getTag:@"enc"]);   // media:enc=utf-8
-    // No enc= → not text-representable
+    // Has enc= → characters
+    XCTAssertNotNil([[CSMediaUrn fromString:CSMediaString error:&e] getTag:@"enc"]);   // media:enc=utf8
+    XCTAssertEqualObjects([[CSMediaUrn fromString:CSMediaJson error:&e] getTag:@"enc"], @"utf8", @"a JSON record is UTF-8");
+    // No enc= → not characters
     XCTAssertNil([[CSMediaUrn fromString:CSMediaBoolean error:&e] getTag:@"enc"]);     // media:bool — its own kind
     XCTAssertNil([[CSMediaUrn fromString:CSMediaInteger error:&e] getTag:@"enc"]);     // media:integer;numeric
-    XCTAssertNil([[CSMediaUrn fromString:CSMediaJson error:&e] getTag:@"enc"]);        // media:fmt=json;record
     XCTAssertNil([[CSMediaUrn fromString:CSMediaIdentity error:&e] getTag:@"enc"]);    // media:
     XCTAssertNil([[CSMediaUrn fromString:CSMediaPng error:&e] getTag:@"enc"]);         // media:ext=png;image
     XCTAssertNil([[CSMediaUrn fromString:CSMediaObject error:&e] getTag:@"enc"]);      // media:record
+}
+
+// TEST1973: Plain text is UTF-8 text written to be read. Every prose file type and the kinds of plain text conform to MEDIA_PLAIN_TEXT; a bare UTF-8 string, markup and serialized data do not. Every textual value — plain text and the textual serializations alike — is a UTF-8 string and conforms to MEDIA_STRING.
+- (void)test1973_plain_text_and_utf8_strings {
+    NSError *e;
+    CSMediaUrn *plain = [CSMediaUrn fromString:CSMediaPlainText error:&e];
+    CSMediaUrn *string = [CSMediaUrn fromString:CSMediaString error:&e];
+    XCTAssertNotNil(plain);
+    XCTAssertNotNil(string);
+    for (NSString *urn in @[CSMediaTxt, CSMediaMd, CSMediaRst, CSMediaLog, CSMediaTextablePage,
+                            @"media:digitized;enc=utf8;ext=txt;plain-text",
+                            @"media:enc=utf8;ext=txt;image-description;plain-text"]) {
+        XCTAssertTrue([[CSMediaUrn fromString:urn error:&e] conformsTo:plain], @"%@ is plain text", urn);
+    }
+    for (NSString *urn in @[CSMediaString, CSMediaHtml, CSMediaJson, CSMediaYaml, CSMediaCsv, @"media:code;enc=utf8;python"]) {
+        XCTAssertFalse([[CSMediaUrn fromString:urn error:&e] conformsTo:plain], @"%@ is not plain text", urn);
+    }
+    for (NSString *urn in @[CSMediaPlainText, CSMediaTxt, CSMediaHtml, CSMediaJson, CSMediaJsonList, CSMediaYaml, CSMediaCsv]) {
+        XCTAssertTrue([[CSMediaUrn fromString:urn error:&e] conformsTo:string], @"%@ is a UTF-8 string", urn);
+    }
+    for (NSString *urn in @[CSMediaBoolean, CSMediaInteger, CSMediaPng, CSMediaObject]) {
+        XCTAssertFalse([[CSMediaUrn fromString:urn error:&e] conformsTo:string], @"%@ is not characters", urn);
+    }
 }
 
 // TEST068: Test is_void returns true when void flag or type=void tag is present
@@ -331,7 +354,7 @@
 
     CSMediaUrn *jsonUrn = [CSMediaUrn fromString:CSMediaJson error:&e];
     XCTAssertTrue([jsonUrn isJson]);
-    XCTAssertNil([jsonUrn getTag:@"enc"], @"media:fmt=json;record carries no enc=");
+    XCTAssertNil([jsonUrn getTag:@"enc"], @"media:enc=utf8;fmt=json;record carries no enc=");
     XCTAssertTrue([jsonUrn isRecord]);
     XCTAssertTrue([jsonUrn isScalar], @"MEDIA_JSON is a scalar record (single object)");
     XCTAssertFalse([jsonUrn isList]);
@@ -394,9 +417,9 @@
     CSMediaUrn *pdfReq = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&e];
     XCTAssertTrue([pdfListing conformsTo:pdfReq]);
 
-    // CSMediaMd is now "media:enc=utf-8;ext=md" — request with just ext=md tag.
+    // CSMediaMd is now "media:enc=utf8;ext=md;plain-text" — request with just ext=md tag.
     CSMediaUrn *mdListing = [CSMediaUrn fromString:CSMediaMd error:&e];
-    CSMediaUrn *mdReq = [CSMediaUrn fromString:@"media:ext=md" error:&e];
+    CSMediaUrn *mdReq = [CSMediaUrn fromString:@"media:ext=md;plain-text" error:&e];
     XCTAssertTrue([mdListing conformsTo:mdReq error:&e]);
 
     CSMediaUrn *strUrn = [CSMediaUrn fromString:CSMediaString error:&e];
@@ -419,8 +442,8 @@
 - (void)test076_specificity {
     NSError *e;
     CSMediaUrn *urn1 = [CSMediaUrn fromString:@"media:string" error:&e];
-    CSMediaUrn *urn2 = [CSMediaUrn fromString:@"media:enc=utf-8" error:&e];
-    CSMediaUrn *urn3 = [CSMediaUrn fromString:@"media:enc=utf-8;numeric" error:&e];
+    CSMediaUrn *urn2 = [CSMediaUrn fromString:@"media:enc=utf8" error:&e];
+    CSMediaUrn *urn3 = [CSMediaUrn fromString:@"media:enc=utf8;numeric" error:&e];
 
     NSInteger s1 = [urn1 specificity];
     NSInteger s2 = [urn2 specificity];
@@ -439,7 +462,7 @@
     XCTAssertTrue([strUrn conformsTo:strUrn], @"string conforms to string");
     XCTAssertTrue([objUrn conformsTo:objUrn], @"object conforms to object");
     XCTAssertFalse([objUrn conformsTo:strUrn],
-        @"MEDIA_OBJECT should NOT conform to MEDIA_STRING (missing enc=utf-8)");
+        @"MEDIA_OBJECT should NOT conform to MEDIA_STRING (missing enc=utf8)");
 }
 
 // TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags
@@ -448,7 +471,8 @@
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaAvailabilityOutput error:&e];
     XCTAssertNotNil(urn);
     XCTAssertEqualObjects([urn getTag:@"fmt"], @"json", @"model-availability is a JSON record");
-    XCTAssertNil([urn getTag:@"enc"], @"a JSON record is not also text");
+    XCTAssertEqualObjects([urn getTag:@"enc"], @"utf8", @"a JSON record is UTF-8");
+    XCTAssertNil([urn getTag:@"plain-text"], @"a JSON record is not plain text");
     XCTAssertTrue([urn isRecord], @"model-availability must have record marker");
     CSMediaUrn *reparsed = [CSMediaUrn fromString:[urn toString] error:&e];
     XCTAssertTrue([urn conformsTo:reparsed], @"roundtrip must conform to original");
@@ -460,7 +484,8 @@
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaPathOutput error:&e];
     XCTAssertNotNil(urn);
     XCTAssertEqualObjects([urn getTag:@"fmt"], @"json", @"model-path is a JSON record");
-    XCTAssertNil([urn getTag:@"enc"], @"a JSON record is not also text");
+    XCTAssertEqualObjects([urn getTag:@"enc"], @"utf8", @"a JSON record is UTF-8");
+    XCTAssertNil([urn getTag:@"plain-text"], @"a JSON record is not plain text");
     XCTAssertTrue([urn isRecord], @"model-path must have record marker");
     CSMediaUrn *reparsed = [CSMediaUrn fromString:[urn toString] error:&e];
     XCTAssertTrue([urn conformsTo:reparsed], @"roundtrip must conform to original");

@@ -16,10 +16,10 @@ import CapDAG
 /// of items), and a stdin source carrying the CONTENT urn — the exact
 /// file-path reference shape, unbounded.
 private let LIVE_FEED_MANIFEST = #"""
-{"name":"FeedCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Live feed test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:drain;in=\"media:feed-frames\";out=\"media:fmt=json;record\"","title":"Drain","aliases":["drain"],"args":[{"media_urn":"media:live;synthetic","name":"frames","required":true,"is_sequence":true,"sources":[{"stdin":"media:feed-frames"}]}],"outputs":[{"media_urn":"media:fmt=json;record","name":"summary","output_description":"What was drained"}]}]}]}
+{"name":"FeedCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Live feed test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","aliases":["identity"],"args":[{"media_urn":"media:","name":"input","required":true,"sources":[{"stdin":"media:"}]}],"outputs":[{"media_urn":"media:","name":"output","output_description":"The input data, unchanged"}]},{"urn":"cap:drain;in=\"media:feed-frames\";out=\"media:enc=utf8;fmt=json;record\"","title":"Drain","aliases":["drain"],"args":[{"media_urn":"media:live;synthetic","name":"frames","required":true,"is_sequence":true,"sources":[{"stdin":"media:feed-frames"}]}],"outputs":[{"media_urn":"media:enc=utf8;fmt=json;record","name":"summary","output_description":"What was drained"}]}]}]}
 """#
 
-private let FEED_CAP_URN = #"cap:drain;in="media:feed-frames";out="media:fmt=json;record""#
+private let FEED_CAP_URN = #"cap:drain;in="media:feed-frames";out="media:enc=utf8;fmt=json;record""#
 
 @available(macOS 10.15.4, iOS 13.4, *)
 final class LiveFeedTests: XCTestCase {
@@ -123,7 +123,7 @@ final class LiveFeedTests: XCTestCase {
         // manifests carry the declared surface spelling, so this is the seam
         // where a string compare would silently fail to find the arg.)
         let reordered = try makeContext(
-            capUrn: #"cap:in="media:feed-frames";drain;out="media:fmt=json;record""#
+            capUrn: #"cap:in="media:feed-frames";drain;out="media:enc=utf8;fmt=json;record""#
         )
         let reorderedStream = try reordered.ctx.resolve(
             streamId: "feed",
@@ -301,7 +301,7 @@ final class LiveFeedTests: XCTestCase {
     private func makeBlindContext(
         mainIn: String
     ) throws -> (ctx: LiveFeedContext, providers: LiveFeedProviders, handles: LiveFeedHandles) {
-        let capUrn = "cap:consume;in=\"\(mainIn)\";out=\"media:fmt=json;record\""
+        let capUrn = "cap:consume;in=\"\(mainIn)\";out=\"media:enc=utf8;fmt=json;record\""
         let escapedCap = capUrn.replacingOccurrences(of: "\"", with: "\\\"")
         let json = """
         {"name":"BlindCartridge","version":"1.0.0","channel":"release","registry_url":null,\
@@ -309,7 +309,7 @@ final class LiveFeedTests: XCTestCase {
         {"urn":"\(escapedCap)","title":"Consume","aliases":["consume"],"args":[\
         {"media_urn":"\(mainIn)","name":"frames","required":true,"is_sequence":true,\
         "sources":[{"stdin":"\(mainIn)"}]}],\
-        "outputs":[{"media_urn":"media:fmt=json;record","name":"summary","output_description":"What was consumed"}]}]}]}
+        "outputs":[{"media_urn":"media:enc=utf8;fmt=json;record","name":"summary","output_description":"What was consumed"}]}]}]}
         """
         let manifest = try JSONDecoder().decode(Manifest.self, from: Data(json.utf8))
         let providers = LiveFeedProviders()

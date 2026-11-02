@@ -445,16 +445,16 @@ final class CborFrameTests: XCTestCase {
     func test12718_streamStartNamesItsOutput() throws {
         let rid = MessageId.newUUID()
         // Two outputs of one cap may carry the same type: the name tells them apart.
-        let kept = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false)
-            .forOutput("media:enc=utf-8;kept")
-        let dropped = Frame.streamStart(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf-8", isSequence: false)
-            .forOutput("media:dropped;enc=utf-8")
+        let kept = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false)
+            .forOutput("media:enc=utf8;kept")
+        let dropped = Frame.streamStart(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf8", isSequence: false)
+            .forOutput("media:dropped;enc=utf8")
         let keptBack = try decodeFrame(try encodeFrame(kept))
         let droppedBack = try decodeFrame(try encodeFrame(dropped))
-        XCTAssertEqual(keptBack.outputUrn, "media:enc=utf-8;kept")
-        XCTAssertEqual(droppedBack.outputUrn, "media:dropped;enc=utf-8")
+        XCTAssertEqual(keptBack.outputUrn, "media:enc=utf8;kept")
+        XCTAssertEqual(droppedBack.outputUrn, "media:dropped;enc=utf8")
         XCTAssertEqual(keptBack.mediaUrn, droppedBack.mediaUrn, "the data's type is its own field")
-        XCTAssertEqual(keptBack.mediaUrn, "media:enc=utf-8")
+        XCTAssertEqual(keptBack.mediaUrn, "media:enc=utf8")
 
         // The unbounded form keeps both.
         let feed = Frame.streamStartUnbounded(reqId: rid, streamId: "s3", mediaUrn: "media:tick", isSequence: true)
@@ -465,7 +465,7 @@ final class CborFrameTests: XCTestCase {
 
         // The main output's stream and a request stream name no output, and
         // the key is not written.
-        let argument = Frame.streamStart(reqId: rid, streamId: "s4", mediaUrn: "media:enc=utf-8")
+        let argument = Frame.streamStart(reqId: rid, streamId: "s4", mediaUrn: "media:enc=utf8")
         let encoded = try encodeFrame(argument)
         guard case .map(let map)? = try CBOR.decode([UInt8](encoded)) else { return XCTFail("a frame is a map") }
         XCTAssertNil(map[.unsignedInt(21)], "a STREAM_START that names no output does not carry key 21")
@@ -474,7 +474,7 @@ final class CborFrameTests: XCTestCase {
 
         // Only a STREAM_START may name an output.
         var chunk = Frame.chunk(reqId: rid, streamId: "s1", seq: 0, payload: Data("x".utf8), chunkIndex: 0, checksum: Frame.computeChecksum(Data("x".utf8)))
-        chunk.output = "media:enc=utf-8;kept"
+        chunk.output = "media:enc=utf8;kept"
         XCTAssertThrowsError(try decodeFrame(try encodeFrame(chunk)), "a CHUNK naming an output is refused") { error in
             XCTAssertTrue("\(error)".contains("output"), "\(error)")
         }

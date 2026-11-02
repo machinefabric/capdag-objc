@@ -594,7 +594,7 @@ public final class InputPackage: Sequence, @unchecked Sendable {
 /// handler thinks about), use `findStreamConforming` instead. Equality
 /// matching against the bare form silently misses the rich form, and
 /// any conforming-but-unmatched stream then falls through to a
-/// downstream `media:enc=utf-8` catch-all and overwrites the prompt
+/// downstream `media:enc=utf8` catch-all and overwrites the prompt
 /// body — that's the gibberish-output bug.
 public func findStream(_ streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)], mediaUrn: String) -> Data? {
     guard let target = try? CSMediaUrn.fromString(mediaUrn) else { return nil }
@@ -2289,7 +2289,7 @@ internal func demuxMultiStream(
 
 /// Unified argument for cap invocation - arguments are identified by media_urn.
 public struct CapArgumentValue: Sendable {
-    /// Semantic identifier, e.g., "media:enc=utf-8;model-spec"
+    /// Semantic identifier, e.g., "media:enc=utf8;model-spec"
     public let mediaUrn: String
     /// Value bytes (UTF-8 for text, raw for binary)
     public let value: Data
@@ -3745,7 +3745,7 @@ public func identityCapDefinition() -> CapDefinition {
 /// by the Rust host, and a Swift cartridge that could not declare its output
 /// produced a manifest the other four implementations could not round-trip.
 public struct CapOutput: Codable, Sendable {
-    /// Media URN referencing a media definition, e.g. "media:enc=utf-8;tag":
+    /// Media URN referencing a media definition, e.g. "media:enc=utf8;tag":
     /// the output's identity, unique within the cap (RULE20).
     public let mediaUrn: String
     /// The output's name in the cap definition: required, unique within the

@@ -22,9 +22,9 @@ static CSMachinePlan *buildForeachPlan(void) {
                                      sources:@[[CSForEachSource sourceWithNode:@"cap_0" item:@"foreach_0_item_0"]]
                                         body:@[@"foreach_0_item_0", @"body_cap_0", @"body_cap_1"]]];
     [plan addNode:[CSMachineNode itemNode:@"foreach_0_item_0" foreach:@"foreach_0" source:@"cap_0" mediaUrn:@"media:pdf-page"]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=\"media:enc=utf-8;text\""]];
-    [plan addNode:[CSMachineNode capNode:@"body_cap_1" capUrn:@"cap:in=\"media:enc=utf-8;text\";out=\"media:decision;fmt=json;record\""]];
-    [plan addNode:[CSMachineNode capNode:@"cap_post" capUrn:@"cap:in=\"media:decision;fmt=json;record\";out=\"media:fmt=json\""]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_0" capUrn:@"cap:in=media:pdf-page;out=\"media:enc=utf8;text\""]];
+    [plan addNode:[CSMachineNode capNode:@"body_cap_1" capUrn:@"cap:in=\"media:enc=utf8;text\";out=\"media:decision;enc=utf8;fmt=json;record\""]];
+    [plan addNode:[CSMachineNode capNode:@"cap_post" capUrn:@"cap:in=\"media:decision;enc=utf8;fmt=json;record\";out=\"media:enc=utf8;fmt=json\""]];
     [plan addNode:[CSMachineNode outputNode:@"output" outputName:@"result" sourceNode:@"cap_post"]];
 
     [plan addEdge:[CSMachinePlanEdge directFrom:@"input_slot" to:@"cap_0"]];
@@ -121,8 +121,8 @@ static CSMachinePlan *buildForeachPlan(void) {
     XCTAssertFalse([linearPlan hasForeach]);
 
     CSMachinePlan *gatherPlan = [CSMachinePlan planWithName:@"gather_only"];
-    [gatherPlan addNode:[CSMachineNode inputSlotNode:@"input" slotName:@"input" mediaUrn:@"media:enc=utf-8" cardinality:CSInputCardinalitySingle]];
-    [gatherPlan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=\"media:enc=utf-8\";summarize;out=media:summary"]];
+    [gatherPlan addNode:[CSMachineNode inputSlotNode:@"input" slotName:@"input" mediaUrn:@"media:enc=utf8" cardinality:CSInputCardinalitySingle]];
+    [gatherPlan addNode:[CSMachineNode capNode:@"cap_0" capUrn:@"cap:in=\"media:enc=utf8\";summarize;out=media:summary"]];
     [gatherPlan addNode:[CSMachineNode collectNode:@"collect_0" inputNodes:@[@"cap_0"] outputMediaUrn:@"media:summary"]];
     [gatherPlan addNode:[CSMachineNode outputNode:@"output" outputName:@"result" sourceNode:@"collect_0"]];
     XCTAssertNil([gatherPlan validate]);
@@ -146,8 +146,8 @@ static CSMachinePlan *buildForeachPlan(void) {
     [plan addNode:[CSMachineNode forEachNode:@"foreach_1"
                                      sources:@[[CSForEachSource sourceWithNode:@"body_cap_0" item:@"foreach_1_item_0"]]
                                         body:@[@"foreach_1_item_0", @"inner_cap"]]];
-    [plan addNode:[CSMachineNode itemNode:@"foreach_1_item_0" foreach:@"foreach_1" source:@"body_cap_0" mediaUrn:@"media:enc=utf-8;text"]];
-    [plan addNode:[CSMachineNode capNode:@"inner_cap" capUrn:@"cap:in=\"media:enc=utf-8;text\";out=media:word"]];
+    [plan addNode:[CSMachineNode itemNode:@"foreach_1_item_0" foreach:@"foreach_1" source:@"body_cap_0" mediaUrn:@"media:enc=utf8;text"]];
+    [plan addNode:[CSMachineNode capNode:@"inner_cap" capUrn:@"cap:in=\"media:enc=utf8;text\";out=media:word"]];
     CSMachineNode *outer = [plan getNode:@"foreach_0"];
     outer.body = [outer.body arrayByAddingObject:@"foreach_1"];
     XCTAssertNil([plan validate]);

@@ -12,7 +12,7 @@
 @end
 
 static NSString * const CSVoidCap = @"cap:in=\"media:void\";test;out=\"media:void\"";
-static NSString * const CSTextCap = @"cap:in=\"media:enc=utf-8\";test;out=\"media:void\"";
+static NSString * const CSTextCap = @"cap:in=\"media:enc=utf8\";test;out=\"media:void\"";
 
 static CSCap *CSCapWithArgs(NSString *urn, NSArray<CSCapArg *> *args) {
     CSCap *cap = [CSCap capWithUrn:[CSCapUrn fromString:urn error:nil] title:@"Test" aliases:@[@"cmd"]];
@@ -21,7 +21,7 @@ static CSCap *CSCapWithArgs(NSString *urn, NSArray<CSCapArg *> *args) {
 }
 
 static CSCap *CSCapWithOutputs(NSString *outSpec, NSArray<CSCapOutput *> *outputs) {
-    NSString *urn = [NSString stringWithFormat:@"cap:in=\"media:enc=utf-8\";test;out=\"%@\"", outSpec];
+    NSString *urn = [NSString stringWithFormat:@"cap:in=\"media:enc=utf8\";test;out=\"%@\"", outSpec];
     CSCap *cap = [CSCap capWithUrn:[CSCapUrn fromString:urn error:nil] title:@"Test" aliases:@[@"cmd"]];
     [cap setOutputs:outputs];
     return cap;
@@ -71,7 +71,7 @@ static CSCapArg *CSPositionArg(NSString *urn, NSString *name, NSInteger position
 }
 
 static NSString * const CSVoidRecordCap = @"cap:in=\"media:void\";test;out=\"media:record\"";
-static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=\"media:record\"";
+static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf8\";test;out=\"media:record\"";
 
 // TEST578: RULE1 - duplicate media_urns rejected
 - (void)test578_rule1DuplicateMediaUrns {
@@ -135,7 +135,7 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 // TEST589: valid cap args with mixed sources pass all rules
 - (void)test589_allRulesPass {
     CSCapArg *input = [CSCapArg argWithMediaUrn:CSMediaString name:@"input" required:YES
-                                        sources:@[[CSArgSource positionSource:0], [CSArgSource stdinSourceWithMediaUrn:@"media:enc=utf-8"]]];
+                                        sources:@[[CSArgSource positionSource:0], [CSArgSource stdinSourceWithMediaUrn:@"media:enc=utf8"]]];
     CSCapArg *second = [CSCapArg argWithMediaUrn:CSMediaInteger name:@"arg1" required:NO sources:@[[CSArgSource positionSource:1]]];
     [self assertArgsPass:CSCapWithArgs(CSTextRecordCap, @[input, second])];
 }
@@ -169,7 +169,7 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 // TEST580: RULE3 - two args that declare a stdin source are rejected
 - (void)test580_rule3TwoStdinArgsRejected {
     NSString *err = [self refusedArgs:CSCapWithArgs(CSTextCap, @[
-        CSStdinArg(CSMediaString, @"input", @"media:enc=utf-8"),
+        CSStdinArg(CSMediaString, @"input", @"media:enc=utf8"),
         CSStdinArg(CSMediaInteger, @"other", @"media:"),
     ])];
     XCTAssertTrue([err containsString:@"RULE3"], @"%@", err);
@@ -182,12 +182,12 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 // nothing to say which of them a piped value is.
 - (void)test581_rule3IdenticalStdinUrnsAreStillTwoMainInputs {
     NSString *err = [self refusedArgs:CSCapWithArgs(CSTextCap, @[
-        CSStdinArg(CSMediaString, @"input", @"media:enc=utf-8"),
-        CSStdinArg(CSMediaInteger, @"other", @"media:enc=utf-8"),
+        CSStdinArg(CSMediaString, @"input", @"media:enc=utf8"),
+        CSStdinArg(CSMediaInteger, @"other", @"media:enc=utf8"),
     ])];
     XCTAssertTrue([err containsString:@"RULE3"], @"%@", err);
     // One is the main input; a cap of one is fine.
-    [self assertArgsPass:CSCapWithArgs(CSTextCap, @[CSStdinArg(CSMediaString, @"input", @"media:enc=utf-8")])];
+    [self assertArgsPass:CSCapWithArgs(CSTextCap, @[CSStdinArg(CSMediaString, @"input", @"media:enc=utf8")])];
 }
 
 // TEST12705: RULE15 - the stdin argument's URN is the cap's `in=`, as a tagged
@@ -195,7 +195,7 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 - (void)test12705_rule15TheStdinArgumentIsTheCapsInput {
     CSCap *(^capOf)(NSString *) = ^CSCap *(NSString *stdinUrn) {
         return CSCapWithArgs(@"cap:in=\"media:document;ext=pdf\";test;out=\"media:record\"",
-                             @[CSStdinArg(@"media:enc=utf-8;file-path", @"document", stdinUrn)]);
+                             @[CSStdinArg(@"media:enc=utf8;file-path", @"document", stdinUrn)]);
     };
     [self assertArgsPass:capOf(@"media:document;ext=pdf")];
     [self assertArgsPass:capOf(@"media:ext=pdf;document")];  // tag order is not identity
@@ -228,8 +228,8 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 // TEST12707: RULE18 - an argument says what it accepts in one place; and what
 // it accepts is not what it is delivered under.
 - (void)test12707_rule18AcceptsAndTheTwoUrnsOfAnArgument {
-    NSString *series = @"media:fmt=json;list;record;time-series";
-    NSString *own = @"media:benchmark;fmt=json;list;record;time-series";
+    NSString *series = @"media:enc=utf8;fmt=json;list;record;time-series";
+    NSString *own = @"media:benchmark;enc=utf8;fmt=json;list;record;time-series";
     CSCapArg *declared = CSFlagArg(own, @"benchmark", @"--benchmark");
     CSCapArg *benchmark = [declared argAccepting:series];
     // It accepts a plain series, and is delivered under its own URN: two args
@@ -246,7 +246,7 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
     XCTAssertEqualObjects([benchmark toDictionary][@"name"], @"benchmark", @"the name is written");
 
     // The main input accepts, and is delivered under, its stdin URN.
-    CSCapArg *main = CSStdinArg(@"media:enc=utf-8;file-path", @"path", series);
+    CSCapArg *main = CSStdinArg(@"media:enc=utf8;file-path", @"path", series);
     XCTAssertEqualObjects([main acceptedUrn], series, @"the main input accepts its stdin URN");
     XCTAssertEqualObjects([main streamUrn], series, @"and is delivered under it");
     // What it is piped is what it accepts, whatever else it says (and saying
@@ -263,14 +263,14 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 
     // `accepts` beside a stdin source says it twice.
     NSString *err = [self refusedArgs:CSCapWithArgs(urn, @[[main argAccepting:series]])];
-    XCTAssertTrue([err containsString:@"RULE18"] && [err containsString:@"media:enc=utf-8;file-path"], @"%@", err);
+    XCTAssertTrue([err containsString:@"RULE18"] && [err containsString:@"media:enc=utf8;file-path"], @"%@", err);
 }
 
 // TEST12708: RULE19, RULE20 - outputs have well-formed, distinct names and
 // distinct media URNs, compared as URNs.
 - (void)test12708_rule19Rule20OutputNamesAndIdentities {
-    NSString *fitUrn = @"media:fmt=json;record;regression";
-    NSString *residuals = @"media:fmt=json;list;record;residual";
+    NSString *fitUrn = @"media:enc=utf8;fmt=json;record;regression";
+    NSString *residuals = @"media:enc=utf8;fmt=json;list;record;residual";
     CSCapOutput *fit = CSOutput(fitUrn, @"fit");
     [self assertOutputsPass:CSCapWithOutputs(fitUrn, @[fit, CSOutput(residuals, @"residuals")])];
 
@@ -281,7 +281,7 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
     err = [self refusedOutputs:CSCapWithOutputs(fitUrn, @[fit, CSOutput(residuals, @"fit")])];
     XCTAssertTrue([err containsString:@"RULE19"] && [err containsString:@"share the name 'fit'"], @"%@", err);
     // The same URN with its tags in another order is the same output.
-    err = [self refusedOutputs:CSCapWithOutputs(fitUrn, @[fit, CSOutput(@"media:regression;record;fmt=json", @"again")])];
+    err = [self refusedOutputs:CSCapWithOutputs(fitUrn, @[fit, CSOutput(@"media:regression;record;fmt=json;enc=utf8", @"again")])];
     XCTAssertTrue([err containsString:@"RULE20"], @"%@", err);
     err = [self refusedOutputs:CSCapWithOutputs(fitUrn, @[fit, CSOutput(@"not a urn", @"broken")])];
     XCTAssertTrue([err containsString:@"RULE20"] && [err containsString:@"not a media URN"], @"%@", err);
@@ -290,38 +290,38 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 // TEST12709: RULE21 - exactly one output is the main one, the cap's `out=`; a
 // cap whose `out=` is void declares none.
 - (void)test12709_rule21ExactlyOneMainOutput {
-    NSString *fitUrn = @"media:fmt=json;record;regression";
-    NSString *err = [self refusedOutputs:CSCapWithOutputs(fitUrn, @[CSOutput(@"media:fmt=json;list;record;residual", @"residuals")])];
+    NSString *fitUrn = @"media:enc=utf8;fmt=json;record;regression";
+    NSString *err = [self refusedOutputs:CSCapWithOutputs(fitUrn, @[CSOutput(@"media:enc=utf8;fmt=json;list;record;residual", @"residuals")])];
     XCTAssertTrue([err containsString:@"RULE21"] && [err containsString:@"0 outputs"], @"%@", err);
     XCTAssertTrue([[self refusedOutputs:CSCapWithOutputs(fitUrn, @[])] containsString:@"RULE21"], @"no output at all");
 
-    CSCap *one = CSCapWithOutputs(fitUrn, @[CSOutput(@"media:regression;fmt=json;record", @"fit")]);
+    CSCap *one = CSCapWithOutputs(fitUrn, @[CSOutput(@"media:regression;fmt=json;record;enc=utf8", @"fit")]);
     [self assertOutputsPass:one];  // the main output is found by URN equivalence
     XCTAssertEqualObjects([one mainOutput].name, @"fit", @"the main output");
     XCTAssertEqualObjects([one outputNamed:@"fit"], [one mainOutput], @"and it is the one of that name");
     XCTAssertNil([one outputNamed:@"other"], @"no output of another name");
     XCTAssertNil([one outputByUrn:@"not a urn"], @"what is no URN identifies no output");
     // The main output is the one `out=` names, wherever it is declared.
-    CSCap *second = CSCapWithOutputs(fitUrn, @[CSOutput(@"media:fmt=json;list;record;residual", @"residuals"), CSOutput(fitUrn, @"fit")]);
+    CSCap *second = CSCapWithOutputs(fitUrn, @[CSOutput(@"media:enc=utf8;fmt=json;list;record;residual", @"residuals"), CSOutput(fitUrn, @"fit")]);
     [self assertOutputsPass:second];
     XCTAssertEqualObjects([second mainOutput].name, @"fit", @"the main output is found by its URN, not its place");
 
     CSCap *empty = CSCapWithOutputs(@"media:void", @[]);
     [self assertOutputsPass:empty];
     XCTAssertNil([empty mainOutput], @"a void cap has no main output");
-    err = [self refusedOutputs:CSCapWithOutputs(@"media:void", @[CSOutput(@"media:enc=utf-8", @"text")])];
+    err = [self refusedOutputs:CSCapWithOutputs(@"media:void", @[CSOutput(@"media:enc=utf8", @"text")])];
     XCTAssertTrue([err containsString:@"RULE21"] && [err containsString:@"media:void"], @"%@", err);
 }
 
 // TEST12710: RULE22 - only a non-main output of a cap that takes an input may
 // carry that input's type.
 - (void)test12710_rule22WhatAnOutputCarries {
-    NSString *kept = @"media:enc=utf-8;kept";
-    CSCapOutput *dropped = [[CSOutput(@"media:enc=utf-8;dropped", @"no") outputAsOptional:YES] outputCarryingInput];
+    NSString *kept = @"media:enc=utf8;kept";
+    CSCapOutput *dropped = [[CSOutput(@"media:enc=utf8;dropped", @"no") outputAsOptional:YES] outputCarryingInput];
     XCTAssertEqualObjects(dropped.carries, CSOutputCarriesInput, @"it carries the input");
     XCTAssertTrue(dropped.optional, @"and stays optional");
     // In the other order too: each keeps what the other declared.
-    CSCapOutput *reversed = [[CSOutput(@"media:enc=utf-8;dropped", @"no") outputCarryingInput] outputAsOptional:YES];
+    CSCapOutput *reversed = [[CSOutput(@"media:enc=utf8;dropped", @"no") outputCarryingInput] outputAsOptional:YES];
     XCTAssertEqualObjects(reversed.carries, CSOutputCarriesInput);
     XCTAssertTrue(reversed.optional);
     [self assertOutputsPass:CSCapWithOutputs(kept, @[[CSOutput(kept, @"yes") outputAsOptional:YES], dropped])];
@@ -343,9 +343,9 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
     NSString *err = [self refusedOutputs:CSCapWithOutputs(kept, @[[CSOutput(kept, @"yes") outputCarryingInput]])];
     XCTAssertTrue([err containsString:@"RULE22"] && [err containsString:@"main output"], @"%@", err);
 
-    CSCap *source = [CSCap capWithUrn:[CSCapUrn fromString:@"cap:in=\"media:void\";now;out=\"media:enc=utf-8;stamp\"" error:nil]
+    CSCap *source = [CSCap capWithUrn:[CSCapUrn fromString:@"cap:in=\"media:void\";now;out=\"media:enc=utf8;stamp\"" error:nil]
                                 title:@"Now" aliases:@[@"now"]];
-    [source setOutputs:@[CSOutput(@"media:enc=utf-8;stamp", @"stamp"), [CSOutput(@"media:enc=utf-8;echo", @"echo") outputCarryingInput]]];
+    [source setOutputs:@[CSOutput(@"media:enc=utf8;stamp", @"stamp"), [CSOutput(@"media:enc=utf8;echo", @"echo") outputCarryingInput]]];
     err = [self refusedOutputs:source];
     XCTAssertTrue([err containsString:@"RULE22"] && [err containsString:@"takes none"], @"%@", err);
 }
@@ -381,7 +381,7 @@ static NSString * const CSTextRecordCap = @"cap:in=\"media:enc=utf-8\";test;out=
 
     // Two arguments under one name.
     CSCap *twins = [self convertCap:YES];
-    [twins addArg:CSFlagArg(@"media:enc=utf-8", @"same", @"--a")];
+    [twins addArg:CSFlagArg(@"media:enc=utf8", @"same", @"--a")];
     [twins addArg:CSFlagArg(@"media:integer", @"same", @"--b")];
     error = nil;
     XCTAssertFalse([withCap(twins) validate:&error]);

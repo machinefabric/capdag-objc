@@ -150,14 +150,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Media defs without extensions field should have empty array
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;text",
+            @"urn": @"media:enc=utf8;text",
             @"media_type": @"text/plain",
             @"profile_uri": @"https://example.com"
         }
     ];
 
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf-8;text", registryWithSpecs(mediaDefs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8;text", registryWithSpecs(mediaDefs), &error);
 
     XCTAssertNil(error, @"Should not have error");
     XCTAssertNotNil(resolved, @"Should resolve successfully");
@@ -252,12 +252,12 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST100: Test ResolvedMediaDef is_record returns true when record marker is present
 - (void)test100_resolved_is_record {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:enc=utf-8;record",
+        @"urn": @"media:enc=utf8;record",
         @"media_type": @"application/json",
         @"title": @"Object"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf-8;record", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8;record", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isRecord]);
     XCTAssertTrue([resolved isScalar], @"record without list marker is scalar");
@@ -267,12 +267,12 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST101: Test ResolvedMediaDef is_scalar returns true when list marker is absent
 - (void)test101_resolved_is_scalar {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:enc=utf-8",
+        @"urn": @"media:enc=utf8",
         @"media_type": @"text/plain",
         @"title": @"String"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf-8", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isScalar]);
     XCTAssertFalse([resolved isRecord]);
@@ -282,12 +282,12 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST102: Test ResolvedMediaDef is_list returns true when list marker is present
 - (void)test102_resolved_is_list {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:enc=utf-8;list",
+        @"urn": @"media:enc=utf8;list",
         @"media_type": @"application/json",
         @"title": @"String Array"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf-8;list", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8;list", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isList]);
     XCTAssertFalse([resolved isRecord]);
@@ -297,28 +297,28 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST103: Test ResolvedMediaDef is_json returns true when json tag is present
 - (void)test103_resolved_is_json {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:fmt=json;record",
+        @"urn": @"media:enc=utf8;fmt=json;record",
         @"media_type": @"application/json",
         @"title": @"JSON"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:fmt=json;record", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8;fmt=json;record", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertTrue([resolved isJSON]);
     XCTAssertTrue([resolved isRecord]);
 }
 
-// TEST104: Text-representability is now carried by the orthogonal `enc=` tag. The old is_text()/is_binary() delegates on ResolvedMediaDef are gone; a media is text iff its URN declares an encoding. `media:enc=utf-8` is plain UTF-8 text — has enc, is not JSON.
+// TEST104: Text-representability is now carried by the orthogonal `enc=` tag. The old is_text()/is_binary() delegates on ResolvedMediaDef are gone; a media is text iff its URN declares an encoding. `media:enc=utf8` is plain UTF-8 text — has enc, is not JSON.
 - (void)test104_resolved_is_text {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:enc=utf-8",
+        @"urn": @"media:enc=utf8",
         @"media_type": @"text/plain",
         @"title": @"Text"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf-8", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
-    XCTAssertTrue(CSMediaUrnHasEncoding(resolved.mediaUrn), @"media:enc=utf-8 is text-representable");
+    XCTAssertTrue(CSMediaUrnHasEncoding(resolved.mediaUrn), @"media:enc=utf8 is text-representable");
     XCTAssertFalse([resolved isJSON]);
 }
 
@@ -327,16 +327,16 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST6282: Test resolving a custom media URN from a registry-seeded media def
 - (void)test6282_resolve_custom_media_def {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:custom-spec;fmt=json",
+        @"urn": @"media:custom-spec;enc=utf8;fmt=json",
         @"media_type": @"application/json",
         @"title": @"Custom Spec",
         @"profile_uri": @"https://example.com/schema"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:custom-spec;fmt=json", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:custom-spec;enc=utf8;fmt=json", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertNil(error);
-    XCTAssertEqualObjects(resolved.mediaUrn, @"media:custom-spec;fmt=json");
+    XCTAssertEqualObjects(resolved.mediaUrn, @"media:custom-spec;enc=utf8;fmt=json");
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertEqualObjects(resolved.profile, @"https://example.com/schema");
     XCTAssertNil(resolved.schema);
@@ -351,16 +351,16 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
         }
     };
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:fmt=json;output-spec;record",
+        @"urn": @"media:enc=utf8;fmt=json;output-spec;record",
         @"media_type": @"application/json",
         @"title": @"Output Spec",
         @"profile_uri": @"https://example.com/schema/output",
         @"schema": schema
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:fmt=json;output-spec;record", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8;fmt=json;output-spec;record", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
-    XCTAssertEqualObjects(resolved.mediaUrn, @"media:fmt=json;output-spec;record");
+    XCTAssertEqualObjects(resolved.mediaUrn, @"media:enc=utf8;fmt=json;output-spec;record");
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertEqualObjects(resolved.profile, @"https://example.com/schema/output");
     XCTAssertNotNil(resolved.schema);
@@ -370,13 +370,13 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST6287: Test local media_defs definition overrides registry definition for same URN
 - (void)test6287_local_overrides_registry {
     NSArray<NSDictionary *> *specs = @[@{
-        @"urn": @"media:enc=utf-8",
+        @"urn": @"media:enc=utf8",
         @"media_type": @"application/json",
         @"title": @"Custom String",
         @"profile_uri": @"https://custom.example.com/str"
     }];
     NSError *error = nil;
-    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf-8", registryWithSpecs(specs), &error);
+    CSMediaDef *resolved = CSResolveMediaUrn(@"media:enc=utf8", registryWithSpecs(specs), &error);
     XCTAssertNotNil(resolved);
     XCTAssertEqualObjects(resolved.contentType, @"application/json");
     XCTAssertEqualObjects(resolved.profile, @"https://custom.example.com/str");

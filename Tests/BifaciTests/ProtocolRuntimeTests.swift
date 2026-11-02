@@ -344,7 +344,7 @@ final class ProtocolRuntimeTests: XCTestCase {
         let output = Bifaci.OutputStream(
             sender: sender,
             streamId: "s1",
-            mediaUrn: "media:enc=utf-8",
+            mediaUrn: "media:enc=utf8",
             requestId: rid,
             routingId: nil,
             maxChunk: 4,
@@ -393,7 +393,7 @@ final class ProtocolRuntimeTests: XCTestCase {
         let output = Bifaci.OutputStream(
             sender: sender,
             streamId: "s1",
-            mediaUrn: "media:enc=utf-8",
+            mediaUrn: "media:enc=utf8",
             requestId: rid,
             routingId: nil,
             maxChunk: 4,
@@ -434,7 +434,7 @@ final class ProtocolRuntimeTests: XCTestCase {
         let frames = BlockingQueue<Frame>()
 
         // Stream 16 chunks through a credited demux with window 8.
-        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false))
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false))
         // A CONFORMING producer: first burst = the initial window (8)...
         for i in 0..<8 {
             frames.push(makeChunk(rid: rid, streamId: "s1", index: UInt64(i), byte: UInt8(i)))
@@ -511,7 +511,7 @@ final class ProtocolRuntimeTests: XCTestCase {
         // Receiver negotiated a 32 window → batch threshold 16. The sender
         // (a different link) has a window of only 8: it emits 8 chunks and
         // stalls, BELOW the receiver's batch threshold.
-        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false))
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false))
         for i in 0..<8 {
             frames.push(makeChunk(rid: rid, streamId: "s1", index: UInt64(i), byte: UInt8(i)))
         }
@@ -569,7 +569,7 @@ final class ProtocolRuntimeTests: XCTestCase {
         let rid = MessageId.newUUID()
         let frames = BlockingQueue<Frame>()
 
-        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false))
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false))
         // Window is 2; a misbehaving sender pushes 3 chunks with no grants
         // possible (nothing consumed yet).
         for i in 0..<3 {
@@ -610,7 +610,7 @@ final class ProtocolRuntimeTests: XCTestCase {
         let frames = BlockingQueue<Frame>()
 
         // Announce an UNBOUNDED stream and send only the first item.
-        frames.push(Frame.streamStartUnbounded(reqId: rid, streamId: "live", mediaUrn: "media:enc=utf-8", isSequence: true))
+        frames.push(Frame.streamStartUnbounded(reqId: rid, streamId: "live", mediaUrn: "media:enc=utf8", isSequence: true))
         frames.push(makeChunk(rid: rid, streamId: "live", index: 0, byte: 0))
 
         let package = demuxMultiStream(frameIterator: AnyIterator { frames.dequeue() })
@@ -643,7 +643,7 @@ final class ProtocolRuntimeTests: XCTestCase {
             // Producer stays open — an unbounded collect would hang forever;
             // the guard must reject BEFORE consuming.
             return Bifaci.InputStream(
-                mediaUrn: "media:enc=utf-8",
+                mediaUrn: "media:enc=utf8",
                 rx: AnyIterator { queue.dequeue() },
                 unbounded: true
             )

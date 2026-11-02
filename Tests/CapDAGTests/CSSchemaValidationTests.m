@@ -67,14 +67,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // MediaDefs array with schema
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;user-data",
+            @"urn": @"media:enc=utf8;record;user-data",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/user-data",
             @"schema": schema
         }
     ];
 
-    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;user-data"
+    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;user-data"
                                              name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--user"]]
@@ -108,14 +108,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;user-data",
+            @"urn": @"media:enc=utf8;record;user-data",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/user-data",
             @"schema": schema
         }
     ];
 
-    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;user-data"
+    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;user-data"
                                              name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--user"]]
@@ -136,7 +136,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSSchemaValidationError *schemaError = (CSSchemaValidationError *)error;
     XCTAssertEqual(schemaError.schemaErrorType, CSSchemaValidationErrorTypeMediaValidation);
-    XCTAssertEqualObjects(schemaError.argumentName, @"media:enc=utf-8;record;user-data");
+    XCTAssertEqualObjects(schemaError.argumentName, @"media:enc=utf8;record;user-data");
 }
 
 // Obj-C specific: unresolved spec ID fails hard during schema validation
@@ -206,14 +206,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;list;query-results",
+            @"urn": @"media:enc=utf8;list;query-results",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/query-results",
             @"schema": schema
         }
     ];
 
-    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;list;query-results"
+    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf8;list;query-results"
                                          name:@"output"
                                          outputDescription:@"Query results"];
 
@@ -247,14 +247,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;list;query-results",
+            @"urn": @"media:enc=utf8;list;query-results",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/query-results",
             @"schema": schema
         }
     ];
 
-    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;list;query-results"
+    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf8;list;query-results"
                                          name:@"output"
                                          outputDescription:@"Query results"];
 
@@ -280,8 +280,8 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST6370: Integration with input validation
 - (void)test6370_IntegrationWithInputValidation {
     // Create cap with schema-enabled arguments
-    // Use media:enc=utf-8;record instead of media:object to indicate textable object data
-    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record"] tag:@"op" value:@"process"] tag:@"target" value:@"user"] build:nil];
+    // Use media:enc=utf8;record instead of media:object to indicate textable object data
+    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf8;record"] tag:@"op" value:@"process"] tag:@"target" value:@"user"] build:nil];
 
     NSDictionary *userSchema = @{
         @"type": @"object",
@@ -295,14 +295,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;user",
+            @"urn": @"media:enc=utf8;record;user",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/user",
             @"schema": userSchema
         }
     ];
 
-    CSCapArg *userArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;user"
+    CSCapArg *userArg = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;user"
                                             name:@"user"
                                             required:YES
                                              sources:@[[CSArgSource cliFlagSource:@"--user"]]
@@ -352,9 +352,9 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST6373: Integration with output validation
 - (void)test6373_IntegrationWithOutputValidation {
     // Create cap with schema-enabled output
-    // Use media:enc=utf-8;record instead of media:object to indicate textable object data
+    // Use media:enc=utf8;record instead of media:object to indicate textable object data
     // The cap's out= is the output it is checked against: its main output (RULE21).
-    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;list;results-array"] tag:@"op" value:@"query"] tag:@"target" value:@"data"] build:nil];
+    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf8;list;results-array"] tag:@"op" value:@"query"] tag:@"target" value:@"data"] build:nil];
 
     NSDictionary *resultSchema = @{
         @"type": @"array",
@@ -371,14 +371,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;list;results-array",
+            @"urn": @"media:enc=utf8;list;results-array",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/results-array",
             @"schema": resultSchema
         }
     ];
 
-    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;list;results-array"
+    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf8;list;results-array"
                                          name:@"output"
                                          outputDescription:@"Query results array"];
 
@@ -455,14 +455,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;payload",
+            @"urn": @"media:enc=utf8;record;payload",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/payload",
             @"schema": complexSchema
         }
     ];
 
-    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;payload"
+    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;payload"
                                              name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--payload"]]
@@ -527,14 +527,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;test-arg",
+            @"urn": @"media:enc=utf8;record;test-arg",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/test-arg",
             @"schema": schema
         }
     ];
 
-    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;test-arg"
+    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;test-arg"
                                              name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--test"]]
@@ -555,7 +555,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     CSSchemaValidationError *schemaError = (CSSchemaValidationError *)error;
     XCTAssertEqual(schemaError.schemaErrorType, CSSchemaValidationErrorTypeMediaValidation);
-    XCTAssertEqualObjects(schemaError.argumentName, @"media:enc=utf-8;record;test-arg");
+    XCTAssertEqualObjects(schemaError.argumentName, @"media:enc=utf8;record;test-arg");
     XCTAssertNotNil(schemaError.validationErrors);
     XCTAssertTrue(schemaError.validationErrors.count > 0, @"Should have validation error details");
 }
@@ -625,13 +625,13 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     // Test that media definitions without schema skip schema validation
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;text-input",
+            @"urn": @"media:enc=utf8;text-input",
             @"media_type": @"text/plain",
             @"profile_uri": @"https://example.com/schema/text-input"
         }
     ];
 
-    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;text-input"
+    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf8;text-input"
                                              name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--input"]]
@@ -672,14 +672,14 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;large-data",
+            @"urn": @"media:enc=utf8;record;large-data",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/large-data",
             @"schema": schema
         }
     ];
 
-    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;large-data"
+    CSCapArg *argument = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;large-data"
                                              name:@"argument"
                                              required:YES
                                               sources:@[[CSArgSource cliFlagSource:@"--data"]]
@@ -711,10 +711,10 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST6390: Full cap validation with media defs
 - (void)test6390_FullCapValidationWithMediaDefs {
     // Test complete cap validation flow with mediaDefs resolution
-    // Use media:enc=utf-8;record instead of media:object to indicate textable object data
+    // Use media:enc=utf8;record instead of media:object to indicate textable object data
     NSError *error = nil;
     // The cap's out= is its one output: the main output (RULE21).
-    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf-8;record;transform-output"] tag:@"format" value:@"json"] tag:@"op" value:@"transform"] build:&error];
+    CSCapUrn *urn = [[[[[[CSCapUrnBuilder builder] inSpec:@"media:void"] outSpec:@"media:enc=utf8;record;transform-output"] tag:@"format" value:@"json"] tag:@"op" value:@"transform"] build:&error];
     XCTAssertNotNil(urn);
 
     NSDictionary *inputSchema = @{
@@ -743,27 +743,27 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     NSArray<NSDictionary *> *mediaDefs = @[
         @{
-            @"urn": @"media:enc=utf-8;record;transform-input",
+            @"urn": @"media:enc=utf8;record;transform-input",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/transform-input",
             @"schema": inputSchema
         },
         @{
-            @"urn": @"media:enc=utf-8;record;transform-output",
+            @"urn": @"media:enc=utf8;record;transform-output",
             @"media_type": @"application/json",
             @"profile_uri": @"https://example.com/schema/transform-output",
             @"schema": outputSchema
         }
     ];
 
-    CSCapArg *inputArg = [CSCapArg argWithMediaUrn:@"media:enc=utf-8;record;transform-input"
+    CSCapArg *inputArg = [CSCapArg argWithMediaUrn:@"media:enc=utf8;record;transform-input"
                                              name:@"input"
                                              required:YES
                                               sources:@[[CSArgSource positionSource:0]]
                                        argDescription:@"Transformation input"
                                          defaultValue:nil];
 
-    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf-8;record;transform-output"
+    CSCapOutput *output = [CSCapOutput outputWithMediaUrn:@"media:enc=utf8;record;transform-output"
                                          name:@"output"
                                          outputDescription:@"Transformation result"];
 

@@ -109,7 +109,7 @@ final class DevTests: XCTestCase {
 
             // The project name reaches the cap it declares, in every language.
             XCTAssertTrue(
-                sources.contains("media:enc=utf-8;\(name)-input"),
+                sources.contains("media:enc=utf8;\(name)-input"),
                 "\(language.id): input media URN is not seeded from the project name")
             XCTAssertFalse(
                 sources.contains("command="),
@@ -215,7 +215,7 @@ final class DevTests: XCTestCase {
         let project = (root as NSString).appendingPathComponent("proj")
         try FileManager.default.createDirectory(
             atPath: project, withIntermediateDirectories: true)
-        let capURN = #"cap:greet;in="media:enc=utf-8";out="media:enc=utf-8;greeting""#
+        let capURN = #"cap:greet;in="media:enc=utf8";out="media:enc=utf8;greeting""#
         try writeStubEntry(project, name: "greeter", alias: "greet", capURN: capURN)
 
         let userDir = (root as NSString).appendingPathComponent("cartridges")
@@ -284,7 +284,7 @@ final class DevTests: XCTestCase {
     // maps to a DIFFERENT cap is rejected; a brand-new alias, and a dev cap that
     // matches an existing fabric cap exactly, are both accepted.
     func test7158_fabricConflictGuard() throws {
-        let alphaURN = #"cap:alpha;in="media:enc=utf-8";out="media:enc=utf-8;alpha""#
+        let alphaURN = #"cap:alpha;in="media:enc=utf8";out="media:enc=utf8;alpha""#
         let alpha = CapDefinition(urn: alphaURN, title: "Alpha", aliases: ["alpha"])
 
         // The fabric knows exactly one alias: `alpha`.
@@ -292,7 +292,7 @@ final class DevTests: XCTestCase {
 
         // A dev cap claiming `alpha` but with a DIFFERENT URN => conflict.
         let clashing = CapDefinition(
-            urn: #"cap:beta;in="media:enc=utf-8";out="media:enc=utf-8;beta""#,
+            urn: #"cap:beta;in="media:enc=utf8";out="media:enc=utf8;beta""#,
             title: "Clash",
             aliases: ["alpha"])
         XCTAssertThrowsError(
@@ -306,7 +306,7 @@ final class DevTests: XCTestCase {
 
         // A brand-new alias the fabric never heard of => fine.
         let fresh = CapDefinition(
-            urn: #"cap:gamma;in="media:enc=utf-8";out="media:enc=utf-8;gamma""#,
+            urn: #"cap:gamma;in="media:enc=utf8";out="media:enc=utf8;gamma""#,
             title: "Fresh",
             aliases: ["gamma"])
         XCTAssertNoThrow(try checkNoFabricConflict(resolveAlias: resolve, cap: fresh))

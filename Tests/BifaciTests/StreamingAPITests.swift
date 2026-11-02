@@ -409,7 +409,7 @@ final class StreamingAPITests: XCTestCase {
         let output = Bifaci.OutputStream(
             sender: mockSender,
             streamId: "test-stream",
-            mediaUrn: "media:enc=utf-8",
+            mediaUrn: "media:enc=utf8",
             requestId: .uint(1),
             routingId: nil,
             maxChunk: 256_000
@@ -453,7 +453,7 @@ final class StreamingAPITests: XCTestCase {
         let output = Bifaci.OutputStream(
             sender: mockSender,
             streamId: "test-stream",
-            mediaUrn: "media:enc=utf-8",
+            mediaUrn: "media:enc=utf8",
             requestId: .uint(1),
             routingId: nil,
             maxChunk: 256_000
@@ -693,19 +693,19 @@ final class StreamingAPITests: XCTestCase {
     func test678_findStreamEquivalentUrnDifferentTagOrder() throws {
         // One stream with tags in one order
         let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
-            ("media:fmt=json;record;llm-generation-request", Data("data".utf8), nil),
+            ("media:fmt=json;record;llm-generation-request;enc=utf8", Data("data".utf8), nil),
         ]
 
         // Look for it with tags in a DIFFERENT order — is_equivalent is order-independent
-        let found = findStream(streams, mediaUrn: "media:llm-generation-request;fmt=json;record")
+        let found = findStream(streams, mediaUrn: "media:llm-generation-request;fmt=json;record;enc=utf8")
         XCTAssertNotNil(found, "Same tags in different order must match via is_equivalent")
         XCTAssertEqual(String(data: found!, encoding: .utf8), "data")
     }
 
-    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:fmt=json;llm-generation-request;record".
+    // TEST679: find_stream with base URN vs full URN fails — is_equivalent is strict This is the root cause of the cartridge_client.rs bug. Sender sent "media:llm-generation-request" but receiver looked for "media:enc=utf8;fmt=json;llm-generation-request;record".
     func test679_findStreamBaseUrnDoesNotMatchFullUrn() throws {
         let streams: [(mediaUrn: String, bytes: Data, meta: StreamMeta?)] = [
-            ("media:llm-generation-request;fmt=json;record", Data("data".utf8), nil),
+            ("media:llm-generation-request;fmt=json;record;enc=utf8", Data("data".utf8), nil),
         ]
 
         // Base URN should NOT match full URN (strict equivalence)
@@ -1017,7 +1017,7 @@ final class StreamingAPITests: XCTestCase {
             code: "INVALID_INPUT",
             attributionClass: .input,
             message: "prompt is invalid",
-            argUrn: "media:enc=utf-8;prompt"
+            argUrn: "media:enc=utf8;prompt"
         )
 
         let identity = classifyHandlerError(error)
@@ -1025,7 +1025,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(identity.code, "INVALID_INPUT")
         XCTAssertEqual(identity.attributionClass, .input)
         XCTAssertEqual(identity.message, "prompt is invalid")
-        XCTAssertEqual(identity.argUrn, "media:enc=utf-8;prompt")
+        XCTAssertEqual(identity.argUrn, "media:enc=utf8;prompt")
     }
 }
 

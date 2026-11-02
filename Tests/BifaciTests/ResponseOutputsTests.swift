@@ -20,11 +20,11 @@ func fullNetwork() -> NetworkAccess {
 }
 import Ops
 
-private let SERIES = "media:fmt=json;record;series"
-private let FIT = "media:fmt=json;record;regression"
-private let RESIDUALS = "media:fmt=json;list;record;residual"
-private let NOTE = "media:enc=utf-8;note"
-private let REJECTED = "media:enc=utf-8;rejected"
+private let SERIES = "media:enc=utf8;fmt=json;record;series"
+private let FIT = "media:enc=utf8;fmt=json;record;regression"
+private let RESIDUALS = "media:enc=utf8;fmt=json;list;record;residual"
+private let NOTE = "media:enc=utf8;note"
+private let REJECTED = "media:enc=utf8;rejected"
 
 /// `regress`: takes a series; its main output, the fit, is not the first it
 /// declares; the residuals are a sequence; a note may not fire; a rejection
@@ -146,10 +146,10 @@ final class ResponseOutputsTests: XCTestCase {
 
         // The main output is the one whose URN is `out=`, wherever it is declared.
         XCTAssertTrue(req.output() === (try req.output(for: FIT)))
-        XCTAssertTrue(req.output() === (try req.output(for: "media:regression;record;fmt=json")))
+        XCTAssertTrue(req.output() === (try req.output(for: "media:regression;record;fmt=json;enc=utf8")))
         // Another output, with its tags in another order, is the same stream.
         let residuals = try req.output(for: RESIDUALS)
-        XCTAssertTrue(residuals === (try req.output(for: "media:residual;record;list;fmt=json")))
+        XCTAssertTrue(residuals === (try req.output(for: "media:residual;record;list;fmt=json;enc=utf8")))
         XCTAssertFalse(residuals === req.output())
 
         for (urn, sequence) in [(FIT, false), (RESIDUALS, true), (NOTE, false), (REJECTED, false)] {
@@ -174,7 +174,7 @@ final class ResponseOutputsTests: XCTestCase {
 
         // What the cap does not declare is not an output of it — a tag short or
         // a tag more is another URN.
-        for unknown in ["media:enc=utf-8", "media:fmt=json;record", "media:enc=utf-8;note;extra", "not a urn"] {
+        for unknown in ["media:enc=utf8", "media:enc=utf8;fmt=json;record", "media:enc=utf8;note;extra", "not a urn"] {
             XCTAssertThrowsError(try req.output(for: unknown)) { error in
                 guard case CartridgeRuntimeError.unknownOutput(let capUrn, let output) = error else {
                     return XCTFail("\(unknown): expected unknownOutput, got \(error)")
@@ -239,24 +239,24 @@ final class ResponseOutputsTests: XCTestCase {
         XCTAssertFalse(sender.snapshot().contains { $0.frameType == .streamEnd })
 
         // A cap whose `out=` is void has no output: nothing is opened for it.
-        (outputs, sender) = try recordedOutputs("cap:in=\"media:enc=utf-8\";sink;out=media:void", nil)
+        (outputs, sender) = try recordedOutputs("cap:in=\"media:enc=utf8\";sink;out=media:void", nil)
         try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         XCTAssertTrue(sender.snapshot().isEmpty)
 
         // The main output's label follows the cap's effect, and is not its
         // name: a cap that passes its input through labels the stream with the
         // input's type and names no output.
-        let pass = "cap:effect=none;in=\"media:enc=utf-8;line\";out=\"media:enc=utf-8\";pass"
+        let pass = "cap:effect=none;in=\"media:enc=utf8;line\";out=\"media:enc=utf8\";pass"
         (outputs, sender) = try recordedOutputs(pass, nil)
         try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         sent = starts(sender)
         XCTAssertEqual(sent.count, 1)
         XCTAssertNil(sent.first?.output, "the main output's stream names no output")
         XCTAssertEqual(sent.first?.label, try deriveResponseMedia(capUrn: pass))
-        XCTAssertNotEqual(sent.first?.label, "media:enc=utf-8", "the label is the input's type")
+        XCTAssertNotEqual(sent.first?.label, "media:enc=utf8", "the label is the input's type")
 
         // A cap served without a definition answers on the one output its URN states.
-        (outputs, sender) = try recordedOutputs("cap:in=\"media:enc=utf-8\";count;out=\"media:integer\"", nil)
+        (outputs, sender) = try recordedOutputs("cap:in=\"media:enc=utf8\";count;out=\"media:integer\"", nil)
         try dispatchOp(op: AnyOp(SilentOp()), input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
         sent = starts(sender)
         XCTAssertEqual(sent.count, 1)
@@ -268,13 +268,13 @@ final class ResponseOutputsTests: XCTestCase {
             let out = try CSCapUrn.fromString(urn).getOutSpec()
             let cap = CapDefinition(
                 urn: urn, title: name, aliases: [name],
-                args: [CapArg(mediaUrn: "media:enc=utf-8", name: "input", required: true, sources: [.stdin("media:enc=utf-8")])],
+                args: [CapArg(mediaUrn: "media:enc=utf8", name: "input", required: true, sources: [.stdin("media:enc=utf8")])],
                 outputs: [declare(out)]
             )
             return (cap, manifest([cap]))
         }
         // A main output declared a sequence, that nobody wrote to, is an empty sequence.
-        let (listing, listingManifest) = try oneOutput("cap:in=\"media:enc=utf-8\";list;out=\"media:enc=utf-8;line\"", "list") {
+        let (listing, listingManifest) = try oneOutput("cap:in=\"media:enc=utf8\";list;out=\"media:enc=utf8;line\"", "list") {
             CapOutput(mediaUrn: $0, name: "made", outputDescription: "What it makes", isSequence: true)
         }
         (outputs, sender) = try recordedOutputs(listing.urn, listingManifest)
@@ -285,7 +285,7 @@ final class ResponseOutputsTests: XCTestCase {
         XCTAssertEqual(sent.first?.isSequence, true)
         // A main output its definition declares optional is not sent when
         // nobody wrote to it.
-        let (maybe, maybeManifest) = try oneOutput("cap:in=\"media:enc=utf-8\";maybe;out=\"media:integer\"", "maybe") {
+        let (maybe, maybeManifest) = try oneOutput("cap:in=\"media:enc=utf8\";maybe;out=\"media:integer\"", "maybe") {
             CapOutput(mediaUrn: $0, name: "made", outputDescription: "What it makes", optional: true)
         }
         (outputs, sender) = try recordedOutputs(maybe.urn, maybeManifest)
@@ -307,13 +307,13 @@ final class ResponseOutputsTests: XCTestCase {
     func test12721_aRequestStreamNamesNoOutput() throws {
         let sender = RecordingFrameSender()
         let call = PeerCall(sender: sender, requestId: .newUUID(), maxChunk: DEFAULT_MAX_CHUNK, responseRx: AnyIterator { nil })
-        let arg = call.arg(mediaUrn: "media:enc=utf-8;prompt")
+        let arg = call.arg(mediaUrn: "media:enc=utf8;prompt")
         XCTAssertNil(arg.outputUrn)
         try arg.start(isSequence: false)
         let sent = starts(sender)
         XCTAssertEqual(sent.count, 1)
         XCTAssertNil(sent.first?.output, "an argument stream does not carry key 21")
-        XCTAssertEqual(sent.first?.label, "media:enc=utf-8;prompt")
+        XCTAssertEqual(sent.first?.label, "media:enc=utf8;prompt")
     }
 
     // TEST12731: a request stream names no output: an argument is identified
@@ -323,7 +323,7 @@ final class ResponseOutputsTests: XCTestCase {
     func test12731_aRequestStreamThatNamesAnOutputIsRefused() throws {
         let rid = MessageId.newUUID()
         func feed(_ named: String?) -> InputPackage {
-            var start = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:enc=utf-8")
+            var start = Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:enc=utf8")
             if let named { start = start.forOutput(named) }
             return demuxMultiStream(frameIterator: iterate([
                 start,
@@ -340,11 +340,11 @@ final class ResponseOutputsTests: XCTestCase {
 
         // The same stream naming an output: a response stream where an
         // argument belongs.
-        let named = feed("media:enc=utf-8;kept").makeIterator()
+        let named = feed("media:enc=utf8;kept").makeIterator()
         guard case .failure(.protocolError(let message))? = named.next() else {
             return XCTFail("expected a protocol error")
         }
-        XCTAssertTrue(message.contains("names an output") && message.contains("media:enc=utf-8;kept"), message)
+        XCTAssertTrue(message.contains("names an output") && message.contains("media:enc=utf8;kept"), message)
         XCTAssertNil(named.next(), "nothing of the request is read as an argument")
     }
 
@@ -354,9 +354,9 @@ final class ResponseOutputsTests: XCTestCase {
     // which may be the same type — and its data is not printed.
     func test12722_standardOutputCarriesTheMainOutput() throws {
         let rid = MessageId.newUUID()
-        let main = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false)
-        let other = Frame.streamStart(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf-8", isSequence: false)
-            .forOutput("media:enc=utf-8;dropped")
+        let main = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false)
+        let other = Frame.streamStart(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf8", isSequence: false)
+            .forOutput("media:enc=utf8;dropped")
         let sender = CliFrameSender.withoutNdjson()
         XCTAssertFalse(sender.isUnprintedStart(main))
         XCTAssertTrue(sender.isUnprintedStart(other))
@@ -383,10 +383,10 @@ final class ResponseOutputsTests: XCTestCase {
     // names no stream reaches a callee with several only by guessing.
     func test12730_aPeerResponseHasAStreamPerOutput() throws {
         let rid = MessageId.newUUID()
-        let rest = "media:enc=utf-8;split-rest"
+        let rest = "media:enc=utf8;split-rest"
         func text(_ t: String) -> CBOR { .byteString(Array(t.utf8)) }
         func start(_ stream: String, _ sequence: Bool) -> Frame {
-            Frame.streamStart(reqId: rid, streamId: stream, mediaUrn: "media:enc=utf-8", isSequence: sequence)
+            Frame.streamStart(reqId: rid, streamId: stream, mediaUrn: "media:enc=utf8", isSequence: sequence)
         }
         func frames() -> [Frame] {
             [

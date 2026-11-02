@@ -32,7 +32,7 @@
 // request spelled that way asked for a cap that takes everything, and found
 // none. The unknown side asks nothing; the stated side is held to.
 - (void)test12368_aQuestionMayLeaveASideUnknown {
-    CSCapUrn *pages = [self cap:@"cap:disbind;in=\"media:document;ext=pdf\";out=\"media:enc=utf-8;ext=txt;page\""];
+    CSCapUrn *pages = [self cap:@"cap:disbind;in=\"media:document;ext=pdf\";out=\"media:enc=utf8;ext=txt;page;plain-text\""];
     CSCapUrn *toJpeg = [self cap:@"cap:convert-image;in=\"media:ext=png;image\";out=\"media:ext=jpeg;image\""];
     CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
     CSCapUrn *passesThrough = [self cap:@"cap:decimate-sequence;effect=none"];

@@ -261,13 +261,13 @@ final class ProtocolTests: XCTestCase {
     // TEST7012: STREAM_START unbounded flag round-trips through CBOR; absent flag means bounded
     func test7012_streamStartUnboundedRoundtrip() throws {
         let rid = MessageId.newUUID()
-        let bounded = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf-8", isSequence: false)
+        let bounded = Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false)
         XCTAssertFalse(bounded.isUnbounded)
         var decoded = try decodeFrame(try encodeFrame(bounded))
         XCTAssertFalse(decoded.isUnbounded, "absent flag must read as bounded")
         XCTAssertNil(decoded.unbounded, "bounded frames omit the key")
 
-        let unbounded = Frame.streamStartUnbounded(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf-8", isSequence: true)
+        let unbounded = Frame.streamStartUnbounded(reqId: rid, streamId: "s2", mediaUrn: "media:enc=utf8", isSequence: true)
         XCTAssertTrue(unbounded.isUnbounded)
         decoded = try decodeFrame(try encodeFrame(unbounded))
         XCTAssertTrue(decoded.isUnbounded)

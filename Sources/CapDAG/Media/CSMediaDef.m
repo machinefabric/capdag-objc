@@ -17,13 +17,13 @@ NSErrorDomain const CSMediaDefErrorDomain = @"CSMediaDefErrorDomain";
 // BUILT-IN MEDIA URN CONSTANTS
 // ============================================================================
 
-NSString * const CSMediaString = @"media:enc=utf-8";
+NSString * const CSMediaString = @"media:enc=utf8";
 NSString * const CSMediaInteger = @"media:integer;numeric";
 NSString * const CSMediaNumber = @"media:numeric";
 NSString * const CSMediaBoolean = @"media:bool";
 NSString * const CSMediaObject = @"media:record";
 NSString * const CSMediaList = @"media:list";
-NSString * const CSMediaStringList = @"media:enc=utf-8;list";
+NSString * const CSMediaStringList = @"media:enc=utf8;list";
 NSString * const CSMediaIntegerList = @"media:integer;list;numeric";
 NSString * const CSMediaNumberList = @"media:list;numeric";
 NSString * const CSMediaBooleanList = @"media:bool;list";
@@ -55,87 +55,87 @@ NSString * const CSMediaMov = @"media:ext=mov;video";
 NSString * const CSMediaWebm = @"media:ext=webm;video";
 NSString * const CSMediaMkv = @"media:ext=mkv;video";
 // Semantic AI input types
-NSString * const CSMediaTextablePage = @"media:enc=utf-8;ext=txt;page;plain-text";
+NSString * const CSMediaTextablePage = @"media:enc=utf8;ext=txt;page;plain-text";
 // Document types (PRIMARY naming - type IS the format)
 NSString * const CSMediaPdf = @"media:document;ext=pdf";
 NSString * const CSMediaEpub = @"media:document;ext=epub";
 // Text format types (PRIMARY naming - type IS the format)
-NSString * const CSMediaMd = @"media:enc=utf-8;ext=md";
-NSString * const CSMediaTxt = @"media:enc=utf-8;ext=txt";
-NSString * const CSMediaRst = @"media:enc=utf-8;ext=rst";
-NSString * const CSMediaLog = @"media:enc=utf-8;ext=log";
-NSString * const CSMediaHtml = @"media:enc=utf-8;ext=html";
-NSString * const CSMediaXml = @"media:enc=utf-8;ext=xml";
-NSString * const CSMediaJson = @"media:fmt=json;record";
-NSString * const CSMediaJsonSchema = @"media:fmt=json;json-schema;record";
-NSString * const CSMediaYaml = @"media:fmt=yaml;record";
+NSString * const CSMediaMd = @"media:enc=utf8;ext=md;plain-text";
+NSString * const CSMediaTxt = @"media:enc=utf8;ext=txt;plain-text";
+NSString * const CSMediaRst = @"media:enc=utf8;ext=rst;plain-text";
+NSString * const CSMediaLog = @"media:enc=utf8;ext=log;plain-text";
+NSString * const CSMediaHtml = @"media:enc=utf8;ext=html";
+NSString * const CSMediaXml = @"media:enc=utf8;ext=xml";
+NSString * const CSMediaJson = @"media:enc=utf8;fmt=json;record";
+NSString * const CSMediaJsonSchema = @"media:enc=utf8;fmt=json;json-schema;record";
+NSString * const CSMediaYaml = @"media:enc=utf8;fmt=yaml;record";
 // Semantic input types
-NSString * const CSMediaModelSpec = @"media:enc=utf-8;model-spec";
-NSString * const CSMediaModelRepo = @"media:fmt=json;model-repo;record";
-NSString * const CSMediaHfToken = @"media:enc=utf-8;hf-token;secret";
-NSString * const CSMediaModelArchList = @"media:fmt=json;model-arch-list;record";
-NSString * const CSMediaModelSearchRequest = @"media:fmt=json;model-search-request;record";
-NSString * const CSMediaModelSearchResponse = @"media:fmt=json;model-search-response;record";
-NSString * const CSMediaModelFilterResolution = @"media:fmt=json;model-filter-resolution;record";
+NSString * const CSMediaModelSpec = @"media:enc=utf8;model-spec";
+NSString * const CSMediaModelRepo = @"media:enc=utf8;fmt=json;model-repo;record";
+NSString * const CSMediaHfToken = @"media:enc=utf8;hf-token;secret";
+NSString * const CSMediaModelArchList = @"media:enc=utf8;fmt=json;model-arch-list;record";
+NSString * const CSMediaModelSearchRequest = @"media:enc=utf8;fmt=json;model-search-request;record";
+NSString * const CSMediaModelSearchResponse = @"media:enc=utf8;fmt=json;model-search-response;record";
+NSString * const CSMediaModelFilterResolution = @"media:enc=utf8;fmt=json;model-filter-resolution;record";
 // Backend-narrowed model-spec supertypes
-NSString * const CSMediaModelSpecCandle = @"media:candle;enc=utf-8;model-spec";
-NSString * const CSMediaModelSpecGguf = @"media:enc=utf-8;gguf;model-spec";
-NSString * const CSMediaModelSpecMlx = @"media:enc=utf-8;mlx;model-spec";
+NSString * const CSMediaModelSpecCandle = @"media:candle;enc=utf8;model-spec";
+NSString * const CSMediaModelSpecGguf = @"media:enc=utf8;gguf;model-spec";
+NSString * const CSMediaModelSpecMlx = @"media:enc=utf8;mlx;model-spec";
 // Backend+use-case specific model-spec variants
-NSString * const CSMediaModelSpecGgufVision = @"media:enc=utf-8;gguf;model-spec;vision";
-NSString * const CSMediaModelSpecGgufLlm = @"media:enc=utf-8;gguf;llm;model-spec";
-NSString * const CSMediaModelSpecGgufEmbeddings = @"media:embeddings;enc=utf-8;gguf;model-spec";
-NSString * const CSMediaModelSpecMlxVision = @"media:enc=utf-8;mlx;model-spec;vision";
-NSString * const CSMediaModelSpecMlxLlm = @"media:enc=utf-8;llm;mlx;model-spec";
-NSString * const CSMediaModelSpecMlxEmbeddings = @"media:embeddings;enc=utf-8;mlx;model-spec";
-NSString * const CSMediaModelSpecCandleVision = @"media:candle;enc=utf-8;model-spec;vision";
-NSString * const CSMediaModelSpecCandleEmbeddings = @"media:candle;embeddings;enc=utf-8;model-spec";
-NSString * const CSMediaModelSpecCandleImageEmbeddings = @"media:candle;enc=utf-8;image-embeddings;model-spec";
-NSString * const CSMediaModelSpecCandleTranscription = @"media:candle;enc=utf-8;model-spec;transcription";
+NSString * const CSMediaModelSpecGgufVision = @"media:enc=utf8;gguf;model-spec;vision";
+NSString * const CSMediaModelSpecGgufLlm = @"media:enc=utf8;gguf;llm;model-spec";
+NSString * const CSMediaModelSpecGgufEmbeddings = @"media:embeddings;enc=utf8;gguf;model-spec";
+NSString * const CSMediaModelSpecMlxVision = @"media:enc=utf8;mlx;model-spec;vision";
+NSString * const CSMediaModelSpecMlxLlm = @"media:enc=utf8;llm;mlx;model-spec";
+NSString * const CSMediaModelSpecMlxEmbeddings = @"media:embeddings;enc=utf8;mlx;model-spec";
+NSString * const CSMediaModelSpecCandleVision = @"media:candle;enc=utf8;model-spec;vision";
+NSString * const CSMediaModelSpecCandleEmbeddings = @"media:candle;embeddings;enc=utf8;model-spec";
+NSString * const CSMediaModelSpecCandleImageEmbeddings = @"media:candle;enc=utf8;image-embeddings;model-spec";
+NSString * const CSMediaModelSpecCandleTranscription = @"media:candle;enc=utf8;model-spec;transcription";
 // File path type — single URN; cardinality lives on is_sequence.
-NSString * const CSMediaFilePath = @"media:enc=utf-8;file-path";
+NSString * const CSMediaFilePath = @"media:enc=utf8;file-path";
 // Semantic input types (continued)
-NSString * const CSMediaMlxModelPath = @"media:enc=utf-8;mlx-model-path";
+NSString * const CSMediaMlxModelPath = @"media:enc=utf8;mlx-model-path";
 // Semantic output types
-NSString * const CSMediaImageDescription = @"media:enc=utf-8;ext=txt;image-description;plain-text";
+NSString * const CSMediaImageDescription = @"media:enc=utf8;ext=txt;image-description;plain-text";
 NSString * const CSMediaModelDim = @"media:integer;model-dim;numeric";
-NSString * const CSMediaDownloadOutput = @"media:download-result;fmt=json;record";
-NSString * const CSMediaListOutput = @"media:fmt=json;model-list;record";
-NSString * const CSMediaStatusOutput = @"media:fmt=json;model-status;record";
-NSString * const CSMediaContentsOutput = @"media:fmt=json;model-contents;record";
-NSString * const CSMediaAvailabilityOutput = @"media:fmt=json;model-availability;record";
-NSString * const CSMediaPathOutput = @"media:fmt=json;model-path;record";
-NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;fmt=json;record";
-NSString * const CSMediaCaptionOutput = @"media:enc=utf-8;image-caption;record";
-NSString * const CSMediaPlainText = @"media:enc=utf-8;ext=txt;plain-text";
-NSString * const CSMediaTranscriptOutput = @"media:fmt=json;record;transcript";
-NSString * const CSMediaDecision = @"media:decision;fmt=json;record";
-NSString * const CSMediaAdapterSelection = @"media:adapter-selection;fmt=json;record";
+NSString * const CSMediaDownloadOutput = @"media:download-result;enc=utf8;fmt=json;record";
+NSString * const CSMediaListOutput = @"media:enc=utf8;fmt=json;model-list;record";
+NSString * const CSMediaStatusOutput = @"media:enc=utf8;fmt=json;model-status;record";
+NSString * const CSMediaContentsOutput = @"media:enc=utf8;fmt=json;model-contents;record";
+NSString * const CSMediaAvailabilityOutput = @"media:enc=utf8;fmt=json;model-availability;record";
+NSString * const CSMediaPathOutput = @"media:enc=utf8;fmt=json;model-path;record";
+NSString * const CSMediaEmbeddingVector = @"media:embedding-vector;enc=utf8;fmt=json;record";
+NSString * const CSMediaCaptionOutput = @"media:enc=utf8;image-caption;record";
+NSString * const CSMediaPlainText = @"media:enc=utf8;plain-text";
+NSString * const CSMediaTranscriptOutput = @"media:enc=utf8;fmt=json;record;transcript";
+NSString * const CSMediaDecision = @"media:decision;enc=utf8;fmt=json;record";
+NSString * const CSMediaAdapterSelection = @"media:adapter-selection;enc=utf8;fmt=json;record";
 // Fabric registry lookup wire types
-NSString * const CSMediaCapUrn = @"media:cap-urn;enc=utf-8";
-NSString * const CSMediaMediaUrn = @"media:enc=utf-8;media-urn";
-NSString * const CSMediaCapDefinition = @"media:cap-definition;fmt=json;record";
-NSString * const CSMediaMediaDefinition = @"media:fmt=json;media-definition;record";
+NSString * const CSMediaCapUrn = @"media:cap-urn;enc=utf8";
+NSString * const CSMediaMediaUrn = @"media:enc=utf8;media-urn";
+NSString * const CSMediaCapDefinition = @"media:cap-definition;enc=utf8;fmt=json;record";
+NSString * const CSMediaMediaDefinition = @"media:enc=utf8;fmt=json;media-definition;record";
 // Fabric registry per-definition version (defver). Carried as data alongside a
 // URN when a cap looks up a definition pinned to a specific manifest snapshot.
 // Absent ⇒ resolved under the lookup cartridge's pinned fabric manifest.
-NSString * const CSMediaFabricDefver = @"media:defver;enc=utf-8";
+NSString * const CSMediaFabricDefver = @"media:defver;enc=utf8";
 // Fabric lookup caps (implemented by fetchcartridge)
 NSString * const CSCapLookupCapFabric =
-    @"cap:in=\"media:cap-urn;enc=utf-8\";fabric;lookup-cap;out=\"media:cap-definition;fmt=json;record\"";
+    @"cap:in=\"media:cap-urn;enc=utf8\";fabric;lookup-cap;out=\"media:cap-definition;enc=utf8;fmt=json;record\"";
 NSString * const CSCapLookupMediaDefFabric =
-    @"cap:in=\"media:enc=utf-8;media-urn\";fabric;lookup-media-def;out=\"media:fmt=json;media-definition;record\"";
+    @"cap:in=\"media:enc=utf8;media-urn\";fabric;lookup-media-def;out=\"media:enc=utf8;fmt=json;media-definition;record\"";
 // Format-specific variants for JSON, YAML, CSV
-NSString * const CSMediaJsonValue = @"media:fmt=json";
-NSString * const CSMediaJsonRecord = @"media:fmt=json;record";
-NSString * const CSMediaJsonList = @"media:fmt=json;list";
-NSString * const CSMediaJsonListRecord = @"media:fmt=json;list;record";
-NSString * const CSMediaYamlValue = @"media:fmt=yaml";
-NSString * const CSMediaYamlRecord = @"media:fmt=yaml;record";
-NSString * const CSMediaYamlList = @"media:fmt=yaml;list";
-NSString * const CSMediaYamlListRecord = @"media:fmt=yaml;list;record";
-NSString * const CSMediaCsv = @"media:fmt=csv;list;record";
-NSString * const CSMediaCsvList = @"media:fmt=csv;list;record";
+NSString * const CSMediaJsonValue = @"media:enc=utf8;fmt=json";
+NSString * const CSMediaJsonRecord = @"media:enc=utf8;fmt=json;record";
+NSString * const CSMediaJsonList = @"media:enc=utf8;fmt=json;list";
+NSString * const CSMediaJsonListRecord = @"media:enc=utf8;fmt=json;list;record";
+NSString * const CSMediaYamlValue = @"media:enc=utf8;fmt=yaml";
+NSString * const CSMediaYamlRecord = @"media:enc=utf8;fmt=yaml;record";
+NSString * const CSMediaYamlList = @"media:enc=utf8;fmt=yaml;list";
+NSString * const CSMediaYamlListRecord = @"media:enc=utf8;fmt=yaml;list;record";
+NSString * const CSMediaCsv = @"media:enc=utf8;fmt=csv;list;record";
+NSString * const CSMediaCsvList = @"media:enc=utf8;fmt=csv;list;record";
 
 // ============================================================================
 // SCHEMA URL CONFIGURATION

@@ -621,7 +621,7 @@ final class ProtocolConformanceTests: XCTestCase {
         let output = Bifaci.OutputStream(
             sender: sender,
             streamId: "s1",
-            mediaUrn: "media:enc=utf-8",
+            mediaUrn: "media:enc=utf8",
             requestId: rid,
             routingId: nil,
             maxChunk: 4
