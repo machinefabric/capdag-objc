@@ -125,10 +125,14 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 // withList and withoutList removed — list tag is semantic, not shape.
 // Shape (scalar vs sequence) is tracked via is_sequence, not URN manipulation.
 
-/// Compute the least upper bound (LUB) of an array of media URNs.
-/// The LUB keeps only tags that are common to ALL inputs (with matching values).
-/// Returns media: (universal) if no common tags exist, or if the array is empty.
-/// Mirrors Rust: pub fn lub(urns: &[MediaUrn]) -> MediaUrn
+/// The most specific media type every one of `urns` conforms to: their common
+/// denominator, as a gather's element type or the meeting point where branches of
+/// different media converge.
+///
+/// Made by tagged-urn's proved model (`leastUpperBoundWithPrefix:urns:error:`): key by
+/// key, the bound allows every state some input allows, and where no single form says
+/// exactly that, it is the least bound that excludes only values the inputs name.
+/// `[media:document;ext=pdf, media:ext=png;image]` gives `media:ext`; no inputs give `media:`.
 + (CSMediaUrn * _Nonnull)lub:(NSArray<CSMediaUrn *> * _Nonnull)urns;
 
 // MARK: - Predicates (mirror Rust MediaUrn predicates)

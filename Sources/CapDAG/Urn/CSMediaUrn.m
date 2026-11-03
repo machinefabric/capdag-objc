@@ -262,36 +262,13 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 // is_sequence on the wire protocol, not by manipulating URNs.
 
 + (CSMediaUrn *)lub:(NSArray<CSMediaUrn *> *)urns {
-    if (urns.count == 0) {
-        NSError *err = nil;
-        CSMediaUrn *universal = [CSMediaUrn fromString:@"media:" error:&err];
-        NSAssert(universal != nil, @"Failed to create universal media URN: %@", err);
-        return universal;
-    }
-    if (urns.count == 1) {
-        return urns[0];
-    }
-
-    // Start with the first URN's tags, intersect with each subsequent URN
-    NSMutableDictionary<NSString *, NSString *> *commonTags = [urns[0].tags mutableCopy];
-
-    for (NSUInteger i = 1; i < urns.count; i++) {
-        NSDictionary<NSString *, NSString *> *otherTags = urns[i].tags;
-        NSMutableArray<NSString *> *keysToRemove = [NSMutableArray array];
-        for (NSString *key in commonTags) {
-            NSString *otherValue = otherTags[key];
-            if (!otherValue || ![otherValue isEqualToString:commonTags[key]]) {
-                [keysToRemove addObject:key];
-            }
-        }
-        [commonTags removeObjectsForKeys:keysToRemove];
-    }
-
+    NSMutableArray<CSTaggedUrn *> *tagged = [NSMutableArray arrayWithCapacity:urns.count];
+    for (CSMediaUrn *urn in urns) [tagged addObject:urn.inner];
     NSError *err = nil;
-    CSTaggedUrn *inner = [CSTaggedUrn fromPrefix:@"media" tags:commonTags error:&err];
-    NSAssert(inner != nil, @"Failed to build LUB MediaUrn from tags: %@", err);
-    CSMediaUrn *result = [CSMediaUrn fromTaggedUrn:inner error:&err];
-    NSAssert(result != nil, @"Failed to wrap LUB TaggedUrn as MediaUrn: %@", err);
+    CSTaggedUrn *bound = [CSTaggedUrn leastUpperBoundWithPrefix:@"media" urns:tagged error:&err];
+    NSAssert(bound != nil, @"Every CSMediaUrn has the media prefix: %@", err);
+    CSMediaUrn *result = [CSMediaUrn fromTaggedUrn:bound error:&err];
+    NSAssert(result != nil, @"The bound of media URNs is a media URN: %@", err);
     return result;
 }
 

@@ -23,28 +23,33 @@
     XCTAssertTrue([lub isEquivalentTo:pdf]);
 }
 
-// TEST853: LUB of URNs with no common tags returns media: (universal)
-- (void)test853_lub_no_common_tags {
+// TEST853: LUB promotes a shared key with differing values to "some value": both inputs
+// HAVE an ext (pdf vs png), so the bound is media:ext — the denominator generic caps like
+// in="media:ext" accept — not the trivial media:. The image marker is only on one side.
+- (void)test853_lub_shared_key_promotes_to_wildcard {
     NSError *error;
     CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
     CSMediaUrn *png = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     XCTAssertNotNil(pdf);
     XCTAssertNotNil(png);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf, png]];
-    CSMediaUrn *universal = [CSMediaUrn fromString:@"media:" error:&error];
-    XCTAssertNotNil(universal);
-    XCTAssertTrue([lub isEquivalentTo:universal],
-        @"LUB of pdf and png should be media: but got %@", [lub toString]);
+    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:ext" error:&error];
+    XCTAssertNotNil(expected);
+    XCTAssertTrue([lub isEquivalentTo:expected],
+        @"LUB of ext=pdf and ext=png;image should be media:ext but got %@", [lub toString]);
+    XCTAssertTrue([pdf conformsTo:lub]);
+    XCTAssertTrue([png conformsTo:lub]);
 }
 
-// TEST854: LUB keeps common tags, drops differing ones
+// TEST854: LUB keeps common tags, drops differing ones. Both inputs are UTF-8 text
+// (shared enc=utf8) but differ in structure (list vs record).
 - (void)test854_lub_partial_overlap {
     NSError *error;
-    CSMediaUrn *jsonText = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json" error:&error];
-    CSMediaUrn *csvText = [CSMediaUrn fromString:@"media:enc=utf8;fmt=csv" error:&error];
-    XCTAssertNotNil(jsonText);
-    XCTAssertNotNil(csvText);
-    CSMediaUrn *lub = [CSMediaUrn lub:@[jsonText, csvText]];
+    CSMediaUrn *textList = [CSMediaUrn fromString:@"media:enc=utf8;list" error:&error];
+    CSMediaUrn *textRecord = [CSMediaUrn fromString:@"media:enc=utf8;record" error:&error];
+    XCTAssertNotNil(textList);
+    XCTAssertNotNil(textRecord);
+    CSMediaUrn *lub = [CSMediaUrn lub:@[textList, textRecord]];
     CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
@@ -93,13 +98,18 @@
     XCTAssertNotNil(b);
     XCTAssertNotNil(c);
     CSMediaUrn *lub = [CSMediaUrn lub:@[a, b, c]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8;list" error:&error];
+    // All three are UTF-8 lists and all three HAVE a fmt (json/csv/ndjson — differing
+    // values → "some fmt"); record is on a and b only → dropped.
+    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8;fmt;list" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should be media:enc=utf8;list but got %@", [lub toString]);
+        @"LUB should be media:enc=utf8;fmt;list but got %@", [lub toString]);
+    XCTAssertTrue([a conformsTo:lub]);
+    XCTAssertTrue([b conformsTo:lub]);
+    XCTAssertTrue([c conformsTo:lub]);
 }
 
-// TEST859: LUB with valued tags (non-marker) that differ
+// TEST859: LUB with valued tags (non-marker) that differ promotes the key
 - (void)test859_lub_valued_tags {
     NSError *error;
     CSMediaUrn *v1 = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
@@ -107,10 +117,10 @@
     XCTAssertNotNil(v1);
     XCTAssertNotNil(v2);
     CSMediaUrn *lub = [CSMediaUrn lub:@[v1, v2]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:image" error:&error];
+    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:ext;image" error:&error];
     XCTAssertNotNil(expected);
     XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should drop conflicting ext tag, got %@", [lub toString]);
+        @"LUB should promote conflicting ext to some ext, got %@", [lub toString]);
 }
 
 #pragma mark - Parsing & Prefix
@@ -354,7 +364,7 @@
 
     CSMediaUrn *jsonUrn = [CSMediaUrn fromString:CSMediaJson error:&e];
     XCTAssertTrue([jsonUrn isJson]);
-    XCTAssertNil([jsonUrn getTag:@"enc"], @"media:enc=utf8;fmt=json;record carries no enc=");
+    XCTAssertEqualObjects([jsonUrn getTag:@"enc"], @"utf8", @"JSON is characters: MEDIA_JSON carries enc=utf8");
     XCTAssertTrue([jsonUrn isRecord]);
     XCTAssertTrue([jsonUrn isScalar], @"MEDIA_JSON is a scalar record (single object)");
     XCTAssertFalse([jsonUrn isList]);
