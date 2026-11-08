@@ -354,7 +354,7 @@
 
     CSMediaUrn *jsonUrn = [CSMediaUrn fromString:CSMediaJson error:&e];
     XCTAssertTrue([jsonUrn isJson]);
-    XCTAssertNil([jsonUrn getTag:@"enc"], @"media:enc=utf8;fmt=json;record carries no enc=");
+    XCTAssertEqualObjects([jsonUrn getTag:@"enc"], @"utf8", @"JSON is characters: MEDIA_JSON carries enc=utf8");
     XCTAssertTrue([jsonUrn isRecord]);
     XCTAssertTrue([jsonUrn isScalar], @"MEDIA_JSON is a scalar record (single object)");
     XCTAssertFalse([jsonUrn isList]);
