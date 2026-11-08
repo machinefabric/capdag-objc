@@ -25,10 +25,14 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.145.47"),
+        // MFR_LOCAL_LIBS: the working copy in this workspace rather than a
+        // published tag. Re-render without it before committing or releasing.
+        .package(path: "../../tagged-urn/tagged-urn-objc"),
         // The runtime the code generated from ../formal runs on, at exactly the lungo release
         // that generated it.
-        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "1.117.0"),
+        // MFR_LOCAL_LIBS: lungo-swift from the local distribution built from the working copy
+        // of lungo. Re-render without it before committing or releasing.
+        .package(path: "../../.sdx/disposable/build/lungo/distribution/lungo-swift"),
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),
