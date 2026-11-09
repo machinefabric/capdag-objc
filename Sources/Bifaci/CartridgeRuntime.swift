@@ -2494,6 +2494,162 @@ func getOwnMemoryMb() -> (footprintMb: UInt64, rssMb: UInt64)? {
     return (footprintMb: footprintMb, rssMb: rssMb)
 }
 
+// MARK: - Frame Reader
+
+/// What a heartbeat reply is made from. All of it is shared state behind
+/// locks, so a reply can be built on any thread. (matches Rust
+/// HeartbeatResponder)
+struct HeartbeatResponder: @unchecked Sendable {
+    let poolsCell: PoolsCell
+    let dropCounters: DropCounters
+    let stragglerCounters: StragglerCounters
+    let liveFeedProviders: LiveFeedProviders
+
+    /// The reply to one heartbeat probe — or the ERR that refuses it.
+    func answer(_ frame: Frame) -> Frame {
+        // The heartbeat is the capacity CONFIG channel: a probe may carry the
+        // operator's desired `configured` values. The whole batch is
+        // validated first — an unknown pool refuses it all with an ERR naming
+        // it, and the probe gets that ERR instead of a reply, so the host's
+        // awaited apply fails precisely rather than silently.
+        if let desiredBytes = frame.desiredCapacityBytes {
+            do {
+                let desired = try decodeDesired(desiredBytes)
+                poolsCell.lock.lock()
+                defer { poolsCell.lock.unlock() }
+                try poolsCell.pools!.applyDesired(desired)
+            } catch {
+                var errFrame = Frame.err(
+                    id: frame.id,
+                    code: "UNKNOWN_POOL",
+                    attributionClass: .internal,
+                    message: "desired capacities refused: \(error)"
+                )
+                errFrame.routingId = frame.routingId
+                return errFrame
+            }
+        }
+        // The host's stats pump combines this self-reported footprint with
+        // its own measurement. `proc_pid_rusage(getpid())` works under the
+        // cartridge sandbox, which blocks queries against *other* pids only.
+        var response = Frame.heartbeat(id: frame.id)
+        var meta: [String: CBOR] = [:]
+        if let mem = getOwnMemoryMb() {
+            meta["footprint_mb"] = .unsignedInt(mem.footprintMb)
+            meta["rss_mb"] = .unsignedInt(mem.rssMb)
+        } else {
+            os_log(.error, log: cartridgeRuntimeLog,
+                   "Cartridge pid %{public}d failed to self-sample memory (proc_pid_rusage returned non-zero) — heartbeat response will omit memory meta",
+                   getpid())
+        }
+        // Protocol observability (L8): the dropped-frame total rides every
+        // heartbeat so the host can surface it without a stats round-trip.
+        // The benign straggler total rides alongside, under its own name —
+        // stragglers are not drops. Capture-edge overruns (12.5 §Overrun)
+        // ride under theirs — an overrun is declared loss at the capture
+        // edge, never a dropped frame.
+        meta["drops_total"] = .unsignedInt(dropCounters.total)
+        meta["stragglers_total"] = .unsignedInt(stragglerCounters.total)
+        meta["overruns_total"] = .unsignedInt(liveFeedProviders.overrunsTotal)
+        // Mandatory: the host hard-errors on a reply without it (see
+        // Pools.swift).
+        poolsCell.lock.lock()
+        let poolSnapshot = poolsCell.pools!.snapshot()
+        poolsCell.lock.unlock()
+        meta[metaPools] = .byteString([UInt8](encodePoolStates(poolSnapshot)))
+        response.meta = meta
+        return response
+    }
+}
+
+/// One thing the frame reader passes to the main loop.
+enum FrameReaderEvent: Sendable {
+    /// A frame the host sent, in the order it was sent.
+    case frame(Frame)
+    /// The end of input: the host closed its end.
+    case eof
+    /// The input ended any other way: a read failed, or the writer a
+    /// heartbeat reply went to was gone.
+    case failed(Error)
+}
+
+/// The running frame reader: `stop()` tells it the main loop is gone.
+final class FrameReaderHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+
+    /// The main loop is gone: the reader stops at its next frame, answering
+    /// nothing more.
+    func stop() {
+        lock.lock()
+        stopped = true
+        lock.unlock()
+    }
+
+    var isStopped: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
+}
+
+/// Read the host's frames on a thread of their own, and answer its
+/// heartbeats from there.
+///
+/// A HEARTBEAT ASKS WHETHER THE CARTRIDGE IS THERE, and the host gives it ten
+/// seconds to say so. The reader queued each frame for the main loop, and the
+/// main loop answered the probe when it reached it — after everything queued
+/// ahead of it, and only while nothing the loop did kept it waiting.
+///
+/// The reader answers a heartbeat itself, straight to the writer, and passes
+/// every frame — heartbeats included — to the main loop in the order it
+/// arrived. `deliver` must never make the reader wait. Nothing between the
+/// probe arriving and the reply leaving waits on the main loop or on a
+/// handler.
+///
+/// What this does NOT claim: that the handlers are making progress. That is
+/// what a request's own activity and stall tracking say. A heartbeat says the
+/// process is alive and reading its input. (matches Rust spawn_frame_reader)
+@discardableResult
+func spawnFrameReader(
+    reader: FrameReader,
+    responder: HeartbeatResponder,
+    output: FrameSender,
+    deliver: @escaping @Sendable (FrameReaderEvent) -> Void
+) -> FrameReaderHandle {
+    let handle = FrameReaderHandle()
+    let thread = Thread {
+        while true {
+            let frame: Frame
+            do {
+                guard let read = try reader.read() else {
+                    deliver(.eof)
+                    return
+                }
+                frame = read
+            } catch {
+                deliver(.failed(error))
+                return
+            }
+            if handle.isStopped {
+                return // The main loop is gone — shutting down
+            }
+            if frame.frameType == .heartbeat {
+                do {
+                    try output.send(responder.answer(frame))
+                } catch {
+                    deliver(.failed(error)) // The writer is gone — shutting down
+                    return
+                }
+            }
+            deliver(.frame(frame))
+        }
+    }
+    thread.name = "capdag-frame-reader"
+    thread.start()
+    return handle
+}
+
 // MARK: - Payload Extraction
 
 /// Extract the effective payload from a REQ frame.
@@ -5319,11 +5475,6 @@ public final class CartridgeRuntime: @unchecked Sendable {
         let pendingPeerRequests = NSMutableDictionary()
         let pendingPeerRequestsLock = NSLock()
 
-        // Track pending heartbeats (cartridge-initiated health probes)
-        // Prevents infinite ping-pong: only respond to heartbeats we didn't send
-        let pendingHeartbeats = NSMutableSet()
-        let pendingHeartbeatsLock = NSLock()
-
         // Track pending incoming requests (host invoking cartridge caps)
         // Maps request ID to (capUrn, frame queue) — forwards request frames
         // to the handler LIVE (the dispatch regime: the handler starts
@@ -5369,22 +5520,31 @@ public final class CartridgeRuntime: @unchecked Sendable {
             poolsCell.lock.unlock()
         }
 
-        // Spawn reader thread: reads frames from stdin and pushes to eventQueue.
+        // The host's frames are read on a thread of their own, which also
+        // answers heartbeats: see `spawnFrameReader` for why neither may wait
+        // on this loop. A loop that ends, however it ends, stops the reader
+        // too: nothing is left answering for a runtime that has stopped.
         let readerEventQueue = eventQueue
-        Thread.detachNewThread {
-            while true {
-                do {
-                    guard let frame = try frameReader.read() else {
-                        readerEventQueue.push(.eof)
-                        return
-                    }
-                    readerEventQueue.push(.frame(frame))
-                } catch {
-                    readerEventQueue.push(.readError(error))
-                    return
-                }
+        let frameReaderHandle = spawnFrameReader(
+            reader: frameReader,
+            responder: HeartbeatResponder(
+                poolsCell: poolsCell,
+                dropCounters: dropCounters,
+                stragglerCounters: stragglerCounters,
+                liveFeedProviders: self.liveFeedProviders
+            ),
+            output: outputSender
+        ) { event in
+            switch event {
+            case .frame(let frame):
+                readerEventQueue.push(.frame(frame))
+            case .eof:
+                readerEventQueue.push(.eof)
+            case .failed(let error):
+                readerEventQueue.push(.readError(error))
             }
         }
+        defer { frameReaderHandle.stop() }
 
         // Helper: spawn a handler thread for a request. The handler receives
         // input INCREMENTALLY: dispatch begins at REQ and its
@@ -5769,79 +5929,12 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 continue
 
             case .heartbeat:
-                // Check if this is a response to a heartbeat we sent
-                pendingHeartbeatsLock.lock()
-                let isOurProbe = pendingHeartbeats.contains(frame.id)
-                if isOurProbe {
-                    pendingHeartbeats.remove(frame.id)
-                }
-                pendingHeartbeatsLock.unlock()
-
-                if isOurProbe {
-                    // Response to our health probe - host is alive, no action needed
-                } else {
-                    // The heartbeat is the capacity CONFIG channel: a probe
-                    // may carry the operator's desired `configured` values.
-                    // The whole batch is validated first — an unknown pool
-                    // refuses it all with an ERR naming it, and the probe
-                    // gets that ERR instead of a reply, so the host's
-                    // awaited apply fails precisely rather than silently.
-                    if let desiredBytes = frame.desiredCapacityBytes {
-                        do {
-                            let desired = try decodeDesired(desiredBytes)
-                            poolsCell.lock.lock()
-                            defer { poolsCell.lock.unlock() }
-                            try poolsCell.pools!.applyDesired(desired)
-                        } catch {
-                            var errFrame = Frame.err(
-                                id: frame.id,
-                                code: "UNKNOWN_POOL",
-                                attributionClass: .internal,
-                                message: "desired capacities refused: \(error)"
-                            )
-                            errFrame.routingId = frame.routingId
-                            try outputSender.send(errFrame)
-                            continue
-                        }
-                    }
-                    // Host-initiated heartbeat — respond with
-                    // self-reported memory. `proc_pid_rusage(getpid())`
-                    // works under the cartridge sandbox (verified in
-                    // run 20260501-143945; sandbox blocks queries
-                    // against *other* pids, not self). The host's
-                    // stats pump combines this footprint with its own
-                    // proc_pidinfo measurement and pushes the result
-                    // to the Mac app via reverse-XPC.
-                    var response = Frame.heartbeat(id: frame.id)
-                    var meta: [String: CBOR] = [:]
-                    if let mem = getOwnMemoryMb() {
-                        meta["footprint_mb"] = .unsignedInt(mem.footprintMb)
-                        meta["rss_mb"] = .unsignedInt(mem.rssMb)
-                    } else {
-                        os_log(.error, log: cartridgeRuntimeLog,
-                               "Cartridge pid %{public}d failed to self-sample memory (proc_pid_rusage returned non-zero) — heartbeat response will omit memory meta",
-                               getpid())
-                    }
-                    // Protocol observability (L8): the cartridge's dropped-
-                    // frame total rides every heartbeat so the host can
-                    // surface it without a dedicated stats round-trip. The
-                    // benign straggler total rides alongside, under its own
-                    // name — stragglers are not drops.
-                    meta["drops_total"] = .unsignedInt(dropCounters.total)
-                    meta["stragglers_total"] = .unsignedInt(stragglerCounters.total)
-                    // Capture-edge overruns (12.5 §Overrun) ride alongside,
-                    // under their own name — an overrun is declared loss at
-                    // the capture edge, never a dropped frame.
-                    meta["overruns_total"] = .unsignedInt(self.liveFeedProviders.overrunsTotal)
-                    // Mandatory: the host hard-errors on a reply without it
-                    // (see Pools.swift).
-                    poolsCell.lock.lock()
-                    let poolSnapshot = poolsCell.pools!.snapshot()
-                    poolsCell.lock.unlock()
-                    meta[metaPools] = .byteString([UInt8](encodePoolStates(poolSnapshot)))
-                    response.meta = meta
-                    try outputSender.send(response)
-                }
+                // ALREADY ANSWERED, by the reader's own thread (see
+                // `spawnFrameReader`). It is passed on only so this loop
+                // turns: a probe may have raised a pool's capacity, and the
+                // admission at the top of the loop is what lets a waiting
+                // request in.
+                continue
 
             case .hello:
                 // Unexpected HELLO after handshake - protocol error

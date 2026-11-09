@@ -1500,4 +1500,106 @@ final class ProtocolSwitchTests: XCTestCase {
         XCTAssertEqual(summary.rid, key.rid.description)
         switch_.shutdown()
     }
+
+    // MARK: - The frame reader answers heartbeats (matches Rust spawn_frame_reader)
+
+    /// A responder over real pools (none declared), as a started cartridge has.
+    private func responderWithNoPools() throws -> HeartbeatResponder {
+        let cell = PoolsCell()
+        cell.pools = try RuntimePools(handlerPatterns: [], declarations: PoolDeclarations())
+        return HeartbeatResponder(
+            poolsCell: cell,
+            dropCounters: DropCounters(),
+            stragglerCounters: StragglerCounters(),
+            liveFeedProviders: LiveFeedProviders()
+        )
+    }
+
+    /// The frame reader between two pipes, as the runtime runs it between
+    /// stdin and stdout: the host's writer and the pipe it writes into, the
+    /// host's reader of what the cartridge wrote, and a queue of what the
+    /// reader passed to the main loop.
+    private func readerUnderTest() throws -> (hostWriter: FrameWriter, hostIn: Pipe, hostReader: FrameReader, passedOn: BlockingQueue<FrameReaderEvent>) {
+        let hostIn = Pipe()
+        let hostOut = Pipe()
+        let sender = ChannelFrameSender(
+            writer: FrameWriter(handle: hostOut.fileHandleForWriting),
+            writerLock: NSLock(),
+            seqAssigner: SeqAssigner(),
+            drops: DropCounters(),
+            stragglers: StragglerCounters()
+        )
+        let passedOn = BlockingQueue<FrameReaderEvent>()
+        spawnFrameReader(
+            reader: FrameReader(handle: hostIn.fileHandleForReading),
+            responder: try responderWithNoPools(),
+            output: sender
+        ) { event in passedOn.push(event) }
+        return (FrameWriter(handle: hostIn.fileHandleForWriting), hostIn, FrameReader(handle: hostOut.fileHandleForReading), passedOn)
+    }
+
+    /// Read one frame on a thread of its own, within `seconds`.
+    private func readWithin(_ seconds: TimeInterval, _ reader: FrameReader) -> Frame? {
+        let got = BlockingQueue<Frame>()
+        Thread.detachNewThread {
+            if let frame = try? reader.read() { got.push(frame) }
+        }
+        return got.tryPop(timeout: seconds)
+    }
+
+    // TEST12647: A heartbeat is answered while the main loop takes nothing — the reader's thread answers it by itself. The main loop answered it when it reached it, so the reply waited on everything the loop did first.
+    func test12647_heartbeatIsAnsweredWithoutTheMainLoop() throws {
+        let (hostWriter, hostIn, hostReader, passedOn) = try readerUnderTest()
+        defer { try? hostIn.fileHandleForWriting.close() }
+
+        let probe = MessageId.newUUID()
+        // Nothing takes from `passedOn` until the reply has come: whatever
+        // answers, it is not the main loop.
+        try hostWriter.write(Frame.heartbeat(id: probe))
+        let reply = try XCTUnwrap(readWithin(5, hostReader), "the heartbeat is answered with no main loop taking frames")
+        XCTAssertEqual(reply.frameType, .heartbeat)
+        XCTAssertEqual(reply.id, probe, "the reply is to the probe that was sent")
+        let meta = try XCTUnwrap(reply.meta, "a heartbeat reply carries its meta")
+        XCTAssertNotNil(meta[metaPools], "the pool state rides every reply; the host refuses one without it")
+
+        // And the main loop is still told, so that it turns and admits.
+        guard case .frame(let passed)? = passedOn.tryPop(timeout: 5) else {
+            return XCTFail("the frame is passed on")
+        }
+        XCTAssertEqual(passed.frameType, .heartbeat)
+        XCTAssertEqual(passed.id, probe)
+    }
+
+    // TEST12648: Every other frame goes to the main loop untouched and in order, and nothing is written for it; the end of input ends the reader and closes the loop's channel.
+    func test12648_otherFramesReachTheLoopInOrderAndEofClosesIt() throws {
+        let (hostWriter, hostIn, hostReader, passedOn) = try readerUnderTest()
+
+        let first = MessageId.newUUID()
+        let second = MessageId.newUUID()
+        try hostWriter.write(Frame.end(id: first))
+        try hostWriter.write(Frame.heartbeat(id: MessageId.newUUID()))
+        try hostWriter.write(Frame.end(id: second))
+        try hostIn.fileHandleForWriting.close() // the host closes its end
+
+        var seen: [Frame] = []
+        reading: while true {
+            switch passedOn.tryPop(timeout: 5) {
+            case .frame(let frame)?:
+                seen.append(frame)
+            case .eof?:
+                break reading
+            case .failed(let error)?:
+                return XCTFail("the end of input is not a failure: \(error)")
+            case nil:
+                return XCTFail("the end of input ends the reader within five seconds")
+            }
+        }
+        XCTAssertEqual(seen.map { $0.frameType }, [.end, .heartbeat, .end], "in the order the host sent them")
+        XCTAssertEqual(seen[0].id, first)
+        XCTAssertEqual(seen[2].id, second)
+
+        let reply = try XCTUnwrap(readWithin(5, hostReader), "the heartbeat is answered")
+        XCTAssertEqual(reply.frameType, .heartbeat, "one reply, to the one heartbeat")
+        XCTAssertNil(readWithin(0.2, hostReader), "and nothing for the others")
+    }
 }
