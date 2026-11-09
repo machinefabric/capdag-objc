@@ -27,6 +27,11 @@
 - (uint32_t)manifestVersion;
 - (NSString *)sha256HexForString:(NSString *)s;
 - (NSString *)objectURLForKind:(NSString *)kind digest:(NSString *)digest defver:(uint32_t)defver;
+- (instancetype)initWithCharter:(CSCharter *)charter
+                         config:(CSFabricRegistryConfig *)config
+                manifestVersion:(uint32_t)manifestVersion
+           bootstrapFromNetwork:(BOOL)bootstrapFromNetwork;
+- (BOOL)ingestManifestDictionary:(NSDictionary *)manifest error:(NSError *_Nullable *_Nullable)error;
 @end
 
 // The per-cap URL at defver 1, from the charter's `definition` location of a
@@ -40,6 +45,39 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
 }
 
 @implementation CSFabricRegistryTests
+
+// TEST1974: the universal type `media:` is a definition like any other: under
+// a versioned manifest it resolves at the definition version the manifest
+// pins, and a manifest that does not hold it does not resolve it.
+- (void)test1974_TheUniversalTypeResolvesAtItsPinnedDefver {
+    NSString *unique = [[NSUUID UUID].UUIDString lowercaseString];
+    NSString *slug = [NSString stringWithFormat:@"registry-tests-1974-%@", unique];
+    CSCharter *charter = [CSFabricRegistry
+        publisherLayoutCharterForAnchor:[NSString stringWithFormat:@"https://127.0.0.1:9/%@", slug]
+                                   slug:slug];
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc]
+        initWithCharter:charter
+                 config:[CSFabricRegistryConfig configWithAnchor:charter.anchor]
+        manifestVersion:12
+   bootstrapFromNetwork:NO];
+    NSError *error = nil;
+    XCTAssertTrue([registry ingestManifestDictionary:@{@"version": @12, @"previous": @11, @"caps": @{},
+                                                       @"media": @{@"media:": @2}, @"aliases": @{}, @"dims": @{}}
+                                               error:&error], @"%@", error);
+    uint32_t defver = 0;
+    XCTAssertTrue([registry mediaDefverFor:@"media:" defver:&defver error:&error], @"%@", error);
+    XCTAssertEqual(defver, 2u);
+
+    XCTAssertTrue([registry ingestManifestDictionary:@{@"version": @12, @"previous": @11, @"caps": @{},
+                                                       @"media": @{}, @"aliases": @{}, @"dims": @{}}
+                                               error:&error], @"%@", error);
+    error = nil;
+    XCTAssertFalse([registry mediaDefverFor:@"media:" defver:&defver error:&error]);
+    XCTAssertTrue([error.localizedDescription containsString:@"media def 'media:' is not part of manifest v12"],
+        @"%@", error.localizedDescription);
+    [[NSFileManager defaultManager]
+        removeItemAtPath:[[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:slug] error:nil];
+}
 
 // TEST1899: a media def resolves to the charter's `definition` location at the
 // defver its manifest pins — `/media/<sha>/<defver>.json` in the publisher's

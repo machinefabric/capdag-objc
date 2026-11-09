@@ -12,8 +12,8 @@
 //    - cachedAliases / cachedDims: name → stored alias / dim, versioned-only.
 //
 //  Atomic cap fetch: getCapWithUrn: refuses to cache a cap until every
-//  media URN it references has also been successfully fetched. The bare
-//  `media:` wildcard is excluded from the recursive fetch.
+//  media URN it references has also been successfully fetched, the
+//  universal type `media:` among them.
 //
 //  A cap or media def is likewise cached only once every dim it names
 //  (`dims`) is cached, at the version the manifest pins, with the value it
@@ -686,18 +686,13 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     return YES;
 }
 
-// Resolve a normalized media URN to its defver. Same rules as capDefver. The
-// bare `media:` wildcard is a sentinel with no published spec, so it resolves
-// to 0 (the fetch path special-cases it and never reaches a request for it).
-// Mirrors Rust media_defver.
+// Resolve a normalized media URN to its defver. Same rules as capDefver; the
+// universal type `media:` is a definition like any other. Mirrors Rust
+// media_defver.
 - (BOOL)mediaDefver:(uint32_t *)outDefver
       forNormalized:(NSString *)normalizedUrn
               error:(NSError *_Nullable *_Nullable)error {
     if (self.manifestVersion == 0) {
-        *outDefver = 0;
-        return YES;
-    }
-    if ([normalizedUrn isEqualToString:@"media:"]) {
         *outDefver = 0;
         return YES;
     }
@@ -1027,8 +1022,9 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 // MARK: - Atomic cap fetch
 
 /// Walk every media URN a cap definition references (in_spec, out_spec,
-/// each arg.media_urn, each stdin source, output.media_urn). Skip the
-/// bare `media:` wildcard. Order is deterministic and de-duplicated.
+/// each arg.media_urn, each stdin source, output.media_urn), the universal
+/// type `media:` among them: the fabric defines it like any other media URN.
+/// Order is deterministic and de-duplicated.
 - (NSArray<NSString *> *)collectReferencedMediaUrnsForCap:(CSCap *)cap {
     NSMutableArray<NSString *> *seen = [NSMutableArray array];
     void (^push)(NSString *) = ^(NSString *urn) {
@@ -1036,7 +1032,6 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
         NSError *err = nil;
         CSMediaUrn *parsed = [CSMediaUrn fromString:urn error:&err];
         if (!parsed) return;
-        if ([parsed isTop]) return; // bare media: wildcard
         NSString *normalized = [parsed toString];
         if (![seen containsObject:normalized]) {
             [seen addObject:normalized];
