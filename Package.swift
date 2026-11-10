@@ -18,7 +18,7 @@ let package = Package(
         .library(
             name: "LLM",
             targets: ["LLM"]),
-        // Every capdag mirror ships the CLI: `capdag new` is how a cartridge
+        // Every capdag mirror ships the CLI: `capdag dev new` is how a cartridge
         // project comes into existence, and each mirror must create the same one.
         .executable(
             name: "capdag",

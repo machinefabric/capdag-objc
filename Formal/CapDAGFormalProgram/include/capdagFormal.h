@@ -411,6 +411,124 @@ lungo_value *capdagFormal_grade_possible(void);
 /* CapDAG.Grade.none; takes ownership of the fields. */
 lungo_value *capdagFormal_grade_none(void);
 
+/* CapDAG.Run.Control.RunPhase */
+#define CAPDAGFORMAL_RUN_PHASE_FINGERPRINT "9b90c7742e44d84be0eb1459ef38080f0c1d2ed5bcf1860d0c34e71a535db4f1"
+lungo_type *capdagFormal_run_phase_type(void);
+#define CAPDAGFORMAL_RUN_PHASE_RUNNING 0
+/* CapDAG.Run.Control.RunPhase.running; takes ownership of the fields. */
+lungo_value *capdagFormal_run_phase_running(void);
+#define CAPDAGFORMAL_RUN_PHASE_STOPPING 1
+/* CapDAG.Run.Control.RunPhase.stopping; takes ownership of the fields. */
+lungo_value *capdagFormal_run_phase_stopping(void);
+#define CAPDAGFORMAL_RUN_PHASE_ABORTING 2
+/* CapDAG.Run.Control.RunPhase.aborting; takes ownership of the fields. */
+lungo_value *capdagFormal_run_phase_aborting(void);
+#define CAPDAGFORMAL_RUN_PHASE_ENDED 3
+/* CapDAG.Run.Control.RunPhase.ended; takes ownership of the fields. */
+lungo_value *capdagFormal_run_phase_ended(void);
+
+/* CapDAG.Run.Control.RunOutcome */
+#define CAPDAGFORMAL_RUN_OUTCOME_FINGERPRINT "488f30c13e7da989b6df7a79e6e894861cce0db4ca431c2460b5d3df125af273"
+lungo_type *capdagFormal_run_outcome_type(void);
+#define CAPDAGFORMAL_RUN_OUTCOME_COMPLETED 0
+/* CapDAG.Run.Control.RunOutcome.completed; takes ownership of the fields. */
+lungo_value *capdagFormal_run_outcome_completed(void);
+#define CAPDAGFORMAL_RUN_OUTCOME_TOLERATED 1
+/* CapDAG.Run.Control.RunOutcome.tolerated; takes ownership of the fields. */
+lungo_value *capdagFormal_run_outcome_tolerated(void);
+#define CAPDAGFORMAL_RUN_OUTCOME_STOPPED 2
+/* CapDAG.Run.Control.RunOutcome.stopped; takes ownership of the fields. */
+lungo_value *capdagFormal_run_outcome_stopped(void);
+#define CAPDAGFORMAL_RUN_OUTCOME_FAILED 3
+/* CapDAG.Run.Control.RunOutcome.failed; takes ownership of the fields. */
+lungo_value *capdagFormal_run_outcome_failed(void);
+#define CAPDAGFORMAL_RUN_OUTCOME_ABORTED 4
+/* CapDAG.Run.Control.RunOutcome.aborted; takes ownership of the fields. */
+lungo_value *capdagFormal_run_outcome_aborted(void);
+
+/* CapDAG.Run.Control.RunAsk */
+#define CAPDAGFORMAL_RUN_ASK_FINGERPRINT "67e4380d6283cd01c5cc9ebc04c02f8ba0921b5fbb73702f73936a519c45672b"
+lungo_type *capdagFormal_run_ask_type(void);
+#define CAPDAGFORMAL_RUN_ASK_INTERRUPT 0
+/* CapDAG.Run.Control.RunAsk.interrupt; takes ownership of the fields. */
+lungo_value *capdagFormal_run_ask_interrupt(void);
+#define CAPDAGFORMAL_RUN_ASK_STOP 1
+/* CapDAG.Run.Control.RunAsk.stop; takes ownership of the fields. */
+lungo_value *capdagFormal_run_ask_stop(void);
+#define CAPDAGFORMAL_RUN_ASK_ABORT 2
+/* CapDAG.Run.Control.RunAsk.abort; takes ownership of the fields. */
+lungo_value *capdagFormal_run_ask_abort(void);
+#define CAPDAGFORMAL_RUN_ASK_DRAINED 3
+/* CapDAG.Run.Control.RunAsk.drained; takes ownership of the fields. */
+lungo_value *capdagFormal_run_ask_drained(void);
+#define CAPDAGFORMAL_RUN_ASK_GRACE_OVER 4
+/* CapDAG.Run.Control.RunAsk.graceOver; takes ownership of the fields. */
+lungo_value *capdagFormal_run_ask_grace_over(void);
+
+/* CapDAG.Run.Control.RunNext */
+#define CAPDAGFORMAL_RUN_NEXT_FINGERPRINT "ed3067eec3d1ed1784061abb5cd9f6a344c9044fb5ce4e2e991157d961689844"
+lungo_type *capdagFormal_run_next_type(void);
+#define CAPDAGFORMAL_RUN_NEXT_MK 0
+/* CapDAG.Run.Control.RunNext.mk; takes ownership of the fields. */
+lungo_value *capdagFormal_run_next_mk(lungo_value *phase, lungo_value *act);
+/* Field phase of CapDAG.Run.Control.RunNext.mk (borrowed). */
+const lungo_value *capdagFormal_run_next_phase(const lungo_value *v);
+/* Field act of CapDAG.Run.Control.RunNext.mk (borrowed). */
+const lungo_value *capdagFormal_run_next_act(const lungo_value *v);
+
+/* CapDAG.Run.Step.StepState */
+#define CAPDAGFORMAL_STEP_STATE_FINGERPRINT "29605211a3fdc3a760359c75d5cb65673e50c5813e851ed461dd9b955dbdfcfa"
+lungo_type *capdagFormal_step_state_type(void);
+#define CAPDAGFORMAL_STEP_STATE_WAITING 0
+/* CapDAG.Run.Step.StepState.waiting; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_waiting(void);
+#define CAPDAGFORMAL_STEP_STATE_RUNNING 1
+/* CapDAG.Run.Step.StepState.running; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_running(void);
+#define CAPDAGFORMAL_STEP_STATE_DONE 2
+/* CapDAG.Run.Step.StepState.done; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_done(void);
+#define CAPDAGFORMAL_STEP_STATE_SKIPPED 3
+/* CapDAG.Run.Step.StepState.skipped; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_skipped(void);
+#define CAPDAGFORMAL_STEP_STATE_TOLERATED 4
+/* CapDAG.Run.Step.StepState.tolerated; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_tolerated(void);
+#define CAPDAGFORMAL_STEP_STATE_FAILED 5
+/* CapDAG.Run.Step.StepState.failed; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_failed(void);
+#define CAPDAGFORMAL_STEP_STATE_NOT_RUN 6
+/* CapDAG.Run.Step.StepState.notRun; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_not_run(void);
+#define CAPDAGFORMAL_STEP_STATE_CANCELLED 7
+/* CapDAG.Run.Step.StepState.cancelled; takes ownership of the fields. */
+lungo_value *capdagFormal_step_state_cancelled(void);
+
+/* CapDAG.Run.Step.StepReport */
+#define CAPDAGFORMAL_STEP_REPORT_FINGERPRINT "72ac48415e459328353488d886a31a3874490648ec761e7e8b14a08f7644ac29"
+lungo_type *capdagFormal_step_report_type(void);
+#define CAPDAGFORMAL_STEP_REPORT_PROGRESS 0
+/* CapDAG.Run.Step.StepReport.progress; takes ownership of the fields. */
+lungo_value *capdagFormal_step_report_progress(lungo_value *complete);
+/* Field complete of CapDAG.Run.Step.StepReport.progress (borrowed). */
+const lungo_value *capdagFormal_step_report_progress_complete(const lungo_value *v);
+#define CAPDAGFORMAL_STEP_REPORT_SKIPPED 1
+/* CapDAG.Run.Step.StepReport.skipped; takes ownership of the fields. */
+lungo_value *capdagFormal_step_report_skipped(void);
+#define CAPDAGFORMAL_STEP_REPORT_TOLERATED 2
+/* CapDAG.Run.Step.StepReport.tolerated; takes ownership of the fields. */
+lungo_value *capdagFormal_step_report_tolerated(void);
+#define CAPDAGFORMAL_STEP_REPORT_FAILED 3
+/* CapDAG.Run.Step.StepReport.failed; takes ownership of the fields. */
+lungo_value *capdagFormal_step_report_failed(void);
+#define CAPDAGFORMAL_STEP_REPORT_RUN_ENDED 4
+/* CapDAG.Run.Step.StepReport.runEnded; takes ownership of the fields. */
+lungo_value *capdagFormal_step_report_run_ended(lungo_value *completed, lungo_value *aborted);
+/* Field completed of CapDAG.Run.Step.StepReport.runEnded (borrowed). */
+const lungo_value *capdagFormal_step_report_run_ended_completed(const lungo_value *v);
+/* Field aborted of CapDAG.Run.Step.StepReport.runEnded (borrowed). */
+const lungo_value *capdagFormal_step_report_run_ended_aborted(const lungo_value *v);
+
 /* TaggedUrn.Constraint */
 #define CAPDAGFORMAL_CONSTRAINT_FINGERPRINT "481fc09e23c6415a7c3f05887577ec940a6ecc84b005e63476c1060b59edcac7"
 lungo_type *capdagFormal_constraint_type(void);
@@ -476,6 +594,25 @@ const lungo_value *capdagFormal_wf_ask_covers_u(const lungo_value *v);
 lungo_value *capdagFormal_wf_ask_same(lungo_value *u);
 /* Field u of CapDAG.Exec.WfAsk.same (borrowed). */
 const lungo_value *capdagFormal_wf_ask_same_u(const lungo_value *v);
+
+/* CapDAG.Run.Control.RunAct */
+#define CAPDAGFORMAL_RUN_ACT_FINGERPRINT "f48722d20571ec5842888991bdef26addc3a210e2b8eb68384575008b80b216c"
+lungo_type *capdagFormal_run_act_type(void);
+#define CAPDAGFORMAL_RUN_ACT_NONE 0
+/* CapDAG.Run.Control.RunAct.none; takes ownership of the fields. */
+lungo_value *capdagFormal_run_act_none(void);
+#define CAPDAGFORMAL_RUN_ACT_STOP 1
+/* CapDAG.Run.Control.RunAct.stop; takes ownership of the fields. */
+lungo_value *capdagFormal_run_act_stop(void);
+#define CAPDAGFORMAL_RUN_ACT_CANCEL 2
+/* CapDAG.Run.Control.RunAct.cancel; takes ownership of the fields. */
+lungo_value *capdagFormal_run_act_cancel(void);
+#define CAPDAGFORMAL_RUN_ACT_KILL 3
+/* CapDAG.Run.Control.RunAct.kill; takes ownership of the fields. */
+lungo_value *capdagFormal_run_act_kill(void);
+#define CAPDAGFORMAL_RUN_ACT_FINISH 4
+/* CapDAG.Run.Control.RunAct.finish; takes ownership of the fields. */
+lungo_value *capdagFormal_run_act_finish(void);
 
 /* CapDAG.Bifaci.Credit.Gate.acquire : CapDAG.Bifaci.Credit.Gate → Nat → CapDAG.Bifaci.Credit.Acquire */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
@@ -704,6 +841,34 @@ int32_t capdagFormal_select(const lungo_value *candidates, const lungo_value *re
 /* CapDAG.Exec.specificity : CapDAG.Exec.WfCap → Nat */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_specificity(const lungo_value *c, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Control.admits : CapDAG.Run.Control.RunPhase → Bool */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_admits(const lungo_value *a, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Control.exitStatus : CapDAG.Run.Control.RunOutcome → Nat */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_exit_status(const lungo_value *a, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Control.joinOutcomes : CapDAG.Run.Control.RunOutcome → CapDAG.Run.Control.RunOutcome → CapDAG.Run.Control.RunOutcome */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_join_outcomes(const lungo_value *a, const lungo_value *b, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Control.next : CapDAG.Run.Control.RunPhase → CapDAG.Run.Control.RunAsk → CapDAG.Run.Control.RunNext */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_next(const lungo_value *a, const lungo_value *a2, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Control.outcome : CapDAG.Run.Control.RunPhase → Bool → Bool → CapDAG.Run.Control.RunOutcome */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_outcome(const lungo_value *a, const lungo_value *a2, const lungo_value *a3, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Step.StepState.final : CapDAG.Run.Step.StepState → Bool */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_final(const lungo_value *a, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Run.Step.on : CapDAG.Run.Step.StepState → CapDAG.Run.Step.StepReport → Option CapDAG.Run.Step.StepState */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_on(const lungo_value *a, const lungo_value *a2, lungo_value **result, lungo_error **error);
 
 /* TaggedUrn.Exec.make : String → List (String × TaggedUrn.Constraint) → Option TaggedUrn.Exec.Wf */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */

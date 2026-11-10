@@ -10,7 +10,7 @@ import Foundation
 /// %1 is not a valid Win32 application
 /// ```
 ///
-/// so `capdag dev-install` could not read a Python project's manifest, and no
+/// so `capdag dev install` could not read a Python project's manifest, and no
 /// scaffolded Python cartridge could be launched on that platform at all.
 ///
 /// This mirror runs on macOS, where the shebang works and nothing here is

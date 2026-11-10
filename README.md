@@ -62,11 +62,11 @@ The normative shared rules live in the
 ## Scaffold a Swift cartridge
 
 ```bash
-capdag new sentiment-tagger --swift
+capdag dev new sentiment-tagger --lang swift
 cd sentiment-tagger
 swift build -c release
-capdag dev-install .
-echo "I love this" | capdag sentiment-tagger
+capdag dev install
+echo "I love this" | capdag run sentiment-tagger
 ```
 
 See [Build and Run a Cartridge](https://machinefabric.com/capdag/docs/18.2-getting-started-cartridge-development/)

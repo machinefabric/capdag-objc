@@ -2,19 +2,19 @@
 //
 // This file backs three developer commands and the local-manifest run path:
 //
-//   - `scaffoldCartridge` — `capdag new <name> --<language>`: write a fresh,
+//   - `scaffoldCartridge` — `capdag dev new <path> --lang <language>`: write a fresh,
 //     runnable cartridge project (one custom cap, one Op that peer-calls a
 //     model, one manifest) into a new directory, in any language the vendored
 //     canonical stubs cover. The stubs are the SAME bytes in every capdag
 //     implementation (see StubsGenerated.swift), so the project you get does not
 //     depend on which capdag binary you ran.
-//   - `stageDevCartridge` — `capdag dev-install <project-dir>`: read the
+//   - `stageDevCartridge` — `capdag dev install <project-dir>`: read the
 //     project's manifest, then copy it under the per-user cartridge root's
 //     reserved `dev` slug so the capdag host discovers it. Re-running overwrites
 //     the same version directory — the update step of the edit/reinstall loop.
 //   - `findDevCapByAlias` + `checkNoFabricConflict` — the local-manifest run
-//     path: when `capdag <alias>` names a cap the fabric does NOT define, a
-//     locally dev-installed cartridge's OWN manifest answers it, as long as the
+//     path: when `capdag run <alias>` names a cap the fabric does NOT define, a
+//     locally installed dev cartridge's OWN manifest answers it, as long as the
 //     cap does not conflict with the fabric. A dev cap never needs to be
 //     published to be developed and run locally.
 //
@@ -53,7 +53,7 @@ public enum DevError: Error, CustomStringConvertible {
         case .noEntry(let project, let candidates):
             return "no cartridge entry found in '\(project)'. Looked for \(candidates). "
                 + "A compiled cartridge must be BUILT before it is installed — the host "
-                + "launches the binary, not the sources. Create the project with `capdag new`."
+                + "launches the binary, not the sources. Create the project with `capdag dev new`."
         case .ambiguousEntry(let project, let found):
             return "'\(project)' contains more than one cartridge entry "
                 + "(\(found.joined(separator: ", "))) — capdag cannot tell which one to "
@@ -61,7 +61,7 @@ public enum DevError: Error, CustomStringConvertible {
                 + "language you are not developing."
         case .notDev(let registryURL):
             return "this project's manifest declares registry_url '\(registryURL)', so it is a "
-                + "PUBLISHED cartridge, not a dev one. `dev-install` stages only dev "
+                + "PUBLISHED cartridge, not a dev one. `capdag dev install` stages only dev "
                 + "cartridges (registry_url null)."
         case .fabricConflict(let alias, let devURN, let fabricURN):
             return "the dev cap '\(devURN)' claims alias '\(alias)', which the fabric already "
@@ -82,25 +82,18 @@ public enum DevError: Error, CustomStringConvertible {
 
 // MARK: - The vendored stub contract
 
-/// Every language `capdag new` can scaffold, in contract order.
+/// Every language `capdag dev new` can scaffold, in contract order.
 ///
-/// A mirror that offered a subset would silently make `capdag new --rust` mean
+/// A mirror that offered a subset would silently make `capdag dev new --lang rust` mean
 /// different things depending on which capdag binary you happened to run.
 public func stubLanguageList() -> [StubLanguage] { stubLanguages }
 
-/// Look a language up by its id (`python`) or its flag (`--python`).
+/// Look a language up by its id (`python`).
 ///
 /// Returns nil for anything else; the caller turns that into an error that
 /// lists what IS available, which is the only useful thing to say.
 public func stubLanguage(_ selector: String) -> StubLanguage? {
-    stubLanguages.first { $0.id == selector || $0.flag == selector }
-}
-
-/// The scaffoldable flags, for usage and error messages. Built from the contract
-/// so a newly vendored language appears everywhere at once rather than in
-/// whichever message someone remembered to update.
-public func stubLanguageFlagList() -> String {
-    stubLanguages.map { $0.flag }.joined(separator: " | ")
+    stubLanguages.first { $0.id == selector }
 }
 
 /// Substitute the project name into a stub's text.
@@ -197,9 +190,9 @@ func makeExecutable(_ path: String) throws {
 
 /// The name a scaffolded directory carries: its own directory name.
 ///
-/// `capdag new <name>` creates <parent>/<name> and every rendered path is seeded
-/// from that name, so the directory IS the name. Reading it back is how
-/// dev-install knows what a compiled entry is called without being told.
+/// `capdag dev new <path>` creates the directory <path>, its last part the name,
+/// and every rendered path is seeded from that name, so the directory IS the
+/// name. Reading it back is how `capdag dev install` knows what a compiled entry is called without being told.
 func projectName(_ projectDir: String) -> String {
     ((projectDir as NSString).standardizingPath as NSString).lastPathComponent
 }
@@ -277,7 +270,7 @@ public func readEntryManifest(_ entry: String) throws -> Manifest {
     }
 }
 
-// MARK: - dev-install — stage a project under the `dev` slug
+// MARK: - dev install — stage a project under the `dev` slug
 
 /// `dev/v{registryVersion}/{channel}/{name}/{version}/` under the root.
 public func devVersionDir(
@@ -434,7 +427,7 @@ public func stageDevCartridge(
 
 // MARK: - The local-manifest run path
 
-/// Search every dev-installed cartridge's own manifest for a cap carrying
+/// Search every installed dev cartridge's own manifest for a cap carrying
 /// `alias`, returning the cap and its version directory.
 ///
 /// Returns nil when no dev cartridge claims the alias — an ordinary outcome, not
@@ -476,7 +469,7 @@ public func findDevCapByAlias(
 
 /// Every `{channel}/{name}/{version}/` directory under a dev root.
 ///
-/// A missing root is not an error — nothing has been dev-installed yet.
+/// A missing root is not an error — no dev cartridge has been installed yet.
 func walkVersionDirs(_ devRoot: String) -> [String] {
     var out: [String] = []
     for channel in readSubdirs(devRoot) {
