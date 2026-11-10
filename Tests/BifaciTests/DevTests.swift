@@ -6,7 +6,7 @@ import CapDAG
 // Dev Tests
 //
 // Covers TEST7154-7160 from `dev.rs` in the reference Rust implementation:
-// the `capdag new` / `capdag dev-install` scaffolding and staging path, and the
+// the `capdag dev new` / `capdag dev install` scaffolding and staging path, and the
 // local-manifest alias resolution that lets an unpublished cap run.
 //
 // TEST7153 covers the `installed_at` timestamp format the staging path writes.
@@ -248,7 +248,7 @@ final class DevTests: XCTestCase {
         XCTAssertTrue(found?.cap.hasAlias("greet") ?? false)
     }
 
-    // TEST7157: dev-install refuses a PUBLISHED manifest. `registry_url`
+    // TEST7157: `dev install` refuses a PUBLISHED manifest. `registry_url`
     // non-null means the cartridge belongs to a registry, and staging it under
     // the dev slug would put a published identity in a slot reserved for local
     // work.
@@ -354,7 +354,7 @@ final class DevTests: XCTestCase {
 
     // TEST7160: the vendored stub contract is IDENTICAL to the canonical source.
     //
-    // This is the whole promise of `capdag new`: the same command from any
+    // This is the whole promise of `capdag dev new`: the same command from any
     // capdag binary writes the same project. Every mirror's copy is generated
     // from this one source, so a difference here means the reference itself was
     // vendored from a different commit than the stub repo currently holds —
@@ -398,7 +398,6 @@ final class DevTests: XCTestCase {
                 XCTFail("vendored language \(vendored.id) is not in the canonical contract")
                 continue
             }
-            XCTAssertEqual(spec["flag"] as? String, vendored.flag)
             XCTAssertEqual(spec["entry"] as? String, vendored.entry)
             guard let declaredFiles = spec["files"] as? [[String: Any]] else {
                 XCTFail("\(vendored.id): canonical `files` is not a list of objects")

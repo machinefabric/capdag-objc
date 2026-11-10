@@ -61,5 +61,12 @@ int32_t capdagFormal__call_l_CapDAG_dExec_dqueryProducing(const uint8_t *input, 
 int32_t capdagFormal__call_l_CapDAG_dExec_drankingKey(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dselect(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dspecificity(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dControl_dadmits(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dControl_dexitStatus(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dControl_djoinOutcomes(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dControl_dnext(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dControl_doutcome(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dStep_dStepState_dfinal(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dRun_dStep_don(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_TaggedUrn_dExec_dmake(const uint8_t *input, size_t len, lungo_buffer *out);
 #endif /* CAPDAGFORMAL_ENTRIES_H */

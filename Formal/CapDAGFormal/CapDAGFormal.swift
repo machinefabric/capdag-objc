@@ -1019,6 +1019,308 @@ extension Grade {
     }
 }
 
+/// Lean's CapDAG.Run.Control.RunPhase.
+public indirect enum RunPhase {
+    /// Lean's CapDAG.Run.Control.RunPhase.running.
+    case running
+    /// Lean's CapDAG.Run.Control.RunPhase.stopping.
+    case stopping
+    /// Lean's CapDAG.Run.Control.RunPhase.aborting.
+    case aborting
+    /// Lean's CapDAG.Run.Control.RunPhase.ended.
+    case ended
+}
+
+extension RunPhase: Equatable {}
+
+extension RunPhase {
+    /// The layout fingerprint of Lean's CapDAG.Run.Control.RunPhase.
+    public static var lungoFingerprint: String { "9b90c7742e44d84be0eb1459ef38080f0c1d2ed5bcf1860d0c34e71a535db4f1" }
+
+    /// Describes CapDAG.Run.Control.RunPhase for polymorphic functions.
+    public static var lungoType: LungoType<RunPhase> {
+        LungoType<RunPhase>(
+            expr: Lungo.inductiveExpr(23),
+            encode: { w, v in
+                switch v {
+                case .running:
+                    w.u32(0)
+                case .stopping:
+                    w.u32(1)
+                case .aborting:
+                    w.u32(2)
+                case .ended:
+                    w.u32(3)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .running
+                case 1: return .stopping
+                case 2: return .aborting
+                case 3: return .ended
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Control.RunPhase")
+                }
+            })
+    }
+}
+
+/// Lean's CapDAG.Run.Control.RunOutcome.
+public indirect enum RunOutcome {
+    /// Lean's CapDAG.Run.Control.RunOutcome.completed.
+    case completed
+    /// Lean's CapDAG.Run.Control.RunOutcome.tolerated.
+    case tolerated
+    /// Lean's CapDAG.Run.Control.RunOutcome.stopped.
+    case stopped
+    /// Lean's CapDAG.Run.Control.RunOutcome.failed.
+    case failed
+    /// Lean's CapDAG.Run.Control.RunOutcome.aborted.
+    case aborted
+}
+
+extension RunOutcome: Equatable {}
+
+extension RunOutcome {
+    /// The layout fingerprint of Lean's CapDAG.Run.Control.RunOutcome.
+    public static var lungoFingerprint: String { "488f30c13e7da989b6df7a79e6e894861cce0db4ca431c2460b5d3df125af273" }
+
+    /// Describes CapDAG.Run.Control.RunOutcome for polymorphic functions.
+    public static var lungoType: LungoType<RunOutcome> {
+        LungoType<RunOutcome>(
+            expr: Lungo.inductiveExpr(24),
+            encode: { w, v in
+                switch v {
+                case .completed:
+                    w.u32(0)
+                case .tolerated:
+                    w.u32(1)
+                case .stopped:
+                    w.u32(2)
+                case .failed:
+                    w.u32(3)
+                case .aborted:
+                    w.u32(4)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .completed
+                case 1: return .tolerated
+                case 2: return .stopped
+                case 3: return .failed
+                case 4: return .aborted
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Control.RunOutcome")
+                }
+            })
+    }
+}
+
+/// Lean's CapDAG.Run.Control.RunAsk.
+public indirect enum RunAsk {
+    /// Lean's CapDAG.Run.Control.RunAsk.interrupt.
+    case interrupt
+    /// Lean's CapDAG.Run.Control.RunAsk.stop.
+    case stop
+    /// Lean's CapDAG.Run.Control.RunAsk.abort.
+    case abort
+    /// Lean's CapDAG.Run.Control.RunAsk.drained.
+    case drained
+    /// Lean's CapDAG.Run.Control.RunAsk.graceOver.
+    case graceOver
+}
+
+extension RunAsk: Equatable {}
+
+extension RunAsk {
+    /// The layout fingerprint of Lean's CapDAG.Run.Control.RunAsk.
+    public static var lungoFingerprint: String { "67e4380d6283cd01c5cc9ebc04c02f8ba0921b5fbb73702f73936a519c45672b" }
+
+    /// Describes CapDAG.Run.Control.RunAsk for polymorphic functions.
+    public static var lungoType: LungoType<RunAsk> {
+        LungoType<RunAsk>(
+            expr: Lungo.inductiveExpr(25),
+            encode: { w, v in
+                switch v {
+                case .interrupt:
+                    w.u32(0)
+                case .stop:
+                    w.u32(1)
+                case .abort:
+                    w.u32(2)
+                case .drained:
+                    w.u32(3)
+                case .graceOver:
+                    w.u32(4)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .interrupt
+                case 1: return .stop
+                case 2: return .abort
+                case 3: return .drained
+                case 4: return .graceOver
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Control.RunAsk")
+                }
+            })
+    }
+}
+
+/// Lean's CapDAG.Run.Control.RunNext.
+public struct RunNext {
+    public let phase: RunPhase
+    public let act: RunAct
+
+    public init(phase: RunPhase, act: RunAct) {
+        self.phase = phase
+        self.act = act
+    }
+}
+
+extension RunNext: Equatable {}
+
+extension RunNext {
+    /// The layout fingerprint of Lean's CapDAG.Run.Control.RunNext.
+    public static var lungoFingerprint: String { "ed3067eec3d1ed1784061abb5cd9f6a344c9044fb5ce4e2e991157d961689844" }
+
+    /// Describes CapDAG.Run.Control.RunNext for polymorphic functions.
+    public static var lungoType: LungoType<RunNext> {
+        LungoType<RunNext>(
+            expr: Lungo.inductiveExpr(26),
+            encode: { w, v in
+                w.u32(0)
+                try RunPhase.lungoType.encode(&w, v.phase)
+                try RunAct.lungoType.encode(&w, v.act)
+            },
+            decode: { r in
+                let c = try r.u32()
+                guard c == 0 else { throw LungoMalformed("constructor index \(c) of CapDAG.Run.Control.RunNext") }
+                return RunNext(phase: try RunPhase.lungoType.decode(&r), act: try RunAct.lungoType.decode(&r))
+            })
+    }
+}
+
+/// Lean's CapDAG.Run.Step.StepState.
+public indirect enum StepState {
+    /// Lean's CapDAG.Run.Step.StepState.waiting.
+    case waiting
+    /// Lean's CapDAG.Run.Step.StepState.running.
+    case running
+    /// Lean's CapDAG.Run.Step.StepState.done.
+    case done
+    /// Lean's CapDAG.Run.Step.StepState.skipped.
+    case skipped
+    /// Lean's CapDAG.Run.Step.StepState.tolerated.
+    case tolerated
+    /// Lean's CapDAG.Run.Step.StepState.failed.
+    case failed
+    /// Lean's CapDAG.Run.Step.StepState.notRun.
+    case notRun
+    /// Lean's CapDAG.Run.Step.StepState.cancelled.
+    case cancelled
+}
+
+extension StepState: Equatable {}
+
+extension StepState {
+    /// The layout fingerprint of Lean's CapDAG.Run.Step.StepState.
+    public static var lungoFingerprint: String { "29605211a3fdc3a760359c75d5cb65673e50c5813e851ed461dd9b955dbdfcfa" }
+
+    /// Describes CapDAG.Run.Step.StepState for polymorphic functions.
+    public static var lungoType: LungoType<StepState> {
+        LungoType<StepState>(
+            expr: Lungo.inductiveExpr(27),
+            encode: { w, v in
+                switch v {
+                case .waiting:
+                    w.u32(0)
+                case .running:
+                    w.u32(1)
+                case .done:
+                    w.u32(2)
+                case .skipped:
+                    w.u32(3)
+                case .tolerated:
+                    w.u32(4)
+                case .failed:
+                    w.u32(5)
+                case .notRun:
+                    w.u32(6)
+                case .cancelled:
+                    w.u32(7)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .waiting
+                case 1: return .running
+                case 2: return .done
+                case 3: return .skipped
+                case 4: return .tolerated
+                case 5: return .failed
+                case 6: return .notRun
+                case 7: return .cancelled
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Step.StepState")
+                }
+            })
+    }
+}
+
+/// Lean's CapDAG.Run.Step.StepReport.
+public indirect enum StepReport {
+    /// Lean's CapDAG.Run.Step.StepReport.progress.
+    case progress(complete: Bool)
+    /// Lean's CapDAG.Run.Step.StepReport.skipped.
+    case skipped
+    /// Lean's CapDAG.Run.Step.StepReport.tolerated.
+    case tolerated
+    /// Lean's CapDAG.Run.Step.StepReport.failed.
+    case failed
+    /// Lean's CapDAG.Run.Step.StepReport.runEnded.
+    case runEnded(completed: Bool, aborted: Bool)
+}
+
+extension StepReport: Equatable {}
+
+extension StepReport {
+    /// The layout fingerprint of Lean's CapDAG.Run.Step.StepReport.
+    public static var lungoFingerprint: String { "72ac48415e459328353488d886a31a3874490648ec761e7e8b14a08f7644ac29" }
+
+    /// Describes CapDAG.Run.Step.StepReport for polymorphic functions.
+    public static var lungoType: LungoType<StepReport> {
+        LungoType<StepReport>(
+            expr: Lungo.inductiveExpr(28),
+            encode: { w, v in
+                switch v {
+                case .progress(let complete):
+                    w.u32(0)
+                    try Lungo.bool.encode(&w, complete)
+                case .skipped:
+                    w.u32(1)
+                case .tolerated:
+                    w.u32(2)
+                case .failed:
+                    w.u32(3)
+                case .runEnded(let completed, let aborted):
+                    w.u32(4)
+                    try Lungo.bool.encode(&w, completed)
+                    try Lungo.bool.encode(&w, aborted)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .progress(complete: try Lungo.bool.decode(&r))
+                case 1: return .skipped
+                case 2: return .tolerated
+                case 3: return .failed
+                case 4: return .runEnded(completed: try Lungo.bool.decode(&r), aborted: try Lungo.bool.decode(&r))
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Step.StepReport")
+                }
+            })
+    }
+}
+
 /// Lean's TaggedUrn.Constraint.
 public indirect enum Constraint {
     /// Lean's TaggedUrn.Constraint.missing.
@@ -1046,7 +1348,7 @@ extension Constraint {
     /// Describes TaggedUrn.Constraint for polymorphic functions.
     public static var lungoType: LungoType<Constraint> {
         LungoType<Constraint>(
-            expr: Lungo.inductiveExpr(23),
+            expr: Lungo.inductiveExpr(29),
             encode: { w, v in
                 switch v {
                 case .missing:
@@ -1105,7 +1407,7 @@ extension Pool {
     /// Describes CapDAG.Bifaci.Pools.Pool for polymorphic functions.
     public static var lungoType: LungoType<Pool> {
         LungoType<Pool>(
-            expr: Lungo.inductiveExpr(24),
+            expr: Lungo.inductiveExpr(30),
             encode: { w, v in
                 w.u32(0)
                 try Lungo.string.encode(&w, v.name)
@@ -1139,7 +1441,7 @@ extension WfAsk {
     /// Describes CapDAG.Exec.WfAsk for polymorphic functions.
     public static var lungoType: LungoType<WfAsk> {
         LungoType<WfAsk>(
-            expr: Lungo.inductiveExpr(25),
+            expr: Lungo.inductiveExpr(31),
             encode: { w, v in
                 switch v {
                 case .unknown:
@@ -1162,6 +1464,57 @@ extension WfAsk {
                 case 2: return .covers(u: try LungoExternWf.lungoType.decode(&r))
                 case 3: return .same(u: try LungoExternWf.lungoType.decode(&r))
                 case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Exec.WfAsk")
+                }
+            })
+    }
+}
+
+/// Lean's CapDAG.Run.Control.RunAct.
+public indirect enum RunAct {
+    /// Lean's CapDAG.Run.Control.RunAct.none.
+    case none
+    /// Lean's CapDAG.Run.Control.RunAct.stop.
+    case stop
+    /// Lean's CapDAG.Run.Control.RunAct.cancel.
+    case cancel
+    /// Lean's CapDAG.Run.Control.RunAct.kill.
+    case kill
+    /// Lean's CapDAG.Run.Control.RunAct.finish.
+    case finish
+}
+
+extension RunAct: Equatable {}
+
+extension RunAct {
+    /// The layout fingerprint of Lean's CapDAG.Run.Control.RunAct.
+    public static var lungoFingerprint: String { "f48722d20571ec5842888991bdef26addc3a210e2b8eb68384575008b80b216c" }
+
+    /// Describes CapDAG.Run.Control.RunAct for polymorphic functions.
+    public static var lungoType: LungoType<RunAct> {
+        LungoType<RunAct>(
+            expr: Lungo.inductiveExpr(32),
+            encode: { w, v in
+                switch v {
+                case .none:
+                    w.u32(0)
+                case .stop:
+                    w.u32(1)
+                case .cancel:
+                    w.u32(2)
+                case .kill:
+                    w.u32(3)
+                case .finish:
+                    w.u32(4)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .none
+                case 1: return .stop
+                case 2: return .cancel
+                case 3: return .kill
+                case 4: return .finish
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Control.RunAct")
                 }
             })
     }
@@ -1776,6 +2129,81 @@ public func specificity(_ c: WfCap) throws -> LungoNat {
             try WfCap.lungoType.encode(&w, c)
         },
         returns: .value(Lungo.nat))
+}
+
+/// Lean's CapDAG.Run.Control.admits : CapDAG.Run.Control.RunPhase → Bool
+public func admits(_ a: RunPhase) throws -> Bool {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dControl_dadmits), typeArgs: [],
+        args: { w in
+            try RunPhase.lungoType.encode(&w, a)
+        },
+        returns: .value(Lungo.bool))
+}
+
+/// Lean's CapDAG.Run.Control.exitStatus : CapDAG.Run.Control.RunOutcome → Nat
+public func exitStatus(_ a: RunOutcome) throws -> LungoNat {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dControl_dexitStatus), typeArgs: [],
+        args: { w in
+            try RunOutcome.lungoType.encode(&w, a)
+        },
+        returns: .value(Lungo.nat))
+}
+
+/// Lean's CapDAG.Run.Control.joinOutcomes : CapDAG.Run.Control.RunOutcome → CapDAG.Run.Control.RunOutcome → CapDAG.Run.Control.RunOutcome
+public func joinOutcomes(_ a: RunOutcome, _ b: RunOutcome) throws -> RunOutcome {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dControl_djoinOutcomes), typeArgs: [],
+        args: { w in
+            try RunOutcome.lungoType.encode(&w, a)
+            try RunOutcome.lungoType.encode(&w, b)
+        },
+        returns: .value(RunOutcome.lungoType))
+}
+
+/// Lean's CapDAG.Run.Control.next : CapDAG.Run.Control.RunPhase → CapDAG.Run.Control.RunAsk → CapDAG.Run.Control.RunNext
+public func next(_ a: RunPhase, _ a2: RunAsk) throws -> RunNext {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dControl_dnext), typeArgs: [],
+        args: { w in
+            try RunPhase.lungoType.encode(&w, a)
+            try RunAsk.lungoType.encode(&w, a2)
+        },
+        returns: .value(RunNext.lungoType))
+}
+
+/// Lean's CapDAG.Run.Control.outcome : CapDAG.Run.Control.RunPhase → Bool → Bool → CapDAG.Run.Control.RunOutcome
+public func outcome(_ a: RunPhase, _ a2: Bool, _ a3: Bool) throws -> RunOutcome {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dControl_doutcome), typeArgs: [],
+        args: { w in
+            try RunPhase.lungoType.encode(&w, a)
+            try Lungo.bool.encode(&w, a2)
+            try Lungo.bool.encode(&w, a3)
+        },
+        returns: .value(RunOutcome.lungoType))
+}
+
+/// Lean's CapDAG.Run.Step.StepState.final : CapDAG.Run.Step.StepState → Bool
+public func final(_ a: StepState) throws -> Bool {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dStep_dStepState_dfinal), typeArgs: [],
+        args: { w in
+            try StepState.lungoType.encode(&w, a)
+        },
+        returns: .value(Lungo.bool))
+}
+
+/// Lean's CapDAG.Run.Step.on : CapDAG.Run.Step.StepState → CapDAG.Run.Step.StepReport → Option CapDAG.Run.Step.StepState
+public func on(_ a: StepState, _ a2: StepReport) throws -> StepState? {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dRun_dStep_don), typeArgs: [],
+        args: { w in
+            try StepState.lungoType.encode(&w, a)
+            try StepReport.lungoType.encode(&w, a2)
+        },
+        returns: .value(Lungo.option(StepState.lungoType)))
 }
 
 /// Lean's TaggedUrn.Exec.make : String → List (String × TaggedUrn.Constraint) → Option TaggedUrn.Exec.Wf
@@ -5077,6 +5505,1005 @@ public let assuranceJSON = #"""
       }
     },
     {
+      "name": "CapDAG.Run.Control.admission_closes",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (a : CapDAG.Run.Control.RunAsk),\n  CapDAG.Run.Control.admits (CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.running a).phase = false ↔\n    (CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.running a).act = CapDAG.Run.Control.RunAct.stop ∨\n      (CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.running a).act = CapDAG.Run.Control.RunAct.cancel ∨\n        (CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.running a).act = CapDAG.Run.Control.RunAct.finish",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "79c2e1e4671deb2b528d3837d6e2d124cf425b9aa4aa5c8ae84edacd14342149",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 43,
+          "column": 1
+        },
+        "end": {
+          "line": 50,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.admission_never_regained",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.admits"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (a : CapDAG.Run.Control.RunAsk),\n  CapDAG.Run.Control.admits p = false → CapDAG.Run.Control.admits (CapDAG.Run.Control.next p a).phase = false",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "30c60628ca12b3c976a328f9583144fdf1547792f098e408a879275a8cb80b17",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 37,
+          "column": 1
+        },
+        "end": {
+          "line": 41,
+          "column": 50
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.admits_iff",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.admits"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase), CapDAG.Run.Control.admits p = true ↔ p = CapDAG.Run.Control.RunPhase.running",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "d2ea0cb48f97648e82e137fe7321ee4b7cac988c80540dfd2a4412a25ad4d044",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 32,
+          "column": 1
+        },
+        "end": {
+          "line": 35,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.cancel_only_on_abort",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (a : CapDAG.Run.Control.RunAsk),\n  (CapDAG.Run.Control.next p a).act = CapDAG.Run.Control.RunAct.cancel →\n    a = CapDAG.Run.Control.RunAsk.abort ∨\n      a = CapDAG.Run.Control.RunAsk.interrupt ∧ p = CapDAG.Run.Control.RunPhase.stopping",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "ff44975da4e2bab93aade6ac33711eb15b266be864320c1b165391e316d3c660",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 61,
+          "column": 1
+        },
+        "end": {
+          "line": 66,
+          "column": 42
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.ended_stays",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (a : CapDAG.Run.Control.RunAsk),\n  CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.ended a =\n    { phase := CapDAG.Run.Control.RunPhase.ended, act := CapDAG.Run.Control.RunAct.none }",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "6b426d8dd9c91dbff53751df5d1e254331b08820820f9340b4168a6c5b3a88c8",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 25,
+          "column": 1
+        },
+        "end": {
+          "line": 28,
+          "column": 18
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.exitStatus_interrupted",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.exitStatus"
+      ],
+      "specifications": [],
+      "statement": "CapDAG.Run.Control.exitStatus CapDAG.Run.Control.RunOutcome.stopped = 130 ∧\n  CapDAG.Run.Control.exitStatus CapDAG.Run.Control.RunOutcome.aborted = 130",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "2d73bd5642ed5f148ba529c10d702b8dc47c7b5295b283ea26c57a2ba9e121f1",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 97,
+          "column": 1
+        },
+        "end": {
+          "line": 101,
+          "column": 9
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.exitStatus_zero_iff",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.exitStatus"
+      ],
+      "specifications": [],
+      "statement": "∀ (o : CapDAG.Run.Control.RunOutcome), CapDAG.Run.Control.exitStatus o = 0 ↔ o = CapDAG.Run.Control.RunOutcome.completed",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "7626f6a147a96f901d116ff12558e0ef0eb477ddb84da46fac26ff74fad58a23",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 92,
+          "column": 1
+        },
+        "end": {
+          "line": 95,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.finish_iff",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (a : CapDAG.Run.Control.RunAsk),\n  (CapDAG.Run.Control.next p a).act = CapDAG.Run.Control.RunAct.finish ↔\n    a = CapDAG.Run.Control.RunAsk.drained ∧ p ≠ CapDAG.Run.Control.RunPhase.ended",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "ea314bf8b17fe9ae46d2ecfee1aa5e576a75b9672f3a82d1d542314ecc296d46",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 83,
+          "column": 1
+        },
+        "end": {
+          "line": 88,
+          "column": 33
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.interrupts",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.running CapDAG.Run.Control.RunAsk.interrupt =\n    { phase := CapDAG.Run.Control.RunPhase.stopping, act := CapDAG.Run.Control.RunAct.stop } ∧\n  CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.stopping CapDAG.Run.Control.RunAsk.interrupt =\n      { phase := CapDAG.Run.Control.RunPhase.aborting, act := CapDAG.Run.Control.RunAct.cancel } ∧\n    CapDAG.Run.Control.next CapDAG.Run.Control.RunPhase.aborting CapDAG.Run.Control.RunAsk.interrupt =\n      { phase := CapDAG.Run.Control.RunPhase.ended, act := CapDAG.Run.Control.RunAct.kill }",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "5e80a446b35ae1f1eece26cb3fd50ad3e0f5f74953d6308323dffd0f3c89bdb3",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 74,
+          "column": 1
+        },
+        "end": {
+          "line": 81,
+          "column": 9
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.join_assoc",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.joinOutcomes"
+      ],
+      "specifications": [],
+      "statement": "∀ (a b c : CapDAG.Run.Control.RunOutcome),\n  CapDAG.Run.Control.joinOutcomes (CapDAG.Run.Control.joinOutcomes a b) c =\n    CapDAG.Run.Control.joinOutcomes a (CapDAG.Run.Control.joinOutcomes b c)",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "b25f684ba058f946c58949bf833aea009b2ebee9ae769b4fac8f93b51608977f",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 142,
+          "column": 1
+        },
+        "end": {
+          "line": 145,
+          "column": 45
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.join_comm",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.joinOutcomes"
+      ],
+      "specifications": [],
+      "statement": "∀ (a b : CapDAG.Run.Control.RunOutcome), CapDAG.Run.Control.joinOutcomes a b = CapDAG.Run.Control.joinOutcomes b a",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "2784d281e8dd8446413128ee4ca4ffae4f9a394bb3e3ba81e2a667f6f9dba238",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 137,
+          "column": 1
+        },
+        "end": {
+          "line": 140,
+          "column": 33
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.join_completed",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.joinOutcomes"
+      ],
+      "specifications": [],
+      "statement": "∀ (a : CapDAG.Run.Control.RunOutcome), CapDAG.Run.Control.joinOutcomes a CapDAG.Run.Control.RunOutcome.completed = a",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "586b226aa2b1e1dee8fb0cea8a70ebe2a87a06b4e99a314f0aa5d186d76f7766",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 152,
+          "column": 1
+        },
+        "end": {
+          "line": 155,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.join_rank",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.joinOutcomes"
+      ],
+      "specifications": [],
+      "statement": "∀ (a b : CapDAG.Run.Control.RunOutcome), (CapDAG.Run.Control.joinOutcomes a b).rank = max a.rank b.rank",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "8c83024ee23bb9aa2b074537e684acb1461bac49be4a8b919deac4834814b870",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 132,
+          "column": 1
+        },
+        "end": {
+          "line": 135,
+          "column": 33
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.join_self",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.joinOutcomes"
+      ],
+      "specifications": [],
+      "statement": "∀ (a : CapDAG.Run.Control.RunOutcome), CapDAG.Run.Control.joinOutcomes a a = a",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "4f91d54b0e432eda7796fba2f1db3fb25fd7d3c9d47cfa08b83fcbc0af5a82a4",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 147,
+          "column": 1
+        },
+        "end": {
+          "line": 150,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.kill_only_when_aborting",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (a : CapDAG.Run.Control.RunAsk),\n  (CapDAG.Run.Control.next p a).act = CapDAG.Run.Control.RunAct.kill → p = CapDAG.Run.Control.RunPhase.aborting",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "65b4b988c3745d850c78d152ecb29bd10fa540338896203bd564161131839658",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 68,
+          "column": 1
+        },
+        "end": {
+          "line": 72,
+          "column": 42
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.next_forward",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (a : CapDAG.Run.Control.RunAsk), p.rank ≤ (CapDAG.Run.Control.next p a).phase.rank",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "efe82c17d0654c5f04035492ed37d544f0b8a9ce3420f13be6d9c4f51ffbfa54",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 19,
+          "column": 1
+        },
+        "end": {
+          "line": 23,
+          "column": 33
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.outcome_aborted",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.outcome"
+      ],
+      "specifications": [],
+      "statement": "∀ (failed tolerated : Bool),\n  CapDAG.Run.Control.outcome CapDAG.Run.Control.RunPhase.aborting failed tolerated =\n    CapDAG.Run.Control.RunOutcome.aborted",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "798fd6102f4568405ed5a7868e8ae0c40a5caa55117863dde1fcd726730caade",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 103,
+          "column": 1
+        },
+        "end": {
+          "line": 107,
+          "column": 43
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.outcome_completed_iff",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.outcome"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (failed tolerated : Bool),\n  CapDAG.Run.Control.outcome p failed tolerated = CapDAG.Run.Control.RunOutcome.completed ↔\n    (p = CapDAG.Run.Control.RunPhase.running ∨ p = CapDAG.Run.Control.RunPhase.ended) ∧\n      failed = false ∧ tolerated = false",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "eaa6183820e1884461bcc5d7d7126f0723f44b2652958a169120eabb4efcebc2",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 122,
+          "column": 1
+        },
+        "end": {
+          "line": 128,
+          "column": 58
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.outcome_failed",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.outcome"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase) (tolerated : Bool),\n  (CapDAG.Run.Control.outcome p true tolerated).rank ≥ CapDAG.Run.Control.RunOutcome.failed.rank",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "b1547dd376ad19ca8a7177e99120b3dc3a3a7010393e6b18a590067261f8b315",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 109,
+          "column": 1
+        },
+        "end": {
+          "line": 113,
+          "column": 41
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.outcome_stopped_not_completed",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.outcome"
+      ],
+      "specifications": [],
+      "statement": "∀ (failed tolerated : Bool),\n  CapDAG.Run.Control.outcome CapDAG.Run.Control.RunPhase.stopping failed tolerated ≠\n    CapDAG.Run.Control.RunOutcome.completed",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "b83c76d9cd5a3682b91b6e2dc251aca9b4d18bca66e68250a062e6e604ca9087",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 115,
+          "column": 1
+        },
+        "end": {
+          "line": 120,
+          "column": 46
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.rank_injective",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.RunOutcome.rank"
+      ],
+      "specifications": [],
+      "statement": "∀ (a b : CapDAG.Run.Control.RunOutcome), a.rank = b.rank → a = b",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "ed1b1549336dff0c7125520023612a673f9841cb714880ccf9758ffd576aa186",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 157,
+          "column": 1
+        },
+        "end": {
+          "line": 160,
+          "column": 53
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.stop_never_cancels",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Control.next"
+      ],
+      "specifications": [],
+      "statement": "∀ (p : CapDAG.Run.Control.RunPhase),\n  (CapDAG.Run.Control.next p CapDAG.Run.Control.RunAsk.stop).act = CapDAG.Run.Control.RunAct.stop ∨\n    (CapDAG.Run.Control.next p CapDAG.Run.Control.RunAsk.stop).act = CapDAG.Run.Control.RunAct.none",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "8d197c70f74f2dbc9b4a37dfd98f6b14de474ea96c203252f83bf5ff0bde1587",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Control.lean",
+        "start": {
+          "line": 54,
+          "column": 1
+        },
+        "end": {
+          "line": 59,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.completed_run_done",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s : CapDAG.Run.Step.StepState) (aborted : Bool),\n  s = CapDAG.Run.Step.StepState.waiting ∨ s = CapDAG.Run.Step.StepState.running →\n    CapDAG.Run.Step.on s (CapDAG.Run.Step.StepReport.runEnded true aborted) = some CapDAG.Run.Step.StepState.done",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "68f875518e1b7ab4c87d46424c3db3c35803fb7e579d6d8c2d7427a07a1242c4",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 32,
+          "column": 1
+        },
+        "end": {
+          "line": 37,
+          "column": 56
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.failed_only_reported",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s : CapDAG.Run.Step.StepState) (r : CapDAG.Run.Step.StepReport),\n  CapDAG.Run.Step.on s r = some CapDAG.Run.Step.StepState.failed →\n    r = CapDAG.Run.Step.StepReport.failed ∨ s = CapDAG.Run.Step.StepState.failed",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "a6e387db2018d6feef8f1be4f816b0b9ab20200157dba58cf276593965fb0803",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 71,
+          "column": 1
+        },
+        "end": {
+          "line": 76,
+          "column": 47
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.final_iff",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.StepState.final"
+      ],
+      "specifications": [],
+      "statement": "∀ (s : CapDAG.Run.Step.StepState),\n  s.final = false ↔\n    s = CapDAG.Run.Step.StepState.waiting ∨ s = CapDAG.Run.Step.StepState.running ∨ s = CapDAG.Run.Step.StepState.done",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "fe8b46da6fa1e1f1dc78bfb2e0ad3fa34ea7cf6636762c8ed86d39e144071bf3",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 78,
+          "column": 1
+        },
+        "end": {
+          "line": 82,
+          "column": 21
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.final_stays",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s : CapDAG.Run.Step.StepState) (r : CapDAG.Run.Step.StepReport),\n  s.final = true → CapDAG.Run.Step.on s r = none ∨ CapDAG.Run.Step.on s r = some s",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "4fbe2351ddc6fb8a34a3248149e3e73d920cdd5abd0b60335854737a5c273aa6",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 10,
+          "column": 1
+        },
+        "end": {
+          "line": 16,
+          "column": 57
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.progress_running_or_done",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s t : CapDAG.Run.Step.StepState) (complete : Bool),\n  CapDAG.Run.Step.on s (CapDAG.Run.Step.StepReport.progress complete) = some t →\n    t = CapDAG.Run.Step.StepState.running ∨ t = CapDAG.Run.Step.StepState.done",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "e77b175e4aaf06ba5713ac431b1bcf391812d59738d26b2bc19bda3708a6ef2b",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 59,
+          "column": 1
+        },
+        "end": {
+          "line": 63,
+          "column": 73
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.run_end_accepted",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s : CapDAG.Run.Step.StepState) (completed aborted : Bool),\n  (CapDAG.Run.Step.on s (CapDAG.Run.Step.StepReport.runEnded completed aborted)).isSome = true",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "ed886b0387992ab6ba8620548f8b02fad6cf018f468f7b71907cfb884f623f2a",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 18,
+          "column": 1
+        },
+        "end": {
+          "line": 22,
+          "column": 56
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.run_end_settles",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s t : CapDAG.Run.Step.StepState) (completed aborted : Bool),\n  CapDAG.Run.Step.on s (CapDAG.Run.Step.StepReport.runEnded completed aborted) = some t →\n    t ≠ CapDAG.Run.Step.StepState.waiting ∧ t ≠ CapDAG.Run.Step.StepState.running",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "ae9c5beabb8ac6a11257d5d2b0305d1d2c47669732fb29d29d3a9e6811814343",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 24,
+          "column": 1
+        },
+        "end": {
+          "line": 30,
+          "column": 26
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.running_at_the_end",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "CapDAG.Run.Step.on CapDAG.Run.Step.StepState.running (CapDAG.Run.Step.StepReport.runEnded false true) =\n    some CapDAG.Run.Step.StepState.cancelled ∧\n  CapDAG.Run.Step.on CapDAG.Run.Step.StepState.running (CapDAG.Run.Step.StepReport.runEnded false false) =\n    some CapDAG.Run.Step.StepState.done",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "c45720df8fe78eacf184cc54a54091867c158e84b8213fcd2f3779ea6c0c20c3",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 46,
+          "column": 1
+        },
+        "end": {
+          "line": 52,
+          "column": 9
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.skipped_only_waiting",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s t : CapDAG.Run.Step.StepState),\n  CapDAG.Run.Step.on s CapDAG.Run.Step.StepReport.skipped = some t → s = CapDAG.Run.Step.StepState.waiting",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "261170ce9ddbaffb82f6ca37857b1a0378657bc93f08e090d19e5abaea44af51",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 54,
+          "column": 1
+        },
+        "end": {
+          "line": 57,
+          "column": 28
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.waiting_not_run",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (aborted : Bool),\n  CapDAG.Run.Step.on CapDAG.Run.Step.StepState.waiting (CapDAG.Run.Step.StepReport.runEnded false aborted) =\n    some CapDAG.Run.Step.StepState.notRun",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "3ff302d0482b0fb54f4a7130662bbfb03c65b4cdff9d24b136925eeae370af5d",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 39,
+          "column": 1
+        },
+        "end": {
+          "line": 44,
+          "column": 24
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.whole_progress_done",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Run.Step.on"
+      ],
+      "specifications": [],
+      "statement": "∀ (s : CapDAG.Run.Step.StepState),\n  s.final = false →\n    CapDAG.Run.Step.on s (CapDAG.Run.Step.StepReport.progress true) = some CapDAG.Run.Step.StepState.done",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "177a5a4b98f35655b01efdaaf5f090be5a6970d52bad116959586a46f5e35c25",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Laws/Step.lean",
+        "start": {
+          "line": 65,
+          "column": 1
+        },
+        "end": {
+          "line": 69,
+          "column": 45
+        }
+      }
+    },
+    {
       "name": "TaggedUrn.Exec.comparable_decides",
       "relation": "lungo.decides",
       "subjects": [
@@ -7618,6 +9045,251 @@ public let assuranceJSON = #"""
         "end": {
           "line": 328,
           "column": 54
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.admits",
+      "module": "CapDAG.Run.Control",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Run.Control.admission_never_regained",
+        "CapDAG.Run.Control.admits_iff"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Control.lean",
+        "start": {
+          "line": 94,
+          "column": 1
+        },
+        "end": {
+          "line": 97,
+          "column": 15
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.exitStatus",
+      "module": "CapDAG.Run.Control",
+      "async": false,
+      "trust": {
+        "axioms": [],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Run.Control.exitStatus_interrupted",
+        "CapDAG.Run.Control.exitStatus_zero_iff"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Control.lean",
+        "start": {
+          "line": 137,
+          "column": 1
+        },
+        "end": {
+          "line": 145,
+          "column": 20
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.joinOutcomes",
+      "module": "CapDAG.Run.Control",
+      "async": false,
+      "trust": {
+        "axioms": [],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": [
+          "lean_nat_dec_le"
+        ]
+      },
+      "claims": [
+        "CapDAG.Run.Control.join_assoc",
+        "CapDAG.Run.Control.join_comm",
+        "CapDAG.Run.Control.join_completed",
+        "CapDAG.Run.Control.join_rank",
+        "CapDAG.Run.Control.join_self"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Control.lean",
+        "start": {
+          "line": 123,
+          "column": 1
+        },
+        "end": {
+          "line": 125,
+          "column": 35
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.next",
+      "module": "CapDAG.Run.Control",
+      "async": false,
+      "trust": {
+        "axioms": [],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Run.Control.admission_closes",
+        "CapDAG.Run.Control.cancel_only_on_abort",
+        "CapDAG.Run.Control.ended_stays",
+        "CapDAG.Run.Control.finish_iff",
+        "CapDAG.Run.Control.interrupts",
+        "CapDAG.Run.Control.kill_only_when_aborting",
+        "CapDAG.Run.Control.next_forward",
+        "CapDAG.Run.Control.stop_never_cancels"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Control.lean",
+        "start": {
+          "line": 75,
+          "column": 1
+        },
+        "end": {
+          "line": 92,
+          "column": 33
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Control.outcome",
+      "module": "CapDAG.Run.Control",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Run.Control.outcome_aborted",
+        "CapDAG.Run.Control.outcome_completed_iff",
+        "CapDAG.Run.Control.outcome_failed",
+        "CapDAG.Run.Control.outcome_stopped_not_completed"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Control.lean",
+        "start": {
+          "line": 127,
+          "column": 1
+        },
+        "end": {
+          "line": 135,
+          "column": 34
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.StepState.final",
+      "module": "CapDAG.Run.Step",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Run.Step.final_iff"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Step.lean",
+        "start": {
+          "line": 58,
+          "column": 1
+        },
+        "end": {
+          "line": 62,
+          "column": 14
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Run.Step.on",
+      "module": "CapDAG.Run.Step",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Run.Step.completed_run_done",
+        "CapDAG.Run.Step.failed_only_reported",
+        "CapDAG.Run.Step.final_stays",
+        "CapDAG.Run.Step.progress_running_or_done",
+        "CapDAG.Run.Step.run_end_accepted",
+        "CapDAG.Run.Step.run_end_settles",
+        "CapDAG.Run.Step.running_at_the_end",
+        "CapDAG.Run.Step.skipped_only_waiting",
+        "CapDAG.Run.Step.waiting_not_run",
+        "CapDAG.Run.Step.whole_progress_done"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Run/Step.lean",
+        "start": {
+          "line": 64,
+          "column": 1
+        },
+        "end": {
+          "line": 84,
+          "column": 17
         }
       }
     },
