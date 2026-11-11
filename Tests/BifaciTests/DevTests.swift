@@ -5,7 +5,7 @@ import CapDAG
 // =============================================================================
 // Dev Tests
 //
-// Covers TEST7154-7160 from `dev.rs` in the reference Rust implementation:
+// Covers TEST7154-7160 and TEST7166 from `dev.rs` in the reference Rust implementation:
 // the `capdag dev new` / `capdag dev install` scaffolding and staging path, and the
 // local-manifest alias resolution that lets an unpublished cap run.
 //
@@ -251,32 +251,66 @@ final class DevTests: XCTestCase {
     // TEST7157: `dev install` refuses a PUBLISHED manifest. `registry_url`
     // non-null means the cartridge belongs to a registry, and staging it under
     // the dev slug would put a published identity in a slot reserved for local
-    // work.
+    // work. The refusal names the registry and the command that refused, and
+    // says what to do instead.
     func test7157_devInstallRejectsPublishedManifest() throws {
         let root = try makeTempDir("published")
         let project = (root as NSString).appendingPathComponent("proj")
         try FileManager.default.createDirectory(
             atPath: project, withIntermediateDirectories: true)
 
+        let registry = "https://cartridges.machinefabric.com/v1/manifest"
         let manifest = Manifest(
             name: "greeter",
             version: "0.1.0",
             channel: "nightly",
-            registryURL: "https://cartridges.machinefabric.com/v1/manifest",
+            registryURL: registry,
             description: "published",
             capGroups: [])
+        let cartridges = (root as NSString).appendingPathComponent("cartridges")
 
         XCTAssertThrowsError(
             try stageDevCartridge(
                 projectDir: project,
                 manifest: manifest,
-                userCartridgeDir: (root as NSString).appendingPathComponent("cartridges"),
+                userCartridgeDir: cartridges,
                 registryVersion: 1,
                 fabricManifestVersion: 7)
         ) { error in
             guard case DevError.notDev = error else {
                 return XCTFail("expected notDev, got \(error)")
             }
+            let text = "\(error)"
+            for said in [registry, "`capdag dev install`", "set registry_url to null"] {
+                XCTAssertTrue(text.contains(said), "the refusal does not say '\(said)': \(text)")
+            }
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: cartridges), "nothing was staged")
+    }
+
+    // TEST7166: a project with no cartridge entry is refused. The error names
+    // the project, every entry that would have been taken — each language's,
+    // under the project's name — and the command that makes a project.
+    func test7166_aProjectWithNoEntryIsRefusedNamingEachEntryAndDevNew() throws {
+        let root = try makeTempDir("noentry")
+        let project = (root as NSString).appendingPathComponent("tagger")
+        try FileManager.default.createDirectory(
+            atPath: project, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(try projectEntry(project)) { error in
+            guard case DevError.noEntry(let named, _) = error else {
+                return XCTFail("expected noEntry, got \(error)")
+            }
+            XCTAssertEqual(named, project)
+            let text = "\(error)"
+            XCTAssertTrue(text.contains(project), "the project is not named: \(text)")
+            for language in stubLanguageList() {
+                XCTAssertTrue(
+                    text.contains(stubEntry(language, "tagger")),
+                    "\(language.display)'s entry is not named: \(text)")
+            }
+            XCTAssertTrue(text.contains("`capdag dev new`"), text)
         }
     }
 
