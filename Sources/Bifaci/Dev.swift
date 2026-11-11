@@ -62,7 +62,8 @@ public enum DevError: Error, CustomStringConvertible {
         case .notDev(let registryURL):
             return "this project's manifest declares registry_url '\(registryURL)', so it is a "
                 + "PUBLISHED cartridge, not a dev one. `capdag dev install` stages only dev "
-                + "cartridges (registry_url null)."
+                + "cartridges (registry_url null). Publish it through the cartridge registry "
+                + "instead, or set registry_url to null for local development."
         case .fabricConflict(let alias, let devURN, let fabricURN):
             return "the dev cap '\(devURN)' claims alias '\(alias)', which the fabric already "
                 + "resolves to '\(fabricURN)'. Rename the dev cap's alias — a dev cartridge "
