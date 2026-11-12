@@ -444,6 +444,11 @@ public enum CartridgeHostError: Error, LocalizedError, Sendable {
     case cartridgeError(code: String, message: String)
     case unexpectedFrameType(FrameType)
     case protocolError(String)
+    /// The host will not start this cartridge, and says why: a bundled
+    /// cartridge whose directory no longer matches its build's signed bundle
+    /// manifest. The request that would have started it is answered with this
+    /// reason, under CARTRIDGE_REFUSED.
+    case cartridgeRefused(String)
     case processExited
     case closed
     case noHandler(String)
@@ -464,6 +469,7 @@ public enum CartridgeHostError: Error, LocalizedError, Sendable {
         case .cartridgeError(let code, let message): return "Cartridge error [\(code)]: \(message)"
         case .unexpectedFrameType(let t): return "Unexpected frame type: \(t)"
         case .protocolError(let msg): return "Protocol error: \(msg)"
+        case .cartridgeRefused(let why): return why
         case .processExited: return "Cartridge process exited unexpectedly"
         case .closed: return "Host is closed"
         case .noHandler(let cap): return "No handler found for cap: \(cap)"
@@ -619,6 +625,12 @@ private class ManagedCartridge {
     /// Absolute path to the version directory containing cartridge.json.
     /// This is the anchor — the entry point is relative to this directory.
     let cartridgeDir: String
+    /// For a bundled cartridge, the directory hash its build's signed bundle
+    /// manifest records; `nil` for an installed, dev, or attached one. It is
+    /// the cartridge's identity hash, and the directory is held to it each
+    /// time the cartridge is started: a cartridge that was changed is refused
+    /// there. Updated by each discovery pass, like `capGroups`.
+    var bundleSHA256: String?
     var pid: pid_t?
     var stdoutHandle: FileHandle?
     var stderrHandle: FileHandle?
@@ -746,9 +758,22 @@ private class ManagedCartridge {
     /// a probe carries them.
     var pendingDesired: DesiredCapacities
 
-    init(path: String, cartridgeDir: String, capGroups: [CapGroup], lifecycle: CartridgeLifecycle = .discovered) {
+    init(
+        path: String,
+        cartridgeDir: String,
+        capGroups: [CapGroup],
+        bundleSHA256: String?,
+        lifecycle: CartridgeLifecycle = .discovered
+    ) {
+        // A recorded bundle hash describes a directory; a cartridge without
+        // one has nothing to hold to it.
+        precondition(
+            bundleSHA256 == nil || !cartridgeDir.isEmpty,
+            "BUG: a bundled cartridge registered without its directory (\(path))"
+        )
         self.path = path
         self.cartridgeDir = cartridgeDir
+        self.bundleSHA256 = bundleSHA256
         self.manifest = Data()
         self.limits = Limits()
         self.capGroups = capGroups
@@ -800,6 +825,15 @@ private class ManagedCartridge {
         return hash
     }
 
+    /// The content hash this cartridge's record carries. A bundled
+    /// cartridge's identity is the hash its build recorded; its directory is
+    /// held to it when the cartridge is started, not here. Any other
+    /// cartridge's is its directory's own hash, memoised.
+    func identityHash(_ dir: String) throws -> String {
+        if let recorded = bundleSHA256 { return recorded }
+        return try directoryHashMemo(dir)
+    }
+
     func installedCartridgeRecord() -> InstalledCartridgeRecord? {
         if isRemoved {
             return nil
@@ -834,7 +868,7 @@ private class ManagedCartridge {
             guard let dirRecord = buildInstalledCartridgeRecord(
                 cartridgeDir: cartridgeDir,
                 attachmentError: attachmentError,
-                hash: { try directoryHashMemo($0) }
+                hash: { try identityHash($0) }
             ) else {
                 return nil
             }
@@ -888,7 +922,7 @@ private class ManagedCartridge {
         capGroups: [CapGroup],
         poolStates: PoolStates
     ) -> ManagedCartridge {
-        let cartridge = ManagedCartridge(path: "", cartridgeDir: "", capGroups: capGroups)
+        let cartridge = ManagedCartridge(path: "", cartridgeDir: "", capGroups: capGroups, bundleSHA256: nil)
         cartridge.manifest = manifest
         cartridge.limits = limits
         cartridge.running = true
@@ -1400,9 +1434,16 @@ public final class CartridgeHost: @unchecked Sendable {
     ///     derived from these groups when the host needs it (cap_table,
     ///     RelayNotify); we don't carry a parallel `knownCaps` field
     ///     that could drift.
-    public func registerCartridge(path: String, cartridgeDir: String, capGroups: [CapGroup]) {
+    ///   - bundleSHA256: For a bundled cartridge, the directory hash its
+    ///     build's signed bundle manifest records (`DiscoveredCartridge.directory`'s
+    ///     `bundleSHA256`); `nil` for an installed or dev one. When given it
+    ///     is the cartridge's identity, the directory is not hashed here, and
+    ///     the directory is held to it each time the cartridge is started.
+    public func registerCartridge(path: String, cartridgeDir: String, capGroups: [CapGroup], bundleSHA256: String?) {
         stateLock.lock()
-        let cartridge = ManagedCartridge(path: path, cartridgeDir: cartridgeDir, capGroups: capGroups)
+        let cartridge = ManagedCartridge(
+            path: path, cartridgeDir: cartridgeDir, capGroups: capGroups, bundleSHA256: bundleSHA256
+        )
         let idx = cartridges.count
         cartridges.append(cartridge)
         for cap in cartridge.capUrns {
@@ -1442,11 +1483,15 @@ public final class CartridgeHost: @unchecked Sendable {
         /// cartridge's full manifest structure (parsed from HELLO at
         /// probe time). The host derives the flat cap-URN list from
         /// these groups when needed (cap-table / RelayNotify).
-        /// Lifecycle is implicitly `.operational`.
+        /// Lifecycle is implicitly `.operational`. `bundleSHA256` is,
+        /// for a bundled cartridge, the directory hash its build's signed
+        /// bundle manifest records, which the host holds the directory to
+        /// each time it starts the cartridge; `nil` for any other.
         case discovered(
             path: String,
             cartridgeDir: String,
-            capGroups: [CapGroup]
+            capGroups: [CapGroup],
+            bundleSHA256: String?
         )
         case failed(
             path: String,
@@ -1458,7 +1503,7 @@ public final class CartridgeHost: @unchecked Sendable {
         var path: String {
             switch self {
             case .inProgress(let path, _, _): return path
-            case .discovered(let path, _, _): return path
+            case .discovered(let path, _, _, _): return path
             case .failed(let path, _, _, _): return path
             }
         }
@@ -1466,7 +1511,7 @@ public final class CartridgeHost: @unchecked Sendable {
         var cartridgeDir: String {
             switch self {
             case .inProgress(_, let dir, _): return dir
-            case .discovered(_, let dir, _): return dir
+            case .discovered(_, let dir, _, _): return dir
             case .failed(_, let dir, _, _): return dir
             }
         }
@@ -1607,16 +1652,18 @@ public final class CartridgeHost: @unchecked Sendable {
                     // pass so the UI doesn't show the old reason
                     // alongside the in-progress badge.
                     cartridge.capGroups = []
+                    cartridge.bundleSHA256 = nil
                     cartridge.helloFailed = false
                     cartridge.attachmentError = nil
                     cartridge.lifecycle = lifecycle
-                case .discovered(_, _, let capGroups):
+                case .discovered(_, _, let capGroups, let bundleSHA256):
                     // Clear any prior attachment error — the probe succeeded
                     // this time around. Update cap_groups so the host's
                     // RelayNotify carries them on the wire even before the
                     // cartridge is spawned for a real REQ. The flat
                     // cap-URN list rebuilds from these via `capUrns`.
                     cartridge.capGroups = capGroups
+                    cartridge.bundleSHA256 = bundleSHA256
                     cartridge.helloFailed = false
                     cartridge.attachmentError = nil
                     cartridge.lifecycle = .operational
@@ -1626,6 +1673,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     // irrelevant per the mutual-exclusivity contract;
                     // keep the safe sentinel.
                     cartridge.capGroups = []
+                    cartridge.bundleSHA256 = nil
                     cartridge.recordAttachmentError(kind: kind, message: message)
                     cartridge.lifecycle = .discovered
                 }
@@ -1663,17 +1711,18 @@ public final class CartridgeHost: @unchecked Sendable {
             switch outcome {
             case .inProgress(let path, let dir, let lifecycle):
                 let cartridge = ManagedCartridge(
-                    path: path, cartridgeDir: dir, capGroups: [], lifecycle: lifecycle
+                    path: path, cartridgeDir: dir, capGroups: [], bundleSHA256: nil, lifecycle: lifecycle
                 )
                 cartridges.append(cartridge)
-            case .discovered(let path, let dir, let capGroups):
+            case .discovered(let path, let dir, let capGroups, let bundleSHA256):
                 let cartridge = ManagedCartridge(
-                    path: path, cartridgeDir: dir, capGroups: capGroups, lifecycle: .operational
+                    path: path, cartridgeDir: dir, capGroups: capGroups,
+                    bundleSHA256: bundleSHA256, lifecycle: .operational
                 )
                 cartridges.append(cartridge)
             case .failed(let path, let dir, let kind, let message):
                 let cartridge = ManagedCartridge(
-                    path: path, cartridgeDir: dir, capGroups: []
+                    path: path, cartridgeDir: dir, capGroups: [], bundleSHA256: nil
                 )
                 cartridge.recordAttachmentError(kind: kind, message: message)
                 cartridges.append(cartridge)
@@ -2176,6 +2225,13 @@ public final class CartridgeHost: @unchecked Sendable {
             if needsSpawn {
                 do {
                     try spawnCartridge(at: cartridgeIdx)
+                } catch CartridgeHostError.cartridgeRefused(let why) {
+                    // A bundled cartridge the host will not start is refused
+                    // by name, with why — Environment.
+                    var err = Frame.err(id: frame.id, code: "CARTRIDGE_REFUSED", attributionClass: .environment, message: why)
+                    err.routingId = xid
+                    sendToRelay(err)
+                    return
                 } catch {
                     var err = Frame.err(id: frame.id, code: "SPAWN_FAILED", attributionClass: .environment, message: "Failed to spawn cartridge: \(error.localizedDescription)")
                     err.routingId = xid
@@ -3437,6 +3493,26 @@ public final class CartridgeHost: @unchecked Sendable {
 
     // MARK: - Spawn On Demand
 
+    /// Why a bundled cartridge's directory may not be started, or nil when it
+    /// still hashes to what its build recorded.
+    ///
+    /// The cartridge is named as its `cartridge.json` names it; one whose
+    /// `cartridge.json` no longer reads is refused for that, since nothing
+    /// then says which bundled cartridge this directory is.
+    static func bundledContentRefusal(cartridgeDir: String, recorded: String) -> String? {
+        guard let identity = resolveLocalCartridgeRecord(cartridgeDir: cartridgeDir) else {
+            return "the bundled cartridge at \(cartridgeDir) has no cartridge.json that reads, so it is not started"
+        }
+        do {
+            try verifyBundledContent(
+                name: identity.id, version: identity.version, versionDir: cartridgeDir, recorded: recorded
+            )
+            return nil
+        } catch {
+            return "\(error)"
+        }
+    }
+
     /// Spawn a registered cartridge binary on demand.
     ///
     /// Performs posix_spawn + HELLO handshake + starts reader thread.
@@ -3448,6 +3524,8 @@ public final class CartridgeHost: @unchecked Sendable {
         // Read cartridge info without holding lock during blocking ops
         stateLock.lock()
         let path = cartridges[idx].path
+        let cartridgeDir = cartridges[idx].cartridgeDir
+        let bundleSHA256 = cartridges[idx].bundleSHA256
         let alreadyRunning = cartridges[idx].running
         let alreadyFailed = cartridges[idx].helloFailed
         stateLock.unlock()
@@ -3458,6 +3536,22 @@ public final class CartridgeHost: @unchecked Sendable {
         guard !alreadyRunning else { return }
         guard !alreadyFailed else {
             throw CartridgeHostError.handshakeFailed("Cartridge previously failed HELLO — permanently removed")
+        }
+
+        // A bundled cartridge is held to the hash its build recorded each time
+        // it is started: discovery took its caps from the signed manifest and
+        // read none of its bytes, so this is where a changed bundle is caught,
+        // just before the bytes run. A refusal is permanent for this host.
+        if let recorded = bundleSHA256 {
+            if let refusal = Self.bundledContentRefusal(cartridgeDir: cartridgeDir, recorded: recorded) {
+                os_log(.error, log: Self.log, "[CartridgeHost] bundled cartridge refused: %{public}@", refusal)
+                stateLock.lock()
+                cartridges[idx].recordAttachmentError(kind: .misplaced, message: refusal)
+                capTable.removeAll { $0.1 == idx }
+                rebuildCapabilities()
+                stateLock.unlock()
+                throw CartridgeHostError.cartridgeRefused(refusal)
+            }
         }
 
         // Setup pipes

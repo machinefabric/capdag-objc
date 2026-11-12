@@ -534,7 +534,7 @@ let testCapGroups = [
         caps: [CapDefinition(urn: memoryHogCapUrn, title: "test", aliases: ["test"])]
     )
 ]
-host.registerCartridge(path: cartridgePath, cartridgeDir: "", capGroups: testCapGroups)
+host.registerCartridge(path: cartridgePath, cartridgeDir: "", capGroups: testCapGroups, bundleSHA256: nil)
 
 let hostThread = Thread {
     do {

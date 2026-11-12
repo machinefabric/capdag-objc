@@ -323,7 +323,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // TEST413: Register cartridge adds entries to cap_table
     func test413_registerCartridgeAddsToCaptable() {
         let host = CartridgeHost.withFullPolicy()
-        host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:convert"]))
+        host.registerCartridge(path: "/usr/bin/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:convert"]), bundleSHA256: nil)
         XCTAssertNotNil(host.findCartridgeForCap("cap:convert"), "Registered cap must be found")
         XCTAssertNil(host.findCartridgeForCap("cap:unknown"), "Unregistered cap must not be found")
     }
@@ -391,7 +391,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
     // TEST425: find_cartridge_for_cap returns None for unregistered cap
     func test425_findCartridgeForCapUnknown() {
         let host = CartridgeHost.withFullPolicy()
-        host.registerCartridge(path: "/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known"]))
+        host.registerCartridge(path: "/test", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known"]), bundleSHA256: nil)
         XCTAssertNotNil(host.findCartridgeForCap("cap:known"))
         XCTAssertNil(host.findCartridgeForCap("cap:unknown"))
     }
@@ -769,7 +769,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let hostToEngine = Pipe()
 
         let host = CartridgeHost.withFullPolicy()
-        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, capGroups: capGroupsFromUrns(["cap:spawn-test"]))
+        host.registerCartridge(path: entryPoint.path, cartridgeDir: cartridgeDir.path, capGroups: capGroupsFromUrns(["cap:spawn-test"]), bundleSHA256: nil)
 
         let hostTask = Task.detached { @Sendable in
             try host.run(
@@ -792,6 +792,92 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
 
         engineToHost.fileHandleForWriting.closeFile()
         try? await hostTask.value
+    }
+
+    /// Register a bundled cartridge whose entry point cannot be started, held
+    /// to `recorded`, send one REQ for its cap, and answer the ERR the engine
+    /// receives and the cartridge's record afterwards.
+    private func startBundled(
+        _ recorded: (String) throws -> String
+    ) async throws -> (err: Frame, record: InstalledCartridgeRecord) {
+        let fm = FileManager.default
+        let cartridgeDir = fm.temporaryDirectory.appendingPathComponent("test1962-\(UUID().uuidString)")
+        try fm.createDirectory(at: cartridgeDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: cartridgeDir) }
+        try Data(#"{"name":"cart","version":"1.0.0","channel":"release","registry_url":null,"entry":"bin","installed_at":"2026-01-01T00:00:00Z","installed_from":"bundle"}"#.utf8)
+            .write(to: cartridgeDir.appendingPathComponent("cartridge.json"))
+        let entryPoint = cartridgeDir.appendingPathComponent("bin")
+        try Data("not an executable".utf8).write(to: entryPoint)
+        let recordedHash = try recorded(cartridgeDir.path)
+
+        let host = CartridgeHost.withFullPolicy()
+        host.registerCartridge(
+            path: entryPoint.path,
+            cartridgeDir: cartridgeDir.path,
+            capGroups: capGroupsFromUrns(["cap:bundled-test"]),
+            bundleSHA256: recordedHash
+        )
+        // Registration takes the recorded hash as the cartridge's identity
+        // rather than hashing the directory.
+        let registered = host.installedCartridgeRecordsForTest()
+        XCTAssertEqual(registered.count, 1)
+        XCTAssertEqual(registered.first?.sha256, recordedHash)
+
+        let engineToHost = Pipe()
+        let hostToEngine = Pipe()
+        let hostTask = Task.detached { @Sendable in
+            try host.run(
+                relayRead: engineToHost.fileHandleForReading,
+                relayWrite: hostToEngine.fileHandleForWriting
+            ) { Data() }
+        }
+        let engineWriter = FrameWriter(handle: engineToHost.fileHandleForWriting)
+        let engineReader = FrameReader(handle: hostToEngine.fileHandleForReading)
+
+        try Self.writeWithXid(
+            engineWriter,
+            Frame.req(id: MessageId.newUUID(), capUrn: "cap:bundled-test", payload: Data(), contentType: "text/plain"),
+            xid: MessageId.newUUID()
+        )
+        let frame = try XCTUnwrap(try Self.readProtocolFrame(engineReader), "the cartridge cannot run, one way or the other")
+        let records = host.installedCartridgeRecordsForTest()
+
+        engineToHost.fileHandleForWriting.closeFile()
+        try? await hostTask.value
+
+        let record = try XCTUnwrap(records.first, "the cartridge stays in the inventory")
+        return (frame, record)
+    }
+
+    // TEST1962: a host holds a bundled cartridge to its recorded hash when it
+    // starts it, and refuses a changed one by name, without starting it.
+    //
+    // Discovery no longer hashes a bundled cartridge (TEST1931), so this is
+    // the check that catches a changed bundle. The entry point cannot be
+    // started: a host that skipped the check would fail at the spawn instead,
+    // which is what the unchanged case shows.
+    func test1962_aChangedBundledCartridgeIsRefusedWhenStarted() async throws {
+        let (refused, record) = try await startBundled { _ in String(repeating: "f", count: 64) }
+        XCTAssertEqual(refused.frameType, .err)
+        XCTAssertEqual(refused.errorCode, "CARTRIDGE_REFUSED", "a changed bundled cartridge is refused, not a failed spawn")
+        let said = refused.errorMessage ?? ""
+        XCTAssertTrue(
+            said.contains("the bundled cartridge cart 1.0.0 was changed after its build recorded it"),
+            "the refusal must name the cartridge and say its bundle changed: \(said)"
+        )
+        XCTAssertFalse(said.contains("posix_spawn"), "a changed cartridge must not be started: \(said)")
+        let error = try XCTUnwrap(record.attachmentError, "the refusal is recorded against the cartridge")
+        XCTAssertEqual(error.kind, .misplaced)
+        XCTAssertTrue(error.message.contains("was changed after its build recorded it"), error.message)
+
+        // Unchanged: the check passes and the host goes on to start it, which
+        // fails here only because the fixture is not a program.
+        let (started, _) = try await startBundled { try hashCartridgeDirectory($0) }
+        XCTAssertEqual(started.frameType, .err)
+        XCTAssertEqual(started.errorCode, "SPAWN_FAILED", "an unchanged cartridge must pass the check and be started")
+        let startedSaid = started.errorMessage ?? ""
+        XCTAssertFalse(startedSaid.contains("was changed"), "an unchanged cartridge must pass the check: \(startedSaid)")
+        XCTAssertTrue(startedSaid.contains("posix_spawn failed"), "an unchanged cartridge must be started: \(startedSaid)")
     }
 
     // TEST418: Route STREAM_START/CHUNK/STREAM_END/END by req_id (not cap_urn) Verifies that after the initial REQ→cartridge routing, all subsequent continuation frames with the same req_id are routed to the same cartridge — even though no cap_urn is present on those frames.
@@ -1195,7 +1281,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         host.registerCartridge(
             path: "\(dir)/respawn-fixture",
             cartridgeDir: dir,
-            capGroups: capGroupsFromUrns(["cap:respawn-test"])
+            capGroups: capGroupsFromUrns(["cap:respawn-test"]),
+            bundleSHA256: nil
         )
 
         // Cap routing table includes the cap.
@@ -1218,12 +1305,14 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         host.registerCartridge(
             path: "\(dir1)/fixture-one",
             cartridgeDir: dir1,
-            capGroups: capGroupsFromUrns(["cap:cap1"])
+            capGroups: capGroupsFromUrns(["cap:cap1"]),
+            bundleSHA256: nil
         )
         host.registerCartridge(
             path: "\(dir2)/fixture-two",
             cartridgeDir: dir2,
-            capGroups: capGroupsFromUrns(["cap:cap2", "cap:cap3"])
+            capGroups: capGroupsFromUrns(["cap:cap2", "cap:cap3"]),
+            bundleSHA256: nil
         )
 
         let caps = host.capabilities
@@ -1295,7 +1384,7 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         let host = CartridgeHost.withFullPolicy()
 
         // Register with known_caps, but cartridge will advertise different caps via manifest
-        host.registerCartridge(path: "/fake/path", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known-cap"]))
+        host.registerCartridge(path: "/fake/path", cartridgeDir: "", capGroups: capGroupsFromUrns(["cap:known-cap"]), bundleSHA256: nil)
 
         // Before attach: known_cap should be findable
         XCTAssertNotNil(host.findCartridgeForCap("cap:known-cap"), "Known cap must be findable before attach")
@@ -1338,7 +1427,8 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         host.registerCartridge(
             path: "\(dormantDir)/dormant-fixture",
             cartridgeDir: dormantDir,
-            capGroups: capGroupsFromUrns(["cap:dormant"])
+            capGroups: capGroupsFromUrns(["cap:dormant"]),
+            bundleSHA256: nil
         )
 
         // Attach a running cartridge (no on-disk anchor — pre-connected

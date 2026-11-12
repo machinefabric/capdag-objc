@@ -88,7 +88,7 @@ final class CborSyncRosterTests: XCTestCase {
             )
         ]
         host.syncDiscoveryOutcomes([
-            .discovered(path: entry.path, cartridgeDir: versionDir.path, capGroups: capGroups)
+            .discovered(path: entry.path, cartridgeDir: versionDir.path, capGroups: capGroups, bundleSHA256: nil)
         ])
         let afterAdd = readNotifyIDs(engineReader)
 
@@ -132,7 +132,7 @@ final class CborSyncRosterTests: XCTestCase {
         try Data("#!/bin/sh\n".utf8).write(to: entry)
 
         let host = CartridgeHost.withFullPolicy()
-        host.registerCartridge(path: entry.path, cartridgeDir: versionDir.path, capGroups: [])
+        host.registerCartridge(path: entry.path, cartridgeDir: versionDir.path, capGroups: [], bundleSHA256: nil)
         // Pretend it started: retirement only has to make a decision about a
         // LIVE process.
         host.markCartridgeRunningForTest(cartridgeIdx: 0)
@@ -196,7 +196,7 @@ final class CborSyncRosterTests: XCTestCase {
 
         // The registry answers again and the roster is restored.
         fixture.host.syncDiscoveryOutcomes([
-            .discovered(path: fixture.path, cartridgeDir: fixture.dir, capGroups: [])
+            .discovered(path: fixture.path, cartridgeDir: fixture.dir, capGroups: [], bundleSHA256: nil)
         ])
 
         XCTAssertEqual(
