@@ -6,7 +6,8 @@ import CapDAG
 // CartridgeDiscovery Tests
 //
 // Mirrors `capdag/src/cartridge_discovery.rs` scan-all tests: TEST1875-1878,
-// and its bundled-cartridge tests: TEST1928, TEST1931, TEST1932.
+// its attach-rule tests: TEST1907, TEST1908, and its bundled-cartridge tests:
+// TEST1928, TEST1931, TEST1932.
 //
 // The scanner enumerates every registry folder on disk (full macOS parity)
 // and validates each cartridge in place against the registry folder it sits
@@ -360,6 +361,80 @@ final class CartridgeDiscoveryTests: XCTestCase {
         guard case let .incompatible(_, _, _, _, _, error) = out.first else {
             return XCTFail("expected Incompatible, got \(String(describing: out.first))")
         }
-        XCTAssertTrue(error.message.contains("fabric manifest version 2"), error.message)
+        XCTAssertTrue(
+            error.message.contains("was built for fabric manifest 2, as its build's signed bundle manifest records"),
+            error.message
+        )
+    }
+
+    // MARK: - TEST1907
+
+    // TEST1907: a cartridge's installed version is its newest, dotted numbers
+    // compared as numbers: 1.174.414 is newer than 1.99.0, though it sorts
+    // before it as text. Discovery shows that version, and a run uses it.
+    func test1907_theNewestVersionIsChosenByNumberNotText() throws {
+        let dirs = ["1.99.0", "1.174.414", "1.9.12", "1.174.9"].map { ("cart" as NSString).appendingPathComponent($0) }
+        XCTAssertEqual(newestVersionDir(dirs), ("cart" as NSString).appendingPathComponent("1.174.414"))
+        XCTAssertNil(newestVersionDir([]))
+
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        for (version, manifest) in [("1.99.0", 1), ("1.174.414", 999)] {
+            let json = """
+            {"name":"cart","version":"\(version)","channel":"nightly","registry_url":null,"entry":"cart","installed_at":"2024-01-01T00:00:00Z","fabric_manifest_version":\(manifest)}
+            """
+            try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "cart",
+                               version: version, cartridgeJSON: json, entry: "cart")
+        }
+        let out = try discoverCartridges(root, identity: nightlyDevIdentity())
+        // 1.174.414 is the one shown, and it is stamped for another manifest,
+        // so the cartridge is refused rather than 1.99.0 being probed.
+        guard out.count == 1, case let .incompatible(_, _, _, _, version, error) = out[0] else {
+            return XCTFail("expected the newest version, refused; got \(out)")
+        }
+        XCTAssertEqual(version, "1.174.414")
+        XCTAssertEqual(error.kind, .fabricManifestVersionMismatch)
+    }
+
+    // MARK: - TEST1908
+
+    // TEST1908: a cartridge stamped for another fabric manifest is refused
+    // naming it, its version, its manifest and the host's, with the remedy
+    // that fits where it came from: a registry install is installed again, a
+    // dev cartridge rebuilt, and a bundled one means the build is wrong.
+    func test1908_aManifestRefusalNamesBothManifestsAndTheRemedy() throws {
+        let terms = AttachTerms(channel: .release, fabricManifestVersion: 13, bundle: .none("no bundle here"))
+        func stamped(_ from: CartridgeInstallSource?, _ registry: String?, _ manifest: UInt32) -> CartridgeJson {
+            CartridgeJson(name: "imagecartridge", version: "1.174.414", channel: .release, registryURL: registry,
+                          entry: "imagecartridge", installedAt: "2024-01-01T00:00:00Z", installedFrom: from,
+                          fabricManifestVersion: manifest)
+        }
+
+        guard case .success(.probe) = admission(stamped(.registry, cartridgesAnchor, 13), terms: terms) else {
+            return XCTFail("a cartridge stamped for this host is attached by starting it")
+        }
+
+        func refused(_ from: CartridgeInstallSource?, _ registry: String?) throws -> Refusal {
+            guard case let .failure(refusal) = admission(stamped(from, registry, 12), terms: terms) else {
+                XCTFail("stamped for 12, refused by a host at 13")
+                throw Refusal(kind: .misplaced, message: "not refused")
+            }
+            return refusal
+        }
+        let installed = try refused(.registry, cartridgesAnchor)
+        XCTAssertEqual(installed.kind, .fabricManifestVersionMismatch)
+        XCTAssertEqual(
+            installed.message,
+            "imagecartridge 1.174.414 was installed for fabric manifest 12, and this host reads "
+                + "fabric manifest 13. Remove it and install it again from its registry."
+        )
+        // Provenance other than `bundle` carries no meaning: a registryURL is
+        // what makes it a registry install.
+        XCTAssertEqual(try refused(nil, cartridgesAnchor), installed)
+        let rebuild = "Rebuild it with MFR_FABRIC_MANIFEST_VERSION=13 and install it again."
+        XCTAssertTrue(try refused(.dev, nil).message.hasSuffix(rebuild))
+        XCTAssertTrue(try refused(nil, nil).message.hasSuffix(rebuild))
+        XCTAssertTrue(try refused(.bundle, cartridgesAnchor).message
+            .hasSuffix("its bundle holds a cartridge for another fabric manifest."))
     }
 }
