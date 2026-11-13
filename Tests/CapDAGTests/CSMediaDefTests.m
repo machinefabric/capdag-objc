@@ -392,7 +392,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     NSDictionary *stored = [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     NSArray *expected = @[[CSDimRef refWithDim:@"file-type" value:@"pdf"], [CSDimRef refWithDim:@"medium" value:@"document"]];
     CSFabricRegistry *registry = registryWithSpecs(@[stored]);
-    XCTAssertEqualObjects([registry getCachedMediaDef:@"media:document;ext=pdf"][@"dims"], stored[@"dims"]);
+    XCTAssertEqualObjects([registry getCachedMediaDef:@"media:document;ext=pdf" error:nil][@"dims"], stored[@"dims"]);
     NSError *error = nil;
     CSMediaDef *def = CSResolveMediaUrn(@"media:document;ext=pdf", registry, &error);
     XCTAssertNotNil(def, @"%@", error);

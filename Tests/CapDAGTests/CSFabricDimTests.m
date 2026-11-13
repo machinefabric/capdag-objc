@@ -10,7 +10,7 @@
 //  The reference proves "decided before any fetch" with an offline registry.
 //  This registry has no offline switch, so these tests point it at a registry
 //  chartered where nothing can be reached (127.0.0.1:9, the discard port): a
-//  fetch would fail with CSFabricRegistryErrorDimUnavailable, never the error
+//  fetch would fail with CSFabricRegistryErrorFetchFailed, never the error
 //  asserted.
 //
 
@@ -281,8 +281,10 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
     XCTAssertTrue([reg capExists:capUrns[0]], @"a cap whose dim survived is kept");
     XCTAssertFalse([reg capExists:capUrns[1]], @"the cap naming the dropped dim is dropped with it");
     XCTAssertTrue([reg capExists:capUrns[2]], @"a cap naming no dim is kept");
-    XCTAssertNotNil([reg getCachedMediaDef:@"media:x"]);
-    XCTAssertNil([reg getCachedMediaDef:@"media:y"], @"a value the dim lacks drops the definition");
+    XCTAssertNotNil([reg getCachedMediaDef:@"media:x" error:nil]);
+    NSError *droppedError = nil;
+    XCTAssertNil([reg getCachedMediaDef:@"media:y" error:&droppedError], @"a value the dim lacks drops the definition");
+    XCTAssertEqual(droppedError.code, CSFabricRegistryErrorPending, @"the manifest names it: not fetched, not absent");
 
     CSFabricRegistry *v0 = [self registryOver:charter version:0 bootstrap:NO];
     XCTAssertNil([v0 getCachedDim:@"medium"], @"v0 has no dims");

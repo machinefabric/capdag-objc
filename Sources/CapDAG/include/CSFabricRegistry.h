@@ -38,14 +38,38 @@ typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryDimErrorCode)
     CSFabricRegistryErrorDimValueUndeclared = 1055,
     /// ValidationError: a definition's `dims` names a dim twice, or a non-dim.
     CSFabricRegistryErrorDimRefsInvalid = 1056,
-    /// NotFound: a dim a definition names could not be fetched.
+    /// CacheError: a fetched dim could not be written to the disk cache.
     CSFabricRegistryErrorDimUnavailable = 1057,
-    /// NotFound: the registry has no object at the dim's address.
-    CSFabricRegistryErrorDimHTTPNotFound = 1058,
     /// The manifest is not one this library reads (for one, it has no `dims`
     /// map).
     CSFabricRegistryErrorManifestInvalid = 1059,
 };
+
+/// The codes of what a fetch from the registry came to (domain
+/// `CSFabricRegistryErrorDomain`).
+typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryFetchErrorCode) {
+    /// NotFound: the registry's answer is that it does not hold the object —
+    /// it answered 404 (or 410) for it. Nothing else is reported as missing.
+    CSFabricRegistryErrorNotFound = 1060,
+    /// FetchFailed: the fetch brought back no body — the registry refused it,
+    /// or did not answer. The userInfo carries what was fetched, the URL, the
+    /// manifest version and the cause (the `CSFabricFetch…Key` keys).
+    CSFabricRegistryErrorFetchFailed = 1061,
+    /// Pending: the pinned manifest names the definition, it is not in
+    /// memory, and it has not been fetched. Only a synchronous lookup says
+    /// this.
+    CSFabricRegistryErrorPending = 1062,
+};
+
+/// userInfo keys of a `CSFabricRegistryErrorFetchFailed` error: what was
+/// fetched (NSString), its URL (NSString), the fabric manifest version
+/// (NSNumber), the cause (NSString: `status`, `timed_out` or `transport`),
+/// and for `status` the HTTP status (NSNumber).
+extern NSString * const CSFabricFetchWhatKey;
+extern NSString * const CSFabricFetchURLKey;
+extern NSString * const CSFabricFetchManifestVersionKey;
+extern NSString * const CSFabricFetchCauseKey;
+extern NSString * const CSFabricFetchStatusKey;
 
 /// The kind of thing a fabric alias resolves to. An alias target is always a
 /// URN; the kind is determined by the URN prefix.
@@ -208,9 +232,13 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 - (void)getMediaDef:(NSString *)urn
           completion:(void (^)(NSDictionary * _Nullable spec, NSError * _Nullable error))completion;
 
-/// Synchronous in-memory probe for a cached media def. Returns nil
-/// when not cached; never touches the network.
-- (nullable NSDictionary *)getCachedMediaDef:(NSString *)urn;
+/// Synchronous in-memory lookup of a media def; never touches the network.
+/// The def, or nil with `error` saying why it is not at hand: the registry
+/// holds none (the manifest does not name it, or its fetch was answered 404),
+/// its last fetch was refused or got no answer (`FetchFailed`, with the URL,
+/// the status and the manifest version), or it has not been fetched
+/// (`Pending`).
+- (nullable NSDictionary *)getCachedMediaDef:(NSString *)urn error:(NSError * _Nullable * _Nullable)error;
 
 /// Insert a media def directly into the in-memory cache.
 /// Updates the extension index as a side effect. Used for tests and

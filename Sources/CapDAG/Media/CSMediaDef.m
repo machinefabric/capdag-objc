@@ -419,13 +419,20 @@ CSMediaDef * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
         return nil;
     }
 
-    NSDictionary *def = [registry getCachedMediaDef:mediaUrn];
+    // The registry's own account of why the def is not at hand — absent, its
+    // fetch refused, or not fetched yet — travels as the underlying error,
+    // and the message says it rather than "not in registry".
+    NSError *lookupError = nil;
+    NSDictionary *def = [registry getCachedMediaDef:mediaUrn error:&lookupError];
     if (!def) {
         if (error) {
+            NSMutableDictionary *info = [NSMutableDictionary dictionaryWithObject:
+                [NSString stringWithFormat:@"Cannot resolve media URN '%@': %@", mediaUrn, lookupError.localizedDescription]
+                                                                         forKey:NSLocalizedDescriptionKey];
+            if (lookupError) info[NSUnderlyingErrorKey] = lookupError;
             *error = [NSError errorWithDomain:CSMediaDefErrorDomain
                                          code:CSMediaDefErrorUnresolvableMediaUrn
-                                     userInfo:@{NSLocalizedDescriptionKey:
-                                                    [NSString stringWithFormat:@"Cannot resolve media URN '%@': not in registry cache", mediaUrn]}];
+                                     userInfo:info];
         }
         return nil;
     }
