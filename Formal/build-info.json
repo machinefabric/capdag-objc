@@ -1,5 +1,5 @@
 {
-  "build_key": "82ce6acf7682f72eae360aca60b4f78b0c2ef41ad050a9955c8d182dc6f1640e",
+  "build_key": "a392ebf9a6bc7a4eec45e782996b831e2af7291c92164b236777e1de932819c1",
   "lean_version": "4.34.1",
   "lean_githash": "5045d0056413266e57c625dcd7c365b10e377c52",
   "bir_version": 3,
@@ -41,6 +41,7 @@
     "CapDAG/Bifaci/Pools.lean": "d908a12c733e27c4801581bedae058898e702ea27ad9e597a28cd123a94c8ace",
     "CapDAG/Bifaci/Request.lean": "604c9ab7c41ee1d61431c2a4bcaafd172b8dc8db5d31bda2f47feb226024b674",
     "CapDAG/Cap.lean": "c191594b3fd6cbe30eaa17d7534087f3e6336c941c44cd1b2d5f2fb762d976ed",
+    "CapDAG/Detect.lean": "3164083da542785c8b9e365522c6f065b438f2da734128a233f71450e8dd8853",
     "CapDAG/Exec.lean": "c2febae2b84aef6588712fe88bd8266b2f84ba73f659113142b42f227e2bbfa2",
     "CapDAG/Query.lean": "34b70954d6515f24ac05517178d63ca6c0588ac9ab353b500756858ba5fba834",
     "CapDAG/Ranking.lean": "bc91e49b36aa687a2eaa72164ed4c9040e759b3a31f3a705b57932a584f8abf5",
@@ -56,14 +57,14 @@
   "project": ".",
   "link_directives": [],
   "output_digests": {
-    "CapDAGFormal/CapDAGFormal.swift": "a2730617ff0d5949f929f8c99470920e361e3672c299824cce85485199565a48",
-    "CapDAGFormalProgram/api/capdagFormal.c": "87ff4fa0a82340cd33f18ffa9e6d4caf51579579701f0d211bed8f19c756fe41",
-    "CapDAGFormalProgram/include/capdagFormal.h": "055cc293d69e651fded00d5d8c234c41a665b02fdcfbcface8755a41717ef4b4",
-    "CapDAGFormalProgram/include/capdagFormal_entries.h": "e9331093c1622b0327bfce0949a36382b433e42355e15a7e3d13317ec0b86af0",
+    "CapDAGFormal/CapDAGFormal.swift": "e9ead0931405d86ae98a05d68fb211bef3ffc2f25c366b2b7225ab0e33cf5b53",
+    "CapDAGFormalProgram/api/capdagFormal.c": "4435973268cc7dfa65f41a8dc05678dd59cb2d12a01a0f776600d948f984ced5",
+    "CapDAGFormalProgram/include/capdagFormal.h": "4de4eb30add4986755e8164fca6869e8aea2075052ff65a05b0de88ff4cbf1dd",
+    "CapDAGFormalProgram/include/capdagFormal_entries.h": "c0cf1dd0c00c42b5b91962fd6e7a264f3a1480b701ec3a90878b98a7df5d55e1",
     "CapDAGFormalProgram/include/lungo.h": "26abb52c952bc92a4d8e65ddbc23351f5080685070768ccf304f410a0b1dc402",
-    "CapDAGFormalProgram/program/capdagFormal_boundary.c": "788af5b6620054b456fcf919313e2d4f5c34b1b30bd14af4a322c22dd0be8ffc",
+    "CapDAGFormalProgram/program/capdagFormal_boundary.c": "62ac413e924371d015053d9797b3b8c855b794007dedac789e6395f0924da9ca",
     "CapDAGFormalProgram/program/capdagFormal_program.c": "0715c76b577dc7aee1c2d8c3d2d11872878905b2065f2aad91bc3e3e247c9842",
-    "CapDAGFormalProgram/program/capdagFormal_program.h": "adc41756fb3ae402c0a4fe91105d11406a0fbe4f1ac6c1f0ce005af5713074e7",
+    "CapDAGFormalProgram/program/capdagFormal_program.h": "1429a5b6dce4bc191e447e50107027b6b991222b717d8e18e2f8a3f782d1ebbf",
     "CapDAGFormalProgram/program/lungo.h": "26abb52c952bc92a4d8e65ddbc23351f5080685070768ccf304f410a0b1dc402",
     "CapDAGFormalProgram/program/modules/CapDAG-Bifaci-Credit.c": "5c51226a231aa0ddbd3521c00ccb32e6d3018ef7ab761f88954ed8931be03040",
     "CapDAGFormalProgram/program/modules/CapDAG-Bifaci-Flow.c": "c86b67a6578d977bef458f60ed2d6ad0d6af7fb77dbe8a07c9ff032c660c1cd1",
@@ -71,6 +72,7 @@
     "CapDAGFormalProgram/program/modules/CapDAG-Bifaci-Pools.c": "3430eb2adea76e45d4ce007c0682f7629f5a959c196bf641304ec584ef0c0fb1",
     "CapDAGFormalProgram/program/modules/CapDAG-Bifaci-Request.c": "9ec084bc216920d91c2735e62e034cbb5e79b41e5d86c4975e5cf0cc26175b04",
     "CapDAGFormalProgram/program/modules/CapDAG-Cap.c": "ec0dee22d1c66d737adf825e0059417c65ef64ddb38bf4d2a0c1d81634e34abb",
+    "CapDAGFormalProgram/program/modules/CapDAG-Detect.c": "48afbf40a66cba900c34ff60fa8e4c048a60062a4c52a088fa5c2dbe6120334a",
     "CapDAGFormalProgram/program/modules/CapDAG-Exec.c": "24b63662c1cfd3c67ba02fd64b55db8237fc007a55d3315249c55a8a9410ff06",
     "CapDAGFormalProgram/program/modules/CapDAG-Query.c": "752f7c237fe16670a2c24b5d63aa979c70d04e6d59cd6070f61199805086cdaa",
     "CapDAGFormalProgram/program/modules/CapDAG-Ranking.c": "8f9cb589f4b0e60331d706437d26f18ef49613d0290c343b2749758a4a0fa165",
@@ -108,7 +110,7 @@
     "CapDAGFormalProgram/program/modules/TaggedUrn-Exec.c": "d0c91c3cc39a5a9b4a991aa415ec63b61accfb5433249e048d50d56125248b4e",
     "CapDAGFormalProgram/program/modules/TaggedUrn-Sorted.c": "77feedfdba16671d60155d9b80020c1ed10df70a45a2f73407c97e366c972d37",
     "CapDAGFormalProgram/program/modules/TaggedUrn-Urn.c": "8b96cb2a24cd4fef76a24393914f2fab5154ea1ea3080f97e4a63a509e4cdc77",
-    "assurance.json": "aa97660f19bef50bf9b1b922dc4d173f4a88a44a903d26b333c98384481045e2"
+    "assurance.json": "5c696d5f89c7085a7f93cba4edaedaba1a039f22e9af7bc3ec35cd19e3772708"
   },
   "platform_products": []
 }
