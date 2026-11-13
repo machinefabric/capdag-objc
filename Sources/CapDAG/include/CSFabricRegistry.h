@@ -305,10 +305,6 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 - (void)getAlias:(NSString *)name
       completion:(void (^)(NSDictionary *_Nullable alias, NSError *_Nullable error))completion;
 
-/// Synchronous, in-memory-only alias resolution. Returns the target URN if the
-/// alias is cached, nil otherwise (including for a malformed name).
-- (nullable NSString *)resolveAliasCached:(NSString *)name;
-
 /// Look up an alias name's pinned defver under the manifest. Returns 0 and
 /// writes *error if the name is malformed or absent from the manifest.
 - (uint32_t)aliasDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error;

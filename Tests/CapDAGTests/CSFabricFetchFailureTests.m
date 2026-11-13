@@ -8,6 +8,16 @@
 //  Tests use // TEST###: comments matching the Rust implementation for
 //  cross-tracking.
 //
+//  Three of the reference's fetch-failure tests have no port here, because
+//  this library has none of the code they exercise:
+//  - 7174 (a refused alias in a machine fails with the refusal) and 7176 (a
+//    constant whose media definition was refused reports the refusal) parse
+//    machine notation; this library has no machine-notation parser.
+//  - 7175 (a refused alias fetch is remembered by the lookups that cannot
+//    wait) needs an alias fetch; this library never fetches an alias over
+//    the network, it reads only the aliases in the pinned cache. What 7175
+//    checks of media definitions, Pending and then the refusal, is 7173 here.
+//
 
 #import <XCTest/XCTest.h>
 #import "CSFabricRegistry.h"
@@ -52,6 +62,7 @@ static NSMutableDictionary<NSString *, NSNumber *> *CSFetchFailureAsked;
 @property (nonatomic, strong) NSURLSession *session;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestMedia;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestCaps;
+@property (nonatomic, copy) NSString *manifestTemplate;
 - (void)bootstrapManifest;
 - (nullable NSString *)normalizeMediaUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error;
 - (nullable NSString *)normalizeCapUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error;
@@ -126,6 +137,27 @@ static NSString * const CSFailureCap = @"cap:in=\"media:refusal-probe;enc=utf8\"
         XCTAssertTrue([raised.reason containsString:part], @"'%@' is missing from: %@", part, raised.reason);
     }
     XCTAssertFalse([raised.reason.lowercaseString containsString:@"not found"], @"%@", raised.reason);
+}
+
+// TEST7168: a manifest the registry answers 404 for is the registry's word
+// that it has no such manifest: NotFound, naming the URL and the status.
+- (void)test7168_aManifestTheRegistryDoesNotHaveIsNotFound {
+    CSFabricRegistry *registry = [self registryAnswering:404];
+    [[NSFileManager defaultManager] removeItemAtPath:[registry.cacheDirectory stringByAppendingPathComponent:@"manifest.json"]
+                                               error:nil];
+    NSString *url = [registry.manifestTemplate stringByReplacingOccurrencesOfString:@"{manifest_version}" withString:@"1"];
+    NSException *raised = nil;
+    @try {
+        [registry bootstrapManifest];
+    } @catch (NSException *exception) {
+        raised = exception;
+    }
+    XCTAssertNotNil(raised, @"a manifest the registry does not have stops the registry");
+    NSError *absent = raised.userInfo[NSUnderlyingErrorKey];
+    XCTAssertEqual(absent.code, CSFabricRegistryErrorNotFound, @"%@", absent);
+    XCTAssertTrue([absent.localizedDescription containsString:@"HTTP 404"], @"%@", absent.localizedDescription);
+    XCTAssertTrue([absent.localizedDescription containsString:url], @"'%@' is missing from: %@", url, absent.localizedDescription);
+    XCTAssertEqualObjects(raised.reason, absent.localizedDescription);
 }
 
 // TEST7169: a refused fetch of a cap or a media def is reported as the

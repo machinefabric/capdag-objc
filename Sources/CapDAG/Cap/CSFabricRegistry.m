@@ -2080,16 +2080,6 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
     }];
 }
 
-- (NSString *)resolveAliasCached:(NSString *)name {
-    NSError *nerr = nil;
-    NSString *normalized = CSNormalizeAliasName(name, &nerr);
-    if (!normalized) return nil;
-    [self.cacheLock lock];
-    NSDictionary *alias = self.cachedAliases[normalized];
-    [self.cacheLock unlock];
-    return alias ? alias[@"target"] : nil;
-}
-
 - (void)insertCachedAliasForTest:(NSDictionary *)alias {
     NSString *name = alias[@"name"];
     NSNumber *version = alias[@"version"];

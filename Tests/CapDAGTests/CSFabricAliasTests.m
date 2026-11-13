@@ -180,17 +180,23 @@ static CSCap *buildExtractCap(void) {
     XCTestExpectation *e1 = [self expectationWithDescription:@"getAlias unknown"];
     [reg getAlias:@"nosuchalias" completion:^(NSDictionary *alias, NSError *error) {
         XCTAssertNil(alias);
-        XCTAssertNotNil(error);
+        XCTAssertEqual(error.code, 1022, @"%@", error);
+        XCTAssertTrue([error.localizedDescription containsString:@"'nosuchalias' is not part of manifest v1"],
+                      @"%@", error.localizedDescription);
         [e1 fulfill];
+    }];
+    XCTestExpectation *e2 = [self expectationWithDescription:@"getAlias malformed"];
+    [reg getAlias:@"bad:name" completion:^(NSDictionary *alias, NSError *error) {
+        XCTAssertNil(alias);
+        XCTAssertEqual(error.code, 1020, @"%@", error);
+        XCTAssertTrue([error.localizedDescription containsString:@"invalid alias name"], @"%@", error.localizedDescription);
+        [e2 fulfill];
     }];
     [self waitForExpectationsWithTimeout:5.0 handler:nil];
 
     NSError *err = nil;
     [reg aliasDefverFor:@"nosuchalias" error:&err];
     XCTAssertNotNil(err);
-
-    XCTAssertNil([reg resolveAliasCached:@"nosuchalias"]);
-    XCTAssertNil([reg resolveAliasCached:@"bad:name"]);
 }
 
 @end
