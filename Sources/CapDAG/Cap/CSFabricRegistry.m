@@ -31,11 +31,53 @@
 #import <CommonCrypto/CommonDigest.h>
 
 NSErrorDomain const CSFabricRegistryErrorDomain = @"CSFabricRegistryError";
+NSString * const CSFabricFetchWhatKey = @"CSFabricFetchWhat";
+NSString * const CSFabricFetchURLKey = @"CSFabricFetchURL";
+NSString * const CSFabricFetchManifestVersionKey = @"CSFabricFetchManifestVersion";
+NSString * const CSFabricFetchCauseKey = @"CSFabricFetchCause";
+NSString * const CSFabricFetchStatusKey = @"CSFabricFetchStatus";
 
 static NSError *CSRegistryError(NSInteger code, NSString *message, NSError *_Nullable underlying) {
     NSMutableDictionary *info = [NSMutableDictionary dictionaryWithObject:message forKey:NSLocalizedDescriptionKey];
     if (underlying) info[NSUnderlyingErrorKey] = underlying;
     return [NSError errorWithDomain:CSFabricRegistryErrorDomain code:code userInfo:info];
+}
+
+/// What one fetch from the registry came to, when it brought back no body:
+/// nil for a success; NotFound for 404 or 410, the registry's answer that it
+/// does not hold the object; and FetchFailed, carrying what was fetched, the
+/// URL, the manifest version and the cause, for any other status and for a
+/// fetch that got no answer. A refused fetch is never reported as missing.
+static NSError *_Nullable CSFetchOutcome(NSString *what, NSString *urlString, uint32_t manifestVersion,
+                                         NSURLResponse *_Nullable response, NSError *_Nullable transportError) {
+    NSMutableDictionary *info = [@{
+        CSFabricFetchWhatKey: what,
+        CSFabricFetchURLKey: urlString,
+        CSFabricFetchManifestVersionKey: @(manifestVersion),
+    } mutableCopy];
+    if (transportError) {
+        BOOL timedOut = [transportError.domain isEqualToString:NSURLErrorDomain] && transportError.code == NSURLErrorTimedOut;
+        info[CSFabricFetchCauseKey] = timedOut ? @"timed_out" : @"transport";
+        info[NSUnderlyingErrorKey] = transportError;
+        info[NSLocalizedDescriptionKey] = timedOut
+            ? [NSString stringWithFormat:@"the registry did not answer the fetch of %@ for fabric manifest v%u: the request to %@ timed out",
+                  what, manifestVersion, urlString]
+            : [NSString stringWithFormat:@"the fetch of %@ for fabric manifest v%u from %@ failed: %@",
+                  what, manifestVersion, urlString, transportError.localizedDescription];
+        return [NSError errorWithDomain:CSFabricRegistryErrorDomain code:CSFabricRegistryErrorFetchFailed userInfo:info];
+    }
+    NSInteger status = [(NSHTTPURLResponse *)response statusCode];
+    if (status >= 200 && status < 300) return nil;
+    if (status == 404 || status == 410) {
+        return CSRegistryError(CSFabricRegistryErrorNotFound, [NSString stringWithFormat:
+            @"the registry has no %@ for fabric manifest v%u (HTTP %ld from %@)", what, manifestVersion, (long)status, urlString], nil);
+    }
+    info[CSFabricFetchCauseKey] = @"status";
+    info[CSFabricFetchStatusKey] = @(status);
+    info[NSLocalizedDescriptionKey] = [NSString stringWithFormat:
+        @"the registry refused the fetch of %@ for fabric manifest v%u: HTTP %ld %@ from %@",
+        what, manifestVersion, (long)status, [NSHTTPURLResponse localizedStringForStatusCode:status], urlString];
+    return [NSError errorWithDomain:CSFabricRegistryErrorDomain code:CSFabricRegistryErrorFetchFailed userInfo:info];
 }
 
 // The anchor of MachineFabric's production fabric, used when nothing names
@@ -165,6 +207,10 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 @property (nonatomic, strong) NSMutableDictionary<NSString *, CSStoredDim *> *cachedDims;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *extensionIndex;
 @property (nonatomic, strong) NSLock *cacheLock;
+// What the last failed fetch of each media def came to, by normalized URN,
+// until a fetch of it succeeds: the synchronous lookup says this rather than
+// "not fetched yet" when the registry already answered.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSError *> *mediaFetchFailures;
 @property (nonatomic, strong, readwrite) CSFabricRegistryConfig *config;
 @property (nonatomic, strong, readwrite) CSCharter *charter;
 // The charter's `manifest` and `definition` templates. Its shape check
@@ -317,6 +363,7 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
         _cachedCaps = [[NSMutableDictionary alloc] init];
         _cachedSpecs = [[NSMutableDictionary alloc] init];
+        _mediaFetchFailures = [[NSMutableDictionary alloc] init];
         _cachedAliases = [[NSMutableDictionary alloc] init];
         _cachedDims = [[NSMutableDictionary alloc] init];
         _extensionIndex = [[NSMutableDictionary alloc] init];
@@ -499,16 +546,14 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     [task resume];
     dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
 
-    if (netError) {
-        [NSException raise:@"CSFabricRegistryManifestUnavailable"
-                    format:@"Failed to fetch manifest v%u at %@: %@",
-                           self.manifestVersion, urlString, netError.localizedDescription];
-    }
-    NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-    if (http.statusCode != 200) {
-        [NSException raise:@"CSFabricRegistryManifestUnavailable"
-                    format:@"Manifest v%u not found in registry (HTTP %ld) at %@",
-                           self.manifestVersion, (long)http.statusCode, urlString];
+    NSError *outcome = CSFetchOutcome([NSString stringWithFormat:@"manifest v%u", self.manifestVersion],
+                                      urlString, self.manifestVersion, response, netError);
+    if (outcome) {
+        // The fetch's own account — a refusal with its status, or the
+        // registry's 404 — is what the exception says and carries.
+        @throw [NSException exceptionWithName:@"CSFabricRegistryManifestUnavailable"
+                                       reason:outcome.localizedDescription
+                                     userInfo:@{NSUnderlyingErrorKey: outcome}];
     }
     body = fetched;
 
@@ -919,17 +964,30 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     [self fetchMediaDefAtomic:urn completion:completion];
 }
 
-- (NSDictionary *)getCachedMediaDef:(NSString *)urn {
+- (NSDictionary *)getCachedMediaDef:(NSString *)urn error:(NSError **)error {
     NSError *normError = nil;
     NSString *normalized = [self normalizeMediaUrn:urn error:&normError];
     if (!normalized) {
-        NSLog(@"[CSFabricRegistry] getCachedMediaDef: malformed media URN treated as not-found: %@", normError.localizedDescription);
+        if (error) *error = normError;
         return nil;
     }
     [self.cacheLock lock];
     NSDictionary *spec = self.cachedSpecs[normalized];
+    NSError *lastFailure = self.mediaFetchFailures[normalized];
     [self.cacheLock unlock];
-    return spec;
+    if (spec) return spec;
+    NSError *defverError = nil;
+    uint32_t defver = 0;
+    if (![self mediaDefver:&defver forNormalized:normalized error:&defverError]) {
+        if (error) *error = defverError;
+        return nil;
+    }
+    if (error) {
+        *error = lastFailure ?: CSRegistryError(CSFabricRegistryErrorPending, [NSString stringWithFormat:
+            @"media def '%@' (defver %u) is named by manifest v%u and has not been fetched",
+            normalized, defver, self.manifestVersion], nil);
+    }
+    return nil;
 }
 
 // Seed a media def directly (test/local hydrate, e.g. from a cartridge
@@ -1105,7 +1163,19 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 // is cached (ensureDimsCached:owner:completion:). A `dims` entry this capdag
 // cannot hold refuses the body. Mirrors Rust fetch_one_media_def.
 - (void)fetchMediaDefAtomic:(NSString *)urn
-                 completion:(void (^)(NSDictionary *_Nullable spec, NSError *_Nullable error))completion {
+                 completion:(void (^)(NSDictionary *_Nullable spec, NSError *_Nullable error))outerCompletion {
+    // Keep what the fetch came to, for the synchronous lookup.
+    NSString *key = [self normalizeMediaUrn:urn error:nil] ?: urn;
+    void (^completion)(NSDictionary *, NSError *) = ^(NSDictionary *spec, NSError *error) {
+        [self.cacheLock lock];
+        if (spec) {
+            [self.mediaFetchFailures removeObjectForKey:key];
+        } else if (error) {
+            self.mediaFetchFailures[key] = error;
+        }
+        [self.cacheLock unlock];
+        outerCompletion(spec, error);
+    };
     [self fetchMediaDefFromRegistry:urn completion:^(NSDictionary *spec, NSError *error) {
         if (!spec) {
             completion(nil, error);
@@ -1449,16 +1519,9 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
     NSURLSessionDataTask *task = [self.session dataTaskWithURL:url
                                              completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) { completion(nil, error); return; }
-        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-        if (http.statusCode != 200) {
-            completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError"
-                                                code:http.statusCode
-                                            userInfo:@{NSLocalizedDescriptionKey:
-                                                           [NSString stringWithFormat:@"Cap '%@' (defver %u) not found in registry (HTTP %ld) at %@",
-                                                            normalized, defver, (long)http.statusCode, urlString]}]);
-            return;
-        }
+        NSError *outcome = CSFetchOutcome([NSString stringWithFormat:@"cap '%@' (defver %u)", normalized, defver],
+                                          urlString, self.manifestVersion, response, error);
+        if (outcome) { completion(nil, outcome); return; }
         NSError *parseError = nil;
         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError];
         if (![json isKindOfClass:[NSDictionary class]]) {
@@ -1514,16 +1577,9 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
     NSURLSessionDataTask *task = [self.session dataTaskWithURL:url
                                              completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) { completion(nil, error); return; }
-        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-        if (http.statusCode != 200) {
-            completion(nil, [NSError errorWithDomain:@"CSFabricRegistryError"
-                                                code:http.statusCode
-                                            userInfo:@{NSLocalizedDescriptionKey:
-                                                           [NSString stringWithFormat:@"Media def '%@' (defver %u) not found in registry (HTTP %ld) at %@",
-                                                            normalized, defver, (long)http.statusCode, urlString]}]);
-            return;
-        }
+        NSError *outcome = CSFetchOutcome([NSString stringWithFormat:@"media def '%@' (defver %u)", normalized, defver],
+                                          urlString, self.manifestVersion, response, error);
+        if (outcome) { completion(nil, outcome); return; }
         NSError *parseError = nil;
         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError];
         if (![json isKindOfClass:[NSDictionary class]]) {
@@ -1773,17 +1829,9 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     NSURL *url = [NSURL URLWithString:urlString];
     NSURLSessionDataTask *task = [self.session dataTaskWithURL:url
                                              completionHandler:^(NSData *data, NSURLResponse *response, NSError *netError) {
-        if (netError) {
-            completion(nil, CSRegistryError(CSFabricRegistryErrorDimUnavailable, [NSString stringWithFormat:
-                @"Failed to fetch dim '%@': %@", name, netError.localizedDescription], netError));
-            return;
-        }
-        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-        if (http.statusCode != 200) {
-            completion(nil, CSRegistryError(CSFabricRegistryErrorDimHTTPNotFound, [NSString stringWithFormat:
-                @"dim '%@' not found in registry (HTTP %ld) at %@", name, (long)http.statusCode, urlString], nil));
-            return;
-        }
+        NSError *outcome = CSFetchOutcome([NSString stringWithFormat:@"dim '%@' (defver %u)", name, defver],
+                                          urlString, self.manifestVersion, response, netError);
+        if (outcome) { completion(nil, outcome); return; }
         NSError *checkError = nil;
         CSStoredDim *dim = [self checkedDimFromData:data name:name defver:defver error:&checkError];
         if (!dim) {
@@ -1868,8 +1916,9 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     [self fetchDimFromRegistry:ref.dim defver:(uint32_t)[defver unsignedIntValue]
                     completion:^(CSStoredDim *dim, NSError *error) {
         if (!dim) {
-            completion(CSRegistryError(CSFabricRegistryErrorDimUnavailable, [NSString stringWithFormat:
-                @"%@ names dim '%@', which could not be fetched: %@", owner, ref.dim, error.localizedDescription], error));
+            // The dim's own failure, as it is: a refused fetch stays a refused
+            // fetch, and only the registry's 404 is NotFound.
+            completion(error);
             return;
         }
         holdValue(dim);
