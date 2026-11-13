@@ -174,16 +174,17 @@ static NSData *jsonData(id object) {
 }
 
 // TEST1968: a dim is addressed at dims/<sha256-of-name>/<defver>.json, on the
-// registry and in the cache; a body served for it must be that dim at that
-// version, with no field this library does not know, and must hold (values
-// present, names unique).
+// registry and in the cache (in the folder of the pinned manifest version); a
+// body served for it must be that dim at that version, with no field this
+// library does not know, and must hold (values present, names unique).
 - (void)test1968_ADimObjectIsTheDimAndVersionAskedFor {
     CSCharter *charter = [self unreachableCharter:@"1968"];
     CSFabricRegistry *reg = [self registryOver:charter version:1 bootstrap:NO];
     NSString *hash = sha256Hex(@"language");
     XCTAssertEqualObjects([reg dimURLForName:@"language" defver:3],
                           ([NSString stringWithFormat:@"%@/dims/%@/3.json", charter.anchor, hash]));
-    NSString *root = [[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:charter.slug];
+    NSString *root = [[[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:charter.slug]
+                      stringByAppendingPathComponent:@"v1"];
     XCTAssertEqualObjects([reg dimCacheFileForName:@"language" defver:3],
                           ([[[root stringByAppendingPathComponent:@"dims"] stringByAppendingPathComponent:hash]
                             stringByAppendingPathComponent:@"3.json"]));
@@ -241,13 +242,18 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
 }
 
 // TEST1971: what is loaded from the disk cache is kept only as the pinned
-// manifest names it — a dim at another version is dropped — and a definition
-// is kept only when every dim it names survives with the value it names. At v0
-// there are no dims.
+// manifest names it — a dim at another version is never read — and a
+// definition is kept only when every dim it names survives with the value it
+// names. At v0 there are no dims.
 - (void)test1971_TheDiskCacheKeepsDefinitionsOnlyWithTheirPinnedDims {
     CSCharter *charter = [self unreachableCharter:@"1971"];
-    NSString *root = [[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:charter.slug];
-    NSArray<NSString *> *capUrns = @[@"cap:a;in=media:;out=media:", @"cap:b;in=media:;out=media:", @"cap:c;in=media:;out=media:"];
+    // The cache folder of manifest 11, where the registry pinned at it reads.
+    NSString *root = [[[CSFabricRegistry capdagCacheRoot] stringByAppendingPathComponent:charter.slug]
+                      stringByAppendingPathComponent:@"v11"];
+    // Caps that hold the definition rules (a void output declares no
+    // outputs), as only those are kept from the cache.
+    NSArray<NSString *> *capUrns = @[@"cap:a;in=media:void;out=media:void", @"cap:b;in=media:void;out=media:void",
+                                     @"cap:c;in=media:void;out=media:void"];
     NSArray *capDims = @[dimsJSON(@[@[@"medium", @"text"]]), dimsJSON(@[@[@"language", @"en"]]), @[]];
     NSMutableDictionary *manifestCaps = [NSMutableDictionary dictionary];
     for (NSUInteger i = 0; i < capUrns.count; i++) {
@@ -257,20 +263,20 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
         NSMutableDictionary *def = [@{@"urn": capUrns[i], @"version": @1, @"title": @"t", @"aliases": @[@"t"]} mutableCopy];
         if ([capDims[i] count] > 0) def[@"dims"] = capDims[i];
         writeJSON([NSString stringWithFormat:@"%@/caps/%@/1.json", root, sha256Hex(normalized)],
-                  @{@"definition": def, @"cached_at": @([[NSDate date] timeIntervalSince1970]), @"ttl_hours": @24});
+                  @{@"definition": def, @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]), @"ttl_hours": @24});
     }
     NSDictionary *specs = @{@"media:x": dimsJSON(@[@[@"medium", @"text"]]), @"media:y": dimsJSON(@[@[@"medium", @"audio"]])};
     for (NSString *urn in specs) {
         writeJSON([NSString stringWithFormat:@"%@/media/%@/1.json", root, sha256Hex(urn)],
                   @{@"spec": @{@"urn": urn, @"version": @1, @"media_type": @"text/plain", @"title": @"t", @"dims": specs[urn]},
-                    @"cached_at": @([[NSDate date] timeIntervalSince1970]), @"ttl_hours": @24});
+                    @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]), @"ttl_hours": @24});
     }
     // The manifest pins language at 2; only version 1 is cached.
     writeJSON([NSString stringWithFormat:@"%@/dims/%@/1.json", root, sha256Hex(@"language")],
               @{@"dim": [dim(@"language", 1, @[@"en"]) toDictionary], @"cached_at": @0, @"ttl_hours": @24});
     writeJSON([NSString stringWithFormat:@"%@/dims/%@/1.json", root, sha256Hex(@"medium")],
               @{@"dim": [dim(@"medium", 1, @[@"text"]) toDictionary], @"cached_at": @0, @"ttl_hours": @24});
-    writeJSON([NSString stringWithFormat:@"%@/manifests/11.json", root],
+    writeJSON([NSString stringWithFormat:@"%@/manifest.json", root],
               @{@"version": @11, @"previous": @10, @"caps": manifestCaps, @"media": @{@"media:x": @1, @"media:y": @1},
                 @"aliases": @{}, @"dims": @{@"language": @2, @"medium": @1}});
 

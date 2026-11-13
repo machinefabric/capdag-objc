@@ -29,6 +29,11 @@
 #import "CSMediaUrn.h"
 #import "CSDim.h"
 #import <CommonCrypto/CommonDigest.h>
+#include <errno.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 NSErrorDomain const CSFabricRegistryErrorDomain = @"CSFabricRegistryError";
 NSString * const CSFabricFetchWhatKey = @"CSFabricFetchWhat";
@@ -83,7 +88,9 @@ static NSError *_Nullable CSFetchOutcome(NSString *what, NSString *urlString, ui
 // The anchor of MachineFabric's production fabric, used when nothing names
 // another. Only the anchor: where its objects are is read from its charter.
 static NSString * const DEFAULT_FABRIC_ANCHOR = @"https://fabric.capdag.com";
-static const NSTimeInterval CACHE_DURATION_HOURS = 24.0;
+// How long a defver-0 entry is kept, in whole hours: cache entries carry it,
+// and `cached_at`, as integers, as every capdag library writes them.
+static const uint64_t CACHE_DURATION_HOURS = 24;
 static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
 // MARK: - CSFabricRegistryConfig
@@ -162,44 +169,297 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     return NO;
 }
 
-// MARK: - Cache entries
+// MARK: - The disk cache
+//
+// Where a fabric registry's definitions are kept on disk, and how an entry is
+// written and read there. Mirrors the reference's `fabric::cache` module.
+//
+// The cache is shared: every capdag process on a machine that reads the same
+// fabric reads and writes the same folder, and they run at once. Two rules
+// follow.
+//
+// - One folder per fabric manifest version. A registry pinned at manifest N
+//   keeps everything under `<registry folder>/v<N>/`:
+//
+//     <caches>/capdag/<charter slug>/          the registry's folder; its charter
+//       v<N>/manifest.json                     manifest N, as the registry served it
+//       v<N>/caps/<sha256 of URN>/<defver>.json
+//       v<N>/media/<sha256 of URN>/<defver>.json
+//       v<N>/aliases/<sha256 of name>/<defver>.json
+//       v<N>/dims/<sha256 of name>/<defver>.json
+//
+//   capdag releases built against different manifests can be installed side
+//   by side; each reads and writes only its own `v<N>`.
+//
+// - An entry is replaced whole. It is written to a temporary file in the
+//   folder it belongs in (`.<entry>.<pid>-<n>.tmp`) and renamed over the entry
+//   with rename(2), which replaces the name in one step, so a reader sees the
+//   old entry or the new one, never part of one. A temporary file a killed
+//   writer left behind is never read, and clearing the cache removes it.
+//
+// An entry that is there and cannot be read, or does not parse, or is not the
+// definition its path names, is corrupt: an error naming the file, never
+// treated as missing, and never deleted.
+//
+// Before this layout, every manifest version shared the registry's folder
+// (`<charter slug>/{caps,media,aliases,dims,manifests}`). This library neither
+// reads nor writes those folders; clearing the cache removes them.
 
-@interface CSCapCacheEntry : NSObject
-@property (nonatomic, strong) CSCap *definition;
-@property (nonatomic) NSTimeInterval cachedAt;
-@property (nonatomic) NSTimeInterval ttlHours;
-- (BOOL)isExpired;
-@end
+/// The name of the exception a registry's construction raises when its disk
+/// cache cannot be used: a corrupt entry or manifest, or a folder or file that
+/// cannot be made. Its reason is the error's message, and its userInfo holds
+/// the NSError under NSUnderlyingErrorKey.
+static NSString * const CSFabricRegistryCacheErrorException = @"CSFabricRegistryCacheError";
 
-@implementation CSCapCacheEntry
-- (BOOL)isExpired {
-    return [[NSDate date] timeIntervalSince1970] > (self.cachedAt + (self.ttlHours * 3600));
+/// The folders a manifest version's definitions live in, one per kind.
+static NSArray<NSString *> *CSFabricCacheKindFolders(void) {
+    return @[@"caps", @"media", @"aliases", @"dims"];
 }
-@end
 
-@interface CSMediaCacheEntry : NSObject
-@property (nonatomic, strong) NSDictionary *spec;
-@property (nonatomic) NSTimeInterval cachedAt;
-@property (nonatomic) NSTimeInterval ttlHours;
-- (BOOL)isExpired;
-@end
+/// The file a manifest version's manifest is kept in, in its folder.
+static NSString * const CSFabricCacheManifestFile = @"manifest.json";
 
-@implementation CSMediaCacheEntry
-- (BOOL)isExpired {
-    return [[NSDate date] timeIntervalSince1970] > (self.cachedAt + (self.ttlHours * 3600));
+/// The folders the shared layout before this one kept in a registry's folder.
+/// Nothing reads them; clearing the cache removes them.
+static NSArray<NSString *> *CSFabricCacheLegacyFolders(void) {
+    return @[@"caps", @"media", @"aliases", @"dims", @"manifests"];
 }
-@end
+
+/// The hash a definition is filed under, in the cache as in the registry.
+static NSString *CSSha256Hex(NSString *s) {
+    NSData *data = [s dataUsingEncoding:NSUTF8StringEncoding];
+    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *out = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+        [out appendFormat:@"%02x", digest[i]];
+    }
+    return out;
+}
+
+static NSError *CSCacheError(NSString *message, NSError *_Nullable underlying) {
+    return CSRegistryError(CSFabricRegistryErrorCache, message, underlying);
+}
+
+/// The error for a cache entry that is there and is not what its path says.
+/// `what` names the kind of entry: cap, media def, alias, dim or manifest.
+static NSError *CSCacheCorrupt(NSString *path, NSString *what, NSString *detail) {
+    return CSCacheError([NSString stringWithFormat:
+        @"the cached %@ %@ is corrupt: %@; remove the file, or run `capdag cache clear`", what, path, detail], nil);
+}
+
+/// Whether `error`, or any error under it, is the POSIX error `code`.
+static BOOL CSErrorChainHasPOSIXCode(NSError *_Nullable error, int code) {
+    for (NSError *e = error; e != nil; e = e.userInfo[NSUnderlyingErrorKey]) {
+        if ([e.domain isEqualToString:NSPOSIXErrorDomain] && e.code == code) return YES;
+    }
+    return NO;
+}
+
+/// Whether `error` says the file or folder is not there.
+static BOOL CSIsNoSuchFile(NSError *_Nullable error) {
+    for (NSError *e = error; e != nil; e = e.userInfo[NSUnderlyingErrorKey]) {
+        if ([e.domain isEqualToString:NSCocoaErrorDomain]
+            && (e.code == NSFileNoSuchFileError || e.code == NSFileReadNoSuchFileError)) {
+            return YES;
+        }
+    }
+    return CSErrorChainHasPOSIXCode(error, ENOENT);
+}
+
+/// Whether there is a folder at `path` (NO when there is nothing, or a file).
+static BOOL CSIsFolder(NSString *path) {
+    BOOL isFolder = NO;
+    return [[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isFolder] && isFolder;
+}
+
+/// Make the folder `path` and its parents. A folder a peer made at the same
+/// moment is the folder wanted: what counts is that it is there afterwards.
+/// The error says what could not be made, and why.
+static BOOL CSMakeFolder(NSString *path, NSError *_Nullable *_Nullable error) {
+    NSError *makeError = nil;
+    if ([[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES
+                                                   attributes:nil error:&makeError]
+        || CSIsFolder(path)) {
+        return YES;
+    }
+    if (error) *error = makeError;
+    return NO;
+}
+
+/// Tells apart the temporary files one process writes at once.
+static _Atomic uint64_t CSFabricCacheTemporaryFiles = 0;
+
+/// Put `bytes` at `path` whole: written to a temporary file beside it, then
+/// renamed over it with rename(2). A reader opening `path` meanwhile reads
+/// what was there before, or `bytes`, never part of them. The folder is made
+/// when missing. On failure the temporary file is removed and the error names
+/// the path.
+///
+/// rename(2) rather than -[NSData writeToFile:atomically:]: the temporary file
+/// must be in the entry's own folder, under a name that says whose it is, so
+/// that the replacement is one rename on one volume and a temporary file a
+/// killed writer leaves is recognisable; Foundation chooses neither the folder
+/// nor the name of its own.
+static BOOL CSWriteCacheFileAtomically(NSString *path, NSData *bytes, NSError *_Nullable *_Nullable error) {
+    NSString *folder = [path stringByDeletingLastPathComponent];
+    NSString *name = [path lastPathComponent];
+    if (folder.length == 0 || name.length == 0 || [name isEqualToString:@"/"]) {
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"the cache file %@ has no folder", path], nil);
+        return NO;
+    }
+    NSError *folderError = nil;
+    if (!CSMakeFolder(folder, &folderError)) {
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"failed to create the cache folder %@: %@",
+                                          folder, folderError.localizedDescription], folderError);
+        return NO;
+    }
+    NSString *temporary = [folder stringByAppendingPathComponent:
+        [NSString stringWithFormat:@".%@.%d-%llu.tmp", name, (int)getpid(),
+         (unsigned long long)atomic_fetch_add(&CSFabricCacheTemporaryFiles, 1)]];
+    NSError *writeError = nil;
+    if (![bytes writeToFile:temporary options:0 error:&writeError]) {
+        unlink(temporary.fileSystemRepresentation);
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"failed to write the cache file %@: %@",
+                                          temporary, writeError.localizedDescription], writeError);
+        return NO;
+    }
+    if (rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) != 0) {
+        int code = errno;
+        unlink(temporary.fileSystemRepresentation);
+        NSError *posix = [NSError errorWithDomain:NSPOSIXErrorDomain code:code userInfo:nil];
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"failed to put the cache file %@ in place: %s",
+                                          path, strerror(code)], posix);
+        return NO;
+    }
+    return YES;
+}
+
+/// The cache file at `path`, as a JSON object. Answers YES with *outObject nil
+/// when there is none, YES with the object when it parses as one, and NO with
+/// an error naming the file when it is there and cannot be read or is not a
+/// JSON object. `what` names the kind of entry in the error.
+static BOOL CSReadCacheFile(NSString *path, NSString *what,
+                            NSDictionary *_Nullable *_Nonnull outObject,
+                            NSError *_Nullable *_Nullable error) {
+    *outObject = nil;
+    NSError *readError = nil;
+    NSData *bytes = [NSData dataWithContentsOfFile:path options:0 error:&readError];
+    if (!bytes) {
+        if (CSIsNoSuchFile(readError)) return YES;
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"the cached %@ %@ cannot be read: %@",
+                                          what, path, readError.localizedDescription], readError);
+        return NO;
+    }
+    NSError *parseError = nil;
+    id json = [NSJSONSerialization JSONObjectWithData:bytes options:0 error:&parseError];
+    if (!json) {
+        if (error) *error = CSCacheCorrupt(path, what, parseError.localizedDescription ?: @"it is not JSON");
+        return NO;
+    }
+    if (![json isKindOfClass:[NSDictionary class]]) {
+        if (error) *error = CSCacheCorrupt(path, what, @"it is not a JSON object");
+        return NO;
+    }
+    *outObject = json;
+    return YES;
+}
+
+/// The body of the cache entry `entry` (`{"<bodyKey>": {...}, "cached_at": <s>,
+/// "ttl_hours": <h>}`), or nil with `*detail` saying what is wrong with it.
+static NSDictionary *_Nullable CSCacheEntryBody(NSDictionary *entry, NSString *bodyKey, NSString *_Nullable *_Nonnull detail) {
+    for (NSString *field in @[@"cached_at", @"ttl_hours"]) {
+        if (![entry[field] isKindOfClass:[NSNumber class]]) {
+            *detail = [NSString stringWithFormat:@"its '%@' is %@", field, entry[field] ? @"not a number" : @"missing"];
+            return nil;
+        }
+    }
+    id body = entry[bodyKey];
+    if (![body isKindOfClass:[NSDictionary class]]) {
+        *detail = [NSString stringWithFormat:@"its '%@' is %@", bodyKey, body ? @"not an object" : @"missing"];
+        return nil;
+    }
+    return body;
+}
+
+/// Whether a cache entry is older than its time to live. Only a defver-0
+/// definition (the flat, mutable regime) is held to it.
+static BOOL CSCacheEntryIsExpired(NSDictionary *entry) {
+    double cachedAt = [entry[@"cached_at"] doubleValue];
+    double ttlHours = [entry[@"ttl_hours"] doubleValue];
+    return [[NSDate date] timeIntervalSince1970] > cachedAt + ttlHours * 3600.0;
+}
+
+/// Remove one file or folder of the shared cache, which a peer may be removing
+/// or refilling at the same moment. Already gone is the outcome either way;
+/// "not empty" or "busy" means a peer refilled it, and the entries now there
+/// are exactly what a refresh was for. Anything else is an error naming it.
+static BOOL CSRemoveShared(NSString *path, NSError *_Nullable *_Nullable error) {
+    NSError *removeError = nil;
+    if ([[NSFileManager defaultManager] removeItemAtPath:path error:&removeError]) return YES;
+    if (CSIsNoSuchFile(removeError)
+        || CSErrorChainHasPOSIXCode(removeError, ENOTEMPTY)
+        || CSErrorChainHasPOSIXCode(removeError, EBUSY)) {
+        return YES;
+    }
+    if (error) *error = CSCacheError([NSString stringWithFormat:@"Failed to remove %@: %@",
+                                      path, removeError.localizedDescription], removeError);
+    return NO;
+}
+
+/// Remove everything in `folder`, which peers are clearing and filling at the
+/// same time (CSRemoveShared).
+static BOOL CSRemoveContents(NSString *folder, NSError *_Nullable *_Nullable error) {
+    NSError *listError = nil;
+    NSArray<NSString *> *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:folder error:&listError];
+    if (!names) {
+        // A peer removed it between the create and the read. It is empty by
+        // any reading, which is what was wanted.
+        if (CSIsNoSuchFile(listError)) return YES;
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"Failed to read cache directory %@: %@",
+                                          folder, listError.localizedDescription], listError);
+        return NO;
+    }
+    for (NSString *name in names) {
+        if (!CSRemoveShared([folder stringByAppendingPathComponent:name], error)) return NO;
+    }
+    return YES;
+}
+
+/// What makes `manifest` not one this library reads, or nil when it is: the
+/// `dims` map (dim name -> defver) is required, and `caps`, `media` and
+/// `aliases`, when present, map names to defvers.
+static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
+    id dims = manifest[@"dims"];
+    if (![dims isKindOfClass:[NSDictionary class]]) {
+        return CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+            @"manifest v%@ %@ 'dims' map (dim name -> defver); every manifest names the dims of its snapshot",
+            manifest[@"version"], dims ? @"has a malformed" : @"has no"], nil);
+    }
+    for (NSString *field in @[@"caps", @"media", @"aliases", @"dims"]) {
+        id map = manifest[field];
+        if (map == nil) continue;
+        if (![map isKindOfClass:[NSDictionary class]]) {
+            return CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+                @"manifest v%@ '%@' is not a map of names to defvers", manifest[@"version"], field], nil);
+        }
+        for (id name in (NSDictionary *)map) {
+            id defver = ((NSDictionary *)map)[name];
+            if (![name isKindOfClass:[NSString class]] || ![defver isKindOfClass:[NSNumber class]]) {
+                return CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+                    @"manifest v%@ '%@' entry '%@' is not %@ mapped to a defver", manifest[@"version"], field, name,
+                    [field isEqualToString:@"dims"] ? @"a dim name" : @"a name"], nil);
+            }
+        }
+    }
+    return nil;
+}
 
 // MARK: - CSFabricRegistry
 
 @interface CSFabricRegistry ()
 @property (nonatomic, strong) NSURLSession *session;
-@property (nonatomic, strong) NSString *cacheDirectory;
-@property (nonatomic, strong) NSString *capsCacheDirectory;
-@property (nonatomic, strong) NSString *mediaCacheDirectory;
-@property (nonatomic, strong) NSString *aliasesCacheDirectory;
-@property (nonatomic, strong) NSString *dimsCacheDirectory;
-@property (nonatomic, strong) NSString *manifestsCacheDirectory;
+@property (nonatomic, copy, readwrite) NSString *cacheDirectory;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, CSCap *> *cachedCaps;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedSpecs;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedAliases;
@@ -269,8 +529,8 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     NSString *folder = [cacheRoot stringByAppendingPathComponent:fetched.charter.slug];
     NSError *storeError = nil;
     if (![fetched storeInFolder:folder error:&storeError]) {
-        if (error) *error = CSRegistryError(1061, [NSString stringWithFormat:@"Failed to store the charter of %@ in %@: %@",
-                                                   anchor, folder, storeError.localizedDescription], storeError);
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"Failed to store the charter of %@ in %@: %@",
+                                            anchor, folder, storeError.localizedDescription], storeError);
         return nil;
     }
     return fetched.charter;
@@ -313,8 +573,9 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 }
 
 // Designated initializer, over a charter already resolved. Everything is read
-// from it: the cache folder is its slug, and the manifest and definitions are
-// where its locations say. `bootstrapFromNetwork == YES` mirrors Rust's
+// from it: the registry's folder is its slug (the cache, that folder's
+// `v<manifestVersion>`), and the manifest and definitions are where its
+// locations say. `bootstrapFromNetwork == YES` mirrors Rust's
 // `with_config_and_manifest_version`: it loads the pinned manifest from the
 // local cache, else blocks on a network fetch, and fails hard if neither can
 // supply it. `bootstrapFromNetwork == NO` mirrors Rust's `new_for_test_*`: an
@@ -343,23 +604,23 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
         _definitionTemplate = [charter.locations[@"definition"] copy];
         _session = [[self class] registrySession];
 
-        // The cache folder is the charter's slug. Prod and staging serve
+        // The registry's folder is the charter's slug. Prod and staging serve
         // different bytes for the same URN/version; two registries have two
         // charters and two slugs, so a prod-populated cache can never satisfy a
-        // staging lookup. The caps/ and media/ subdirs derive from it.
-        _cacheDirectory = [[[self class] capdagCacheRoot] stringByAppendingPathComponent:charter.slug];
-        _capsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"caps"];
-        _mediaCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"media"];
-        _aliasesCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"aliases"];
-        _dimsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"dims"];
-        _manifestsCacheDirectory = [_cacheDirectory stringByAppendingPathComponent:@"manifests"];
-
-        NSFileManager *fm = [NSFileManager defaultManager];
-        [fm createDirectoryAtPath:_capsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-        [fm createDirectoryAtPath:_mediaCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-        [fm createDirectoryAtPath:_aliasesCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-        [fm createDirectoryAtPath:_dimsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-        [fm createDirectoryAtPath:_manifestsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+        // staging lookup. Its cache is the folder of the manifest version it
+        // is pinned at, `<slug>/v<N>`, so registries built for two manifests
+        // never read each other's definitions.
+        _cacheDirectory = [[[self class] cacheFolderOfRegistryFolder:
+                               [[[self class] capdagCacheRoot] stringByAppendingPathComponent:charter.slug]
+                                                     manifestVersion:manifestVersion] copy];
+        for (NSString *kind in CSFabricCacheKindFolders()) {
+            NSString *folder = [_cacheDirectory stringByAppendingPathComponent:kind];
+            NSError *folderError = nil;
+            if (!CSMakeFolder(folder, &folderError)) {
+                [[self class] raiseCacheError:CSCacheError([NSString stringWithFormat:
+                    @"Failed to create cache directory %@: %@", folder, folderError.localizedDescription], folderError)];
+            }
+        }
 
         _cachedCaps = [[NSMutableDictionary alloc] init];
         _cachedSpecs = [[NSMutableDictionary alloc] init];
@@ -403,16 +664,25 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
             [self bootstrapManifest];
         }
 
-        [self loadAllCachedCaps];
-        [self loadAllCachedMediaDefs];
-        [self loadAllCachedAliases];
-        [self loadAllCachedDims];
-        // Filter the loaded caches to the pinned manifest's defvers (v >= 1):
-        // only retain a cached entry whose own version matches the defver the
-        // manifest pins its URN at. A v0-flat or stale-version blob left on disk
-        // from a different snapshot must never satisfy a v >= 1 lookup. Then
-        // keep a cap or media def only when every dim it names survived. Mirrors
-        // retain_pinned in Rust's constructor.
+        // Hydrate the in-memory caches from the disk cache: each definition the
+        // manifest pins, from the one file its key and pinned defver name. A
+        // corrupt entry fails the construction, naming its file. Mirrors
+        // load_pinned_entries in Rust's constructor.
+        NSError *loadError = nil;
+        NSDictionary *pinned = [[self class] loadPinnedEntriesFromCacheFolder:_cacheDirectory
+                                                                     manifest:[self manifestDictionary]
+                                                                        error:&loadError];
+        if (!pinned) {
+            [[self class] raiseCacheError:loadError];
+        }
+        [_cachedCaps addEntriesFromDictionary:pinned[@"caps"]];
+        [_cachedSpecs addEntriesFromDictionary:pinned[@"media"]];
+        [_cachedAliases addEntriesFromDictionary:pinned[@"aliases"]];
+        [_cachedDims addEntriesFromDictionary:pinned[@"dims"]];
+        // Filter the loaded caches to the pinned manifest's defvers (v >= 1),
+        // then keep a cap or media def only when every dim it names survived.
+        // Loading already reads only pinned entries; this also rebuilds the
+        // extension index. Mirrors retain_pinned in Rust's constructor.
         [self filterCachesToManifest];
     }
     return self;
@@ -468,14 +738,7 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 }
 
 - (NSString *)sha256HexForString:(NSString *)s {
-    NSData *data = [s dataUsingEncoding:NSUTF8StringEncoding];
-    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *out = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
-    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
-        [out appendFormat:@"%02x", digest[i]];
-    }
-    return out;
+    return CSSha256Hex(s);
 }
 
 - (NSString *)normalizeExtension:(NSString *)extension {
@@ -488,39 +751,33 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
 // MARK: - Manifest bootstrap
 
-// Load the pinned manifest BEFORE any cache hydrate or fetch. Tries the local
-// cache (`manifests/<N>.json`) first, then BLOCKS on a network GET. If neither
-// produces a parseable manifest at the pinned version this raises — there is no
-// v0 fallback (the caller pinned v >= 1 by baking it in). Exact behavioural
-// mirror of Rust load_or_fetch_manifest + the constructor that .awaits it.
+// Load the pinned manifest BEFORE any cache hydrate or fetch. Tries the cached
+// manifest (`v<N>/manifest.json`) first, then BLOCKS on a network GET. If
+// neither produces a parseable manifest at the pinned version this raises —
+// there is no v0 fallback (the caller pinned v >= 1 by baking it in). A cached
+// manifest that is corrupt or another version's raises naming its file
+// (CSFabricRegistryCacheError), and is never silently fetched again. Exact
+// behavioural mirror of Rust load_or_fetch_manifest + the constructor that
+// .awaits it.
 - (void)bootstrapManifest {
-    NSString *cacheFile = [self.manifestsCacheDirectory
-        stringByAppendingPathComponent:[NSString stringWithFormat:@"%u.json", self.manifestVersion]];
-    NSFileManager *fm = [NSFileManager defaultManager];
-
-    NSData *body = nil;
-    if ([fm fileExistsAtPath:cacheFile]) {
-        NSData *cached = [NSData dataWithContentsOfFile:cacheFile];
-        if (cached) {
-            NSError *parseErr = nil;
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:cached options:0 error:&parseErr];
-            uint32_t cachedVersion = [json isKindOfClass:[NSDictionary class]]
-                ? (uint32_t)[json[@"version"] unsignedIntValue] : 0;
-            NSError *ingestErr = nil;
-            if ([json isKindOfClass:[NSDictionary class]] && cachedVersion == self.manifestVersion
-                && [self ingestManifestDictionary:json error:&ingestErr]) {
-                return;
-            }
-            // A cached manifest whose version disagrees with the file name (or
-            // that no longer parses, or is not a manifest this library reads)
-            // is corrupt; drop it and re-fetch from the network rather than
-            // trusting the wrong snapshot.
-            NSLog(@"[CSFabricRegistry] cached manifest at %@ did not parse, reported version %u (expected %u) or was refused (%@); re-fetching",
-                  cacheFile, cachedVersion, self.manifestVersion, ingestErr.localizedDescription ?: @"-");
-            [fm removeItemAtPath:cacheFile error:nil];
+    NSString *cacheFile = [self.cacheDirectory stringByAppendingPathComponent:CSFabricCacheManifestFile];
+    NSDictionary *cached = nil;
+    NSError *cacheError = nil;
+    if (![[self class] readCachedManifestInFolder:self.cacheDirectory
+                                          version:self.manifestVersion
+                                         manifest:&cached
+                                            error:&cacheError]) {
+        [[self class] raiseCacheError:cacheError];
+    }
+    if (cached) {
+        NSError *ingestErr = nil;
+        if (![self ingestManifestDictionary:cached error:&ingestErr]) {
+            [[self class] raiseCacheError:CSCacheCorrupt(cacheFile, @"manifest", ingestErr.localizedDescription)];
         }
+        return;
     }
 
+    NSData *body = nil;
     NSString *urlString = [self.manifestTemplate
         stringByReplacingOccurrencesOfString:@"{manifest_version}"
                                   withString:[NSString stringWithFormat:@"%u", self.manifestVersion]];
@@ -577,33 +834,28 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
                     format:@"Manifest v%u at %@ is refused: %@",
                            self.manifestVersion, urlString, ingestErr.localizedDescription];
     }
-    [body writeToFile:cacheFile atomically:YES];
+    NSError *writeError = nil;
+    if (!CSWriteCacheFileAtomically(cacheFile, body, &writeError)) {
+        [[self class] raiseCacheError:writeError];
+    }
 }
 
 // Replace the in-memory manifest maps with the snapshot's `caps`/`media`/
 // `aliases`/`dims` URN→defver mappings. The published manifest is the single
 // source of truth for which URNs belong to the snapshot and at which defver each
-// resolves. `dims` is required: a manifest without it is not one this library
-// reads, and is refused (NO + *error) without touching the maps.
+// resolves. `dims` is required, and each map names definitions with defvers: a
+// manifest that breaks either is not one this library reads, and is refused
+// (NO + *error) without touching the maps (CSManifestRefusal).
 - (BOOL)ingestManifestDictionary:(NSDictionary *)manifest error:(NSError *_Nullable *_Nullable)error {
+    NSError *refusal = CSManifestRefusal(manifest);
+    if (refusal) {
+        if (error) *error = refusal;
+        return NO;
+    }
     NSDictionary *caps = manifest[@"caps"];
     NSDictionary *media = manifest[@"media"];
     NSDictionary *aliases = manifest[@"aliases"];
-    id dims = manifest[@"dims"];
-    if (![dims isKindOfClass:[NSDictionary class]]) {
-        if (error) *error = CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
-            @"manifest v%@ %@ 'dims' map (dim name -> defver); every manifest names the dims of its snapshot",
-            manifest[@"version"], dims ? @"has a malformed" : @"has no"], nil);
-        return NO;
-    }
-    for (id name in (NSDictionary *)dims) {
-        id defver = ((NSDictionary *)dims)[name];
-        if (![name isKindOfClass:[NSString class]] || ![defver isKindOfClass:[NSNumber class]]) {
-            if (error) *error = CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
-                @"manifest v%@ 'dims' entry '%@' is not a dim name mapped to a defver", manifest[@"version"], name], nil);
-            return NO;
-        }
-    }
+    NSDictionary *dims = manifest[@"dims"];
     [self.cacheLock lock];
     [self.manifestCaps removeAllObjects];
     [self.manifestMedia removeAllObjects];
@@ -789,14 +1041,6 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     url = [url stringByReplacingOccurrencesOfString:@"{urn_hash}" withString:digest];
     return [url stringByReplacingOccurrencesOfString:@"{version}"
                                           withString:[NSString stringWithFormat:@"%u", defver]];
-}
-
-// The on-disk cache file of a definition: `<dir>/<sha>/<defver>.json`.
-// Mirrors the cache-path half of the Rust helpers.
-- (NSString *)cacheFileInDir:(NSString *)dir digest:(NSString *)digest defver:(uint32_t)defver {
-    NSString *subdir = [dir stringByAppendingPathComponent:digest];
-    [[NSFileManager defaultManager] createDirectoryAtPath:subdir withIntermediateDirectories:YES attributes:nil error:nil];
-    return [subdir stringByAppendingPathComponent:[NSString stringWithFormat:@"%u.json", defver]];
 }
 
 // MARK: - Public cap surface
@@ -1056,7 +1300,13 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
 // MARK: - Cache lifecycle
 
-- (void)clearCache {
+// Invalidate every cache of this registry's manifest version: the in-memory
+// definition maps and its whole folder on disk, INCLUDING the cached manifest,
+// and the folders of the layout before per-version folders. The in-memory
+// manifest maps stay (the registry stays pinned and usable; every definition is
+// fetched again lazily at the same defvers), and a registry constructed after
+// this fetches the manifest afresh. Mirrors Rust clear_cache.
+- (BOOL)clearCache:(NSError *_Nullable *_Nullable)error {
     [self.cacheLock lock];
     [self.cachedCaps removeAllObjects];
     [self.cachedSpecs removeAllObjects];
@@ -1064,22 +1314,7 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     [self.cachedDims removeAllObjects];
     [self.extensionIndex removeAllObjects];
     [self.cacheLock unlock];
-
-    NSFileManager *fm = [NSFileManager defaultManager];
-    // Clear the per-object caches (caps/media/aliases/dims) but PRESERVE the manifest
-    // cache: the registry stays pinned and usable after a clear, and re-fetching
-    // every object lazily must still resolve defvers from the same snapshot. The
-    // in-memory manifest maps are likewise left intact (cleared only by a new
-    // construction). Recreate the per-object dirs so subsequent writes succeed.
-    [fm removeItemAtPath:self.capsCacheDirectory error:nil];
-    [fm removeItemAtPath:self.mediaCacheDirectory error:nil];
-    [fm removeItemAtPath:self.aliasesCacheDirectory error:nil];
-    [fm removeItemAtPath:self.dimsCacheDirectory error:nil];
-    [fm createDirectoryAtPath:self.capsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    [fm createDirectoryAtPath:self.mediaCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    [fm createDirectoryAtPath:self.aliasesCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    [fm createDirectoryAtPath:self.dimsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    [fm createDirectoryAtPath:self.manifestsCacheDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+    return [[self class] clearCacheFolder:self.cacheDirectory error:error];
 }
 
 // MARK: - Atomic cap fetch
@@ -1149,7 +1384,11 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
                     return;
                 }
                 // All referenced media defs and dims in cache. Write the cap.
-                [self saveCapToCache:cap];
+                NSError *saveError = nil;
+                if (![self saveCapToCache:cap error:&saveError]) {
+                    completion(nil, saveError);
+                    return;
+                }
                 [self.cacheLock lock];
                 self.cachedCaps[normalized] = cap;
                 [self.cacheLock unlock];
@@ -1194,7 +1433,11 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
                 completion(nil, dimError);
                 return;
             }
-            [self saveMediaDefToCache:spec];
+            NSError *saveError = nil;
+            if (![self saveMediaDefToCache:spec error:&saveError]) {
+                completion(nil, saveError);
+                return;
+            }
             [self insertMediaDefInMemory:spec];
             completion(spec, nil);
         }];
@@ -1299,14 +1542,310 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
 // MARK: - Disk cache I/O
 
++ (void)raiseCacheError:(NSError *)error {
+    @throw [NSException exceptionWithName:CSFabricRegistryCacheErrorException
+                                   reason:error.localizedDescription
+                                 userInfo:@{NSUnderlyingErrorKey: error}];
+}
+
++ (NSString *)cacheFolderOfRegistryFolder:(NSString *)registryFolder manifestVersion:(uint32_t)manifestVersion {
+    return [registryFolder stringByAppendingPathComponent:[NSString stringWithFormat:@"v%u", manifestVersion]];
+}
+
++ (NSString *)cacheEntryPathInFolder:(NSString *)folder
+                                kind:(NSString *)kind
+                                 key:(NSString *)key
+                              defver:(uint32_t)defver {
+    return [[[folder stringByAppendingPathComponent:kind] stringByAppendingPathComponent:CSSha256Hex(key)]
+            stringByAppendingPathComponent:[NSString stringWithFormat:@"%u.json", defver]];
+}
+
++ (BOOL)storeCacheEntry:(NSDictionary *)entry
+                 atPath:(NSString *)path
+                   what:(NSString *)what
+                  error:(NSError *_Nullable *_Nullable)error {
+    if (![NSJSONSerialization isValidJSONObject:entry]) {
+        if (error) *error = CSCacheError([NSString stringWithFormat:
+            @"failed to serialize the %@ cache entry: it is not a JSON object", what], nil);
+        return NO;
+    }
+    NSError *serializeError = nil;
+    NSData *bytes = [NSJSONSerialization dataWithJSONObject:entry options:NSJSONWritingPrettyPrinted error:&serializeError];
+    if (!bytes) {
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"failed to serialize the %@ cache entry: %@",
+                                          what, serializeError.localizedDescription], serializeError);
+        return NO;
+    }
+    return CSWriteCacheFileAtomically(path, bytes, error);
+}
+
++ (BOOL)readCachedManifestInFolder:(NSString *)folder
+                           version:(uint32_t)version
+                          manifest:(NSDictionary *_Nullable *_Nonnull)outManifest
+                             error:(NSError *_Nullable *_Nullable)error {
+    *outManifest = nil;
+    NSString *path = [folder stringByAppendingPathComponent:CSFabricCacheManifestFile];
+    NSDictionary *manifest = nil;
+    if (!CSReadCacheFile(path, @"manifest", &manifest, error)) return NO;
+    if (!manifest) return YES;
+    id cachedVersion = manifest[@"version"];
+    if (![cachedVersion isKindOfClass:[NSNumber class]]) {
+        if (error) *error = CSCacheCorrupt(path, @"manifest",
+            [NSString stringWithFormat:@"its 'version' is %@", cachedVersion ? @"not a number" : @"missing"]);
+        return NO;
+    }
+    NSError *refusal = CSManifestRefusal(manifest);
+    if (refusal) {
+        if (error) *error = CSCacheCorrupt(path, @"manifest", refusal.localizedDescription);
+        return NO;
+    }
+    if ([cachedVersion unsignedIntValue] != version) {
+        if (error) *error = CSCacheCorrupt(path, @"manifest", [NSString stringWithFormat:
+            @"it is manifest %u, in the folder of manifest %u", [cachedVersion unsignedIntValue], version]);
+        return NO;
+    }
+    *outManifest = manifest;
+    return YES;
+}
+
+// Read, from the cache folder `folder` of manifest `manifest`, every definition
+// the manifest pins that is cached: each from the one file its key and pinned
+// defver name, so nothing at another defver, and nothing another manifest
+// version cached, is ever read. Mirrors Rust load_pinned_entries.
+//
+// An entry that is not there is not cached. One that is there and cannot be
+// read, does not parse, or is not the definition and defver its path names is
+// corrupt, and an error naming the file; the file is left where it is. Two
+// rules drop an entry and leave it to be fetched anew, naming its file in the
+// log:
+// - a defver-0 cap or media def older than its time to live (defver 0 is the
+//   flat, mutable regime);
+// - a cap or dim that breaks the definition rules was written by a capdag with
+//   other rules; its file is removed.
++ (nullable NSDictionary *)loadPinnedEntriesFromCacheFolder:(NSString *)folder
+                                                   manifest:(NSDictionary *)manifest
+                                                      error:(NSError *_Nullable *_Nullable)error {
+    NSMutableDictionary<NSString *, CSCap *> *caps = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSDictionary *> *media = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSDictionary *> *aliases = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, CSStoredDim *> *dims = [NSMutableDictionary dictionary];
+    NSString *(^holds)(NSString *, uint32_t, NSString *, uint32_t) =
+        ^NSString *(NSString *found, uint32_t foundVersion, NSString *key, uint32_t defver) {
+            return [NSString stringWithFormat:@"it holds '%@' at defver %u, where '%@' at defver %u belongs",
+                    found, foundVersion, key, defver];
+        };
+
+    NSDictionary<NSString *, NSNumber *> *pinnedCaps = manifest[@"caps"];
+    for (NSString *urn in pinnedCaps) {
+        uint32_t defver = [pinnedCaps[urn] unsignedIntValue];
+        NSString *path = [self cacheEntryPathInFolder:folder kind:@"caps" key:urn defver:defver];
+        NSDictionary *entry = nil;
+        if (!CSReadCacheFile(path, @"cap", &entry, error)) return nil;
+        if (!entry) continue;
+        NSString *detail = nil;
+        NSDictionary *body = CSCacheEntryBody(entry, @"definition", &detail);
+        if (!body) {
+            if (error) *error = CSCacheCorrupt(path, @"cap", detail);
+            return nil;
+        }
+        NSError *parseError = nil;
+        CSCap *cap = [CSCap capWithDictionary:body error:&parseError];
+        if (!cap) {
+            if (error) *error = CSCacheCorrupt(path, @"cap", parseError.localizedDescription ?: @"it is not a cap definition");
+            return nil;
+        }
+        NSError *urnError = nil;
+        NSString *cachedUrn = [[CSCapUrn fromString:[cap.capUrn toString] error:&urnError] toString];
+        if (!cachedUrn) {
+            if (error) *error = CSCacheCorrupt(path, @"cap", urnError.localizedDescription ?: @"its URN does not parse");
+            return nil;
+        }
+        if (![cachedUrn isEqualToString:urn] || cap.version != defver) {
+            if (error) *error = CSCacheCorrupt(path, @"cap", holds(cachedUrn, cap.version, urn, defver));
+            return nil;
+        }
+        if (defver == 0 && CSCacheEntryIsExpired(entry)) {
+            NSLog(@"[CSFabricRegistry] the cached cap %@ is past its time to live", path);
+            continue;
+        }
+        NSError *ruleError = nil;
+        if (![CSCapValidator validateCapDefinition:cap error:&ruleError]) {
+            NSLog(@"[CSFabricRegistry] dropping the cached cap %@: %@", path, ruleError.localizedDescription);
+            [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+            continue;
+        }
+        caps[cachedUrn] = cap;
+    }
+
+    NSDictionary<NSString *, NSNumber *> *pinnedMedia = manifest[@"media"];
+    for (NSString *urn in pinnedMedia) {
+        uint32_t defver = [pinnedMedia[urn] unsignedIntValue];
+        NSString *path = [self cacheEntryPathInFolder:folder kind:@"media" key:urn defver:defver];
+        NSDictionary *entry = nil;
+        if (!CSReadCacheFile(path, @"media def", &entry, error)) return nil;
+        if (!entry) continue;
+        NSString *detail = nil;
+        NSDictionary *spec = CSCacheEntryBody(entry, @"spec", &detail);
+        if (!spec) {
+            if (error) *error = CSCacheCorrupt(path, @"media def", detail);
+            return nil;
+        }
+        id specUrn = spec[@"urn"];
+        id specVersion = spec[@"version"];
+        if (![specUrn isKindOfClass:[NSString class]]) {
+            if (error) *error = CSCacheCorrupt(path, @"media def", @"its spec has no 'urn' string");
+            return nil;
+        }
+        if (specVersion != nil && ![specVersion isKindOfClass:[NSNumber class]]) {
+            if (error) *error = CSCacheCorrupt(path, @"media def", @"its spec's 'version' is not a number");
+            return nil;
+        }
+        NSError *urnError = nil;
+        NSString *cachedUrn = [[CSMediaUrn fromString:specUrn error:&urnError] toString];
+        if (!cachedUrn) {
+            if (error) *error = CSCacheCorrupt(path, @"media def", urnError.localizedDescription ?: @"its URN does not parse");
+            return nil;
+        }
+        uint32_t cachedVersion = [specVersion unsignedIntValue];
+        if (![cachedUrn isEqualToString:urn] || cachedVersion != defver) {
+            if (error) *error = CSCacheCorrupt(path, @"media def", holds(cachedUrn, cachedVersion, urn, defver));
+            return nil;
+        }
+        if (defver == 0 && CSCacheEntryIsExpired(entry)) {
+            NSLog(@"[CSFabricRegistry] the cached media def %@ is past its time to live", path);
+            continue;
+        }
+        media[cachedUrn] = spec;
+    }
+
+    NSDictionary<NSString *, NSNumber *> *pinnedAliases = manifest[@"aliases"];
+    for (NSString *name in pinnedAliases) {
+        uint32_t defver = [pinnedAliases[name] unsignedIntValue];
+        NSString *path = [self cacheEntryPathInFolder:folder kind:@"aliases" key:name defver:defver];
+        NSDictionary *entry = nil;
+        if (!CSReadCacheFile(path, @"alias", &entry, error)) return nil;
+        if (!entry) continue;
+        NSString *detail = nil;
+        NSDictionary *alias = CSCacheEntryBody(entry, @"alias", &detail);
+        if (!alias) {
+            if (error) *error = CSCacheCorrupt(path, @"alias", detail);
+            return nil;
+        }
+        id aliasName = alias[@"name"];
+        id target = alias[@"target"];
+        id version = alias[@"version"];
+        if (![aliasName isKindOfClass:[NSString class]] || ![target isKindOfClass:[NSString class]]
+            || ![version isKindOfClass:[NSNumber class]]) {
+            if (error) *error = CSCacheCorrupt(path, @"alias", @"it is not an alias (a 'name', a 'target' and a 'version')");
+            return nil;
+        }
+        // The checks the reference holds a fetched alias to
+        // (validate_fetched_alias), each a corrupt entry here.
+        if (![aliasName isEqualToString:name]) {
+            if (error) *error = CSCacheCorrupt(path, @"alias", [NSString stringWithFormat:
+                @"alias object name '%@' does not match requested name '%@'", aliasName, name]);
+            return nil;
+        }
+        if ([version unsignedIntValue] != defver) {
+            if (error) *error = CSCacheCorrupt(path, @"alias", [NSString stringWithFormat:
+                @"alias '%@' object reports version %u but manifest pins defver %u", aliasName, [version unsignedIntValue], defver]);
+            return nil;
+        }
+        if (!CSClassifyAliasTarget(target, NULL)) {
+            if (error) *error = CSCacheCorrupt(path, @"alias", [NSString stringWithFormat:
+                @"alias '%@' target '%@' is neither a cap nor a media URN", aliasName, target]);
+            return nil;
+        }
+        aliases[aliasName] = alias;
+    }
+
+    NSDictionary<NSString *, NSNumber *> *pinnedDims = manifest[@"dims"];
+    for (NSString *name in pinnedDims) {
+        uint32_t defver = [pinnedDims[name] unsignedIntValue];
+        NSString *path = [self cacheEntryPathInFolder:folder kind:@"dims" key:name defver:defver];
+        NSDictionary *entry = nil;
+        if (!CSReadCacheFile(path, @"dim", &entry, error)) return nil;
+        if (!entry) continue;
+        NSString *detail = nil;
+        NSDictionary *body = CSCacheEntryBody(entry, @"dim", &detail);
+        if (!body) {
+            if (error) *error = CSCacheCorrupt(path, @"dim", detail);
+            return nil;
+        }
+        NSError *parseError = nil;
+        CSStoredDim *dim = [CSStoredDim dimWithDictionary:body error:&parseError];
+        if (!dim) {
+            if (error) *error = CSCacheCorrupt(path, @"dim", parseError.localizedDescription ?: @"it is not a dim");
+            return nil;
+        }
+        if (![dim.name isEqualToString:name] || dim.version != defver) {
+            if (error) *error = CSCacheCorrupt(path, @"dim", holds(dim.name, dim.version, name, defver));
+            return nil;
+        }
+        NSError *validateError = nil;
+        if (![dim validate:&validateError]) {
+            NSLog(@"[CSFabricRegistry] dropping the cached dim %@: %@", path, validateError.localizedDescription);
+            [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+            continue;
+        }
+        dims[dim.name] = dim;
+    }
+
+    return @{@"caps": caps, @"media": media, @"aliases": aliases, @"dims": dims};
+}
+
+// Empty the cache folder of one manifest version, `folder`, and remove the
+// folders the layout before per-version folders kept beside it. Mirrors Rust
+// clear_cache_folder.
+//
+// The cache is SHARED, and the processes that clear it run at the same time.
+// Removing the tree and putting it back is not safe between peers — one
+// process deleting an ancestor while another is creating into it fails the
+// second with "No such file or directory" on a path it had just made. So a
+// kind's folder is never removed, only its contents, and every step tolerates
+// a peer having done the same thing first (CSRemoveShared). The manifest, and
+// any temporary file a killed writer left, are removed from the version's
+// folder; other versions' folders and the stored charter are left as they are.
++ (BOOL)clearCacheFolder:(NSString *)folder error:(NSError *_Nullable *_Nullable)error {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *kind in CSFabricCacheKindFolders()) {
+        NSString *kindFolder = [folder stringByAppendingPathComponent:kind];
+        NSError *createError = nil;
+        if (!CSMakeFolder(kindFolder, &createError)) {
+            if (error) *error = CSCacheError([NSString stringWithFormat:@"Failed to create cache directory %@: %@",
+                                              kindFolder, createError.localizedDescription], createError);
+            return NO;
+        }
+        if (!CSRemoveContents(kindFolder, error)) return NO;
+    }
+    // What is left at the top of the version's folder: the manifest, and
+    // temporary files. The kinds' folders themselves stay.
+    NSError *listError = nil;
+    NSArray<NSString *> *top = [fm contentsOfDirectoryAtPath:folder error:&listError];
+    if (!top) {
+        if (CSIsNoSuchFile(listError)) return YES;
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"Failed to read cache directory %@: %@",
+                                          folder, listError.localizedDescription], listError);
+        return NO;
+    }
+    for (NSString *name in top) {
+        NSString *path = [folder stringByAppendingPathComponent:name];
+        if (!CSIsFolder(path) && !CSRemoveShared(path, error)) return NO;
+    }
+    NSString *registryFolder = [folder stringByDeletingLastPathComponent];
+    for (NSString *legacy in CSFabricCacheLegacyFolders()) {
+        NSString *path = [registryFolder stringByAppendingPathComponent:legacy];
+        if (CSIsFolder(path) && !CSRemoveShared(path, error)) return NO;
+    }
+    return YES;
+}
+
 - (nullable NSString *)capCacheFilePathForUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error {
     NSString *normalized = [self normalizeCapUrn:urn error:error];
     if (!normalized) return nil;
     uint32_t defver = 0;
     if (![self capDefver:&defver forNormalized:normalized error:error]) return nil;
-    return [self cacheFileInDir:self.capsCacheDirectory
-                         digest:[self sha256HexForString:normalized]
-                         defver:defver];
+    return [[self class] cacheEntryPathInFolder:self.cacheDirectory kind:@"caps" key:normalized defver:defver];
 }
 
 - (nullable NSString *)mediaCacheFilePathForUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error {
@@ -1314,183 +1853,37 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     if (!normalized) return nil;
     uint32_t defver = 0;
     if (![self mediaDefver:&defver forNormalized:normalized error:error]) return nil;
-    return [self cacheFileInDir:self.mediaCacheDirectory
-                         digest:[self sha256HexForString:normalized]
-                         defver:defver];
+    return [[self class] cacheEntryPathInFolder:self.cacheDirectory kind:@"media" key:normalized defver:defver];
 }
 
-- (void)saveCapToCache:(CSCap *)cap {
-    NSError *pathError = nil;
-    NSString *cacheFile = [self capCacheFilePathForUrn:[cap.capUrn toString] error:&pathError];
-    if (!cacheFile) {
-        NSLog(@"[CSFabricRegistry] saveCapToCache: skipping cap with malformed URN: %@", pathError.localizedDescription);
-        return;
-    }
-    NSDictionary *capDict = [cap toDictionary];
+// Write a fetched cap's cache entry, whole (storeCacheEntry:). A cap that
+// cannot be written is not cached at all: the fetch fails with the error.
+- (BOOL)saveCapToCache:(CSCap *)cap error:(NSError *_Nullable *_Nullable)error {
+    NSString *cacheFile = [self capCacheFilePathForUrn:[cap.capUrn toString] error:error];
+    if (!cacheFile) return NO;
     NSDictionary *entry = @{
-        @"definition": capDict,
-        @"cached_at": @([[NSDate date] timeIntervalSince1970]),
+        @"definition": [cap toDictionary],
+        @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
         @"ttl_hours": @(CACHE_DURATION_HOURS),
     };
-    NSError *err = nil;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:entry options:NSJSONWritingPrettyPrinted error:&err];
-    if (data) {
-        [data writeToFile:cacheFile atomically:YES];
-    }
+    return [[self class] storeCacheEntry:entry atPath:cacheFile what:@"cap" error:error];
 }
 
-- (void)saveMediaDefToCache:(NSDictionary *)spec {
-    NSString *rawUrn = spec[@"urn"];
-    if (![rawUrn isKindOfClass:[NSString class]]) return;
-    NSError *pathError = nil;
-    NSString *cacheFile = [self mediaCacheFilePathForUrn:rawUrn error:&pathError];
-    if (!cacheFile) {
-        NSLog(@"[CSFabricRegistry] saveMediaDefToCache: skipping spec with malformed URN '%@': %@",
-              rawUrn, pathError.localizedDescription);
-        return;
+// Write a fetched media def's cache entry, whole (storeCacheEntry:).
+- (BOOL)saveMediaDefToCache:(NSDictionary *)spec error:(NSError *_Nullable *_Nullable)error {
+    id rawUrn = spec[@"urn"];
+    if (![rawUrn isKindOfClass:[NSString class]]) {
+        if (error) *error = CSRegistryError(1001, @"a media def without a 'urn' string cannot be cached", nil);
+        return NO;
     }
+    NSString *cacheFile = [self mediaCacheFilePathForUrn:rawUrn error:error];
+    if (!cacheFile) return NO;
     NSDictionary *entry = @{
         @"spec": spec,
-        @"cached_at": @([[NSDate date] timeIntervalSince1970]),
+        @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
         @"ttl_hours": @(CACHE_DURATION_HOURS),
     };
-    NSError *err = nil;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:entry options:NSJSONWritingPrettyPrinted error:&err];
-    if (data) {
-        [data writeToFile:cacheFile atomically:YES];
-    }
-}
-
-// Enumerate every cached `.json` file under a cache dir, covering BOTH the flat
-// v0 layout (`<dir>/<sha>.json`) and the versioned v >= 1 layout
-// (`<dir>/<sha>/<defver>.json`). A shallow scan would miss the versioned files,
-// leaving a populated disk cache invisible to the in-memory hydrate. Mirrors
-// the recursive walk in Rust load_all_cached_caps/media_defs/aliases.
-- (NSArray<NSString *> *)cachedJSONFilePathsInDir:(NSString *)dir {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSMutableArray<NSString *> *paths = [NSMutableArray array];
-    NSDirectoryEnumerator *en = [fm enumeratorAtPath:dir];
-    for (NSString *rel in en) {
-        if (![rel hasSuffix:@".json"]) continue;
-        [paths addObject:[dir stringByAppendingPathComponent:rel]];
-    }
-    return paths;
-}
-
-- (void)loadAllCachedCaps {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray<NSString *> *files = [self cachedJSONFilePathsInDir:self.capsCacheDirectory];
-    for (NSString *filePath in files) {
-        NSData *data = [NSData dataWithContentsOfFile:filePath];
-        if (!data) continue;
-        NSError *err = nil;
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&err];
-        if (![json isKindOfClass:[NSDictionary class]]) continue;
-
-        CSCapCacheEntry *entry = [[CSCapCacheEntry alloc] init];
-        entry.cachedAt = [json[@"cached_at"] doubleValue];
-        entry.ttlHours = [json[@"ttl_hours"] doubleValue];
-
-        NSDictionary *capDict = json[@"definition"];
-        CSCap *cap = [CSCap capWithDictionary:capDict error:&err];
-        if (!cap) continue;
-
-        // TTL applies only to v0 (flat) entries; versioned entries are immutable
-        // by protocol. Mirrors the `version == 0 && is_expired()` guard in Rust.
-        if (cap.version == 0 && [entry isExpired]) {
-            [fm removeItemAtPath:filePath error:nil];
-            continue;
-        }
-
-        NSError *normError = nil;
-        NSString *normalized = [self normalizeCapUrn:[cap.capUrn toString] error:&normError];
-        if (!normalized) {
-            NSLog(@"[CSFabricRegistry] loadAllCachedCaps: skipping cached cap with malformed URN: %@", normError.localizedDescription);
-            continue;
-        }
-        [self.cacheLock lock];
-        self.cachedCaps[normalized] = cap;
-        [self.cacheLock unlock];
-    }
-}
-
-- (void)loadAllCachedMediaDefs {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray<NSString *> *files = [self cachedJSONFilePathsInDir:self.mediaCacheDirectory];
-    for (NSString *filePath in files) {
-        NSData *data = [NSData dataWithContentsOfFile:filePath];
-        if (!data) continue;
-        NSError *err = nil;
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&err];
-        if (![json isKindOfClass:[NSDictionary class]]) continue;
-
-        CSMediaCacheEntry *entry = [[CSMediaCacheEntry alloc] init];
-        entry.cachedAt = [json[@"cached_at"] doubleValue];
-        entry.ttlHours = [json[@"ttl_hours"] doubleValue];
-
-        NSDictionary *spec = json[@"spec"];
-        if (![spec isKindOfClass:[NSDictionary class]]) continue;
-
-        uint32_t specVersion = (uint32_t)[spec[@"version"] unsignedIntValue];
-        if (specVersion == 0 && [entry isExpired]) {
-            [fm removeItemAtPath:filePath error:nil];
-            continue;
-        }
-        [self insertMediaDefInMemory:spec];
-    }
-}
-
-// Load the alias cache (`aliases/<sha>/<defver>.json`). Aliases are
-// versioned-only — no v0 flat path, no TTL (a published defver is immutable).
-// Mirrors Rust load_all_cached_aliases.
-- (void)loadAllCachedAliases {
-    NSArray<NSString *> *files = [self cachedJSONFilePathsInDir:self.aliasesCacheDirectory];
-    for (NSString *filePath in files) {
-        NSData *data = [NSData dataWithContentsOfFile:filePath];
-        if (!data) continue;
-        NSError *err = nil;
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&err];
-        if (![json isKindOfClass:[NSDictionary class]]) continue;
-        NSDictionary *alias = json[@"alias"];
-        if (![alias isKindOfClass:[NSDictionary class]]) continue;
-        NSString *name = alias[@"name"];
-        if (![name isKindOfClass:[NSString class]]) continue;
-        [self.cacheLock lock];
-        self.cachedAliases[name] = alias;
-        [self.cacheLock unlock];
-    }
-}
-
-// Load the dim cache (`dims/<sha>/<defver>.json`, each `{"dim": <body>,
-// "cached_at", "ttl_hours"}`). Dims are versioned-only — no v0 flat path, no
-// TTL (a published defver is immutable). A cached body this library cannot
-// hold is dropped like an unparseable one, and fetched anew. Of two cached
-// versions of one dim, the one the manifest pins is kept. Mirrors Rust
-// load_all_cached_dims.
-- (void)loadAllCachedDims {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray<NSString *> *files = [self cachedJSONFilePathsInDir:self.dimsCacheDirectory];
-    for (NSString *filePath in files) {
-        NSData *data = [NSData dataWithContentsOfFile:filePath];
-        if (!data) continue;
-        NSError *err = nil;
-        id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&err];
-        id body = [json isKindOfClass:[NSDictionary class]] ? json[@"dim"] : nil;
-        CSStoredDim *dim = [body isKindOfClass:[NSDictionary class]] ? [CSStoredDim dimWithDictionary:body error:&err] : nil;
-        if (!dim || ![dim validate:&err]) {
-            NSLog(@"[CSFabricRegistry] dropping dim cache file %@: %@", filePath,
-                  err.localizedDescription ?: @"not a dim cache entry");
-            [fm removeItemAtPath:filePath error:nil];
-            continue;
-        }
-        [self.cacheLock lock];
-        CSStoredDim *held = self.cachedDims[dim.name];
-        uint32_t pinned = (uint32_t)[self.manifestDims[dim.name] unsignedIntValue];
-        if (!(held && held.version == pinned)) {
-            self.cachedDims[dim.name] = dim;
-        }
-        [self.cacheLock unlock];
-    }
+    return [[self class] storeCacheEntry:entry atPath:cacheFile what:@"media def" error:error];
 }
 
 // MARK: - HTTP fetch
@@ -1775,10 +2168,11 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     return [self objectURLForKind:@"dims" digest:[self sha256HexForString:name] defver:defver];
 }
 
-// The cache file of a dim at a defver: `<cache>/dims/<sha256-of-name>/<defver>.json`.
-// Mirrors the cache-path half of Rust dim_url_and_cache_path.
+// The cache file of a dim at a defver: `<cache>/dims/<sha256-of-name>/<defver>.json`,
+// in the folder of the pinned manifest version. Mirrors the cache-path half of
+// Rust dim_url_and_cache_path.
 - (NSString *)dimCacheFileForName:(NSString *)name defver:(uint32_t)defver {
-    return [self cacheFileInDir:self.dimsCacheDirectory digest:[self sha256HexForString:name] defver:defver];
+    return [[self class] cacheEntryPathInFolder:self.cacheDirectory kind:@"dims" key:name defver:defver];
 }
 
 // A dim body as a registry served it, for the dim `name` at `defver`: parsed
@@ -1840,15 +2234,15 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
         }
         NSDictionary *entry = @{
             @"dim": [dim toDictionary],
-            @"cached_at": @([[NSDate date] timeIntervalSince1970]),
+            @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
             @"ttl_hours": @(CACHE_DURATION_HOURS),
         };
         NSError *writeError = nil;
-        NSString *cacheFile = [self dimCacheFileForName:name defver:defver];
-        NSData *serialized = [NSJSONSerialization dataWithJSONObject:entry options:NSJSONWritingPrettyPrinted error:&writeError];
-        if (!serialized || ![serialized writeToFile:cacheFile options:NSDataWritingAtomic error:&writeError]) {
-            completion(nil, CSRegistryError(CSFabricRegistryErrorDimUnavailable, [NSString stringWithFormat:
-                @"Failed to write dim cache file %@: %@", cacheFile, writeError.localizedDescription], writeError));
+        if (![[self class] storeCacheEntry:entry
+                                    atPath:[self dimCacheFileForName:name defver:defver]
+                                      what:@"dim"
+                                     error:&writeError]) {
+            completion(nil, writeError);
             return;
         }
         [self.cacheLock lock];
