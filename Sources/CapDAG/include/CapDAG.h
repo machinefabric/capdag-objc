@@ -56,6 +56,7 @@ FOUNDATION_EXPORT const unsigned char CapDAGVersionString[];
 // Progress mapping for DAG execution
 #import "CSProgressMapper.h"
 
-// InputResolver module - unified input resolution with media detection
+// InputResolver module - what a file is, and unified input resolution
+#import "CSFileMediaDetection.h"
 #import "CSInputResolver.h"
 

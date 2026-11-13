@@ -2,16 +2,19 @@
 //  CSInputResolver.h
 //  CapDAG
 //
-//  InputResolver — Unified input resolution with pluggable media adapters
+//  InputResolver — resolving a run's inputs (files, directories and globs) to
+//  the files they name and what each of them is.
 //
-//  This module resolves mixed file/directory/glob inputs into a flat list of files
-//  with detected media types, cardinality, and structure markers.
+//  What a file is comes from the one detection every host runs
+//  (CSDetectFileMedia, CSFileMediaDetection.h); this module adds the path
+//  resolution around it and the shape of the result.
 //
 //  Mirrors Rust: capdag/src/input_resolver/
 //
 
 #import <Foundation/Foundation.h>
 #import "CSCardinality.h"
+#import "CSFileMediaDetection.h"
 
 @class CSFabricRegistry;
 
@@ -39,8 +42,24 @@ typedef NS_ERROR_ENUM(CSInputResolverErrorDomain, CSInputResolverError) {
     /// All paths resolved to zero files
     CSInputResolverErrorNoFilesResolved = 8,
     /// Symlink cycle detected
-    CSInputResolverErrorSymlinkCycle = 9
+    CSInputResolverErrorSymlinkCycle = 9,
+    /// The file has no extension to tell its type from
+    CSInputResolverErrorNoExtension = 10,
+    /// The fabric declares no file media type for the file's extension
+    /// (the extension is under CSInputResolverExtensionKey)
+    CSInputResolverErrorUnknownExtension = 11,
+    /// The fabric's file media types could not be loaded (the registry's
+    /// error is under NSUnderlyingErrorKey)
+    CSInputResolverErrorFabricUnavailable = 12
 };
+
+/// userInfo key of a CSInputResolverErrorDomain error about one file: its path
+/// (NSString).
+FOUNDATION_EXPORT NSString * const CSInputResolverPathKey;
+
+/// userInfo key of a CSInputResolverErrorUnknownExtension error: the file's
+/// extension, lowercased (NSString).
+FOUNDATION_EXPORT NSString * const CSInputResolverExtensionKey;
 
 #pragma mark - Content Structure
 
@@ -125,9 +144,10 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// Registry of cartridge-provided content inspection adapters.
 ///
 /// Tracks which cartridges have registered adapter URNs for content inspection,
-/// detects ambiguity at registration time (rejecting entire cap groups),
-/// and maps file extensions to the cartridges that can inspect them.
-@interface CSMediaAdapterRegistry : NSObject
+/// detects ambiguity at registration time (rejecting entire cap groups), and
+/// names the cartridges to consult for a file's candidates (it is a host's
+/// CSAdapterSource).
+@interface CSMediaAdapterRegistry : NSObject <CSAdapterSource>
 
 /// Create a new empty registry with the given media URN registry.
 /// No adapters are registered by default — cartridges register them
@@ -152,12 +172,22 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// The number of registered adapter rows (tests/diagnostics).
 @property (nonatomic, readonly) NSUInteger registeredAdapterCount;
 
-/// Find adapters that can handle candidate URNs for a given file extension.
-/// Returns array of cartridge IDs that have registered adapters matching.
-- (NSArray<NSString *> *)cartridgeIdsForExtension:(NSString *)extension;
+/// The registered adapters some of these candidates conform to, one per
+/// cartridge, in registration order.
+- (NSArray<CSCartridgeAdapter *> *)adaptersForCandidates:(NSArray<CSMediaUrn *> *)candidates;
 
-/// Quick check: does any registered adapter handle this extension?
-- (BOOL)hasAdapterForExtension:(NSString *)extension;
+/// The adapters of the file media types the fabric declares for an extension
+/// (-[CSFabricRegistry fileMediaForExtension:completion:]), one per cartridge.
+/// The completion gets the registry's error when the file types cannot be
+/// loaded, or a definition has no valid URN.
+- (void)findAdaptersForExtension:(NSString *)extension
+                      completion:(void (^)(NSArray<CSCartridgeAdapter *> *_Nullable adapters,
+                                           NSError *_Nullable error))completion;
+
+/// Whether any registered adapter covers a file media type the fabric declares
+/// for the extension. Errors as findAdaptersForExtension:completion:'s.
+- (void)hasAdapterForExtension:(NSString *)extension
+                    completion:(void (^)(BOOL hasAdapter, NSError *_Nullable error))completion;
 
 @end
 
@@ -175,24 +205,39 @@ BOOL CSInputResolverShouldExcludeDirectory(NSString *path);
 
 #pragma mark - Input Resolution Functions
 
-/// Resolve a single input path to files using the supplied
-/// `CSFabricRegistry` for extension lookups.
-CSResolvedInputSet * _Nullable CSInputResolverResolvePath(NSString *path,
-                                                          CSFabricRegistry *registry,
-                                                          NSError **error);
+/// How a host detects its inputs: its fabric and the cartridges it can ask.
+/// Mirrors Rust: Detection
+@interface CSDetection : NSObject
 
-/// Resolve multiple input paths to files using the supplied
-/// `CSFabricRegistry` for extension lookups.
-CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *paths,
-                                                           CSFabricRegistry *registry,
-                                                           NSError **error);
+@property (nonatomic, strong, readonly) CSFabricRegistry *registry;
+@property (nonatomic, strong, readonly) id<CSAdapterSource> adapters;
+@property (nonatomic, strong, readonly) id<CSCartridgeAdapterInvoker> invoker;
 
-/// Detect media type for a single file using the supplied
-/// `CSFabricRegistry` for extension lookups.
-NSString * _Nullable CSInputResolverDetectFile(NSString *path,
-                                               CSContentStructure *structure,
-                                               CSFabricRegistry *registry,
-                                               NSError **error);
++ (instancetype)detectionWithRegistry:(CSFabricRegistry *)registry
+                             adapters:(id<CSAdapterSource>)adapters
+                              invoker:(id<CSCartridgeAdapterInvoker>)invoker;
+
+@end
+
+/// What one file is, as a run's input: the media a host that cannot ask takes
+/// (CSPrimaryMedia of CSDetectFileMedia's answer), with the content structure
+/// its list and record markers say. Mirrors Rust: resolve_file
+void CSInputResolverResolveFile(NSString *path,
+                                CSDetection *detection,
+                                void (^completion)(CSResolvedFile *_Nullable file, NSError *_Nullable error));
+
+/// Resolve one input path (a file, a directory or a glob) to the files it
+/// names and what each is. Mirrors Rust: resolve_input
+void CSInputResolverResolvePath(NSString *path,
+                                CSDetection *detection,
+                                void (^completion)(CSResolvedInputSet *_Nullable set, NSError *_Nullable error));
+
+/// Resolve input paths (a file, a directory or a glob each) to the files they
+/// name and what each is, in order. The first file whose type cannot be told
+/// fails the whole set with its error. Mirrors Rust: resolve_paths
+void CSInputResolverResolvePaths(NSArray<NSString *> *paths,
+                                 CSDetection *detection,
+                                 void (^completion)(CSResolvedInputSet *_Nullable set, NSError *_Nullable error));
 
 #pragma mark - Path Utilities
 

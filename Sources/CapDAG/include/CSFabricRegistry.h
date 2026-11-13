@@ -7,7 +7,9 @@
 //  defs, aliases and dims together with a single HTTP client and one
 //  disk cache: the folder of the fabric manifest version the registry is
 //  pinned at, `<NSCachesDirectory>/capdag/<charter slug>/v<N>/`, holding
-//  `manifest.json` and `caps/`, `media/`, `aliases/` and `dims/`, each
+//  `manifest.json`, `file_types.json` (which of the manifest's media
+//  definitions are file types, with the hash of the manifest file they were
+//  worked out from) and `caps/`, `media/`, `aliases/` and `dims/`, each
 //  definition at `<kind>/<sha256 of its key>/<defver>.json`.
 //
 
@@ -84,6 +86,16 @@ typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryCacheErrorCod
     CSFabricRegistryErrorCache = 1063,
 };
 
+/// The code of the error that says the fabric's file media types cannot be
+/// told (domain `CSFabricRegistryErrorDomain`; the reference's FileTypes): a
+/// file media definition of the pinned manifest could not be loaded (the
+/// message names every one and why), or the manifest names a media definition
+/// by something that is no media URN (the message names the manifest version
+/// and the entry).
+typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryFileTypesErrorCode) {
+    CSFabricRegistryErrorFileTypes = 1064,
+};
+
 /// The kind of thing a fabric alias resolves to. An alias target is always a
 /// URN; the kind is determined by the URN prefix.
 typedef NS_ENUM(NSInteger, CSAliasTargetKind) {
@@ -146,9 +158,10 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
  * names — so a reader holding a cached definition can always read the
  * documentation of the dims it was built from (`getCachedDim:`).
  *
- * Extension lookups (mediaUrnsForExtension:) consult the in-memory
- * media-def cache: extensions become known as their owning specs
- * land — there is no compiled-in fallback table.
+ * The file media types an extension names come from the whole pinned
+ * manifest (fileMediaForExtension:completion:): every media definition whose
+ * URN carries the `ext=` file-type tag. They load the first time a file's
+ * type is asked, never at construction.
  */
 /// What the planner needs of a fabric registry.
 ///
@@ -266,26 +279,40 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 /// (`Pending`).
 - (nullable NSDictionary *)getCachedMediaDef:(NSString *)urn error:(NSError * _Nullable * _Nullable)error;
 
-/// Insert a media def directly into the in-memory cache.
-/// Updates the extension index as a side effect. Used for tests and
-/// for hydrating from local sources (e.g. cartridge manifests).
+/// Insert a media def directly into the in-memory cache and register it in
+/// the manifest at its declared version. Used for tests and for hydrating from
+/// local sources (e.g. cartridge manifests). The manifest is then no longer
+/// the file it was read from, so its file types are worked out from it in
+/// memory and not kept beside the cached manifest.
 - (void)addMediaDef:(NSDictionary *)spec;
 
-/// All media URNs registered for the given extension. Returns an
-/// empty array when the extension hasn't been seen yet (specs
-/// hydrate on demand through getMediaDef / getCapWithUrn — there is
-/// no compiled-in fallback). The leading dot is stripped if present;
-/// matching is case-insensitive.
-- (NSArray<NSString *> *)mediaUrnsForExtension:(NSString *)extension;
+/// Name a media definition in the manifest at `defver` without caching it:
+/// the registry fetches it from its `definition` location when it is first
+/// needed. The manifest is then no longer the file it was read from (see
+/// addMediaDef:). Test helper; mirrors Rust `list_media_in_manifest_for_test`.
+- (void)listMediaInManifestForTest:(NSString *)urn defver:(uint32_t)defver;
 
-/// Convenience: the first registered URN for the extension, or nil.
-- (nullable NSString *)primaryMediaUrnForExtension:(NSString *)extension;
-
-/// YES if the extension index currently has any URNs for the extension.
-- (BOOL)hasExtension:(NSString *)extension;
-
-/// All extensions currently in the index.
-- (NSArray<NSString *> *)allExtensions;
+/// The file media types a file with this extension can be: every media
+/// definition (a spec dictionary) of the pinned manifest whose URN carries the
+/// `ext=` file-type tag and whose `extensions` list the extension (any case),
+/// in URN order. Empty when the fabric declares no file type for it. A
+/// definition without the `ext=` tag is content, never a file type, whatever
+/// extensions it lists.
+///
+/// The first call loads every file media definition the manifest names: those
+/// not cached are fetched, 16 at a time, into this manifest version's cache.
+/// Which of the manifest's media definitions are file types is worked out once
+/// and kept beside the cached manifest (`file_types.json`, with the sha256 of
+/// the manifest file), read back while that file is unchanged; a kept list
+/// that cannot be read is a `CSFabricRegistryErrorCache` error naming its
+/// file. Later calls answer from memory; calls made while the types load are
+/// answered when they have loaded. A definition that cannot be had fails the
+/// call (`CSFabricRegistryErrorFileTypes`, naming each one and why), and so
+/// does a manifest entry that is no media URN: an answer from part of the
+/// fabric's file types would be a wrong answer. Mirrors Rust
+/// `file_media_for_extension`.
+- (void)fileMediaForExtension:(NSString *)extension
+                   completion:(void (^)(NSArray<NSDictionary *> *_Nullable definitions, NSError *_Nullable error))completion;
 
 // MARK: Alias surface
 
@@ -372,8 +399,8 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 /// definitions and its whole folder on disk, including the cached manifest, so
 /// every definition is fetched again (and a registry constructed afterwards
 /// fetches the manifest again). Each kind's folder is emptied, never removed;
-/// every file at the top of the version's folder (the manifest, and temporary
-/// files a killed writer left) is removed; the folders of the layout before
+/// every file at the top of the version's folder (the manifest, the file types
+/// kept beside it, and temporary files a killed writer left) is removed; the folders of the layout before
 /// per-version folders (`caps`, `media`, `aliases`, `dims` and `manifests`
 /// directly in the registry's folder) are removed; other manifest versions'
 /// folders and the stored charter are kept. Processes clearing the same cache

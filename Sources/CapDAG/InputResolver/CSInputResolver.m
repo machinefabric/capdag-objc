@@ -2,18 +2,20 @@
 //  CSInputResolver.m
 //  CapDAG
 //
-//  InputResolver — Unified input resolution with pluggable media adapters
+//  InputResolver — resolving a run's inputs (files, directories and globs) to
+//  the files they name and what each of them is (CSDetectFileMedia).
 //
 //  Mirrors Rust: capdag/src/input_resolver/
 //
 
 #import "CSInputResolver.h"
-#import "CSMediaAdapters.h"
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 #import <glob.h>
 
 NSErrorDomain const CSInputResolverErrorDomain = @"CSInputResolverErrorDomain";
+NSString * const CSInputResolverPathKey = @"CSInputResolverPath";
+NSString * const CSInputResolverExtensionKey = @"CSInputResolverExtension";
 
 #pragma mark - CSResolvedFile Implementation
 
@@ -269,56 +271,15 @@ NSArray<NSString *> * _Nullable CSInputResolverExpandGlob(NSString *pattern, NSE
     return paths;
 }
 
-// CSMediaAdapterRegistry implementation has been moved to CSMediaAdapters.m.
-// The registry now tracks cartridge-provided adapters via cap group registration.
-
-// The following placeholder keeps the file structure intact while the old
-// implementation block has been removed — see CSMediaAdapters.m
-
-// OLD CSMediaAdapterRegistry implementation removed — see CSMediaAdapters.m
-// The following is the remainder of the file starting at Path Resolution.
-// Extension-based detection helper (sync, for preliminary UI queries).
-// Consults the supplied registry's in-memory extension index — no
-// hardcoded fallback. The registry hydrates on demand through cap and
-// media-def fetch, so callers must seed it (or wait for fetches to
-// land) before extension lookups will yield specific URNs.
-static NSString * _Nullable _detectMediaUrnByExtension(NSString *path,
-                                                       CSContentStructure *structure,
-                                                       CSFabricRegistry *registry) {
-    NSString *ext = [[path pathExtension] lowercaseString];
-    if (ext.length == 0) {
-        if (structure) *structure = CSContentStructureScalarOpaque;
-        return @"media:";
-    }
-
-    NSString *primaryUrn = [registry primaryMediaUrnForExtension:ext];
-    if (!primaryUrn) {
-        if (structure) *structure = CSContentStructureScalarOpaque;
-        return @"media:";
-    }
-
-    // Derive structure from URN marker tags
-    if (structure) {
-        NSError *parseError = nil;
-        CSMediaUrn *urn = [CSMediaUrn fromString:primaryUrn error:&parseError];
-        if (urn) {
-            BOOL hasList = [urn isList];
-            BOOL hasRecord = [urn isRecord];
-            if (hasList && hasRecord) {
-                *structure = CSContentStructureListRecord;
-            } else if (hasList) {
-                *structure = CSContentStructureListOpaque;
-            } else if (hasRecord) {
-                *structure = CSContentStructureScalarRecord;
-            } else {
-                *structure = CSContentStructureScalarOpaque;
-            }
-        } else {
-            *structure = CSContentStructureScalarOpaque;
-        }
-    }
-
-    return primaryUrn;
+/// The content structure a media URN's list and record markers say.
+/// Mirrors Rust: structure_from_marker_tags
+static CSContentStructure CSStructureFromMarkerTags(CSMediaUrn *urn) {
+    BOOL hasList = [urn isList];
+    BOOL hasRecord = [urn isRecord];
+    if (hasList && hasRecord) return CSContentStructureListRecord;
+    if (hasList) return CSContentStructureListOpaque;
+    if (hasRecord) return CSContentStructureScalarRecord;
+    return CSContentStructureScalarOpaque;
 }
 
 #pragma mark - Path Resolution
@@ -484,134 +445,112 @@ static NSArray<NSString *> * _Nullable _resolvePaths(NSArray<NSString *> *paths,
 
 #pragma mark - Main Resolution Functions
 
-/// Size limit for content inspection (64KB)
-static const NSUInteger kInspectionBufferSize = 65536;
+@implementation CSDetection
 
-CSResolvedInputSet * _Nullable CSInputResolverResolvePath(NSString *path,
-                                                          CSFabricRegistry *registry,
-                                                          NSError **error) {
-    return CSInputResolverResolvePaths(@[path], registry, error);
++ (instancetype)detectionWithRegistry:(CSFabricRegistry *)registry
+                             adapters:(id<CSAdapterSource>)adapters
+                              invoker:(id<CSCartridgeAdapterInvoker>)invoker {
+    CSDetection *detection = [[CSDetection alloc] init];
+    detection->_registry = registry;
+    detection->_adapters = adapters;
+    detection->_invoker = invoker;
+    return detection;
 }
 
-CSResolvedInputSet * _Nullable CSInputResolverResolvePaths(NSArray<NSString *> *paths,
-                                                           CSFabricRegistry *registry,
-                                                           NSError **error) {
-    // Check for empty input
+@end
+
+void CSInputResolverResolveFile(NSString *path,
+                                CSDetection *detection,
+                                void (^completion)(CSResolvedFile *_Nullable file, NSError *_Nullable error)) {
+    CSDetectFileMedia(path, detection.registry, detection.adapters, detection.invoker,
+                      ^(CSFileMedia *found, NSError *error) {
+        if (!found) {
+            completion(nil, error);
+            return;
+        }
+        NSString *mediaUrn = [found primary];
+        NSError *parseError = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:mediaUrn error:&parseError];
+        if (!urn) {
+            completion(nil, [NSError errorWithDomain:CSInputResolverErrorDomain
+                                                code:CSInputResolverErrorInspectionFailed
+                                            userInfo:@{
+                NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Content inspection failed for %@: '%@' is no media URN: %@",
+                                            path, mediaUrn, parseError.localizedDescription],
+                CSInputResolverPathKey: path,
+            }]);
+            return;
+        }
+        completion([CSResolvedFile fileWithPath:found.path
+                                       mediaUrn:mediaUrn
+                                      sizeBytes:found.sizeBytes
+                               contentStructure:CSStructureFromMarkerTags(urn)], nil);
+    });
+}
+
+void CSInputResolverResolvePath(NSString *path,
+                                CSDetection *detection,
+                                void (^completion)(CSResolvedInputSet *_Nullable set, NSError *_Nullable error)) {
+    CSInputResolverResolvePaths(@[path], detection, completion);
+}
+
+/// The input set of resolved files: a sequence when there is more than one,
+/// and their common media when every file's media is equivalent.
+static CSResolvedInputSet *CSInputSetOfFiles(NSArray<CSResolvedFile *> *files) {
+    // is_sequence is determined solely by file count. Content structure
+    // (list/record) describes what's inside a file, not cardinality.
+    BOOL isSequence = files.count > 1;
+    NSString *commonMedia = files.firstObject.mediaUrn;
+    CSMediaUrn *first = commonMedia ? [CSMediaUrn fromString:commonMedia error:nil] : nil;
+    for (CSResolvedFile *file in files) {
+        CSMediaUrn *other = [CSMediaUrn fromString:file.mediaUrn error:nil];
+        if (!first || !other || ![first isEquivalentTo:other]) {
+            commonMedia = nil;
+            break;
+        }
+    }
+    return [CSResolvedInputSet setWithFiles:files isSequence:isSequence commonMedia:commonMedia];
+}
+
+/// Resolve the files from `index` on, one after another, then hand over the
+/// set.
+static void CSResolveFilesFrom(NSArray<NSString *> *filePaths, NSUInteger index, CSDetection *detection,
+                               NSMutableArray<CSResolvedFile *> *resolved,
+                               void (^completion)(CSResolvedInputSet *_Nullable set, NSError *_Nullable error)) {
+    if (index == filePaths.count) {
+        completion(CSInputSetOfFiles(resolved), nil);
+        return;
+    }
+    CSInputResolverResolveFile(filePaths[index], detection, ^(CSResolvedFile *file, NSError *error) {
+        if (!file) {
+            completion(nil, error);
+            return;
+        }
+        [resolved addObject:file];
+        CSResolveFilesFrom(filePaths, index + 1, detection, resolved, completion);
+    });
+}
+
+void CSInputResolverResolvePaths(NSArray<NSString *> *paths,
+                                 CSDetection *detection,
+                                 void (^completion)(CSResolvedInputSet *_Nullable set, NSError *_Nullable error)) {
     if (paths.count == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSInputResolverErrorDomain
-                                         code:CSInputResolverErrorEmptyInput
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: @"No input paths provided"
-            }];
-        }
-        return nil;
+        completion(nil, [NSError errorWithDomain:CSInputResolverErrorDomain
+                                            code:CSInputResolverErrorEmptyInput
+                                        userInfo:@{NSLocalizedDescriptionKey: @"No input paths provided"}]);
+        return;
     }
-
-    // Resolve all paths to files
-    NSArray<NSString *> *filePaths = _resolvePaths(paths, error);
+    NSError *error = nil;
+    NSArray<NSString *> *filePaths = _resolvePaths(paths, &error);
     if (!filePaths) {
-        return nil;
+        completion(nil, error);
+        return;
     }
-
-    // Check if we got any files
     if (filePaths.count == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSInputResolverErrorDomain
-                                         code:CSInputResolverErrorNoFilesResolved
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: @"No files found in input paths"
-            }];
-        }
-        return nil;
+        completion(nil, [NSError errorWithDomain:CSInputResolverErrorDomain
+                                            code:CSInputResolverErrorNoFilesResolved
+                                        userInfo:@{NSLocalizedDescriptionKey: @"No files found in input paths"}]);
+        return;
     }
-
-    // Detect media type for each file (extension-based, preliminary)
-    NSMutableArray<CSResolvedFile *> *resolvedFiles = [NSMutableArray array];
-    NSFileManager *fm = [NSFileManager defaultManager];
-
-    NSMutableSet<NSString *> *fileMediaUrns = [NSMutableSet set];
-
-    for (NSString *filePath in filePaths) {
-        // Get file size
-        NSDictionary *attrs = [fm attributesOfItemAtPath:filePath error:nil];
-        uint64_t fileSize = [attrs[NSFileSize] unsignedLongLongValue];
-
-        // Detect media type by extension (preliminary, no content inspection)
-        CSContentStructure structure = CSContentStructureScalarOpaque;
-        NSString *mediaUrn = _detectMediaUrnByExtension(filePath, &structure, registry);
-        if (!mediaUrn) {
-            return nil;
-        }
-
-        // Track media URN for homogeneity check (proper URN equivalence, not string splitting)
-        [fileMediaUrns addObject:mediaUrn];
-
-        CSResolvedFile *resolved = [CSResolvedFile fileWithPath:filePath
-                                                       mediaUrn:mediaUrn
-                                                      sizeBytes:fileSize
-                                               contentStructure:structure];
-        [resolvedFiles addObject:resolved];
-    }
-
-    // is_sequence is determined solely by file count.
-    // Content structure (list/record) describes what's inside a file, not cardinality.
-    BOOL isSequence = resolvedFiles.count > 1;
-
-    // Determine common media type via proper URN equivalence.
-    // If all files resolve to equivalent URNs, they share a common media type.
-    NSString *commonMedia = nil;
-    if (fileMediaUrns.count == 1) {
-        commonMedia = [fileMediaUrns anyObject];
-    } else if (fileMediaUrns.count > 1) {
-        // Check all URNs for equivalence using CSMediaUrn
-        NSArray<NSString *> *allUrns = [fileMediaUrns allObjects];
-        CSMediaUrn *first = [CSMediaUrn fromString:allUrns[0] error:nil];
-        BOOL allEquivalent = (first != nil);
-        for (NSUInteger i = 1; i < allUrns.count && allEquivalent; i++) {
-            CSMediaUrn *other = [CSMediaUrn fromString:allUrns[i] error:nil];
-            if (!other || ![first isEquivalentTo:other]) {
-                allEquivalent = NO;
-            }
-        }
-        if (allEquivalent) {
-            commonMedia = allUrns[0];
-        }
-    }
-
-    return [CSResolvedInputSet setWithFiles:resolvedFiles
-                                 isSequence:isSequence
-                                commonMedia:commonMedia];
-}
-
-NSString * _Nullable CSInputResolverDetectFile(NSString *path,
-                                               CSContentStructure *structure,
-                                               CSFabricRegistry *registry,
-                                               NSError **error) {
-    NSFileManager *fm = [NSFileManager defaultManager];
-
-    BOOL isDir = NO;
-    if (![fm fileExistsAtPath:path isDirectory:&isDir]) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSInputResolverErrorDomain
-                                         code:CSInputResolverErrorNotFound
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:@"File not found: %@", path]
-            }];
-        }
-        return nil;
-    }
-
-    if (isDir) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSInputResolverErrorDomain
-                                         code:CSInputResolverErrorNotAFile
-                                     userInfo:@{
-                NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Path is a directory: %@", path]
-            }];
-        }
-        return nil;
-    }
-
-    return _detectMediaUrnByExtension(path, structure, registry);
+    CSResolveFilesFrom(filePaths, 0, detection, [NSMutableArray arrayWithCapacity:filePaths.count], completion);
 }
