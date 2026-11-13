@@ -11,9 +11,8 @@
 #import "CSMediaUrn.h"
 #import "CSFabricRegistry.h"
 
-/// Build a `CSFabricRegistry` pre-seeded with the media defs the
-/// input-resolver tests reference. The unified registry hydrates
-/// extensions from spec arrival; tests must seed explicitly.
+/// Build a `CSFabricRegistry` whose manifest names the file media types the
+/// input-resolver tests reference (`pdf`, `txt`, `json`), each cached.
 static CSFabricRegistry *testFabricRegistry(void) {
     CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
     [registry addMediaDef:@{
@@ -23,16 +22,16 @@ static CSFabricRegistry *testFabricRegistry(void) {
         @"extensions": @[@"pdf"],
     }];
     [registry addMediaDef:@{
-        @"urn": @"media:enc=utf8;txt",
-        @"media_type": @"text/plain",
-        @"title": @"Text",
-        @"extensions": @[@"txt"],
-    }];
-    [registry addMediaDef:@{
-        @"urn": @"media:enc=utf8;fmt=json;record",
+        @"urn": @"media:enc=utf8;ext=json;fmt=json;record",
         @"media_type": @"application/json",
         @"title": @"JSON",
         @"extensions": @[@"json"],
+    }];
+    [registry addMediaDef:@{
+        @"urn": @"media:enc=utf8;ext=txt;list;plain-text",
+        @"media_type": @"text/plain",
+        @"title": @"Text",
+        @"extensions": @[@"txt"],
     }];
     return registry;
 }
@@ -62,6 +61,24 @@ static CSFabricRegistry *testFabricRegistry(void) {
 
 #pragma mark - Helpers
 
+/// Resolve `paths` as a host with no cartridges does, waiting for the answer.
+- (nullable CSResolvedInputSet *)resolve:(NSArray<NSString *> *)paths error:(NSError **)error {
+    CSDetection *detection = [CSDetection detectionWithRegistry:self.registry
+                                                       adapters:[[CSNoAdapters alloc] init]
+                                                        invoker:[[CSNoInvoker alloc] init]];
+    XCTestExpectation *done = [self expectationWithDescription:@"resolve"];
+    __block CSResolvedInputSet *resolved = nil;
+    __block NSError *failure = nil;
+    CSInputResolverResolvePaths(paths, detection, ^(CSResolvedInputSet *set, NSError *e) {
+        resolved = set;
+        failure = e;
+        [done fulfill];
+    });
+    [self waitForExpectations:@[done] timeout:10];
+    if (error) *error = failure;
+    return resolved;
+}
+
 - (NSString *)createTestFile:(NSString *)name content:(NSString *)content {
     NSString *path = [self.testDir stringByAppendingPathComponent:name];
     [content writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -81,7 +98,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *path = [self createTestFile:@"test.txt" content:@"hello"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(path, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -94,7 +111,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *path = [self.testDir stringByAppendingPathComponent:@"missing.txt"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(path, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path] error:&error];
 
     XCTAssertNotNil(error);
     XCTAssertNil(result);
@@ -106,7 +123,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *dir = [self createTestDir:@"empty"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(dir, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[dir] error:&error];
 
     XCTAssertNotNil(error);
     XCTAssertNil(result);
@@ -120,7 +137,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"docs/file2.txt" content:@"two"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(dir, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[dir] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -136,7 +153,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"top/sub/file2.txt" content:@"b"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(dir, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[dir] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -151,7 +168,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *pattern = [self.testDir stringByAppendingPathComponent:@"*.txt"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(pattern, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[pattern] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -164,7 +181,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *pattern = [self.testDir stringByAppendingPathComponent:@"*.no-such-extension"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(pattern, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[pattern] error:&error];
 
     XCTAssertNotNil(error, @"glob with no matches must surface as an error, not silently empty");
     XCTAssertNil(result);
@@ -179,7 +196,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *pattern = [self.testDir stringByAppendingPathComponent:@"a/**/*.txt"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(pattern, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[pattern] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -196,7 +213,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"folder/inner.txt" content:@"y"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePaths(@[file, dir], self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[file, dir] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -208,7 +225,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *path = [self createTestFile:@"test.txt" content:@"hello"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePaths(@[path, path], self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path, path] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -220,7 +237,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *pattern = [self.testDir stringByAppendingPathComponent:@"[unclosed"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(pattern, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[pattern] error:&error];
 
     XCTAssertNotNil(error, @"invalid glob pattern must surface an error");
     XCTAssertNil(result);
@@ -230,7 +247,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
 - (void)test1013_empty_input {
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePaths(@[], self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[] error:&error];
 
     XCTAssertNotNil(error);
     XCTAssertNil(result);
@@ -246,7 +263,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertNil(linkError);
 
     NSError *error = nil;
-    CSResolvedInputSet *result = CSInputResolverResolvePath(link, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[link] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -260,7 +277,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *path = [self createTestFile:@"name with spaces.txt" content:@"x"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(path, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -272,7 +289,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *path = [self createTestFile:@"日本語.txt" content:@"x"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(path, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -286,7 +303,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"rel.txt" content:@"x"];
 
     NSError *error = nil;
-    CSResolvedInputSet *result = CSInputResolverResolvePath(@"rel.txt", self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[@"rel.txt"] error:&error];
 
     [self.fm changeCurrentDirectoryPath:cwd];
 
@@ -358,14 +375,14 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertFalse(CSInputResolverShouldExcludeFile(@"/path/file.md"));
 }
 
-#pragma mark - Aggregate Cardinality Tests (Rust resolver.rs: TEST1090-TEST1098)
+#pragma mark - Aggregate Cardinality Tests (Rust resolver.rs: TEST1090-TEST1094)
 
 // TEST1090: 1 file → is_sequence=false
 - (void)test1090_single_file_scalar {
     NSString *path = [self createTestFile:@"test.pdf" content:@"%PDF-1.4"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(path, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -378,7 +395,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     NSString *path2 = [self createTestFile:@"file2.txt" content:@"two"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePaths(@[path1, path2], self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[path1, path2] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -392,7 +409,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"single/only.pdf" content:@"%PDF"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(dir, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[dir] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
@@ -408,30 +425,12 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"multi/c.txt" content:@"c"];
     NSError *error = nil;
 
-    CSResolvedInputSet *result = CSInputResolverResolvePath(dir, self.registry, &error);
+    CSResolvedInputSet *result = [self resolve:@[dir] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(result);
     XCTAssertEqual(result.files.count, 3);
     XCTAssertTrue(result.isSequence, @"directory with multiple files must be isSequence=YES");
-}
-
-// TEST1098: Extension-based detection picks up pdf tag for .pdf files
-- (void)test1098_extension_based_pdf {
-    NSString *path = [self createTestFile:@"doc.pdf" content:@"%PDF-1.4"];
-    CSContentStructure structure = CSContentStructureScalarOpaque;
-    NSError *error = nil;
-
-    NSString *mediaUrn = CSInputResolverDetectFile(path, &structure, self.registry, &error);
-
-    XCTAssertNil(error);
-    XCTAssertNotNil(mediaUrn);
-
-    NSError *parseError = nil;
-    CSMediaUrn *urn = [CSMediaUrn fromString:mediaUrn error:&parseError];
-    XCTAssertNotNil(urn, @"detected URN must parse: %@ (parse error: %@)", mediaUrn, parseError);
-    XCTAssertEqualObjects([urn getTag:@"ext"], @"pdf",
-                    @"PDF extension must produce URN with ext=pdf tag, got: %@", mediaUrn);
 }
 
 #pragma mark - Types Tests (Rust types.rs: TEST1144, TEST1145)
@@ -489,7 +488,7 @@ static CSFabricRegistry *testFabricRegistry(void) {
     [self createTestFile:@"equivalents/b.json" content:@"{\"b\":2}"];
     NSError *error = nil;
 
-    CSResolvedInputSet *resolved = CSInputResolverResolvePath(dir, self.registry, &error);
+    CSResolvedInputSet *resolved = [self resolve:@[dir] error:&error];
 
     XCTAssertNil(error);
     XCTAssertNotNil(resolved);

@@ -7,8 +7,9 @@
 //
 //    - cachedCaps: in-memory map of normalised cap URN → CSCap.
 //    - cachedSpecs: in-memory map of normalised media URN → spec dict.
-//    - extensionIndex: lowercase extension → array of URNs, populated
-//      as media defs land in cachedSpecs.
+//    - fileMediaIndex: lowercase extension → the file media definitions
+//      (those whose URN carries the `ext=` tag) of the whole pinned manifest
+//      that list it, loaded the first time a file's type is asked.
 //    - cachedAliases / cachedDims: name → stored alias / dim, versioned-only.
 //
 //  Atomic cap fetch: getCapWithUrn: refuses to cache a cap until every
@@ -183,6 +184,8 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 //
 //     <caches>/capdag/<charter slug>/          the registry's folder; its charter
 //       v<N>/manifest.json                     manifest N, as the registry served it
+//       v<N>/file_types.json                   which of manifest N's media are file types, worked
+//                                              out once from manifest.json (and its hash)
 //       v<N>/caps/<sha256 of URN>/<defver>.json
 //       v<N>/media/<sha256 of URN>/<defver>.json
 //       v<N>/aliases/<sha256 of name>/<defver>.json
@@ -219,15 +222,23 @@ static NSArray<NSString *> *CSFabricCacheKindFolders(void) {
 /// The file a manifest version's manifest is kept in, in its folder.
 static NSString * const CSFabricCacheManifestFile = @"manifest.json";
 
+/// The file the file types a manifest version's manifest names are kept in,
+/// in its folder: which of its media definitions carry the `ext=` tag, with
+/// the hash of the manifest file they were worked out from.
+static NSString * const CSFabricCacheFileTypesFile = @"file_types.json";
+
+/// How many file media definitions are fetched at once when the file media
+/// index loads on a cold cache.
+static const NSUInteger CSFileMediaFetchesAtOnce = 16;
+
 /// The folders the shared layout before this one kept in a registry's folder.
 /// Nothing reads them; clearing the cache removes them.
 static NSArray<NSString *> *CSFabricCacheLegacyFolders(void) {
     return @[@"caps", @"media", @"aliases", @"dims", @"manifests"];
 }
 
-/// The hash a definition is filed under, in the cache as in the registry.
-static NSString *CSSha256Hex(NSString *s) {
-    NSData *data = [s dataUsingEncoding:NSUTF8StringEncoding];
+/// The sha256 of `data`, in lowercase hex.
+static NSString *CSSha256HexOfData(NSData *data) {
     uint8_t digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
     NSMutableString *out = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
@@ -235,6 +246,11 @@ static NSString *CSSha256Hex(NSString *s) {
         [out appendFormat:@"%02x", digest[i]];
     }
     return out;
+}
+
+/// The hash a definition is filed under, in the cache as in the registry.
+static NSString *CSSha256Hex(NSString *s) {
+    return CSSha256HexOfData([s dataUsingEncoding:NSUTF8StringEncoding]);
 }
 
 static NSError *CSCacheError(NSString *message, NSError *_Nullable underlying) {
@@ -455,6 +471,98 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
     return nil;
 }
 
+// MARK: - The file types of a manifest
+
+/// The media definitions of a manifest (`media`: URN → defver, of manifest
+/// `manifestVersion`) that are file types: those whose URN carries the `ext=`
+/// file-type tag, each as `@[URN, defver]`, in URN order. A manifest entry
+/// that is no media URN is a FileTypes error naming the manifest version and
+/// the entry. Mirrors Rust `derive_file_types`.
+static NSArray<NSArray *> *_Nullable CSDeriveFileTypes(NSDictionary<NSString *, NSNumber *> *media,
+                                                       uint32_t manifestVersion,
+                                                       NSError *_Nullable *_Nullable error) {
+    NSMutableArray<NSArray *> *fileTypes = [NSMutableArray array];
+    for (NSString *urn in media) {
+        NSError *parseError = nil;
+        CSMediaUrn *parsed = [CSMediaUrn fromString:urn error:&parseError];
+        if (!parsed) {
+            if (error) *error = CSRegistryError(CSFabricRegistryErrorFileTypes, [NSString stringWithFormat:
+                @"manifest v%u names '%@' as a media definition, and it is no media URN: %@",
+                manifestVersion, urn, parseError.localizedDescription ?: @"it does not parse"], parseError);
+            return nil;
+        }
+        if ([parsed getTag:@"ext"] != nil) {
+            [fileTypes addObject:@[urn, @([media[urn] unsignedIntValue])]];
+        }
+    }
+    [fileTypes sortUsingComparator:^NSComparisonResult(NSArray *a, NSArray *b) {
+        NSComparisonResult byUrn = [(NSString *)a[0] compare:b[0] options:NSLiteralSearch];
+        return byUrn != NSOrderedSame ? byUrn : [(NSNumber *)a[1] compare:b[1]];
+    }];
+    return fileTypes;
+}
+
+/// The file types kept at `path` (`{"manifest_sha256": <hex>, "file_types":
+/// [[<URN>, <defver>], ...]}`, as every capdag library keeps them) and the
+/// hash of the manifest file they were worked out from. Answers YES with both
+/// nil when nothing is kept there, YES with both when the file holds them, and
+/// NO with an error naming the file when it is there and cannot be read or is
+/// not that. Mirrors Rust `read_entry::<KeptFileTypes>`.
+static BOOL CSReadKeptFileTypes(NSString *path,
+                                NSString *_Nullable *_Nonnull outManifestSha256,
+                                NSArray<NSArray *> *_Nullable *_Nonnull outFileTypes,
+                                NSError *_Nullable *_Nullable error) {
+    *outManifestSha256 = nil;
+    *outFileTypes = nil;
+    NSDictionary *kept = nil;
+    if (!CSReadCacheFile(path, @"file types", &kept, error)) return NO;
+    if (!kept) return YES;
+    id sha = kept[@"manifest_sha256"];
+    if (![sha isKindOfClass:[NSString class]]) {
+        if (error) *error = CSCacheCorrupt(path, @"file types", [NSString stringWithFormat:
+            @"its 'manifest_sha256' is %@", sha ? @"not a string" : @"missing"]);
+        return NO;
+    }
+    id list = kept[@"file_types"];
+    if (![list isKindOfClass:[NSArray class]]) {
+        if (error) *error = CSCacheCorrupt(path, @"file types", [NSString stringWithFormat:
+            @"its 'file_types' is %@", list ? @"not a list" : @"missing"]);
+        return NO;
+    }
+    NSMutableArray<NSArray *> *fileTypes = [NSMutableArray arrayWithCapacity:[(NSArray *)list count]];
+    for (id entry in (NSArray *)list) {
+        if (![entry isKindOfClass:[NSArray class]] || [(NSArray *)entry count] != 2
+            || ![((NSArray *)entry)[0] isKindOfClass:[NSString class]]
+            || ![((NSArray *)entry)[1] isKindOfClass:[NSNumber class]]) {
+            if (error) *error = CSCacheCorrupt(path, @"file types",
+                @"an entry of its 'file_types' is not a [media URN, defver] pair");
+            return NO;
+        }
+        [fileTypes addObject:@[((NSArray *)entry)[0], @([((NSArray *)entry)[1] unsignedIntValue])]];
+    }
+    *outManifestSha256 = sha;
+    *outFileTypes = fileTypes;
+    return YES;
+}
+
+/// One load of the file media index: the file media definitions still to
+/// fetch, and what the fetches came to. Guarded by itself.
+@interface CSFileMediaLoad : NSObject
+@property (nonatomic, strong) NSMutableArray<NSString *> *queue;
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *definitions;
+@property (nonatomic, strong) NSMutableArray<NSString *> *failures;
+/// Fetches started or still to start that have not completed.
+@property (nonatomic) NSUInteger outstanding;
+@end
+
+@implementation CSFileMediaLoad
+@end
+
+/// What a load of the file media index hands each caller waiting on it: the
+/// index, or the error that stopped it.
+typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDictionary *> *> *_Nullable index,
+                                           NSError *_Nullable error);
+
 // MARK: - CSFabricRegistry
 
 @interface CSFabricRegistry ()
@@ -465,7 +573,17 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *cachedAliases;
 // Dim name → stored dim, filtered to the pinned manifest's defvers.
 @property (nonatomic, strong) NSMutableDictionary<NSString *, CSStoredDim *> *cachedDims;
-@property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *extensionIndex;
+// Lower-case extension → the file media definitions of the whole manifest
+// that list it, in URN order; nil until a file's type is first asked
+// (fileMediaForExtension:completion:). Guarded by cacheLock.
+@property (nonatomic, strong, nullable) NSDictionary<NSString *, NSArray<NSDictionary *> *> *fileMediaIndex;
+// The callers waiting on the file media index while it loads; nil when no
+// load runs, so the index loads once. Guarded by cacheLock.
+@property (nonatomic, strong, nullable) NSMutableArray<CSFileMediaIndexCompletion> *fileMediaWaiters;
+// The cached manifest file the manifest maps were read from: the file types it
+// names are kept beside it. nil for a manifest made in memory, and once a test
+// helper has changed the manifest's media. Guarded by cacheLock.
+@property (nonatomic, copy, nullable) NSString *manifestFile;
 @property (nonatomic, strong) NSLock *cacheLock;
 // What the last failed fetch of each media def came to, by normalized URN,
 // until a fetch of it succeeds: the synchronous lookup says this rather than
@@ -627,8 +745,12 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
         _mediaFetchFailures = [[NSMutableDictionary alloc] init];
         _cachedAliases = [[NSMutableDictionary alloc] init];
         _cachedDims = [[NSMutableDictionary alloc] init];
-        _extensionIndex = [[NSMutableDictionary alloc] init];
         _cacheLock = [[NSLock alloc] init];
+        // A bootstrapped manifest is the file it was read from, or the file
+        // it was written to when it was fetched.
+        _manifestFile = bootstrapFromNetwork
+            ? [_cacheDirectory stringByAppendingPathComponent:CSFabricCacheManifestFile]
+            : nil;
 
         // Manifest pin. The production path passes CSBakedFabricManifestVersion
         // (CSFabricManifestVersion.m, regenerated by scripts/lib/config.sh from
@@ -681,8 +803,8 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
         [_cachedDims addEntriesFromDictionary:pinned[@"dims"]];
         // Filter the loaded caches to the pinned manifest's defvers (v >= 1),
         // then keep a cap or media def only when every dim it names survived.
-        // Loading already reads only pinned entries; this also rebuilds the
-        // extension index. Mirrors retain_pinned in Rust's constructor.
+        // Loading already reads only pinned entries. Mirrors retain_pinned in
+        // Rust's constructor.
         [self filterCachesToManifest];
     }
     return self;
@@ -739,14 +861,6 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
 
 - (NSString *)sha256HexForString:(NSString *)s {
     return CSSha256Hex(s);
-}
-
-- (NSString *)normalizeExtension:(NSString *)extension {
-    NSString *ext = [extension lowercaseString];
-    if ([ext hasPrefix:@"."]) {
-        ext = [ext substringFromIndex:1];
-    }
-    return ext;
 }
 
 // MARK: - Manifest bootstrap
@@ -936,14 +1050,7 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
             [self.cachedSpecs removeObjectForKey:urn];
         }
     }
-    // The extension index is derived from cachedSpecs; rebuild it so it
-    // reflects only the retained specs.
-    [self.extensionIndex removeAllObjects];
-    NSArray<NSDictionary *> *retainedSpecs = [self.cachedSpecs allValues];
     [self.cacheLock unlock];
-    for (NSDictionary *spec in retainedSpecs) {
-        [self indexExtensionsForSpec:spec urn:spec[@"urn"]];
-    }
 }
 
 // Whether every dim `refs` names is in `cached` with the value it names.
@@ -1263,39 +1370,243 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
         spec = [stamped copy];
     }
     [self insertMediaDefInMemory:spec];
+    [self.cacheLock lock];
     if (self.manifestVersion >= 1) {
-        [self.cacheLock lock];
         self.manifestMedia[normalized] = @(specVersion);
+    }
+    // The manifest is no longer the file it was read from.
+    self.manifestFile = nil;
+    [self.cacheLock unlock];
+}
+
+- (void)listMediaInManifestForTest:(NSString *)urn defver:(uint32_t)defver {
+    NSError *normError = nil;
+    NSString *normalized = [self normalizeMediaUrn:urn error:&normError];
+    if (!normalized) {
+        [NSException raise:NSInvalidArgumentException
+                    format:@"listMediaInManifestForTest: '%@' is no media URN: %@", urn, normError.localizedDescription];
+    }
+    [self.cacheLock lock];
+    self.manifestMedia[normalized] = @(defver);
+    // The manifest is no longer the file it was read from.
+    self.manifestFile = nil;
+    [self.cacheLock unlock];
+}
+
+// MARK: - File media types
+
+- (void)fileMediaForExtension:(NSString *)extension
+                   completion:(void (^)(NSArray<NSDictionary *> *_Nullable definitions, NSError *_Nullable error))completion {
+    NSString *key = [extension lowercaseString];
+    [self loadFileMediaIndex:^(NSDictionary<NSString *, NSArray<NSDictionary *> *> *index, NSError *error) {
+        if (!index) {
+            completion(nil, error);
+            return;
+        }
+        completion(index[key] ?: @[], nil);
+    }];
+}
+
+// The file media index, loaded when first asked: which of the manifest's media
+// definitions are file types (fileTypesInCacheFolder:...), each from the cache
+// or fetched, CSFileMediaFetchesAtOnce at a time. A caller arriving while it
+// loads waits for that load. A load that fails keeps nothing, so the next
+// caller loads again. Mirrors Rust `file_media_index`.
+- (void)loadFileMediaIndex:(CSFileMediaIndexCompletion)completion {
+    [self.cacheLock lock];
+    NSDictionary<NSString *, NSArray<NSDictionary *> *> *loaded = self.fileMediaIndex;
+    if (loaded) {
         [self.cacheLock unlock];
+        completion(loaded, nil);
+        return;
+    }
+    if (self.fileMediaWaiters) {
+        [self.fileMediaWaiters addObject:[completion copy]];
+        [self.cacheLock unlock];
+        return;
+    }
+    self.fileMediaWaiters = [NSMutableArray arrayWithObject:[completion copy]];
+    NSDictionary<NSString *, NSNumber *> *media = [self.manifestMedia copy];
+    NSString *manifestFile = self.manifestFile;
+    NSDictionary<NSString *, NSDictionary *> *cached = [self.cachedSpecs copy];
+    [self.cacheLock unlock];
+
+    NSError *error = nil;
+    NSArray<NSArray *> *fileTypes = [[self class] fileTypesInCacheFolder:self.cacheDirectory
+                                                            manifestFile:manifestFile
+                                                         manifestVersion:self.manifestVersion
+                                                                   media:media
+                                                                   error:&error];
+    if (!fileTypes) {
+        [self finishFileMediaLoad:nil error:error];
+        return;
+    }
+    CSFileMediaLoad *load = [[CSFileMediaLoad alloc] init];
+    load.queue = [NSMutableArray array];
+    load.definitions = [NSMutableArray array];
+    load.failures = [NSMutableArray array];
+    for (NSArray *fileType in fileTypes) {
+        NSDictionary *definition = cached[fileType[0]];
+        if (definition) {
+            [load.definitions addObject:definition];
+        } else {
+            [load.queue addObject:fileType[0]];
+        }
+    }
+    load.outstanding = load.queue.count;
+    if (load.outstanding == 0) {
+        [self completeFileMediaLoad:load];
+        return;
+    }
+    NSUInteger atOnce = MIN(load.queue.count, CSFileMediaFetchesAtOnce);
+    for (NSUInteger i = 0; i < atOnce; i++) {
+        [self fetchNextFileMedia:load];
     }
 }
 
-- (NSArray<NSString *> *)mediaUrnsForExtension:(NSString *)extension {
-    NSString *ext = [self normalizeExtension:extension];
-    [self.cacheLock lock];
-    NSArray<NSString *> *urns = self.extensionIndex[ext];
-    NSArray<NSString *> *snapshot = urns ? [urns copy] : @[];
-    [self.cacheLock unlock];
-    return snapshot;
+// Fetch the next file media definition the load still lacks; when the fetch
+// completes, the next is started, so no more than CSFileMediaFetchesAtOnce run
+// at once. The last to complete finishes the load.
+- (void)fetchNextFileMedia:(CSFileMediaLoad *)load {
+    NSString *urn = nil;
+    @synchronized (load) {
+        if (load.queue.count == 0) return;
+        urn = load.queue.firstObject;
+        [load.queue removeObjectAtIndex:0];
+    }
+    [self fetchMediaDefAtomic:urn completion:^(NSDictionary *spec, NSError *error) {
+        BOOL finished = NO;
+        @synchronized (load) {
+            if (spec) {
+                [load.definitions addObject:spec];
+            } else {
+                [load.failures addObject:[NSString stringWithFormat:@"%@: %@",
+                    urn, error.localizedDescription ?: @"the fetch reported no error"]];
+            }
+            load.outstanding -= 1;
+            finished = (load.outstanding == 0);
+        }
+        if (finished) {
+            [self completeFileMediaLoad:load];
+        } else {
+            [self fetchNextFileMedia:load];
+        }
+    }];
 }
 
-- (NSString *)primaryMediaUrnForExtension:(NSString *)extension {
-    return [self mediaUrnsForExtension:extension].firstObject;
+// Index what the load gathered by extension, or fail naming every file media
+// definition that could not be had.
+- (void)completeFileMediaLoad:(CSFileMediaLoad *)load {
+    NSComparator literal = ^NSComparisonResult(NSString *a, NSString *b) {
+        return [a compare:b options:NSLiteralSearch];
+    };
+    if (load.failures.count > 0) {
+        NSArray<NSString *> *failures = [load.failures sortedArrayUsingComparator:literal];
+        [self finishFileMediaLoad:nil error:CSRegistryError(CSFabricRegistryErrorFileTypes, [NSString stringWithFormat:
+            @"%lu of the %lu file media types of manifest v%u could not be loaded, so no file's type can be told "
+            @"from its extension: %@",
+            (unsigned long)failures.count, (unsigned long)(failures.count + load.definitions.count),
+            self.manifestVersion, [failures componentsJoinedByString:@"; "]], nil)];
+        return;
+    }
+    NSMutableDictionary<NSString *, NSMutableArray<NSDictionary *> *> *index = [NSMutableDictionary dictionary];
+    for (NSDictionary *definition in load.definitions) {
+        id extensions = definition[@"extensions"];
+        if (extensions == nil) continue;
+        BOOL listOfStrings = [extensions isKindOfClass:[NSArray class]];
+        for (id extension in (listOfStrings ? (NSArray *)extensions : @[])) {
+            if (![extension isKindOfClass:[NSString class]]) listOfStrings = NO;
+        }
+        if (!listOfStrings) {
+            [self finishFileMediaLoad:nil error:CSRegistryError(CSFabricRegistryErrorFileTypes, [NSString stringWithFormat:
+                @"the file media definition '%@' of manifest v%u has an 'extensions' that is not a list of strings",
+                definition[@"urn"], self.manifestVersion], nil)];
+            return;
+        }
+        for (NSString *extension in (NSArray<NSString *> *)extensions) {
+            NSString *key = [extension lowercaseString];
+            NSMutableArray<NSDictionary *> *named = index[key];
+            if (!named) {
+                named = [NSMutableArray array];
+                index[key] = named;
+            }
+            [named addObject:definition];
+        }
+    }
+    NSMutableDictionary<NSString *, NSArray<NSDictionary *> *> *sorted = [NSMutableDictionary dictionaryWithCapacity:index.count];
+    for (NSString *key in index) {
+        NSArray<NSDictionary *> *byUrn = [index[key] sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            return literal(a[@"urn"], b[@"urn"]);
+        }];
+        NSMutableArray<NSDictionary *> *unique = [NSMutableArray arrayWithCapacity:byUrn.count];
+        for (NSDictionary *definition in byUrn) {
+            if (![[unique.lastObject objectForKey:@"urn"] isEqualToString:definition[@"urn"]]) {
+                [unique addObject:definition];
+            }
+        }
+        sorted[key] = unique;
+    }
+    [self finishFileMediaLoad:sorted error:nil];
 }
 
-- (BOOL)hasExtension:(NSString *)extension {
-    NSString *ext = [self normalizeExtension:extension];
+// Keep the index a load made, and answer every caller that waited on it.
+- (void)finishFileMediaLoad:(nullable NSDictionary<NSString *, NSArray<NSDictionary *> *> *)index
+                      error:(nullable NSError *)error {
     [self.cacheLock lock];
-    BOOL has = self.extensionIndex[ext] != nil;
+    if (index) {
+        self.fileMediaIndex = index;
+    }
+    NSArray<CSFileMediaIndexCompletion> *waiters = self.fileMediaWaiters;
+    self.fileMediaWaiters = nil;
     [self.cacheLock unlock];
-    return has;
+    for (CSFileMediaIndexCompletion waiter in waiters) {
+        waiter(index, error);
+    }
 }
 
-- (NSArray<NSString *> *)allExtensions {
-    [self.cacheLock lock];
-    NSArray<NSString *> *exts = [self.extensionIndex allKeys];
-    [self.cacheLock unlock];
-    return exts;
+// The file types of the manifest whose media map is `media`, in the cache
+// folder `folder` of its version. `manifestFile` is the cached manifest file
+// the map was read from, nil for a manifest made in memory.
+//
+// Working them out parses every media URN the manifest names (tens of
+// thousands), which every file a host detects would otherwise pay for. So they
+// are kept beside the manifest file (CSFabricCacheFileTypesFile), with the
+// sha256 of its bytes, and read back while that file is unchanged; a manifest
+// fetched again has other bytes and its file types are worked out afresh. Kept
+// file types that cannot be read are an error naming their file. A manifest
+// with no file keeps nothing. Mirrors Rust `file_types_of`.
++ (nullable NSArray<NSArray *> *)fileTypesInCacheFolder:(NSString *)folder
+                                           manifestFile:(nullable NSString *)manifestFile
+                                        manifestVersion:(uint32_t)manifestVersion
+                                                  media:(NSDictionary<NSString *, NSNumber *> *)media
+                                                  error:(NSError *_Nullable *_Nullable)error {
+    if (!manifestFile) {
+        return CSDeriveFileTypes(media, manifestVersion, error);
+    }
+    NSError *readError = nil;
+    NSData *bytes = [NSData dataWithContentsOfFile:manifestFile options:0 error:&readError];
+    if (!bytes) {
+        if (error) *error = CSCacheError([NSString stringWithFormat:@"the cached manifest %@ cannot be read: %@",
+                                          manifestFile, readError.localizedDescription], readError);
+        return nil;
+    }
+    NSString *manifestSha256 = CSSha256HexOfData(bytes);
+    NSString *keptFile = [folder stringByAppendingPathComponent:CSFabricCacheFileTypesFile];
+    NSString *keptSha256 = nil;
+    NSArray<NSArray *> *kept = nil;
+    if (!CSReadKeptFileTypes(keptFile, &keptSha256, &kept, error)) return nil;
+    if (kept && [keptSha256 isEqualToString:manifestSha256]) {
+        return kept;
+    }
+    NSArray<NSArray *> *fileTypes = CSDeriveFileTypes(media, manifestVersion, error);
+    if (!fileTypes) return nil;
+    if (![self storeCacheEntry:@{@"manifest_sha256": manifestSha256, @"file_types": fileTypes}
+                        atPath:keptFile
+                          what:@"file types"
+                         error:error]) {
+        return nil;
+    }
+    return fileTypes;
 }
 
 // MARK: - Cache lifecycle
@@ -1312,7 +1623,7 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
     [self.cachedSpecs removeAllObjects];
     [self.cachedAliases removeAllObjects];
     [self.cachedDims removeAllObjects];
-    [self.extensionIndex removeAllObjects];
+    self.fileMediaIndex = nil;
     [self.cacheLock unlock];
     return [[self class] clearCacheFolder:self.cacheDirectory error:error];
 }
@@ -1494,8 +1805,8 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
     }
 }
 
-// Insert a fetched/cached media spec into the in-memory cache and extension
-// index — and ONLY those. The manifest map is NOT written here: the manifest is
+// Insert a fetched/cached media spec into the in-memory cache — and ONLY
+// there. The manifest map is NOT written here: the manifest is
 // authoritative (loaded from R2 / seeded by the test helper) and the path this
 // spec was fetched from was already derived from it. Mirrors the cache-only
 // insert at the tail of Rust fetch_one_media_def. The test/local seeding path
@@ -1514,29 +1825,6 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
     }
     [self.cacheLock lock];
     self.cachedSpecs[normalized] = spec;
-    [self.cacheLock unlock];
-    [self indexExtensionsForSpec:spec urn:rawUrn];
-}
-
-// Update the extension index for a spec's declared extensions. Takes the cache
-// lock internally; never call it while already holding the lock.
-- (void)indexExtensionsForSpec:(NSDictionary *)spec urn:(NSString *)rawUrn {
-    if (![rawUrn isKindOfClass:[NSString class]]) return;
-    NSArray *extensions = spec[@"extensions"];
-    if (![extensions isKindOfClass:[NSArray class]]) return;
-    [self.cacheLock lock];
-    for (id ext in extensions) {
-        if (![ext isKindOfClass:[NSString class]]) continue;
-        NSString *extLower = [self normalizeExtension:ext];
-        NSMutableArray *list = self.extensionIndex[extLower];
-        if (!list) {
-            list = [NSMutableArray array];
-            self.extensionIndex[extLower] = list;
-        }
-        if (![list containsObject:rawUrn]) {
-            [list addObject:rawUrn];
-        }
-    }
     [self.cacheLock unlock];
 }
 

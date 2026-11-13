@@ -2,9 +2,11 @@
 //  CSMediaAdapters.m
 //  CapDAG
 //
-//  CSMediaAdapterRegistry — tracks cartridge-provided content inspection adapters.
-//  All in-process adapters have been removed. Content inspection is now performed
-//  by cartridges via the adapter-selection cap protocol.
+//  CSMediaAdapterRegistry — tracks cartridge-provided content inspection adapters
+//  and names the cartridges to consult for a file's candidates. Content
+//  inspection is performed by cartridges via the adapter-selection cap protocol.
+//
+//  Mirrors Rust: capdag/src/input_resolver/adapters/registry.rs
 //
 
 #import "CSInputResolver.h"
@@ -145,37 +147,79 @@
     return YES;
 }
 
-- (NSArray<NSString *> *)cartridgeIdsForExtension:(NSString *)extension {
-    NSArray<NSString *> *candidateStrings = [self.fabricRegistry mediaUrnsForExtension:extension];
-    if (!candidateStrings || candidateStrings.count == 0) {
-        return @[];
-    }
-
-    // Parse candidates
-    NSMutableArray<CSMediaUrn *> *candidates = [[NSMutableArray alloc] init];
-    for (NSString *s in candidateStrings) {
-        CSMediaUrn *urn = [CSMediaUrn fromString:s error:nil];
-        if (urn) {
-            [candidates addObject:urn];
-        }
-    }
-
-    // Find registered adapters where any candidate conforms to the registered URN
-    NSMutableOrderedSet<NSString *> *result = [[NSMutableOrderedSet alloc] init];
+- (NSArray<CSCartridgeAdapter *> *)adaptersForCandidates:(NSArray<CSMediaUrn *> *)candidates {
+    NSMutableArray<CSCartridgeAdapter *> *results = [NSMutableArray array];
+    NSMutableSet<NSString *> *seenCartridges = [NSMutableSet set];
     for (CSRegisteredAdapter *registered in self.registeredAdapters) {
+        BOOL matches = NO;
         for (CSMediaUrn *candidate in candidates) {
             if ([candidate conformsTo:registered.mediaUrn]) {
-                [result addObject:registered.cartridgeId];
+                matches = YES;
                 break;
             }
         }
+        if (matches && ![seenCartridges containsObject:registered.cartridgeId]) {
+            [seenCartridges addObject:registered.cartridgeId];
+            [results addObject:[CSCartridgeAdapter adapterWithCartridgeId:registered.cartridgeId
+                                                               adapterUrn:registered.mediaUrn]];
+        }
     }
-
-    return [result array];
+    return results;
 }
 
-- (BOOL)hasAdapterForExtension:(NSString *)extension {
-    return [[self cartridgeIdsForExtension:extension] count] > 0;
+/// The file media types the fabric declares for an extension, parsed. A
+/// definition with no valid URN is an error naming it.
+- (void)extensionCandidates:(NSString *)extension
+                 completion:(void (^)(NSArray<CSMediaUrn *> *_Nullable candidates, NSError *_Nullable error))completion {
+    [self.fabricRegistry fileMediaForExtension:extension completion:^(NSArray<NSDictionary *> *definitions, NSError *error) {
+        if (!definitions) {
+            completion(nil, error);
+            return;
+        }
+        NSMutableArray<CSMediaUrn *> *candidates = [NSMutableArray arrayWithCapacity:definitions.count];
+        for (NSDictionary *definition in definitions) {
+            NSError *parseError = nil;
+            id urnString = definition[@"urn"];
+            CSMediaUrn *urn = [urnString isKindOfClass:[NSString class]]
+                ? [CSMediaUrn fromString:urnString error:&parseError]
+                : nil;
+            if (!urn) {
+                completion(nil, [NSError errorWithDomain:CSFabricRegistryErrorDomain
+                                                    code:1001
+                                                userInfo:@{
+                    NSLocalizedDescriptionKey: [NSString stringWithFormat:
+                        @"the fabric's media definition '%@' has no valid URN: %@",
+                        urnString, parseError.localizedDescription ?: @"it is not a string"]
+                }]);
+                return;
+            }
+            [candidates addObject:urn];
+        }
+        completion(candidates, nil);
+    }];
+}
+
+- (void)findAdaptersForExtension:(NSString *)extension
+                      completion:(void (^)(NSArray<CSCartridgeAdapter *> *_Nullable adapters,
+                                           NSError *_Nullable error))completion {
+    [self extensionCandidates:extension completion:^(NSArray<CSMediaUrn *> *candidates, NSError *error) {
+        if (!candidates) {
+            completion(nil, error);
+            return;
+        }
+        completion([self adaptersForCandidates:candidates], nil);
+    }];
+}
+
+- (void)hasAdapterForExtension:(NSString *)extension
+                    completion:(void (^)(BOOL hasAdapter, NSError *_Nullable error))completion {
+    [self extensionCandidates:extension completion:^(NSArray<CSMediaUrn *> *candidates, NSError *error) {
+        if (!candidates) {
+            completion(NO, error);
+            return;
+        }
+        completion([self adaptersForCandidates:candidates].count > 0, nil);
+    }];
 }
 
 @end
