@@ -5,8 +5,10 @@
 //  Unified Fabric Registry — replaces what used to be a separate
 //  cap registry and media-URN registry. Holds cap definitions, media
 //  defs, aliases and dims together with a single HTTP client and one
-//  disk cache root (`caps/`, `media/`, `aliases/` and `dims/`
-//  subdirectories).
+//  disk cache: the folder of the fabric manifest version the registry is
+//  pinned at, `<NSCachesDirectory>/capdag/<charter slug>/v<N>/`, holding
+//  `manifest.json` and `caps/`, `media/`, `aliases/` and `dims/`, each
+//  definition at `<kind>/<sha256 of its key>/<defver>.json`.
 //
 
 #import <Foundation/Foundation.h>
@@ -45,6 +47,17 @@ typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryDimErrorCode)
     /// The manifest is not one this library reads (for one, it has no `dims`
     /// map).
     CSFabricRegistryErrorManifestInvalid = 1059,
+};
+
+/// The code of the registry's disk-cache errors (domain
+/// `CSFabricRegistryErrorDomain`; the reference's CacheError): a cache file or
+/// folder that cannot be read, written, made or removed, and a cache entry or
+/// cached manifest that is corrupt — there, but unreadable, unparseable, or
+/// not the definition and version its path names. A corrupt entry's message
+/// names its file and says to remove it, or run `capdag cache clear`; the
+/// file is left where it is.
+typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryCacheErrorCode) {
+    CSFabricRegistryErrorCache = 1062,
 };
 
 /// The kind of thing a fabric alias resolves to. An alias target is always a
@@ -141,7 +154,12 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 /// anchor, else fetched from the anchor and stored — and everything after it
 /// is read from the charter. Blocks on the network when the charter or the
 /// pinned manifest is not cached, and raises when neither disk nor network
-/// supplies them.
+/// supplies them. Then reads from the disk cache each definition the manifest
+/// pins. Raises `CSFabricRegistryCacheError` when the cache cannot be used: a
+/// cached manifest or entry that is corrupt (the reason names the file), or a
+/// cache folder or file that cannot be made; the NSError
+/// (`CSFabricRegistryErrorCache`) is in the exception's userInfo under
+/// NSUnderlyingErrorKey.
 - (instancetype)initWithConfig:(CSFabricRegistryConfig *)config;
 
 /// Initialize against the fabric registry chartered at `anchor`.
@@ -149,8 +167,8 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
 /// Test constructor: empty registry pinned at manifest v1 so test helpers flow
 /// caps/media/aliases into the manifest at their declared version. Its charter
-/// is +publisherLayoutCharterForAnchor:slug: of the default anchor, and it
-/// never touches the network.
+/// is +publisherLayoutCharterForAnchor:slug: of the default anchor, its cache
+/// folder `<capdagCacheRoot>/test-fabric/v1`, and it never touches the network.
 - (instancetype)initForTest;
 
 /// The directory every registry's cache folder lives under:
@@ -159,6 +177,14 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 /// cache populated from one fabric can never satisfy lookups against another,
 /// which serves DIFFERENT bytes for the same URN and version.
 + (NSString *)capdagCacheRoot;
+
+/// The cache folder of the manifest version this registry is pinned at,
+/// `<capdagCacheRoot>/<charter slug>/v<N>`. Definitions live at
+/// `<kind>/<sha256>/<defver>.json` and the manifest at `manifest.json`. Each
+/// entry is replaced whole (written to `.<entry>.<pid>-<n>.tmp` beside it and
+/// renamed over it), so a reader never sees part of one. Exposed so admin
+/// surfaces can report the folder they clear. Mirrors Rust `cache_dir`.
+@property (nonatomic, readonly, copy) NSString *cacheDirectory;
 
 /// The charter of a fabric published at `anchor` the way the publisher lays a
 /// fabric out (`fabric/src/fabric.js`), named `slug`. For a registry that is
@@ -314,8 +340,19 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 
 // MARK: Cache lifecycle
 
-/// Clear in-memory and on-disk caches.
-- (void)clearCache;
+/// Invalidate every cache of this registry's manifest version: the in-memory
+/// definitions and its whole folder on disk, including the cached manifest, so
+/// every definition is fetched again (and a registry constructed afterwards
+/// fetches the manifest again). Each kind's folder is emptied, never removed;
+/// every file at the top of the version's folder (the manifest, and temporary
+/// files a killed writer left) is removed; the folders of the layout before
+/// per-version folders (`caps`, `media`, `aliases`, `dims` and `manifests`
+/// directly in the registry's folder) are removed; other manifest versions'
+/// folders and the stored charter are kept. Processes clearing the same cache
+/// at once do not fail each other. Answers NO with a
+/// `CSFabricRegistryErrorCache` error naming the path that could not be made,
+/// read or removed. Mirrors Rust `clear_cache`.
+- (BOOL)clearCache:(NSError *_Nullable *_Nullable)error;
 
 @end
 
