@@ -52,7 +52,6 @@ static NSMutableDictionary<NSString *, NSNumber *> *CSFetchFailureAsked;
 @property (nonatomic, strong) NSURLSession *session;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestMedia;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *manifestCaps;
-@property (nonatomic, strong) NSString *manifestsCacheDirectory;
 - (void)bootstrapManifest;
 - (nullable NSString *)normalizeMediaUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error;
 - (nullable NSString *)normalizeCapUrn:(NSString *)urn error:(NSError *_Nullable *_Nullable)error;
@@ -109,7 +108,7 @@ static NSString * const CSFailureCap = @"cap:in=\"media:refusal-probe;enc=utf8\"
 // manifest that is not found.
 - (void)test7167_aRefusedManifestFetchIsReportedAsTheRefusal {
     CSFabricRegistry *registry = [self registryAnswering:403];
-    [[NSFileManager defaultManager] removeItemAtPath:[registry.manifestsCacheDirectory stringByAppendingPathComponent:@"1.json"]
+    [[NSFileManager defaultManager] removeItemAtPath:[registry.cacheDirectory stringByAppendingPathComponent:@"manifest.json"]
                                                error:nil];
     NSException *raised = nil;
     @try {
