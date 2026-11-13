@@ -3484,32 +3484,59 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
 
 // MARK: - Manifest Types (for CLI mode)
 
+/// A JSON object key as written, so a wire type can see every key it was
+/// given — the keys it does not know among them.
+private struct WireKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+}
+
+/// Refuse a key the wire type `Keys` does not know, naming it, as the
+/// reference's `deny_unknown_fields` does: a key this capdag does not know is
+/// a fabric newer than it, and dropping the key would advertise a contract the
+/// fabric never made.
+private func refuseUnknownKeys<Keys: CodingKey & CaseIterable>(_ decoder: Decoder, _ keys: Keys.Type, in what: String) throws {
+    let known = Set(Keys.allCases.map(\.stringValue))
+    let container = try decoder.container(keyedBy: WireKey.self)
+    if let unknown = container.allKeys.map(\.stringValue).sorted().first(where: { !known.contains($0) }) {
+        throw DecodingError.dataCorrupted(DecodingError.Context(
+            codingPath: decoder.codingPath + [WireKey(stringValue: unknown)],
+            debugDescription: "unknown field `\(unknown)` in \(what), expected one of \(known.sorted().joined(separator: ", "))"))
+    }
+}
+
 /// Source for extracting argument values in CLI mode.
 public enum ArgSource: Codable, Sendable {
     case cliFlag(String)
     case positional(Int)
     case stdin(String)  // Media URN for stdin input
 
-    enum CodingKeys: String, CodingKey {
-        case type
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case cliFlag = "cli_flag"
         case position
         case stdin
     }
 
+    /// The format is a single-key object: {"stdin": "..."}, {"position": 0}, or
+    /// {"cli_flag": "..."}. A key this capdag does not know, or two kinds in
+    /// one source, is refused, as the reference refuses them.
     public init(from decoder: Decoder) throws {
+        try refuseUnknownKeys(decoder, CodingKeys.self, in: "an argument source")
         let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        // The format is a single-key object: {"stdin": "..."}, {"position": 0}, or {"cli_flag": "..."}
-        // NOT {"type": "stdin", "stdin": "..."}
-        if let flag = try? container.decode(String.self, forKey: .cliFlag) {
-            self = .cliFlag(flag)
-        } else if let pos = try? container.decode(Int.self, forKey: .position) {
-            self = .positional(pos)
-        } else if let mediaUrn = try? container.decode(String.self, forKey: .stdin) {
-            self = .stdin(mediaUrn)
-        } else {
-            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid source format: must have exactly one of 'cli_flag', 'position', or 'stdin'")
+        guard container.allKeys.count == 1, let kind = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "an argument source has exactly one of 'cli_flag', 'position' or 'stdin'; this one has \(container.allKeys.map(\.stringValue).sorted())"))
+        }
+        switch kind {
+        case .cliFlag:
+            self = .cliFlag(try container.decode(String.self, forKey: .cliFlag))
+        case .position:
+            self = .positional(try container.decode(Int.self, forKey: .position))
+        case .stdin:
+            self = .stdin(try container.decode(String.self, forKey: .stdin))
         }
     }
 
@@ -3632,8 +3659,10 @@ public struct CapArg: Codable, Sendable {
     public let sources: [ArgSource]
     public let argDescription: String?
     public let defaultValue: JSONValue?
+    /// Arbitrary metadata as a JSON value.
+    public let metadata: JSONValue?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case mediaUrn = "media_urn"
         case name
         case accepts
@@ -3643,9 +3672,10 @@ public struct CapArg: Codable, Sendable {
         case sources
         case argDescription = "arg_description"
         case defaultValue = "default_value"
+        case metadata
     }
 
-    public init(mediaUrn: String, name: String, required: Bool, isSequence: Bool = false, streaming: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil, accepts: String? = nil) {
+    public init(mediaUrn: String, name: String, required: Bool, isSequence: Bool = false, streaming: Bool = false, sources: [ArgSource], argDescription: String? = nil, defaultValue: JSONValue? = nil, accepts: String? = nil, metadata: JSONValue? = nil) {
         self.mediaUrn = mediaUrn
         self.name = name
         self.accepts = accepts
@@ -3655,21 +3685,26 @@ public struct CapArg: Codable, Sendable {
         self.sources = sources
         self.argDescription = argDescription
         self.defaultValue = defaultValue
+        self.metadata = metadata
     }
 
+    /// Reads an argument as the reference does: `required` and `sources` are
+    /// required, and a key this capdag does not know is refused, naming it.
     public init(from decoder: Decoder) throws {
+        try refuseUnknownKeys(decoder, CodingKeys.self, in: "a cap argument")
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
         // Every argument is named (RULE17); a definition without one is not a
         // definition this library reads.
         name = try container.decode(String.self, forKey: .name)
         accepts = try container.decodeIfPresent(String.self, forKey: .accepts)
-        required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+        required = try container.decode(Bool.self, forKey: .required)
         isSequence = try container.decodeIfPresent(Bool.self, forKey: .isSequence) ?? false
         streaming = try container.decodeIfPresent(Bool.self, forKey: .streaming) ?? false
-        sources = try container.decodeIfPresent([ArgSource].self, forKey: .sources) ?? []
+        sources = try container.decode([ArgSource].self, forKey: .sources)
         argDescription = try container.decodeIfPresent(String.self, forKey: .argDescription)
         defaultValue = try container.decodeIfPresent(JSONValue.self, forKey: .defaultValue)
+        metadata = try container.decodeIfPresent(JSONValue.self, forKey: .metadata)
     }
 
     /// Whether this arg is the cap's MAIN INPUT for the given `in=` spec:
@@ -3774,7 +3809,7 @@ public struct CapOutput: Codable, Sendable {
     /// Arbitrary metadata as a JSON object.
     public let metadata: JSONValue?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case mediaUrn = "media_urn"
         case name
         case outputDescription = "output_description"
@@ -3797,6 +3832,7 @@ public struct CapOutput: Codable, Sendable {
     }
 
     public init(from decoder: Decoder) throws {
+        try refuseUnknownKeys(decoder, CodingKeys.self, in: "a cap output")
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mediaUrn = try container.decode(String.self, forKey: .mediaUrn)
         // Every output is named (RULE19).
@@ -3835,8 +3871,61 @@ public enum OutputCarries: String, Codable, Sendable {
     case input
 }
 
+/// One dim a definition was built from, and the value chosen from it: an entry
+/// of a cap's `dims`. Mirrors the reference `capdag::DimRef`, unknown keys
+/// refused as it refuses them.
+public struct DimRef: Codable, Sendable, Equatable, Hashable {
+    /// The dim's name.
+    public let dim: String
+    /// The name of the value chosen from that dim.
+    public let value: String
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case dim
+        case value
+    }
+
+    public init(dim: String, value: String) {
+        self.dim = dim
+        self.value = value
+    }
+
+    public init(from decoder: Decoder) throws {
+        try refuseUnknownKeys(decoder, CodingKeys.self, in: "a dim reference")
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        dim = try container.decode(String.self, forKey: .dim)
+        value = try container.decode(String.self, forKey: .value)
+    }
+}
+
+/// Who registered a cap, and when. Mirrors the reference `capdag::RegisteredBy`.
+public struct RegisteredBy: Codable, Sendable, Equatable {
+    /// Username of the user who registered the cap.
+    public let username: String
+    /// ISO 8601 timestamp of when the cap was registered.
+    public let registeredAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case username
+        case registeredAt = "registered_at"
+    }
+
+    public init(username: String, registeredAt: String) {
+        self.username = username
+        self.registeredAt = registeredAt
+    }
+}
+
+/// A cap definition as a manifest carries it. Mirrors the reference
+/// `capdag::Cap` field for field and key for key, because a Swift cartridge
+/// builds its manifest by decoding the fabric's snapshot of its caps into this
+/// type and encoding it again: a field missing here is a field missing from the
+/// manifest the host and the publisher read.
 public struct CapDefinition: Codable, Sendable {
     public let urn: String
+    /// Per-definition version; 0 is the implicit pre-versioning state.
+    /// Absent in the wire form ⇒ 0.
+    public let version: UInt32
     public let title: String
     /// Globally-unique names selecting this cap in both CLIs (replaces the
     /// former non-unique `command`). At least one; uniqueness enforced at publish.
@@ -3845,20 +3934,44 @@ public struct CapDefinition: Codable, Sendable {
     /// a runnable graph edge). Absent in the wire form ⇒ false.
     public let isAbstract: Bool
     public let capDescription: String?
+    /// Long-form markdown documentation: only what is specific to this cap.
+    public let documentation: String?
+    /// The dims this cap was built from, and the value chosen from each, in
+    /// the order its source references them. Empty when it was built from no
+    /// dim. Descriptive only: matching and dispatch never read it.
+    public let dims: [DimRef]
+    /// Key-value metadata.
+    public let metadata: [String: String]
     public let args: [CapArg]
     /// Every output the cap declares. Exactly one is the main output, the one
     /// whose URN is the cap URN's `out=` (RULE21); a cap whose `out=` is void
     /// declares none.
     public let outputs: [CapOutput]
+    /// Arbitrary metadata as a JSON value.
+    public let metadataJSON: JSONValue?
+    public let registeredBy: RegisteredBy?
+    /// Architectures (HuggingFace `model_type` values) the cap can run; empty
+    /// means any.
+    public let supportedModelTypes: [String]
+    /// The model spec used when the cap is invoked without one.
+    public let defaultModelSpec: String?
 
     enum CodingKeys: String, CodingKey {
         case urn
+        case version
         case title
         case aliases
         case isAbstract = "abstract"
         case capDescription = "cap_description"
+        case documentation
+        case dims
+        case metadata
         case args
         case outputs
+        case metadataJSON = "metadata_json"
+        case registeredBy = "registered_by"
+        case supportedModelTypes = "supported_model_types"
+        case defaultModelSpec = "default_model_spec"
     }
 
     /// The primary (first) alias — single-name display. A cap always has one.
@@ -3877,19 +3990,28 @@ public struct CapDefinition: Codable, Sendable {
         self = try JSONDecoder().decode(CapDefinition.self, from: data)
     }
 
-    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], outputs: [CapOutput] = []) {
+    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], outputs: [CapOutput] = [], version: UInt32 = 0, documentation: String? = nil, dims: [DimRef] = [], metadata: [String: String] = [:], metadataJSON: JSONValue? = nil, registeredBy: RegisteredBy? = nil, supportedModelTypes: [String] = [], defaultModelSpec: String? = nil) {
         self.urn = urn
+        self.version = version
         self.title = title
         self.aliases = aliases
         self.isAbstract = isAbstract
         self.capDescription = capDescription
+        self.documentation = documentation
+        self.dims = dims
+        self.metadata = metadata
         self.args = args
         self.outputs = outputs
+        self.metadataJSON = metadataJSON
+        self.registeredBy = registeredBy
+        self.supportedModelTypes = supportedModelTypes
+        self.defaultModelSpec = defaultModelSpec
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         urn = try container.decode(String.self, forKey: .urn)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
         title = try container.decode(String.self, forKey: .title)
         aliases = try container.decode([String].self, forKey: .aliases)
         // A cap must declare at least one alias — how it is selected in both CLIs.
@@ -3900,13 +4022,36 @@ public struct CapDefinition: Codable, Sendable {
         }
         isAbstract = try container.decodeIfPresent(Bool.self, forKey: .isAbstract) ?? false
         capDescription = try container.decodeIfPresent(String.self, forKey: .capDescription)
+        documentation = try container.decodeIfPresent(String.self, forKey: .documentation)
+        dims = try container.decodeIfPresent([DimRef].self, forKey: .dims) ?? []
+        // A dim is named at most once, by a dim name and with a value: a
+        // definition cannot have been built with two values of one dim. The
+        // rule is CapDAG's own (`CSCheckDimRefs`), the one CSCap holds to.
+        var refusal: NSError?
+        if !CSCheckDimRefs(dims.map { CSDimRef(dim: $0.dim, value: $0.value) }, &refusal) {
+            throw DecodingError.dataCorruptedError(
+                forKey: .dims, in: container,
+                debugDescription: "cap '\(urn)' dims: \(refusal?.localizedDescription ?? "refused without a reason")")
+        }
+        metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
         args = try container.decodeIfPresent([CapArg].self, forKey: .args) ?? []
         outputs = try container.decodeIfPresent([CapOutput].self, forKey: .outputs) ?? []
+        metadataJSON = try container.decodeIfPresent(JSONValue.self, forKey: .metadataJSON)
+        registeredBy = try container.decodeIfPresent(RegisteredBy.self, forKey: .registeredBy)
+        supportedModelTypes = try container.decodeIfPresent([String].self, forKey: .supportedModelTypes) ?? []
+        defaultModelSpec = try container.decodeIfPresent(String.self, forKey: .defaultModelSpec)
     }
 
+    /// Writes each key exactly when the reference does: defaulted and empty
+    /// fields are left out, so a Swift manifest's cap is the bytes any other
+    /// implementation writes for it.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(urn, forKey: .urn)
+        // Omit `version` when 0 (absent ⇒ 0 in the wire form).
+        if version != 0 {
+            try container.encode(version, forKey: .version)
+        }
         try container.encode(title, forKey: .title)
         try container.encode(aliases, forKey: .aliases)
         // Omit `abstract` when false (absent ⇒ false in the wire form).
@@ -3914,12 +4059,26 @@ public struct CapDefinition: Codable, Sendable {
             try container.encode(true, forKey: .isAbstract)
         }
         try container.encodeIfPresent(capDescription, forKey: .capDescription)
+        try container.encodeIfPresent(documentation, forKey: .documentation)
+        // Omit `dims` when the cap was built from none, as the registry does.
+        if !dims.isEmpty {
+            try container.encode(dims, forKey: .dims)
+        }
+        if !metadata.isEmpty {
+            try container.encode(metadata, forKey: .metadata)
+        }
         if !args.isEmpty {
             try container.encode(args, forKey: .args)
         }
         if !outputs.isEmpty {
             try container.encode(outputs, forKey: .outputs)
         }
+        try container.encodeIfPresent(metadataJSON, forKey: .metadataJSON)
+        try container.encodeIfPresent(registeredBy, forKey: .registeredBy)
+        if !supportedModelTypes.isEmpty {
+            try container.encode(supportedModelTypes, forKey: .supportedModelTypes)
+        }
+        try container.encodeIfPresent(defaultModelSpec, forKey: .defaultModelSpec)
     }
 
     /// The main output: the one whose media URN is the cap URN's `out=`, by

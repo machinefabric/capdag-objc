@@ -445,4 +445,162 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual((claimingJson["adapter_urns"] as? [String])?.count, 1,
                        "a non-empty adapter_urns must be written")
     }
+
+    private func jsonObject(_ data: Data) throws -> [String: Any] {
+        try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private func decodingFailure(_ json: String) -> String? {
+        do {
+            _ = try JSONDecoder().decode(CapDefinition.self, from: Data(json.utf8))
+            return nil
+        } catch {
+            return String(describing: error)
+        }
+    }
+
+    // TEST1969: a cap's `dims` — the dims it was built from and the value
+    // chosen from each — survive a round-trip in order, under the wire key the
+    // registry publishes; a cap built from no dim carries no `dims` key; an
+    // entry with a key this capdag does not know is refused like an argument's,
+    // and so is one dim named twice. A cartridge re-serializes the caps it
+    // declares, so a dropped `dims` would leave its copy without them.
+    func test1969_capDimsRoundTripInOrderAndRefuseWhatTheyCannotHold() throws {
+        let json = #"{"urn":"cap:ask;constrained;in=\"media:enc=utf8\";language=en;out=\"media:enc=utf8\"","version":3,"title":"Ask","aliases":["ask-en"],"documentation":"Only about asking.","dims":[{"dim":"constrained","value":"constrained"},{"dim":"language","value":"en"}]}"#
+        let cap = try JSONDecoder().decode(CapDefinition.self, from: Data(json.utf8))
+        XCTAssertEqual(cap.dims, [
+            DimRef(dim: "constrained", value: "constrained"),
+            DimRef(dim: "language", value: "en"),
+        ])
+        let back = try JSONEncoder().encode(cap)
+        let backDims = try XCTUnwrap(try jsonObject(back)["dims"] as? [[String: String]],
+                                     "a cap built from dims writes them back under `dims`")
+        XCTAssertEqual(backDims, [["dim": "constrained", "value": "constrained"], ["dim": "language", "value": "en"]])
+        let again = try JSONDecoder().decode(CapDefinition.self, from: back)
+        XCTAssertEqual(again.dims, cap.dims)
+
+        let bare = CapDefinition(urn: "cap:effect=none", title: "Identity", aliases: ["identity"])
+        XCTAssertNil(try jsonObject(try JSONEncoder().encode(bare))["dims"],
+                     "a cap built from no dim carries no `dims` key")
+
+        let extra = json.replacingOccurrences(of: #"{"dim":"language","value":"en"}"#, with: #"{"dim":"language","value":"en","version":1}"#)
+        let extraFailure = try XCTUnwrap(decodingFailure(extra), "an unknown dims key is refused")
+        XCTAssertTrue(extraFailure.contains("version"), extraFailure)
+
+        let twice = json.replacingOccurrences(of: #"{"dim":"constrained","value":"constrained"}"#, with: #"{"dim":"language","value":"es"}"#)
+        let twiceFailure = try XCTUnwrap(decodingFailure(twice), "one dim named twice is refused")
+        XCTAssertTrue(twiceFailure.contains("dim 'language' is named more than once"), twiceFailure)
+    }
+
+    // TEST8044: a cap snapshot as the fabric publishes it — every field
+    // capdag-rs's `Cap` writes, dims among them — decodes into CapDefinition
+    // and comes out in the manifest the cartridge reports exactly as it went
+    // in. A Swift cartridge builds its manifest from such a snapshot; a field
+    // this type dropped went missing from the manifest, and the publisher
+    // refused the cartridge for caps whose dims no longer matched the fabric's.
+    func test8044_capSnapshotSurvivesIntoTheReportedManifestWithEveryField() throws {
+        let snapshot = #"""
+        [
+          {
+            "urn": "cap:embeddings-dimensions;in=\"media:embeddings;enc=utf8;mlx;model-spec\";ml-model;mlx;out=\"media:integer;model-dim;numeric\"",
+            "version": 4,
+            "title": "Get Embeddings Dimensions (MLX)",
+            "aliases": ["embeddings-dimensions-mlx", "embedding-dims-mlx"],
+            "cap_description": "Query the dimensionality of embeddings for a given MLX model",
+            "documentation": "## Purpose\n\nReports the vector size an MLX embedding model produces.",
+            "dims": [
+              {"dim": "ml-model", "value": "ml-model"},
+              {"dim": "backend", "value": "mlx"}
+            ],
+            "metadata": {"family": "embeddings"},
+            "args": [
+              {
+                "media_urn": "media:embeddings;enc=utf8;mlx;model-spec",
+                "name": "input",
+                "required": false,
+                "is_sequence": false,
+                "streaming": false,
+                "sources": [{"position": 0}, {"stdin": "media:embeddings;enc=utf8;mlx;model-spec"}],
+                "arg_description": "Path to MLX embedding model directory",
+                "default_value": "hf:mlx-community/all-MiniLM-L6-v2-4bit",
+                "metadata": {"picker": "model"}
+              }
+            ],
+            "outputs": [
+              {
+                "media_urn": "media:integer;model-dim;numeric",
+                "name": "output",
+                "output_description": "Dimensionality of the embeddings (positive integer)",
+                "optional": false,
+                "is_sequence": false,
+                "streaming": false,
+                "metadata": {"unit": "dimensions"}
+              }
+            ],
+            "metadata_json": {"ui": {"group": "embeddings", "rank": 2}},
+            "registered_by": {"username": "fabric", "registered_at": "2026-11-01T00:00:00Z"},
+            "supported_model_types": ["bert", "xlm-roberta"],
+            "default_model_spec": "hf:mlx-community/all-MiniLM-L6-v2-4bit"
+          }
+        ]
+        """#
+        let caps = try JSONDecoder().decode([CapDefinition].self, from: Data(snapshot.utf8))
+        let manifest = Manifest(
+            name: "snapshot-cartridge",
+            version: "1.0.0",
+            channel: "nightly",
+            registryURL: nil,
+            description: "A cartridge built from a cap snapshot",
+            capGroups: [defaultGroup([identityCapDefinition()] + caps)]
+        )
+        let runtime = CartridgeRuntime(manifest: try JSONEncoder().encode(manifest))
+
+        let reported = try jsonObject(runtime.manifestData)
+        let groups = try XCTUnwrap(reported["cap_groups"] as? [[String: Any]])
+        let reportedCaps = try XCTUnwrap(groups.first?["caps"] as? [[String: Any]])
+        XCTAssertEqual(reportedCaps.count, 2)
+        let written = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(snapshot.utf8)) as? [[String: Any]])
+        for key in written[0].keys.sorted() {
+            XCTAssertNotNil(reportedCaps[1][key], "the reported manifest dropped the cap's `\(key)`")
+        }
+        XCTAssertEqual(NSDictionary(dictionary: reportedCaps[1]), NSDictionary(dictionary: written[0]),
+                       "the reported cap is the snapshot's, field for field")
+    }
+
+    // TEST8047: an argument, an output, an argument source and a dim entry
+    // with a key this capdag does not know are refused, naming the key, as
+    // capdag-rs refuses them (`deny_unknown_fields`): the key is a fabric newer
+    // than this library, and dropping it would advertise a contract the fabric
+    // never made. An argument without `required` or `sources` is refused too,
+    // because capdag-rs requires both.
+    func test8047_definitionPartsRefuseKeysTheyDoNotKnow() throws {
+        let cap = { (args: String, outputs: String) in
+            #"{"urn":"cap:in=\"media:enc=utf8\";out=\"media:enc=utf8\";echo","title":"Echo","aliases":["echo"],"args":["# + args + #"],"outputs":["# + outputs + #"]}"#
+        }
+        let arg = #"{"media_urn":"media:enc=utf8","name":"input","required":true,"sources":[{"stdin":"media:enc=utf8"}]}"#
+        let output = #"{"media_urn":"media:enc=utf8","name":"output","output_description":"The text"}"#
+        XCTAssertNil(decodingFailure(cap(arg, output)), "the definition itself is well formed")
+
+        let argExtra = arg.replacingOccurrences(of: #""required":true"#, with: #""required":true,"bounded":true"#)
+        let argFailure = try XCTUnwrap(decodingFailure(cap(argExtra, output)), "an unknown argument key is refused")
+        XCTAssertTrue(argFailure.contains("bounded"), argFailure)
+
+        let outputExtra = output.replacingOccurrences(of: #""name":"output""#, with: #""name":"output","window":4"#)
+        let outputFailure = try XCTUnwrap(decodingFailure(cap(arg, outputExtra)), "an unknown output key is refused")
+        XCTAssertTrue(outputFailure.contains("window"), outputFailure)
+
+        let sourceExtra = arg.replacingOccurrences(of: #"{"stdin":"media:enc=utf8"}"#, with: #"{"stdin":"media:enc=utf8","position":0}"#)
+        XCTAssertNotNil(decodingFailure(cap(sourceExtra, output)), "a source naming two kinds is refused")
+        let sourceUnknown = arg.replacingOccurrences(of: #"{"stdin":"media:enc=utf8"}"#, with: #"{"stdin":"media:enc=utf8","chunk":64}"#)
+        let sourceFailure = try XCTUnwrap(decodingFailure(cap(sourceUnknown, output)), "an unknown source key is refused")
+        XCTAssertTrue(sourceFailure.contains("chunk"), sourceFailure)
+
+        let noRequired = arg.replacingOccurrences(of: #""required":true,"#, with: "")
+        let requiredFailure = try XCTUnwrap(decodingFailure(cap(noRequired, output)), "an argument without `required` is refused")
+        XCTAssertTrue(requiredFailure.contains("required"), requiredFailure)
+        let noSources = arg.replacingOccurrences(of: #","sources":[{"stdin":"media:enc=utf8"}]"#, with: "")
+        let sourcesFailure = try XCTUnwrap(decodingFailure(cap(noSources, output)), "an argument without `sources` is refused")
+        XCTAssertTrue(sourcesFailure.contains("sources"), sourcesFailure)
+    }
 }
