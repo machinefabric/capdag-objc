@@ -318,7 +318,8 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         host.registerCartridge(
             path: dir.appendingPathComponent("dropcart").path,
             cartridgeDir: dir.path,
-            capGroups: []
+            capGroups: [],
+            bundleSHA256: nil
         )
 
         // No heartbeat round-trip yet: the reading must be ABSENT, never a
@@ -384,7 +385,7 @@ final class CartridgeHostInstalledRecordTests: XCTestCase {
         let rejectedPath = rejectedDir.appendingPathComponent("rejectedcart").path
 
         let host = CartridgeHost.withFullPolicy()
-        host.registerCartridge(path: stalePath, cartridgeDir: staleDir.path, capGroups: [])
+        host.registerCartridge(path: stalePath, cartridgeDir: staleDir.path, capGroups: [], bundleSHA256: nil)
 
         // Healthy (never spawned): advertised without an attachment error.
         var records = host.installedCartridgeRecordsForTest()

@@ -22,6 +22,22 @@
 //  envelope beside it — produced at the END of a build, after every platform
 //  signing step. There is no ordering problem left to have.
 //
+//  # What a host learns from it, and when it checks the bytes
+//
+//  Each entry records, under the signature, everything discovery decides from:
+//  the cartridge's directory hash, the fabric manifest version it was built
+//  against, and the cap groups it advertises in its HELLO (recorded by the
+//  build, which starts each cartridge once to ask). So discovering a bundle
+//  reads one signed file: it neither hashes a cartridge nor starts one, and a
+//  command that lists or plans pays for no cartridge it does not run.
+//
+//  The bytes are checked when they matter, which is when a host starts a
+//  cartridge: its directory is hashed and held to the recorded value each time
+//  it is spawned, and a cartridge that was changed is refused there, by name
+//  (`verifyBundledContent`). Checking at the spawn rather than at discovery
+//  also closes the gap between the two, during which a checked cartridge could
+//  be replaced before it ran.
+//
 //  # What this file does and does not do
 //
 //  It reads and applies a manifest. It does NOT verify the signature: this
@@ -32,10 +48,12 @@
 //
 
 import Foundation
+import CapDAG
 
 /// The `format` every bundle manifest carries. A manifest without exactly this
-/// is refused rather than interpreted.
-public let bundleManifestFormat = "capdag.bundle/v1"
+/// is refused rather than interpreted: the shape is the contract between the
+/// build that writes it and the runtime that reads it.
+public let bundleManifestFormat = "capdag.bundle/v2"
 
 /// The manifest's name inside the bundled-cartridges root.
 public let bundleManifestFile = "bundle.json"
@@ -55,12 +73,41 @@ public struct BundledCartridge: Codable, Equatable {
     /// exclusion is what lets a build write the manifest without changing what
     /// the manifest attests.
     public let sha256: String
+    /// The fabric manifest version the cartridge was built against.
+    ///
+    /// Its `cartridge.json` states it too, but that file is outside the hash;
+    /// recorded here it is signed, and a host pinned to another version
+    /// refuses the cartridge without starting it.
+    public let fabricManifestVersion: UInt32
+    /// The cap groups the cartridge advertises in its HELLO, as the build read
+    /// them by starting it. Discovery takes them from here instead of starting
+    /// every bundled cartridge to ask again; they are a function of the bytes
+    /// `sha256` covers, which are checked before the cartridge runs.
+    public let capGroups: [CapGroup]
 
-    public init(name: String, version: String, channel: String, sha256: String) {
+    enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case channel
+        case sha256
+        case fabricManifestVersion = "fabric_manifest_version"
+        case capGroups = "cap_groups"
+    }
+
+    public init(
+        name: String,
+        version: String,
+        channel: String,
+        sha256: String,
+        fabricManifestVersion: UInt32,
+        capGroups: [CapGroup]
+    ) {
         self.name = name
         self.version = version
         self.channel = channel
         self.sha256 = sha256
+        self.fabricManifestVersion = fabricManifestVersion
+        self.capGroups = capGroups
     }
 }
 
@@ -84,6 +131,24 @@ public struct BundleManifest: Codable, Equatable {
     /// What this manifest says about one cartridge, if it says anything.
     public func entry(name: String, version: String) -> BundledCartridge? {
         cartridges.first { $0.name == name && $0.version == version }
+    }
+
+    /// The entry for one bundled cartridge, held to the channel it is on.
+    ///
+    /// Unlisted, or listed at another version, is a cartridge the build did
+    /// not record — a stale copy left from an earlier build among them. Listed
+    /// for the other channel is a manifest vouching for an artefact it did not
+    /// describe.
+    public func admit(name: String, version: String, channel: String) throws -> BundledCartridge {
+        guard let entry = entry(name: name, version: version) else {
+            throw BundleManifestError.notListed(name: name, version: version)
+        }
+        guard entry.channel == channel else {
+            throw BundleManifestError.wrongChannel(
+                name: name, version: version, recorded: entry.channel, found: channel
+            )
+        }
+        return entry
     }
 }
 
@@ -109,30 +174,18 @@ public enum BundleProof {
     /// the right reason rather than quietly hosted.
     case none(String)
 
-    /// Hold one bundled cartridge to what this proof allows. `nil` when it
-    /// passes, the reason when it does not.
-    public func check(name: String, version: String, versionDir: String) -> String? {
+    /// What this proof records about one bundled cartridge, which discovery
+    /// takes its caps and its fabric manifest version from.
+    ///
+    /// Reads nothing on disk. The cartridge's bytes are held to the recorded
+    /// hash when a host starts it (`verifyBundledContent`), not here. Throws a
+    /// `BundleManifestError` saying why the cartridge is not admitted.
+    public func admit(name: String, version: String, channel: String) throws -> BundledCartridge {
         switch self {
         case .none(let reason):
-            return reason.isEmpty
-                ? "nothing proves the bundled cartridges under this root"
-                : reason
+            throw BundleManifestError.unproven(reason)
         case .proven(let manifest):
-            guard let entry = manifest.entry(name: name, version: version) else {
-                return "the bundle manifest does not list \(name) \(version); "
-                    + "this build ships a cartridge it did not record"
-            }
-            let actual: String
-            do {
-                actual = try hashCartridgeDirectory(versionDir)
-            } catch {
-                return "failed to hash bundled cartridge directory: \(error)"
-            }
-            if actual != entry.sha256 {
-                return "\(name) \(version) does not match the bundle manifest: "
-                    + "recorded \(entry.sha256), on disk \(actual)"
-            }
-            return nil
+            return try manifest.admit(name: name, version: version, channel: channel)
         }
     }
 }
@@ -155,12 +208,20 @@ public func isBundleManifestFile(_ fileName: String) -> Bool {
     fileName == bundleManifestFile || fileName == bundleManifestSigFile
 }
 
-/// What went wrong reading a bundle manifest.
-public enum BundleManifestError: Error, CustomStringConvertible {
+/// What went wrong reading a bundle manifest, or holding a bundled cartridge
+/// to one.
+public enum BundleManifestError: Error, CustomStringConvertible, LocalizedError {
     case missing(String)
     case unsigned(String)
+    case unreadable(path: String, reason: String)
     case malformed(path: String, reason: String)
     case unsupportedFormat(String)
+    /// Nothing proves the bundled cartridges under this root (`BundleProof.none`),
+    /// for the reason given.
+    case unproven(String)
+    case notListed(name: String, version: String)
+    case wrongChannel(name: String, version: String, recorded: String, found: String)
+    case contentMismatch(dir: String, name: String, version: String, expected: String, actual: String)
 
     public var description: String {
         switch self {
@@ -168,12 +229,30 @@ public enum BundleManifestError: Error, CustomStringConvertible {
             return "no bundle manifest at \(path) — this build shipped cartridges it cannot vouch for"
         case .unsigned(let path):
             return "no signature at \(path) — an unsigned bundle manifest proves nothing"
+        case .unreadable(let path, let reason):
+            return "cannot read \(path): \(reason)"
         case .malformed(let path, let reason):
             return "\(path) is not a bundle manifest: \(reason)"
         case .unsupportedFormat(let found):
             return "bundle manifest has format '\(found)' (expected '\(bundleManifestFormat)')"
+        case .unproven(let reason):
+            return reason.isEmpty
+                ? "nothing proves the bundled cartridges under this root"
+                : reason
+        case .notListed(let name, let version):
+            return "the bundle manifest does not list \(name) \(version); "
+                + "this build ships a cartridge it did not record"
+        case .wrongChannel(let name, let version, let recorded, let found):
+            return "the bundle manifest records \(name) \(version) for the '\(recorded)' channel, "
+                + "and this cartridge is on the '\(found)' channel"
+        case .contentMismatch(let dir, let name, let version, let expected, let actual):
+            return "the bundled cartridge \(name) \(version) was changed after its build recorded it, "
+                + "so it is not started: its directory \(dir) hashes to \(actual), and the build's "
+                + "signed bundle manifest records \(expected). Reinstall the application it is bundled with"
         }
     }
+
+    public var errorDescription: String? { description }
 }
 
 /// Read and shape-check the manifest under a bundled-cartridges root, with the
@@ -195,14 +274,102 @@ public func readBundleManifest(
     else {
         throw BundleManifestError.unsigned(sigPath)
     }
+    let manifest = try parseBundleManifest(bytes, path: manifestPath)
+    return (manifest, bytes, envelope)
+}
+
+/// The format field alone, read before the document is.
+private struct BundleManifestFormatField: Decodable {
+    let format: String
+}
+
+/// The document a manifest's bytes hold, held to this format and to the cap
+/// definition rules.
+///
+/// The format is read first and on its own, so a manifest in another format
+/// is refused for being one, rather than as a document that fails to parse.
+/// No earlier format is read: a v1 manifest records no caps and no fabric
+/// manifest version, so a host reading one would have to start every cartridge
+/// to learn them, which is what v2 exists to stop.
+func parseBundleManifest(_ bytes: Data, path: String) throws -> BundleManifest {
+    let format: String
+    do {
+        format = try JSONDecoder().decode(BundleManifestFormatField.self, from: bytes).format
+    } catch {
+        throw BundleManifestError.malformed(path: path, reason: "\(error)")
+    }
+    guard format == bundleManifestFormat else {
+        throw BundleManifestError.unsupportedFormat(format)
+    }
     let manifest: BundleManifest
     do {
         manifest = try JSONDecoder().decode(BundleManifest.self, from: bytes)
     } catch {
-        throw BundleManifestError.malformed(path: manifestPath, reason: "\(error)")
+        throw BundleManifestError.malformed(path: path, reason: "\(error)")
     }
-    guard manifest.format == bundleManifestFormat else {
-        throw BundleManifestError.unsupportedFormat(manifest.format)
+    // The recorded caps cross from the cartridge that advertised them to every
+    // host that reads them here, so they are held to the definition rules as
+    // an advertised manifest is (`advertisedManifest`). The rules are the cap
+    // library's (`CSCapValidator`); what is held to them is the groups exactly
+    // as this host will route by them.
+    for cartridge in manifest.cartridges {
+        if let ruleError = capGroupsRuleError(cartridge.capGroups) {
+            throw BundleManifestError.malformed(
+                path: path,
+                reason: "\(cartridge.name) \(cartridge.version): \(ruleError)"
+            )
+        }
     }
-    return (manifest, bytes, envelope)
+    return manifest
+}
+
+/// The definition rule a group's caps break, or why the groups are no cap
+/// groups the cap library reads; nil when every cap keeps the rules.
+private func capGroupsRuleError(_ groups: [CapGroup]) -> String? {
+    for group in groups {
+        let dictionary: [String: Any]
+        do {
+            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(group))
+            guard let decoded = object as? [String: Any] else {
+                return "cap group '\(group.name)' does not encode as a JSON object"
+            }
+            dictionary = decoded
+        } catch {
+            return "cap group '\(group.name)' does not encode: \(error)"
+        }
+        let parsed: CSCapGroup
+        do {
+            parsed = try CSCapGroup(dictionary: dictionary)
+        } catch {
+            return "cap group '\(group.name)' is not a cap group: \(error.localizedDescription)"
+        }
+        for cap in parsed.caps {
+            do {
+                try CSCapValidator.validateCapDefinition(cap)
+            } catch {
+                return "invalid cap definition: \(error.localizedDescription)"
+            }
+        }
+    }
+    return nil
+}
+
+/// Hold a bundled cartridge's directory to the hash its build recorded.
+///
+/// A host calls this each time it starts a bundled cartridge, which is the
+/// moment the bytes are about to run. Throws `.contentMismatch` naming the
+/// cartridge and its directory when the bytes changed, and `.unreadable` when
+/// the directory cannot be hashed.
+public func verifyBundledContent(name: String, version: String, versionDir: String, recorded: String) throws {
+    let actual: String
+    do {
+        actual = try hashCartridgeDirectory(versionDir)
+    } catch {
+        throw BundleManifestError.unreadable(path: versionDir, reason: "\(error)")
+    }
+    guard actual == recorded else {
+        throw BundleManifestError.contentMismatch(
+            dir: versionDir, name: name, version: version, expected: recorded, actual: actual
+        )
+    }
 }

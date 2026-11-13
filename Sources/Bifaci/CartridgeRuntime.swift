@@ -3485,7 +3485,7 @@ final class PeerInvokerImpl: PeerInvoker, @unchecked Sendable {
 // MARK: - Manifest Types (for CLI mode)
 
 /// Source for extracting argument values in CLI mode.
-public enum ArgSource: Codable, Sendable {
+public enum ArgSource: Codable, Sendable, Equatable {
     case cliFlag(String)
     case positional(Int)
     case stdin(String)  // Media URN for stdin input
@@ -3602,7 +3602,7 @@ public enum JSONValue: Codable, Sendable, Equatable {
     }
 }
 
-public struct CapArg: Codable, Sendable {
+public struct CapArg: Codable, Sendable, Equatable {
     /// The argument's identity: its media URN, unique within the cap (RULE1).
     public let mediaUrn: String
     /// The argument's name in the cap definition: required, unique within the
@@ -3744,7 +3744,7 @@ public func identityCapDefinition() -> CapDefinition {
 /// field for field, because this is a WIRE type: a cartridge's manifest is read
 /// by the Rust host, and a Swift cartridge that could not declare its output
 /// produced a manifest the other four implementations could not round-trip.
-public struct CapOutput: Codable, Sendable {
+public struct CapOutput: Codable, Sendable, Equatable {
     /// Media URN referencing a media definition, e.g. "media:enc=utf8;tag":
     /// the output's identity, unique within the cap (RULE20).
     public let mediaUrn: String
@@ -3835,7 +3835,7 @@ public enum OutputCarries: String, Codable, Sendable {
     case input
 }
 
-public struct CapDefinition: Codable, Sendable {
+public struct CapDefinition: Codable, Sendable, Equatable {
     public let urn: String
     public let title: String
     /// Globally-unique names selecting this cap in both CLIs (replaces the
@@ -3964,7 +3964,7 @@ public struct CapDefinition: Codable, Sendable {
 
 /// Cartridge manifest structure.
 /// A cap group bundles caps and adapter URNs as an atomic registration unit.
-public struct CapGroup: Codable, Sendable {
+public struct CapGroup: Codable, Sendable, Equatable {
     public let name: String
     public let caps: [CapDefinition]
     public let adapterUrns: [String]

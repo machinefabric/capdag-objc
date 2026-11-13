@@ -5,7 +5,8 @@ import CapDAG
 // =============================================================================
 // CartridgeDiscovery Tests
 //
-// Mirrors `capdag/src/cartridge_discovery.rs` scan-all tests: TEST1875-1878.
+// Mirrors `capdag/src/cartridge_discovery.rs` scan-all tests: TEST1875-1878,
+// and its bundled-cartridge tests: TEST1928, TEST1931, TEST1932.
 //
 // The scanner enumerates every registry folder on disk (full macOS parity)
 // and validates each cartridge in place against the registry folder it sits
@@ -211,7 +212,7 @@ final class CartridgeDiscoveryTests: XCTestCase {
         expectIncompatible(try discoverCartridges(placed, identity: nightlyDevIdentity()), .handshakeFailed)
     }
 
-    // MARK: - TEST1878 / TEST1928
+    // MARK: - TEST1878 / TEST1928 / TEST1931 / TEST1932
 
     /// The cartridge.json of a bundled cartridge in the dev slot: placement is
     /// self-consistent (null registry → dev slug), so it passes every earlier
@@ -244,52 +245,121 @@ final class CartridgeDiscoveryTests: XCTestCase {
                       "message should name the bundled-integrity failure: \(error.message)")
     }
 
-    // TEST1928: a bundled cartridge the manifest records passes, and one it
-    // records differently does not.
+    /// The cap groups a build recorded for the fixture cartridge: one cap,
+    /// which discovery must hand back as recorded.
+    private func recordedCapGroups() -> [CapGroup] {
+        [CapGroup(
+            name: "cart",
+            caps: [CapDefinition(urn: CSCapIdentity, title: "Identity", aliases: ["identity"])],
+            adapterUrns: []
+        )]
+    }
+
+    /// A manifest recording the fixture cartridge at `sha256`, built for
+    /// fabric manifest version `fabricManifestVersion`.
+    private func recorded(_ sha256: String, _ fabricManifestVersion: UInt32) -> BundleManifest {
+        BundleManifest(environment: "dev", cartridges: [
+            BundledCartridge(
+                name: "cart", version: "1.0.0", channel: "nightly", sha256: sha256,
+                fabricManifestVersion: fabricManifestVersion, capGroups: recordedCapGroups()
+            )
+        ])
+    }
+
+    /// Lay down the bundled fixture cartridge with an entry point that cannot
+    /// be started on any platform: marked executable, as an installed entry
+    /// point must be, and not a program. A discovery that started it would
+    /// end at handshakeFailed. Returns the version directory.
+    private func installUnstartableBundled(root: String) throws -> String {
+        var dir = root
+        for component in ["dev", "v\(CSBakedCartridgeRegistryVersion)", "nightly", "cart", "1.0.0"] {
+            dir = (dir as NSString).appendingPathComponent(component)
+        }
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try bundledCartridgeJSON().write(
+            toFile: (dir as NSString).appendingPathComponent("cartridge.json"), atomically: true, encoding: .utf8
+        )
+        let entryPath = (dir as NSString).appendingPathComponent("cart")
+        try Data("not a program".utf8).write(to: URL(fileURLWithPath: entryPath))
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: entryPath)
+        return dir
+    }
+
+    // TEST1928: a bundled cartridge is admitted exactly when the manifest
+    // records it, and refused, before anything runs, when it does not.
     //
     // The other half of TEST1878, and the one that proves the gate is a real
     // check rather than a refusal of everything: the same tree, the same
     // cartridge, and the only difference is what the build recorded about it.
-    // A gate that always said no would pass TEST1878 alone.
     func test1928_aBundledCartridgePassesExactlyWhenTheManifestRecordsIt() throws {
         let root = try makeTempRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
-        try installFixture(root: root, slug: "dev", channelFolder: "nightly", name: "cart",
-                           version: "1.0.0", cartridgeJSON: bundledCartridgeJSON(), entry: "cart")
+        _ = try installUnstartableBundled(root: root)
 
-        let versionDir = ((((root as NSString)
-            .appendingPathComponent("dev") as NSString)
-            .appendingPathComponent("v\(CSBakedCartridgeRegistryVersion)") as NSString)
-            .appendingPathComponent("nightly") as NSString)
-            .appendingPathComponent("cart") as NSString
-        let cartridgeDir = versionDir.appendingPathComponent("1.0.0")
-        let recorded = try hashCartridgeDirectory(cartridgeDir)
-
-        func listed(_ sha256: String) -> DiscoveryIdentity {
-            bundledIdentity(BundleManifest(environment: "dev", cartridges: [
-                BundledCartridge(name: "cart", version: "1.0.0", channel: "nightly", sha256: sha256)
-            ]))
+        let admitted = try discoverCartridges(root, identity: bundledIdentity(recorded(String(repeating: "a", count: 64), 1)))
+        XCTAssertEqual(admitted.count, 1)
+        guard case .directory = admitted.first else {
+            return XCTFail("a recorded bundled cartridge must be admitted: \(String(describing: admitted.first))")
         }
 
-        // Recorded as it is on disk: past the gate. It still ends at the HELLO
-        // probe, because the fixture's entry point is not a cartridge — what
-        // matters is that the failure is no longer the integrity one.
-        let passed = try discoverCartridges(root, identity: listed(recorded))
-        XCTAssertEqual(passed.count, 1)
-        guard case let .incompatible(_, _, _, _, _, error) = passed.first else {
-            return XCTFail("expected the probe to be reached, got \(String(describing: passed.first))")
-        }
-        XCTAssertFalse(error.message.contains("bundled cartridge integrity"),
-                       "a cartridge the manifest records must get past the integrity gate: \(error.message)")
-
-        // Recorded as something else — the cartridge was changed after the
-        // build recorded it.
-        let refused = try discoverCartridges(root, identity: listed(String(repeating: "f", count: 64)))
+        // Recorded under another name: this build ships a cartridge it did not
+        // record.
+        let other = BundleManifest(environment: "dev", cartridges: [
+            BundledCartridge(
+                name: "other", version: "1.0.0", channel: "nightly", sha256: String(repeating: "a", count: 64),
+                fabricManifestVersion: 1, capGroups: recordedCapGroups()
+            )
+        ])
+        let refused = try discoverCartridges(root, identity: bundledIdentity(other))
         expectIncompatible(refused, .misplaced)
-        guard case let .incompatible(_, _, _, _, _, other) = refused.first else {
+        guard case let .incompatible(_, _, _, _, _, error) = refused.first else {
             return XCTFail("expected Incompatible, got \(String(describing: refused.first))")
         }
-        XCTAssertTrue(other.message.contains("bundled cartridge integrity"),
-                      "a cartridge that differs from the manifest must be refused: \(other.message)")
+        XCTAssertTrue(error.message.contains("bundled cartridge integrity"),
+                      "a cartridge the manifest does not record must be refused: \(error.message)")
+    }
+
+    // TEST1931: discovering a bundle neither starts nor hashes a cartridge:
+    // its caps and its content hash are the ones the signed manifest records.
+    //
+    // The entry point cannot be started, so a discovery that probed it would
+    // report handshakeFailed; and the recorded hash is not the directory's, so
+    // a discovery that hashed it would refuse it. The hash is held to the
+    // directory when a host starts the cartridge (TEST1962's half).
+    func test1931_bundledDiscoveryReadsTheManifestAndStartsNothing() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let dir = try installUnstartableBundled(root: root)
+
+        let out = try discoverCartridges(root, identity: bundledIdentity(recorded(String(repeating: "f", count: 64), 1)))
+        XCTAssertEqual(out.count, 1)
+        guard case let .directory(entryPoint, versionDir, _, _, _, _, capGroups, bundleSHA256) = out.first else {
+            return XCTFail("expected the bundled cartridge admitted from its manifest, got \(String(describing: out.first))")
+        }
+        XCTAssertEqual(capGroups, recordedCapGroups(), "the caps must be the recorded ones")
+        XCTAssertEqual(bundleSHA256, String(repeating: "f", count: 64))
+        XCTAssertEqual(versionDir, dir)
+        XCTAssertEqual(entryPoint, (dir as NSString).appendingPathComponent("cart"))
+    }
+
+    // TEST1932: a bundled cartridge whose build recorded another fabric
+    // manifest version is refused as built for another fabric, without being
+    // started.
+    //
+    // Its cartridge.json says the host's version; the signed record says
+    // otherwise, and the signed record is what discovery believes, since
+    // cartridge.json is outside the hash.
+    func test1932_aBundledCartridgeBuiltForAnotherFabricIsRefusedUnstarted() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        _ = try installUnstartableBundled(root: root)
+
+        let out = try discoverCartridges(root, identity: bundledIdentity(recorded(String(repeating: "a", count: 64), 2)))
+        expectIncompatible(out, .fabricManifestVersionMismatch)
+        guard case let .incompatible(_, _, _, _, _, error) = out.first else {
+            return XCTFail("expected Incompatible, got \(String(describing: out.first))")
+        }
+        XCTAssertTrue(error.message.contains("fabric manifest version 2"), error.message)
     }
 }
