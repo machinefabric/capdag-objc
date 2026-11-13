@@ -112,6 +112,160 @@ private func unixSecondsNow() -> Int64 {
     Int64(Date().timeIntervalSince1970)
 }
 
+// MARK: - The attach rule
+
+/// What a host holds a cartridge to before it attaches it, from what the
+/// cartridge's `cartridge.json` says: the part of a host's identity that
+/// `admission(_:terms:)` reads.
+public struct AttachTerms {
+    public let channel: CartridgeChannel
+    public let fabricManifestVersion: UInt32
+    /// What proves a cartridge that says it was bundled; see
+    /// `DiscoveryIdentity.bundle`.
+    public let bundle: BundleProof
+
+    public init(channel: CartridgeChannel, fabricManifestVersion: UInt32, bundle: BundleProof) {
+        self.channel = channel
+        self.fabricManifestVersion = fabricManifestVersion
+        self.bundle = bundle
+    }
+}
+
+extension DiscoveryIdentity {
+    /// The terms this host attaches cartridges on.
+    public var attachTerms: AttachTerms {
+        AttachTerms(channel: channel, fabricManifestVersion: fabricManifestVersion, bundle: bundle)
+    }
+}
+
+/// Why a host does not attach a cartridge.
+public struct Refusal: Error, Equatable {
+    public let kind: CartridgeAttachmentErrorKind
+    public let message: String
+
+    public init(kind: CartridgeAttachmentErrorKind, message: String) {
+        self.kind = kind
+        self.message = message
+    }
+
+    /// The refusal as the attachment error a roster carries.
+    public func at(_ detectedAtUnixSeconds: Int64) -> CartridgeAttachmentError {
+        CartridgeAttachmentError(kind: kind, message: message, detectedAtUnixSeconds: detectedAtUnixSeconds)
+    }
+}
+
+/// How a host attaches a cartridge it does not refuse.
+public enum Admission {
+    /// Nothing vouches for its caps: the host learns them by starting it.
+    case probe
+    /// A bundled cartridge, attached as its build's signed bundle manifest
+    /// records it: its caps are the recorded ones, and a host holds its
+    /// directory to the recorded hash each time it starts it
+    /// (`verifyBundledContent`).
+    case bundled(BundledCartridge)
+}
+
+/// Whether, and how, a cartridge whose `cartridge.json` reads as `cj` is
+/// attached under `terms`; the refusal when it is not.
+///
+/// The one rule every host decides by: discovery's roster and a run that
+/// attaches the installed cartridge a cap needs both call it, so a cartridge
+/// one of them refuses is never run by the other. It reads nothing on disk.
+public func admission(_ cj: CartridgeJson, terms: AttachTerms) -> Result<Admission, Refusal> {
+    if cj.channel != terms.channel {
+        return .failure(Refusal(
+            kind: .misplaced,
+            message: "Channel mismatch: cartridge declares '\(cj.channel.asString)' but host is pinned to '\(terms.channel.asString)'. Release and nightly artefacts must not mix."
+        ))
+    }
+
+    // NO registry pin: the host's baked registry does NOT restrict which
+    // registries' cartridges are attached. Whether a version is actually
+    // LISTED upstream is the verdict layer's call.
+
+    let bundled = cj.installedFrom == .bundle
+    if cj.fabricManifestVersion != terms.fabricManifestVersion {
+        let ours = terms.fabricManifestVersion
+        // What to do differs by where the cartridge came from, told as every
+        // host tells it: `installed_from: bundle` is the one provenance with
+        // meaning, and otherwise a registryURL is a registry install and none
+        // a dev cartridge.
+        let remedy: String
+        if bundled {
+            remedy = "The build that bundled it is inconsistent: its bundle holds a cartridge for another fabric manifest."
+        } else if cj.registryURL != nil {
+            remedy = "Remove it and install it again from its registry."
+        } else {
+            remedy = "Rebuild it with MFR_FABRIC_MANIFEST_VERSION=\(ours) and install it again."
+        }
+        return .failure(Refusal(
+            kind: .fabricManifestVersionMismatch,
+            message: "\(cj.name) \(cj.version) was installed for fabric manifest \(cj.fabricManifestVersion), and this host reads fabric manifest \(ours). \(remedy)"
+        ))
+    }
+
+    // A bundled cartridge. A cartridge marked `installed_from: bundle` is
+    // shipped INSIDE this build, not user-installed, and has no upstream
+    // registry to verify against — so it needs its own proof.
+    //
+    // ONE mechanism, on every platform: the build's signed bundle manifest.
+    // The proof was established when this host started (see `BundleProof`);
+    // here it is applied to the cartridge in hand. Apple's signature still
+    // matters, and it is what stops the operating system warning a user; it
+    // is not what decides whether code runs here.
+    //
+    // The manifest records what a probe would learn — the caps the cartridge
+    // advertises, and the fabric manifest version it was built for — so the
+    // cartridge is attached from that record without being started or hashed.
+    if bundled {
+        let recorded: BundledCartridge
+        do {
+            recorded = try terms.bundle.admit(name: cj.name, version: cj.version, channel: cj.channel.asString)
+        } catch {
+            return .failure(Refusal(kind: .misplaced, message: "bundled cartridge integrity check failed: \(error)"))
+        }
+        // cartridge.json is outside the hash, so what it says of the fabric
+        // was checked above only as far as it goes: the signed record is what
+        // is believed.
+        if recorded.fabricManifestVersion != terms.fabricManifestVersion {
+            return .failure(Refusal(
+                kind: .fabricManifestVersionMismatch,
+                message: "\(cj.name) \(cj.version) was built for fabric manifest \(recorded.fabricManifestVersion), as its build's signed bundle manifest records, and this host reads fabric manifest \(terms.fabricManifestVersion). The build that bundled it is inconsistent: its bundle holds a cartridge for another fabric manifest."
+            ))
+        }
+        return .success(.bundled(recorded))
+    }
+
+    return .success(.probe)
+}
+
+/// Order two cartridge version strings by their dotted numeric parts; a
+/// missing part counts as 0 and a part that is not a number is skipped. The
+/// one order cartridge versions have, as every capdag library gives it.
+func compareCartridgeVersions(_ a: String, _ b: String) -> ComparisonResult {
+    let partsA = a.split(separator: ".").compactMap { UInt32($0) }
+    let partsB = b.split(separator: ".").compactMap { UInt32($0) }
+    for i in 0..<max(partsA.count, partsB.count) {
+        let numA = i < partsA.count ? partsA[i] : 0
+        let numB = i < partsB.count ? partsB[i] : 0
+        if numA != numB {
+            return numA < numB ? .orderedAscending : .orderedDescending
+        }
+    }
+    return .orderedSame
+}
+
+/// The newest of a cartridge's installed version directories, by their
+/// names, in the order the registry gives versions: dotted numbers compared
+/// as numbers, so `1.174.0` is newer than `1.99.0`. Every host attaches this
+/// one and only this one, so what a roster shows for a cartridge is what a
+/// run uses. `nil` for no directories.
+public func newestVersionDir(_ versionDirs: [String]) -> String? {
+    versionDirs.max {
+        compareCartridgeVersions(($0 as NSString).lastPathComponent, ($1 as NSString).lastPathComponent) == .orderedAscending
+    }
+}
+
 // MARK: - Probe
 
 /// Probe a cartridge binary for its capability surface.
@@ -267,17 +421,9 @@ private func scanChannelRoot(
             }
         }
 
-        if versionDirs.isEmpty {
+        guard let versionDir = newestVersionDir(versionDirs) else {
             continue
         }
-
-        // Prefer the newest version (lexical-descending on the folder name).
-        versionDirs.sort { a, b in
-            let va = (a as NSString).lastPathComponent
-            let vb = (b as NSString).lastPathComponent
-            return vb < va
-        }
-        let versionDir = versionDirs[0]
 
         let pathDerivedName = (nameDir as NSString).lastPathComponent
         let pathDerivedVersion = (versionDir as NSString).lastPathComponent
@@ -328,86 +474,22 @@ private func scanChannelRoot(
             continue
         }
 
-        if cj.channel != identity.channel {
+        switch admission(cj, terms: identity.attachTerms) {
+        case .failure(let refused):
             discovered.append(.incompatible(
                 versionDir: versionDir,
                 id: cj.name,
                 channel: cj.channel,
                 registryURL: cj.registryURL,
                 version: cj.version,
-                error: CartridgeAttachmentError(
-                    kind: .misplaced,
-                    message: "Channel mismatch: cartridge declares '\(cj.channel.asString)' but host is pinned to '\(identity.channel.asString)'. Release and nightly artefacts must not mix.",
-                    detectedAtUnixSeconds: detectedAt
-                )
+                error: refused.at(detectedAt)
             ))
             continue
-        }
-
-        if cj.fabricManifestVersion != identity.fabricManifestVersion {
-            discovered.append(.incompatible(
-                versionDir: versionDir,
-                id: cj.name,
-                channel: cj.channel,
-                registryURL: cj.registryURL,
-                version: cj.version,
-                error: CartridgeAttachmentError(
-                    kind: .fabricManifestVersionMismatch,
-                    message: "Cartridge built against fabric manifest version \(cj.fabricManifestVersion), but host is pinned to \(identity.fabricManifestVersion). Rebuild the cartridge with MFR_FABRIC_MANIFEST_VERSION=\(identity.fabricManifestVersion).",
-                    detectedAtUnixSeconds: detectedAt
-                )
-            ))
-            continue
-        }
-
-        // A bundled cartridge. A cartridge marked `installed_from: bundle` is
-        // shipped INSIDE this build and has no upstream registry to verify
-        // against — so the build's signed bundle manifest is what proves it, on
-        // every platform. The proof was established when this discovery
-        // started (see `BundleProof`); here it is applied to the cartridge in
-        // hand.
-        //
-        // The manifest records what a probe would learn — the caps the
-        // cartridge advertises, and the fabric manifest version it was built
-        // against — so a bundled cartridge is neither started nor hashed here.
-        // Its bytes are held to the recorded hash when a host starts it, which
+        // A bundled cartridge is neither started nor hashed here: its build's
+        // signed bundle manifest records the caps a probe would learn, and a
+        // host holds its bytes to the recorded hash when it starts it, which
         // is when they are about to run.
-        if cj.installedFrom == .bundle {
-            let recorded: BundledCartridge
-            do {
-                recorded = try identity.bundle.admit(name: cj.name, version: cj.version, channel: cj.channel.asString)
-            } catch {
-                discovered.append(.incompatible(
-                    versionDir: versionDir,
-                    id: cj.name,
-                    channel: cj.channel,
-                    registryURL: cj.registryURL,
-                    version: cj.version,
-                    error: CartridgeAttachmentError(
-                        kind: .misplaced,
-                        message: "bundled cartridge integrity check failed: \(error)",
-                        detectedAtUnixSeconds: detectedAt
-                    )
-                ))
-                continue
-            }
-            // cartridge.json is outside the hash; the signed record is what is
-            // believed about the fabric the cartridge was built against.
-            if recorded.fabricManifestVersion != identity.fabricManifestVersion {
-                discovered.append(.incompatible(
-                    versionDir: versionDir,
-                    id: cj.name,
-                    channel: cj.channel,
-                    registryURL: cj.registryURL,
-                    version: cj.version,
-                    error: CartridgeAttachmentError(
-                        kind: .fabricManifestVersionMismatch,
-                        message: "Bundled cartridge built against fabric manifest version \(recorded.fabricManifestVersion), as its build's signed bundle manifest records, but host is pinned to \(identity.fabricManifestVersion). Rebuild the bundle with MFR_FABRIC_MANIFEST_VERSION=\(identity.fabricManifestVersion).",
-                        detectedAtUnixSeconds: detectedAt
-                    )
-                ))
-                continue
-            }
+        case .success(.bundled(let recorded)):
             discovered.append(.directory(
                 entryPoint: cj.resolveEntryPoint(versionDir),
                 versionDir: versionDir,
@@ -419,6 +501,8 @@ private func scanChannelRoot(
                 bundleSHA256: recorded.sha256
             ))
             continue
+        case .success(.probe):
+            break
         }
 
         let entryPoint = cj.resolveEntryPoint(versionDir)
