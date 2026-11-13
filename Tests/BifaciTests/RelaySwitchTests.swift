@@ -1634,3 +1634,386 @@ extension FileHandle {
         )
     }
 }
+
+// =============================================================================
+// A peer request no master serves, held while the switch's provider brings
+// the master that serves it (PeerHold.swift, 14.2 §Peer requests no master
+// serves) — TEST463–TEST471.
+//
+// Every test runs a real switch over real sockets: a caller master that makes
+// a peer call, and — when the provider brings it — a second master serving
+// the peer cap, attached to the running switch. The masters speak the wire
+// protocol themselves, as this suite's other tests do; a pump thread drives
+// the switch's inbound stream as a host's loop does.
+// =============================================================================
+
+private let peerProvidedCap = "cap:in=\"media:enc=utf8\";peer-provided;out=\"media:enc=utf8\""
+private let peerCallerCap = "cap:in=\"media:enc=utf8\";peer-caller;out=\"media:enc=utf8\""
+private let peerUnrelatedCap = "cap:in=\"media:enc=utf8\";peer-unrelated;out=\"media:enc=utf8\""
+private let peerRoomy = PeerHoldBound(frames: 64, bytes: 1 << 20, deadline: 10)
+
+private func peerTestExpiry() -> PeerRefusal {
+    PeerRefusal(
+        code: "TEST_PROVIDER_TIMEOUT",
+        attributionClass: .environment,
+        message: "testcartridge, which provides peer-provided, was not started in time"
+    )
+}
+
+/// A count several threads add to.
+private final class PeerCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func add() { lock.lock(); n += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+}
+
+/// A master whose cartridge makes peer calls: each call's answer is
+/// "ok:<the bytes the peer answered>", or "err:<CODE>:<message>" with the ERR
+/// the call ended with.
+private final class PeerCaller: @unchecked Sendable {
+    let writer: FrameWriter
+    private let seq = SeqAssigner()
+    private let lock = NSLock()
+    private var answers: [String] = []
+    private let answered = DispatchSemaphore(value: 0)
+
+    init(writer: FrameWriter) {
+        self.writer = writer
+    }
+
+    /// Read the switch's answers to this master's peer calls until its
+    /// connection closes.
+    func serve(_ reader: FrameReader) {
+        var bodies: [MessageId: Data] = [:]
+        while let frame = try? reader.read() {
+            switch frame.frameType {
+            case .chunk:
+                bodies[frame.id, default: Data()].append(frame.payload ?? Data())
+            case .end:
+                let body = bodies.removeValue(forKey: frame.id) ?? Data()
+                record("ok:" + String(decoding: body, as: UTF8.self))
+            case .err:
+                bodies[frame.id] = nil
+                record("err:\(frame.errorCode ?? ""):\(frame.errorMessage ?? "")")
+            default:
+                break
+            }
+        }
+    }
+
+    private func record(_ answer: String) {
+        lock.lock()
+        answers.append(answer)
+        lock.unlock()
+        answered.signal()
+    }
+
+    /// Send one peer call to peerProvidedCap, as a cartridge's peer invoker
+    /// does: the REQ with no routing id, its argument stream, its END — and,
+    /// when asked, a CANCEL for it after.
+    func call(_ argument: Data, cancel: Bool = false) throws {
+        let rid = MessageId.newUUID()
+        let streamId = "arg-0"
+        var frames = [
+            Frame.req(id: rid, capUrn: peerProvidedCap, payload: Data(), contentType: "application/cbor"),
+            Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:enc=utf8"),
+            Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: argument, chunkIndex: 0, checksum: Frame.computeChecksum(argument)),
+            Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1),
+            Frame.end(id: rid),
+        ]
+        if cancel {
+            frames.append(Frame.cancel(targetRid: rid, reason: .user()))
+        }
+        for var frame in frames {
+            seq.assign(&frame)
+            try writer.write(frame)
+        }
+    }
+
+    /// The next peer call's answer, or nil after 30 s.
+    func answer() -> String? {
+        guard answered.wait(timeout: .now() + 30) == .success else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return answers.removeFirst()
+    }
+}
+
+/// Brings a master the way a host's provider brings a cartridge: it attaches
+/// one to the switch it was set on.
+private final class TestPeerProvider: PeerProvider, @unchecked Sendable {
+    weak var switch_: RelaySwitch?
+    let asked = PeerCounter()
+    let served = PeerCounter()
+    /// The cap the master it brings serves, and how long bringing it takes;
+    /// `refusal`, when set, is what it answers instead.
+    let urn: String
+    let delay: TimeInterval
+    let refusal: PeerRefusal?
+    /// Starts the master it brings: its id, its cap, its counter.
+    var startUpper: ((String, String, PeerCounter) -> SocketPair)!
+
+    init(urn: String = peerProvidedCap, delay: TimeInterval = 0, refusal: PeerRefusal? = nil) {
+        self.urn = urn
+        self.delay = delay
+        self.refusal = refusal
+    }
+
+    func provision(capUrn: String) -> Result<PeerProvision, PeerRefusal> {
+        precondition(capUrn == peerProvidedCap, "the provider is asked for the cap the peer call named")
+        asked.add()
+        if let refusal = refusal {
+            return .failure(refusal)
+        }
+        return .success(PeerProvision(
+            ready: { [self] in
+                Thread.sleep(forTimeInterval: delay)
+                guard let switch_ = switch_ else {
+                    return PeerRefusal(code: "TEST_ATTACH_FAILED", attributionClass: .internal, message: "the switch is gone")
+                }
+                do {
+                    _ = try switch_.addMaster(startUpper("provided-host", urn, served))
+                    return nil
+                } catch {
+                    return PeerRefusal(code: "TEST_ATTACH_FAILED", attributionClass: .internal, message: "\(error)")
+                }
+            },
+            onExpiry: peerTestExpiry()
+        ))
+    }
+}
+
+@available(macOS 10.15.4, iOS 13.4, *)
+extension CborRelaySwitchTests {
+
+    /// Connect a master serving `urn`: it answers each request with its
+    /// argument upper-cased, and counts the requests it served.
+    private func startUpper(_ id: String, _ urn: String, _ served: PeerCounter) -> SocketPair {
+        let toSwitch = FileHandle.socketPair()
+        let fromSwitch = FileHandle.socketPair()
+        let sent = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: fromSwitch.read)
+            let writer = FrameWriter(handle: toSwitch.write)
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity, urn], limits: Limits())
+            sent.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            let seq = SeqAssigner()
+            var arguments: [MessageId: Data] = [:]
+            while let frame = try? reader.read() {
+                switch frame.frameType {
+                case .req:
+                    arguments[frame.id] = Data()
+                case .chunk:
+                    arguments[frame.id, default: Data()].append(frame.payload ?? Data())
+                case .end:
+                    served.add()
+                    let argument = arguments.removeValue(forKey: frame.id) ?? Data()
+                    let answer = Data(String(decoding: argument, as: UTF8.self).uppercased().utf8)
+                    let streamId = "answer"
+                    for var out in [
+                        Frame.streamStart(reqId: frame.id, streamId: streamId, mediaUrn: "media:enc=utf8"),
+                        Frame.chunk(reqId: frame.id, streamId: streamId, seq: 0, payload: answer, chunkIndex: 0, checksum: Frame.computeChecksum(answer)),
+                        Frame.streamEnd(reqId: frame.id, streamId: streamId, chunkCount: 1),
+                        Frame.end(id: frame.id),
+                    ] {
+                        out.routingId = frame.routingId
+                        seq.assign(&out)
+                        try? writer.write(out)
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        _ = sent.wait(timeout: .now() + 5)
+        return SocketPair(id: id, read: toSwitch.read, write: fromSwitch.write)
+    }
+
+    /// A switch with one master — the caller — pumped as a host's loop pumps
+    /// it, and, when given, `provider` as its peer provider within `bound`.
+    /// The returned stop ends the pump and the switch.
+    private func peerSwitch(_ provider: TestPeerProvider?, _ bound: PeerHoldBound) throws -> (RelaySwitch, PeerCaller, () -> Void) {
+        let toSwitch = FileHandle.socketPair()
+        let fromSwitch = FileHandle.socketPair()
+        let caller = PeerCaller(writer: FrameWriter(handle: toSwitch.write))
+        let sent = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: fromSwitch.read)
+            try! self.sendNotify(writer: caller.writer, capabilities: [CSCapIdentity, peerCallerCap], limits: Limits())
+            sent.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: caller.writer)
+            caller.serve(reader)
+        }
+        XCTAssertEqual(sent.wait(timeout: .now() + 5), .success)
+        let switch_ = try RelaySwitch(
+            sockets: [SocketPair(id: "caller-host", read: toSwitch.read, write: fromSwitch.write)],
+            policy: HostPolicy(network: .full)
+        )
+        if let provider = provider {
+            provider.switch_ = switch_
+            provider.startUpper = { [unowned self] id, urn, served in self.startUpper(id, urn, served) }
+            try switch_.setPeerProvider(provider, bound: bound)
+        }
+        let stopped = PeerCounter()
+        DispatchQueue.global().async {
+            while stopped.value == 0 {
+                _ = try? switch_.readFromMasters(timeout: 0.1)
+            }
+        }
+        return (switch_, caller, { stopped.add(); switch_.shutdown() })
+    }
+
+    // TEST463: A peer call to a cap no master serves is held while the
+    // switch's provider brings a master that serves it, and is then answered
+    // by that master, with every argument byte the caller sent while it was
+    // held.
+    func test463_heldPeerCallIsAnsweredOnceItsProviderIsBrought() throws {
+        let provider = TestPeerProvider(delay: 0.3)
+        let (_, caller, stop) = try peerSwitch(provider, peerRoomy)
+        defer { stop() }
+
+        try caller.call(Data("hello peer".utf8))
+        XCTAssertEqual(caller.answer(), "ok:HELLO PEER")
+        XCTAssertEqual(provider.asked.value, 1)
+        XCTAssertEqual(provider.served.value, 1)
+
+        // Brought once: the next call is routed to it at once.
+        try caller.call(Data("again".utf8))
+        XCTAssertEqual(caller.answer(), "ok:AGAIN")
+        XCTAssertEqual(provider.asked.value, 1, "a served cap is not provided again")
+    }
+
+    // TEST464: A provider that cannot bring what serves the cap ends the held
+    // call with its own ERR — its code and its message, which name what is
+    // missing and what to do.
+    func test464_refusedProvisionEndsTheCallWithTheProvidersErr() throws {
+        let refusal = PeerRefusal(
+            code: "CARTRIDGE_INSTALL_FAILED",
+            attributionClass: .environment,
+            message: "testcartridge provides peer-provided and is not installed; " +
+                "install it with: capdag cartridge install testcartridge"
+        )
+        let (_, caller, stop) = try peerSwitch(TestPeerProvider(refusal: refusal), peerRoomy)
+        defer { stop() }
+
+        try caller.call(Data("hello".utf8))
+        XCTAssertEqual(caller.answer(), "err:\(refusal.code):\(refusal.message)")
+    }
+
+    // TEST465: A held call waits no longer than its deadline: it ends with the
+    // provider's own expiry ERR. The provider's work goes on, so what it
+    // brought late serves the next call.
+    func test465_heldCallEndsAtItsDeadlineAndTheLateProviderServesTheNext() throws {
+        var bound = peerRoomy
+        bound.deadline = 0.3
+        let provider = TestPeerProvider(delay: 1.5)
+        let (_, caller, stop) = try peerSwitch(provider, bound)
+        defer { stop() }
+
+        let started = Date()
+        try caller.call(Data("hello".utf8))
+        let expired = peerTestExpiry()
+        XCTAssertEqual(caller.answer(), "err:\(expired.code):\(expired.message)")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5, "the call ended at its deadline, not when the provider finished")
+        XCTAssertEqual(provider.served.value, 0, "the expired call was not replayed")
+
+        Thread.sleep(forTimeInterval: 1.5)
+        try caller.call(Data("later".utf8))
+        XCTAssertEqual(caller.answer(), "ok:LATER")
+        XCTAssertEqual(provider.asked.value, 1)
+    }
+
+    // TEST466: A hold keeps no more frames than its bound: a call that sends
+    // more while it is held ends with PEER_HOLD_OVERFLOW, and is never
+    // replayed.
+    func test466_heldCallPastItsFrameBoundEnds() throws {
+        // REQ, STREAM_START, CHUNK, STREAM_END and END are five frames.
+        var bound = peerRoomy
+        bound.frames = 4
+        let provider = TestPeerProvider(delay: 0.3)
+        let (_, caller, stop) = try peerSwitch(provider, bound)
+        defer { stop() }
+
+        try caller.call(Data("hello".utf8))
+        let answer = caller.answer() ?? "no answer"
+        XCTAssertTrue(answer.hasPrefix("err:\(PEER_HOLD_OVERFLOW):"), answer)
+        XCTAssertTrue(answer.contains("more than 4 frames"), answer)
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertEqual(provider.served.value, 0)
+    }
+
+    // TEST467: A hold keeps no more payload bytes than its bound.
+    func test467_heldCallPastItsByteBoundEnds() throws {
+        var bound = peerRoomy
+        bound.bytes = 1024
+        let provider = TestPeerProvider(delay: 0.3)
+        let (_, caller, stop) = try peerSwitch(provider, bound)
+        defer { stop() }
+
+        // 400 copies of "hello" is 2000 bytes, over the 1024 a hold keeps.
+        try caller.call(Data(String(repeating: "hello", count: 400).utf8))
+        let answer = caller.answer() ?? "no answer"
+        XCTAssertTrue(answer.hasPrefix("err:\(PEER_HOLD_OVERFLOW):"), answer)
+        XCTAssertTrue(answer.contains("1024 bytes"), answer)
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertEqual(provider.served.value, 0)
+    }
+
+    // TEST468: A caller that cancels its held call is answered with its
+    // cancel at once, and the call is not replayed to the provider brought
+    // after.
+    func test468_cancelledHeldCallEndsAtOnceAndIsNotReplayed() throws {
+        let provider = TestPeerProvider(delay: 0.8)
+        let (_, caller, stop) = try peerSwitch(provider, peerRoomy)
+        defer { stop() }
+
+        let started = Date()
+        try caller.call(Data("hello".utf8), cancel: true)
+        let answer = caller.answer() ?? "no answer"
+        XCTAssertTrue(answer.hasPrefix("err:CANCELLED:"), answer)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.8, "the cancel was answered before the provider was there")
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertEqual(provider.served.value, 0)
+    }
+
+    // TEST469: A provider whose master does not serve the cap leaves the call
+    // held until its deadline, which ends it with the provider's expiry ERR;
+    // the provider is asked once.
+    func test469_providerThatServesSomethingElseEndsTheCallAtItsDeadline() throws {
+        var bound = peerRoomy
+        bound.deadline = 0.8
+        let provider = TestPeerProvider(urn: peerUnrelatedCap, delay: 0.05)
+        let (_, caller, stop) = try peerSwitch(provider, bound)
+        defer { stop() }
+
+        try caller.call(Data("hello".utf8))
+        let expired = peerTestExpiry()
+        XCTAssertEqual(caller.answer(), "err:\(expired.code):\(expired.message)")
+        XCTAssertEqual(provider.asked.value, 1)
+    }
+
+    // TEST470: A switch without a provider refuses a peer call to a cap no
+    // master serves at once, with NO_HANDLER naming the cap.
+    func test470_withoutAProviderTheCallIsRefusedWithNoHandler() throws {
+        let (_, caller, stop) = try peerSwitch(nil, peerRoomy)
+        defer { stop() }
+
+        try caller.call(Data("hello".utf8))
+        let answer = caller.answer() ?? "no answer"
+        XCTAssertTrue(answer.hasPrefix("err:NO_HANDLER:No handler found for cap:"), answer)
+        XCTAssertTrue(answer.contains("peer-provided"), answer)
+    }
+
+    // TEST471: A switch takes one peer provider.
+    func test471_aSecondPeerProviderIsRefused() throws {
+        let provider = TestPeerProvider(refusal: peerTestExpiry())
+        let (switch_, _, stop) = try peerSwitch(provider, peerRoomy)
+        defer { stop() }
+
+        XCTAssertThrowsError(try switch_.setPeerProvider(provider, bound: peerRoomy)) { error in
+            XCTAssertTrue("\(error)".contains("already has a peer provider"), "\(error)")
+        }
+    }
+}

@@ -467,8 +467,24 @@ public final class RelaySwitch: @unchecked Sendable {
         return masters[destIdx].limits.initialCredit
     }
     private let lock = NSLock()
-    private var frameChannel: [(masterIdx: Int, frame: Frame?, error: Error?)] = []
+    /// One item of the switch's inbound stream.
+    private enum Inbound {
+        /// A frame from a master, or the end of its connection.
+        case master(masterIdx: Int, frame: Frame?, error: Error?)
+        /// Bringing the provider of held peer request `rid` ended.
+        case settled(rid: MessageId, settlement: PeerSettlement)
+    }
+    /// The switch's inbound stream: frames from the master reader threads,
+    /// and the end of bringing a held peer request's provider — one stream,
+    /// handled in order, so a held request's replay is ordered with every
+    /// frame its caller sends after.
+    private var frameChannel: [Inbound] = []
     private let frameSemaphore = DispatchSemaphore(value: 0)
+
+    /// What brings a provider for a peer request no master serves, and the
+    /// requests held while it does (`setPeerProvider`). Nil: such a request is
+    /// refused with NO_HANDLER. Guarded by `lock`.
+    private var peerProviding: (provider: PeerProvider, holds: PeerHoldTable)?
 
     /// Serialises `addMaster` across the whole switch.
     /// `masterIdx` is the routing key for capTable / requestRouting;
@@ -881,8 +897,12 @@ public final class RelaySwitch: @unchecked Sendable {
     }
 
     private func enqueueFrame(masterIdx: Int, frame: Frame?, error: Error?) {
+        enqueue(.master(masterIdx: masterIdx, frame: frame, error: error))
+    }
+
+    private func enqueue(_ item: Inbound) {
         lock.lock()
-        frameChannel.append((masterIdx: masterIdx, frame: frame, error: error))
+        frameChannel.append(item)
         lock.unlock()
         frameSemaphore.signal()
     }
@@ -1709,32 +1729,56 @@ public final class RelaySwitch: @unchecked Sendable {
         while true {
             frameSemaphore.wait()
 
-            lock.lock()
-            guard !frameChannel.isEmpty else {
-                lock.unlock()
-                continue
+            switch try handleNextInbound() {
+            case .none: continue
+            case .allMastersClosed: return nil
+            case .forEngine(let frame): return frame
             }
-            let masterFrame = frameChannel.removeFirst()
+        }
+    }
+
+    /// What handling one item of the inbound stream came to.
+    private enum InboundHandled {
+        /// Nothing for the engine: the item was handled here, or the stream
+        /// was empty.
+        case none
+        /// Every master has closed.
+        case allMastersClosed
+        /// A frame for the engine.
+        case forEngine(Frame)
+    }
+
+    /// Take the next item of the inbound stream, if there is one, and handle
+    /// it: a master's frame, its connection's end, or the end of bringing a
+    /// held peer request's provider.
+    private func handleNextInbound() throws -> InboundHandled {
+        lock.lock()
+        guard !frameChannel.isEmpty else {
             lock.unlock()
+            return .none
+        }
+        let item = frameChannel.removeFirst()
+        lock.unlock()
 
-            if let error = masterFrame.error {
-                fputs("[RelaySwitch] Error reading from master \(masterFrame.masterIdx): \(error)\n", stderr)
-                try handleMasterDeath(masterFrame.masterIdx)
-                continue
+        switch item {
+        case .settled(let rid, let settlement):
+            try releaseHeldRequest(rid: rid, settlement)
+            return .none
+        case .master(let masterIdx, _, .some(let error)):
+            fputs("[RelaySwitch] Error reading from master \(masterIdx): \(error)\n", stderr)
+            try handleMasterDeath(masterIdx)
+            return .none
+        case .master(let masterIdx, .none, .none):
+            try handleMasterDeath(masterIdx)
+            lock.lock()
+            let allDead = masters.allSatisfy { !$0.healthy }
+            lock.unlock()
+            return allDead ? .allMastersClosed : .none
+        case .master(let masterIdx, .some(let frame), .none):
+            if let resultFrame = try handleMasterFrame(sourceIdx: masterIdx, frame: frame) {
+                return .forEngine(resultFrame)
             }
-
-            guard let frame = masterFrame.frame else {
-                try handleMasterDeath(masterFrame.masterIdx)
-                lock.lock()
-                let allDead = masters.allSatisfy { !$0.healthy }
-                lock.unlock()
-                if allDead { return nil }
-                continue
-            }
-
-            if let resultFrame = try handleMasterFrame(sourceIdx: masterFrame.masterIdx, frame: frame) {
-                return resultFrame
-            }
+            return .none
         }
     }
 
@@ -1751,31 +1795,10 @@ public final class RelaySwitch: @unchecked Sendable {
             let result = frameSemaphore.wait(timeout: DispatchTime.now() + remaining)
             if result == .timedOut { return nil }
 
-            lock.lock()
-            guard !frameChannel.isEmpty else {
-                lock.unlock()
-                continue
-            }
-            let masterFrame = frameChannel.removeFirst()
-            lock.unlock()
-
-            if let error = masterFrame.error {
-                fputs("[RelaySwitch] Error reading from master \(masterFrame.masterIdx): \(error)\n", stderr)
-                try handleMasterDeath(masterFrame.masterIdx)
-                continue
-            }
-
-            guard let frame = masterFrame.frame else {
-                try handleMasterDeath(masterFrame.masterIdx)
-                lock.lock()
-                let allDead = masters.allSatisfy { !$0.healthy }
-                lock.unlock()
-                if allDead { return nil }
-                continue
-            }
-
-            if let resultFrame = try handleMasterFrame(sourceIdx: masterFrame.masterIdx, frame: frame) {
-                return resultFrame
+            switch try handleNextInbound() {
+            case .none: continue
+            case .allMastersClosed: return nil
+            case .forEngine(let frame): return frame
             }
         }
     }
@@ -1849,6 +1872,213 @@ public final class RelaySwitch: @unchecked Sendable {
         return matches.first?.masterIdx
     }
 
+    // MARK: - Peer requests no master serves
+
+    /// Bring a provider for the peer requests no master serves, holding each
+    /// while it does, within `bound` (14.2 §Peer requests no master serves).
+    /// Set once, before the switch routes anything that may need it; a second
+    /// provider is refused.
+    public func setPeerProvider(_ provider: PeerProvider, bound: PeerHoldBound) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard peerProviding == nil else {
+            throw RelaySwitchError.protocolError("this switch already has a peer provider")
+        }
+        peerProviding = (provider: provider, holds: PeerHoldTable(bound: bound))
+    }
+
+    /// Hold peer REQ `frame` and start bringing the provider of its cap. The
+    /// end of bringing it arrives on the inbound stream, in order with every
+    /// frame the caller sends. Caller holds `lock`.
+    private func holdPeerRequestLocked(sourceIdx: Int, frame: Frame) throws -> Frame? {
+        guard let providing = peerProviding else {
+            fatalError("BUG: only a switch with a peer provider holds requests")
+        }
+        if var err = providing.holds.hold(sourceIdx: sourceIdx, req: frame) {
+            fputs("[RelaySwitch] peer REQ cap='\(frame.cap ?? "")' rid=\(frame.id) is more than a hold keeps — refused\n", stderr)
+            try? writeToMasterIdx(sourceIdx, &err)
+            return nil
+        }
+        fputs("[RelaySwitch] no master serves the peer REQ cap='\(frame.cap ?? "")' rid=\(frame.id) from_master=\(sourceIdx) — held while its provider is brought\n", stderr)
+        let rid = frame.id
+        let capUrn = frame.cap!
+        let provider = providing.provider
+        let deadline = providing.holds.bound.deadline
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let settlement = self.bringProvider(provider, capUrn: capUrn, deadline: deadline)
+            self.enqueue(.settled(rid: rid, settlement: settlement))
+        }
+        return nil
+    }
+
+    /// A frame from master `sourceIdx` for one of the requests it made that is
+    /// held: kept, or the end of the request. Returns whether the frame was
+    /// the hold's. Caller holds `lock`.
+    private func arriveForHeldRequestLocked(sourceIdx: Int, frame: Frame) throws -> Bool {
+        guard let providing = peerProviding, providing.holds.isHeld(sourceIdx: sourceIdx, rid: frame.id) else {
+            return false
+        }
+        if var err = providing.holds.arrive(frame) {
+            fputs("[RelaySwitch] held peer request rid=\(frame.id) ended: \(err.errorCode ?? "")\n", stderr)
+            try? writeToMasterIdx(sourceIdx, &err)
+        }
+        return true
+    }
+
+    /// Bringing held request `rid`'s provider ended: replay its frames, in the
+    /// order they came, or answer its caller with why not.
+    private func releaseHeldRequest(rid: MessageId, _ settlement: PeerSettlement) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let providing = peerProviding else {
+            fatalError("BUG: only a switch with a peer provider holds requests")
+        }
+        // Nil: cancelled, overflowed, or its caller's master died meanwhile.
+        guard let (request, err) = providing.holds.settle(rid: rid, settlement) else { return }
+        if var err = err {
+            fputs("[RelaySwitch] held peer request cap='\(request.capUrn)' rid=\(rid): its provider was not brought — ended\n", stderr)
+            try? writeToMasterIdx(request.sourceIdx, &err)
+            return
+        }
+        fputs("[RelaySwitch] held peer request cap='\(request.capUrn)' rid=\(rid) replayed (\(request.frames.count) frames)\n", stderr)
+        _ = try routePeerRequestLocked(sourceIdx: request.sourceIdx, frame: request.frames[0], replayed: true)
+        for frame in request.frames.dropFirst() {
+            // A peer request's own frames are routed internally; none is ever
+            // handed to the engine.
+            _ = try handleMasterFrameLocked(sourceIdx: request.sourceIdx, frame: frame)
+        }
+    }
+
+    /// Bring the provider of `capUrn` for a held request, within `deadline`:
+    /// find it, wait for it to be ready, then for a master to serve the cap.
+    /// Bringing it goes on past the deadline — only the wait ends. Blocking;
+    /// called without `lock`.
+    private func bringProvider(_ provider: PeerProvider, capUrn: String, deadline: TimeInterval) -> PeerSettlement {
+        let expiry = DispatchTime.now() + deadline
+
+        let found = DispatchSemaphore(value: 0)
+        let provisionBox = PeerHandoff<Result<PeerProvision, PeerRefusal>>()
+        DispatchQueue.global(qos: .userInitiated).async {
+            provisionBox.value = provider.provision(capUrn: capUrn)
+            found.signal()
+        }
+        if found.wait(timeout: expiry) == .timedOut {
+            return .expired(PeerRefusal(
+                code: PEER_PROVIDER_TIMEOUT,
+                attributionClass: .environment,
+                message: "no cartridge providing \(capUrn) was found within \(Int(deadline)) s"
+            ))
+        }
+        let provision: PeerProvision
+        switch provisionBox.value! {
+        case .failure(let refusal): return .refused(refusal)
+        case .success(let p): provision = p
+        }
+
+        let readied = DispatchSemaphore(value: 0)
+        let readyBox = PeerHandoff<PeerRefusal?>()
+        DispatchQueue.global(qos: .userInitiated).async {
+            readyBox.value = .some(provision.ready())
+            readied.signal()
+        }
+        if readied.wait(timeout: expiry) == .timedOut {
+            return .expired(provision.onExpiry)
+        }
+        if case .some(.some(let refusal)) = readyBox.value {
+            return .refused(refusal)
+        }
+
+        while true {
+            lock.lock()
+            let served = findMasterForCap(capUrn, preferredCap: nil) != nil
+            lock.unlock()
+            if served { return .provided }
+            if DispatchTime.now() >= expiry { return .expired(provision.onExpiry) }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
+
+    /// Route peer REQ `frame` from master `sourceIdx`, already given its
+    /// routing id: to the master that serves its cap; or, when none does,
+    /// held while the switch's `PeerProvider` brings one, or refused with
+    /// NO_HANDLER — as the model decides (formal/CapDAG/Bifaci/Hold.lean).
+    /// `replayed` is a REQ that was held before: it is never held again.
+    /// Caller holds `lock`.
+    private func routePeerRequestLocked(sourceIdx: Int, frame: Frame, replayed: Bool) throws -> Frame? {
+        guard let cap = frame.cap, let xid = frame.routingId else {
+            fatalError("BUG: a peer REQ names its cap and is given its routing id before it is routed")
+        }
+        var mutableFrame = frame
+
+        // Find destination master (no preference for peer requests).
+        guard let destIdx = findMasterForCap(cap, preferredCap: nil) else {
+            if ProtocolModel.holds(canProvide: peerProviding != nil, replayed: replayed) {
+                return try holdPeerRequestLocked(sourceIdx: sourceIdx, frame: frame)
+            }
+            // No handler registered for this cap. Rather than throwing
+            // — which aborts the pump and leaves the caller hanging
+            // until its activity timeout — send an ERR frame straight
+            // back to the source master so the peer call fails fast
+            // with a clear error. Stamp the synthetic XID assigned
+            // above so the receiving cartridge host runtime accepts it
+            // (path-C invariant). Mirrors Rust's route_peer_request
+            // NO_HANDLER branch (Ok(None) + ERR to caller).
+            fputs("[RelaySwitch] NO_HANDLER for peer REQ cap='\(cap)' rid=\(frame.id) from_master=\(sourceIdx) — sending ERR to caller\n", stderr)
+            // No master serving this cap is a deployment/manifest
+            // mismatch — Environment (docs/failure-taxonomy.md).
+            let message = replayed
+                ? "No handler found for cap: \(cap) — its provider was brought, and no master serves it even so"
+                : "No handler found for cap: \(cap)"
+            var errFrame = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: message)
+            errFrame.routingId = xid
+            try? writeToMasterIdx(sourceIdx, &errFrame)
+            return nil
+        }
+
+        let rid = frame.id
+        let key = RoutingKey(xid: xid, rid: rid)
+
+        // Register the peer request and link it under its parent for
+        // the cancel cascade — one table write (L7).
+        fputs("[RelaySwitch] PEER_REQ: master \(sourceIdx) → master \(destIdx) cap='\(cap)' rid=\(rid) xid=\(xid)\n", stderr)
+        do {
+            let state = RequestState(
+                routing: RoutingEntry(sourceMasterIdx: sourceIdx, destinationMasterIdx: destIdx),
+                origin: sourceIdx,
+                externalChannel: nil,
+                isPeer: true,
+                initialCredit: masterInitialCredit(destIdx)
+            )
+            state.capUrn = cap
+            try requests.register(key, state)
+        } catch {
+            throw RelaySwitchError.protocolError("\(error.localizedDescription)")
+        }
+
+        // Track parent→child for cancel cascade
+        if let meta = frame.meta, let parentRidCbor = meta["parent_rid"] {
+            let parentRid: MessageId?
+            switch parentRidCbor {
+            case .byteString(let bytes) where bytes.count == 16:
+                parentRid = .uuid(Data(bytes))
+            case .unsignedInt(let n):
+                parentRid = .uint(n)
+            default:
+                parentRid = nil
+            }
+            if let parentRid = parentRid, let parentXid = requests.xidForRid(parentRid) {
+                requests.linkChild(parent: RoutingKey(xid: parentXid, rid: parentRid), child: key)
+            }
+        }
+
+        // Forward to destination with XID
+        try writeToMasterIdx(destIdx, &mutableFrame)
+
+        // Do NOT return to engine (internal routing)
+        return nil
+    }
+
     /// Handle a frame arriving from a master (cartridge → engine direction).
     ///
     /// Returns Some(frame) if the frame should be forwarded to the engine.
@@ -1856,13 +2086,33 @@ public final class RelaySwitch: @unchecked Sendable {
     func handleMasterFrame(sourceIdx: Int, frame: Frame) throws -> Frame? {
         lock.lock()
         defer { lock.unlock() }
+        return try handleMasterFrameLocked(sourceIdx: sourceIdx, frame: frame)
+    }
+
+    /// `handleMasterFrame`, with `lock` held.
+    private func handleMasterFrameLocked(sourceIdx: Int, frame: Frame) throws -> Frame? {
+        // A frame a cartridge sends for its own peer request that is held
+        // (its argument streams, its grants, its cancel) is the hold's: kept
+        // to be replayed after the REQ, or the request's end.
+        let forOwnRequest: Bool
+        switch frame.frameType {
+        case .streamStart, .chunk, .streamEnd, .end, .err, .log, .credit:
+            forOwnRequest = frame.routingId == nil
+        case .cancel, .closeStream:
+            forOwnRequest = true
+        default:
+            forOwnRequest = false
+        }
+        if forOwnRequest, try arriveForHeldRequestLocked(sourceIdx: sourceIdx, frame: frame) {
+            return nil
+        }
 
         var mutableFrame = frame
 
         switch frame.frameType {
         case .req:
             // Peer request: cartridge → cartridge via switch (no preference)
-            guard let cap = frame.cap else {
+            guard frame.cap != nil else {
                 throw RelaySwitchError.protocolError("REQ frame missing cap URN")
             }
 
@@ -1880,69 +2130,9 @@ public final class RelaySwitch: @unchecked Sendable {
 
             // Assign fresh XID
             xidCounter += 1
-            let xid = MessageId.uint(xidCounter)
-            mutableFrame.routingId = xid
+            mutableFrame.routingId = MessageId.uint(xidCounter)
 
-            // Find destination master (no preference for peer requests).
-            guard let destIdx = findMasterForCap(cap, preferredCap: nil) else {
-                // No handler registered for this cap. Rather than throwing
-                // — which aborts the pump and leaves the caller hanging
-                // until its activity timeout — send an ERR frame straight
-                // back to the source master so the peer call fails fast
-                // with a clear error. Stamp the synthetic XID assigned
-                // above so the receiving cartridge host runtime accepts it
-                // (path-C invariant). Mirrors Rust's handle_master_frame
-                // NO_HANDLER branch (Ok(None) + ERR to caller).
-                fputs("[RelaySwitch] NO_HANDLER for peer REQ cap='\(cap)' rid=\(frame.id) from_master=\(sourceIdx) — sending ERR to caller\n", stderr)
-                // No master serving this cap is a deployment/manifest
-                // mismatch — Environment (docs/failure-taxonomy.md).
-                var errFrame = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: "No handler found for cap: \(cap)")
-                errFrame.routingId = xid
-                try? writeToMasterIdx(sourceIdx, &errFrame)
-                return nil
-            }
-
-            let rid = frame.id
-            let key = RoutingKey(xid: xid, rid: rid)
-
-            // Register the peer request and link it under its parent for
-            // the cancel cascade — one table write (L7).
-            fputs("[RelaySwitch] PEER_REQ: master \(sourceIdx) → master \(destIdx) cap='\(cap)' rid=\(rid) xid=\(xid)\n", stderr)
-            do {
-                let state = RequestState(
-                    routing: RoutingEntry(sourceMasterIdx: sourceIdx, destinationMasterIdx: destIdx),
-                    origin: sourceIdx,
-                    externalChannel: nil,
-                    isPeer: true,
-                    initialCredit: masterInitialCredit(destIdx)
-                )
-                state.capUrn = cap
-                try requests.register(key, state)
-            } catch {
-                throw RelaySwitchError.protocolError("\(error.localizedDescription)")
-            }
-
-            // Track parent→child for cancel cascade
-            if let meta = frame.meta, let parentRidCbor = meta["parent_rid"] {
-                let parentRid: MessageId?
-                switch parentRidCbor {
-                case .byteString(let bytes) where bytes.count == 16:
-                    parentRid = .uuid(Data(bytes))
-                case .unsignedInt(let n):
-                    parentRid = .uint(n)
-                default:
-                    parentRid = nil
-                }
-                if let parentRid = parentRid, let parentXid = requests.xidForRid(parentRid) {
-                    requests.linkChild(parent: RoutingKey(xid: parentXid, rid: parentRid), child: key)
-                }
-            }
-
-            // Forward to destination with XID
-            try writeToMasterIdx(destIdx, &mutableFrame)
-
-            // Do NOT return to engine (internal routing)
-            return nil
+            return try routePeerRequestLocked(sourceIdx: sourceIdx, frame: mutableFrame, replayed: false)
 
         case .streamStart, .chunk, .streamEnd, .end, .err, .log, .credit:
             // Branch based on XID presence to distinguish request vs response direction
@@ -2145,6 +2335,14 @@ public final class RelaySwitch: @unchecked Sendable {
         // slot (probe pending) whose socket then closes must detach too,
         // or the host could never reconnect to it.
         masters[masterIdx].detached = true
+
+        // The requests held for its cartridges have nobody left to answer.
+        if let providing = peerProviding {
+            let forgotten = providing.holds.forgetSource(masterIdx)
+            if forgotten > 0 {
+                fputs("[RelaySwitch] master \(masterIdx) died: its \(forgotten) held peer requests dropped\n", stderr)
+            }
+        }
 
         guard masters[masterIdx].healthy else {
             return
