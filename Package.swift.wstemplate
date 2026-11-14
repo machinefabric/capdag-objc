@@ -25,19 +25,25 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        {%- if env.MFR_LOCAL_LIBS %}
-        // MFR_LOCAL_LIBS: the working copy in this workspace rather than a
+        {%- if env.MFR_LIBS == "working" %}
+        // MFR_LIBS "working": the working copy in this workspace rather than a
         // published tag. Re-render without it before committing or releasing.
         .package(path: "{{ projects.tagged_urn_objc.path_from_here }}"),
+        {%- elif env.MFR_LIBS == "channel" %}
+        // MFR_LIBS "channel": the release fetched under the build root, in place of the public one.
+        .package(path: "{{ build.root_from_here }}/libraries/tagged-urn-objc/{{ projects.tagged_urn_objc.version }}/tagged-urn-objc-{{ projects.tagged_urn_objc.version }}"),
         {%- else %}
         .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "{{ projects.tagged_urn_objc.latest_remote_version }}"),
         {%- endif %}
         // The runtime the code generated from ../formal runs on, at exactly the lungo release
         // that generated it.
-        {%- if env.MFR_LOCAL_LIBS %}
-        // MFR_LOCAL_LIBS: lungo-swift from the local distribution built from the working copy
+        {%- if env.MFR_LIBS == "working" %}
+        // MFR_LIBS "working": lungo-swift from the local distribution built from the working copy
         // of lungo. Re-render without it before committing or releasing.
         .package(path: "{{ build.root_from_here }}/lungo/distribution/lungo-swift"),
+        {%- elif env.MFR_LIBS == "channel" %}
+        // MFR_LIBS "channel": the release fetched under the build root, in place of the public one.
+        .package(path: "{{ build.root_from_here }}/libraries/lungo-swift/{{ projects.lungo_rs.version }}/lungo-swift-{{ projects.lungo_rs.version }}"),
         {%- else %}
         .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "{{ projects.lungo_swift.latest_remote_version }}"),
         {%- endif %}
