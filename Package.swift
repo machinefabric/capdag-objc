@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.687.98
+// version: 1.688.111
 import PackageDescription
 
 let package = Package(
@@ -25,10 +25,10 @@ let package = Package(
             targets: ["capdag-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.151.33"),
+        .package(url: "https://github.com/machinefabric/tagged-urn-objc.git", exact: "1.152.0"),
         // The runtime the code generated from ../formal runs on, at exactly the lungo release
         // that generated it.
-        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "1.120.164"),
+        .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "1.126.0"),
         .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),

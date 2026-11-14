@@ -380,4 +380,54 @@ enum ProtocolModel {
         case .exhausted: return .exhausted
         }
     }
+
+    // MARK: Peer holds
+
+    typealias HoldBound = CapDAGFormal.Bound
+    typealias HoldState = CapDAGFormal.Held
+    typealias Bringing = CapDAGFormal.Bringing
+
+    static func holdBound(frames: UInt64, bytes: UInt64) -> HoldBound {
+        HoldBound(frames: LungoNat(frames), bytes: LungoNat(bytes))
+    }
+
+    /// Whether a peer request no master serves is held.
+    static func holds(canProvide: Bool, replayed: Bool) -> Bool {
+        switch decided({ try CapDAGFormal.whenUnrouted(canProvide, replayed) }) {
+        case .hold: return true
+        case .refuse: return false
+        }
+    }
+
+    /// A hold before its REQ is kept.
+    static func holdInitial() -> HoldState {
+        decided { try CapDAGFormal.initial() }
+    }
+
+    enum HoldArrived {
+        /// Kept: this is the hold now.
+        case keep(HoldState)
+        /// Keeping it would take the hold past its bound: the request ends.
+        case overflow
+        /// The caller cancelled the request: it ends, and nothing is replayed.
+        case cancel
+    }
+
+    /// A frame of `size` payload bytes arriving for a held request.
+    static func holdArrive(_ bound: HoldBound, _ held: HoldState, _ frameType: FrameType, size: UInt64) -> HoldArrived {
+        switch decided({ try CapDAGFormal.holdArrive(bound, held, frameType.model, LungoNat(size)) }) {
+        case .keep(let held): return .keep(held)
+        case .overflow: return .overflow
+        case .cancel: return .cancel
+        }
+    }
+
+    /// Whether a held request is replayed when bringing its provider ended
+    /// so; it fails otherwise.
+    static func replays(_ bringing: Bringing) -> Bool {
+        switch decided({ try CapDAGFormal.fateOf(bringing) }) {
+        case .replay: return true
+        case .fail: return false
+        }
+    }
 }
