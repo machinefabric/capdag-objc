@@ -2,7 +2,7 @@
 
 Generated from the test catalogue. Edit the tests, not this file.
 
-1052 tests: 1051 numbered, 1 unnumbered.
+1061 tests: 1060 numbered, 1 unnumbered.
 
 ## Numbered
 
@@ -343,6 +343,15 @@ Generated from the test catalogue. Edit the tests, not this file.
 | TEST460 | capdag/capdag-objc | swift | `test460_reorderBufferTerminalErr` | Tests/BifaciTests/FlowOrderingTests.swift:408 | TEST460: Terminal ERR frame flows through correctly |
 | TEST461 | capdag/capdag-objc | swift | `test461_writeChunkedSeqZero` | Tests/BifaciTests/FlowOrderingTests.swift:427 | TEST461: write_chunked produces frames with seq=0; SeqAssigner assigns at output stage |
 | TEST462 | capdag/capdag-objc | swift | `test462_attachedCartridgeIdentityFromManifest` | Tests/BifaciTests/CartridgeHostInstalledRecordTests.swift:281 | TEST462: An attached cartridge (pre-connected over raw streams, no on-disk anchor) gets a resolvable install identity derived from its HELLO manifest — `installedCartridgeRecordFromManifest`. Identity gates advertisement (`buildInstalledCartridgeRecordsLocked` drops a cartridge whose record is nil), so a nil here means the cartridge is silently dropped from every RelayNotify and the engine can never route to it. Regression lock for the attached-cartridge identity path this mirror regressed on: `installedCartridgeRecord()` returned nil for attached cartridges, so they never reached the engine. Mirrors the reference `installed_cartridge_record_from_manifest`. |
+| TEST463 | capdag/capdag-objc | swift | `test463_heldPeerCallIsAnsweredOnceItsProviderIsBrought` | Tests/BifaciTests/RelaySwitchTests.swift:1872 | TEST463: A peer call to a cap no master serves is held while the switch's provider brings a master that serves it, and is then answered by that master, with every argument byte the caller sent while it was held. |
+| TEST464 | capdag/capdag-objc | swift | `test464_refusedProvisionEndsTheCallWithTheProvidersErr` | Tests/BifaciTests/RelaySwitchTests.swift:1891 | TEST464: A provider that cannot bring what serves the cap ends the held call with its own ERR — its code and its message, which name what is missing and what to do. |
+| TEST465 | capdag/capdag-objc | swift | `test465_heldCallEndsAtItsDeadlineAndTheLateProviderServesTheNext` | Tests/BifaciTests/RelaySwitchTests.swift:1908 | TEST465: A held call waits no longer than its deadline: it ends with the provider's own expiry ERR. The provider's work goes on, so what it brought late serves the next call. |
+| TEST466 | capdag/capdag-objc | swift | `test466_heldCallPastItsFrameBoundEnds` | Tests/BifaciTests/RelaySwitchTests.swift:1931 | TEST466: A hold keeps no more frames than its bound: a call that sends more while it is held ends with PEER_HOLD_OVERFLOW, and is never replayed. |
+| TEST467 | capdag/capdag-objc | swift | `test467_heldCallPastItsByteBoundEnds` | Tests/BifaciTests/RelaySwitchTests.swift:1948 | TEST467: A hold keeps no more payload bytes than its bound. |
+| TEST468 | capdag/capdag-objc | swift | `test468_cancelledHeldCallEndsAtOnceAndIsNotReplayed` | Tests/BifaciTests/RelaySwitchTests.swift:1967 | TEST468: A caller that cancels its held call is answered with its cancel at once, and the call is not replayed to the provider brought after. |
+| TEST469 | capdag/capdag-objc | swift | `test469_providerThatServesSomethingElseEndsTheCallAtItsDeadline` | Tests/BifaciTests/RelaySwitchTests.swift:1984 | TEST469: A provider whose master does not serve the cap leaves the call held until its deadline, which ends it with the provider's expiry ERR; the provider is asked once. |
+| TEST470 | capdag/capdag-objc | swift | `test470_withoutAProviderTheCallIsRefusedWithNoHandler` | Tests/BifaciTests/RelaySwitchTests.swift:1999 | TEST470: A switch without a provider refuses a peer call to a cap no master serves at once, with NO_HANDLER naming the cap. |
+| TEST471 | capdag/capdag-objc | swift | `test471_aSecondPeerProviderIsRefused` | Tests/BifaciTests/RelaySwitchTests.swift:2010 | TEST471: A switch takes one peer provider. |
 | TEST472 | capdag/capdag-objc | swift | `test472_handshakeNegotiatesReorderBuffer` | Tests/BifaciTests/FlowOrderingTests.swift:457 | TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides) |
 | TEST473 | capdag/capdag-objc | swift | `test473_capDiscardParsesAsValidCapUrn` | Tests/BifaciTests/StandardCapsTests.swift:14 | TEST473: CAP_DISCARD parses as valid CapUrn with in=media: and out=media:void |
 | TEST474 | capdag/capdag-objc | swift | `test474_capDiscardAcceptsVoidOutputCaps` | Tests/BifaciTests/StandardCapsTests.swift:32 | TEST474: CAP_DISCARD accepts specific-input/void-output caps |
