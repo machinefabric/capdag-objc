@@ -93,7 +93,7 @@ public func classifyHandlerError(_ error: Error) -> (code: String, attributionCl
     // A classified op-layer failure keeps the identity it declared
     // (matches Rust dispatch_op's OpError → RuntimeError mapping).
     if let opError = error as? OpError, let code = opError.failureCode {
-        return (code, opError.attributionClass, opError.failureReason, opError.failureArgUrn, nil)
+        return (code, opError.attributionClass, opError.failureReason, opError.failureArgUrn, opError.failureHint)
     }
     // A peer's error propagated as-is keeps the class, attribution and hint
     // the PEER's frame declared.

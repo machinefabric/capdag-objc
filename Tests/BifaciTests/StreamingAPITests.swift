@@ -1017,7 +1017,8 @@ final class StreamingAPITests: XCTestCase {
             code: "INVALID_INPUT",
             attributionClass: .input,
             message: "prompt is invalid",
-            argUrn: "media:enc=utf8;prompt"
+            argUrn: "media:enc=utf8;prompt",
+            hint: nil
         )
 
         let identity = classifyHandlerError(error)
@@ -1026,6 +1027,7 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(identity.attributionClass, .input)
         XCTAssertEqual(identity.message, "prompt is invalid")
         XCTAssertEqual(identity.argUrn, "media:enc=utf8;prompt")
+        XCTAssertNil(identity.hint)
     }
 
     // TEST7189: a handler that cannot go on without its peer's answer, and
@@ -1048,6 +1050,18 @@ final class StreamingAPITests: XCTestCase {
             "ggufcartridge provides the inference cap and is not installed, and installing it failed"
         )
         XCTAssertEqual(try frame.errorHint(), "capdag cartridge install ggufcartridge")
+
+        // The same refusal, carried through the op layer as a classified op
+        // failure, keeps its hint.
+        let throughOps = handlerErrFrame(id: .newUUID(), error: OpError.classified(
+            code: "CARTRIDGE_INSTALL_FAILED",
+            attributionClass: .environment,
+            message: "ggufcartridge provides the inference cap and is not installed, and installing it failed",
+            argUrn: nil,
+            hint: "capdag cartridge install ggufcartridge"
+        ))
+        XCTAssertEqual(throughOps.errorCode, "CARTRIDGE_INSTALL_FAILED")
+        XCTAssertEqual(try throughOps.errorHint(), "capdag cartridge install ggufcartridge")
 
         struct Broke: Error {}
         let own = handlerErrFrame(id: .newUUID(), error: Broke())

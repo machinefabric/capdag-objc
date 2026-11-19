@@ -41,7 +41,7 @@ let package = Package(
         {%- else %}
         .package(url: "https://github.com/machinefabric/lungo-swift.git", exact: "{{ projects.lungo_swift.latest_remote_version }}"),
         {%- endif %}
-        .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.19.17"),
+        .package(url: "https://github.com/jowharshamshiri/ops-objc.git", from: "1.21.5"),
         .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
         .package(url: "https://github.com/Bouke/Glob.git", from: "1.0.0"),
     ],
