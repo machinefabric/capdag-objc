@@ -2,7 +2,7 @@
 
 Generated from the test catalogue. Edit the tests, not this file.
 
-1075 tests: 1074 numbered, 1 unnumbered.
+1077 tests: 1076 numbered, 1 unnumbered.
 
 ## Numbered
 
@@ -1053,6 +1053,8 @@ Generated from the test catalogue. Edit the tests, not this file.
 | TEST12388 | capdag/capdag-objc | swift | `test12388_aLateArrivalGetsWhatIsLeftOfTheOutage` | Tests/BifaciTests/ProtocolConformanceTests.swift:773 | TEST12388: a request that joins the line late into an outage is given what is left of the outage's window, not a window of its own: the time is the outage's. |
 | TEST12389 | capdag/capdag-objc | swift | `test12389_handshakeRefusesAZeroCreditWindow` | Tests/BifaciTests/ProtocolConformanceTests.swift:795 | TEST12389: a HELLO proposing a credit window of zero fails the handshake, naming the window. Under a zero window no chunk may be sent, and with none consumed none is ever granted: every stream would stop at its first chunk, for good. |
 | TEST12597 | capdag/capdag-objc | swift | `test12597_EveryModelFunctionCarriesAProvedClaim` | Tests/CapDAGFormalTests/FormalAssuranceTests.swift:10 | TEST12597: every function of the proved model this mirror calls carries a proved claim. The model's package carries what is proved of each function it exports (its assurance document, generated from ../formal): each one decides, equals or keeps what its claim says, and none rests on an assumption about the host — the model needs none. |
+| TEST12647 | capdag/capdag-objc | swift | `test12647_heartbeatIsAnsweredWithoutTheMainLoop` | Tests/BifaciTests/ProtocolRuntimeTests.swift:1551 | TEST12647: A heartbeat is answered while the main loop takes nothing — the reader's thread answers it by itself. The main loop answered it when it reached it, so the reply waited on everything the loop did first. |
+| TEST12648 | capdag/capdag-objc | swift | `test12648_otherFramesReachTheLoopInOrderAndEofClosesIt` | Tests/BifaciTests/ProtocolRuntimeTests.swift:1574 | TEST12648: Every other frame goes to the main loop untouched and in order, and nothing is written for it; the end of input ends the reader and closes the loop's channel. |
 | TEST12705 | capdag/capdag-objc | objc | `test12705_rule15TheStdinArgumentIsTheCapsInput` | Tests/CapDAGTests/CSDefinitionRulesTests.m:195 | TEST12705: RULE15 - the stdin argument's URN is the cap's `in=`, as a tagged URN: the same tags in another order pass, another type does not. |
 | TEST12706 | capdag/capdag-objc | objc | `test12706_rule17ArgumentNames` | Tests/CapDAGTests/CSDefinitionRulesTests.m:207 | TEST12706: RULE17 - every argument has a well-formed name, unique in its cap. |
 | TEST12707 | capdag/capdag-objc | objc | `test12707_rule18AcceptsAndTheTwoUrnsOfAnArgument` | Tests/CapDAGTests/CSDefinitionRulesTests.m:230 | TEST12707: RULE18 - an argument says what it accepts in one place; and what it accepts is not what it is delivered under. |
