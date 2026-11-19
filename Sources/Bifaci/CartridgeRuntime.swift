@@ -96,8 +96,10 @@ public enum StreamError: Error {
     /// failure class the peer's frame declared (docs/failure-taxonomy.md),
     /// its message — never folded into prose — and the media URN of the
     /// argument the peer's frame attributed the failure to (nil when the
-    /// frame carried no attribution).
-    case remoteError(code: String, attributionClass: AttributionClass, message: String, argUrn: String?)
+    /// frame carried no attribution), and its hint (nil when it gave none).
+    /// A handler that cannot go on without the peer's answer throws this
+    /// error as it came, so its own ERR is the peer's.
+    case remoteError(code: String, attributionClass: AttributionClass, message: String, argUrn: String?, hint: String?)
     case closed
     case decode(String)
     case io(String)
@@ -1945,8 +1947,11 @@ internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGran
                 let argUrn: String?
                 do { argUrn = try frame.attributionArgUrn() }
                 catch { return protocolError("\(error)") }
+                let hint: String?
+                do { hint = try frame.errorHint() }
+                catch { return protocolError("\(error)") }
                 ended = true
-                return (.data(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)), nil), nil)
+                return (.data(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn, hint: hint)), nil), nil)
 
             default:
                 return protocolError("Unexpected frame type in response: \(frame.frameType)")
@@ -2256,10 +2261,19 @@ internal func demuxMultiStream(
                     streamsQueue.push(.failure(failure))
                     break loop
                 }
-                for (_, queue) in streamChannels {
-                    queue.push(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)))
+                let hint: String?
+                do { hint = try frame.errorHint() }
+                catch {
+                    let failure = StreamError.protocolError("\(error)")
+                    for (_, queue) in streamChannels { queue.push(.failure(failure)) }
+                    streamsQueue.push(.failure(failure))
+                    break loop
                 }
-                streamsQueue.push(.failure(.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn)))
+                let remote = StreamError.remoteError(code: code, attributionClass: attributionClass, message: message, argUrn: argUrn, hint: hint)
+                for (_, queue) in streamChannels {
+                    queue.push(.failure(remote))
+                }
+                streamsQueue.push(.failure(remote))
                 break loop
 
             default:
@@ -5501,19 +5515,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
                         return
                     }
                     fputs("[CartridgeRuntime] handler FAILED: cap='\(capUrn)' rid=\(requestId) error=\(error)\n", stderr)
-                    // The ERR frame carries the failure's DECLARED identity
-                    // (docs/failure-taxonomy.md): the code and class from
-                    // the emit source when the thrown error is classified,
-                    // HANDLER_ERROR/internal when the handler never
-                    // declared one.
-                    let identity = classifyHandlerError(error)
-                    var errFrame = Frame.err(
-                        id: requestId,
-                        code: identity.code,
-                        attributionClass: identity.attributionClass,
-                        message: identity.message,
-                        argUrn: identity.argUrn
-                    )
+                    var errFrame = handlerErrFrame(id: requestId, error: error)
                     errFrame.routingId = routingId
                     try? outputSender.send(errFrame)
                 }

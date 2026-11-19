@@ -2193,6 +2193,44 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(decoded.errorMessage, "prompt exceeds context window")
     }
 
+    // TEST7188: an ERR frame's hint — what a person does next — crosses the
+    // wire codec verbatim beside code, class and message; an ERR without one
+    // carries no "hint" key; a hint that is empty or not text is the
+    // emitter's protocol violation, never read as no hint. (mirrors Rust
+    // TEST7188)
+    func test7188_errFrameHintRoundtrip() throws {
+        let frame = Frame.err(
+            id: .newUUID(),
+            code: "CARTRIDGE_INSTALL_FAILED",
+            attributionClass: .environment,
+            message: "ggufcartridge is not installed, and installing it failed"
+        ).withHint("capdag cartridge install ggufcartridge")
+        let decoded = try decodeFrame(try encodeFrame(frame))
+        guard case .utf8String(let wireHint)? = decoded.meta?["hint"] else {
+            XCTFail("the encoded ERR meta must carry the hint key")
+            return
+        }
+        XCTAssertEqual(wireHint, "capdag cartridge install ggufcartridge")
+        XCTAssertEqual(try decoded.errorHint(), "capdag cartridge install ggufcartridge")
+        XCTAssertEqual(decoded.errorCode, "CARTRIDGE_INSTALL_FAILED")
+        XCTAssertEqual(try decoded.attributionClass(), .environment)
+        XCTAssertEqual(decoded.errorMessage, "ggufcartridge is not installed, and installing it failed")
+
+        var plain = try decodeFrame(try encodeFrame(
+            Frame.err(id: .newUUID(), code: "X", attributionClass: .internal, message: "m")
+        ))
+        XCTAssertNil(plain.meta?["hint"], "no hint, no key")
+        XCTAssertNil(try plain.errorHint())
+
+        plain.meta?["hint"] = .utf8String(" ")
+        XCTAssertThrowsError(try plain.errorHint(), "an empty hint is a violation")
+        plain.meta?["hint"] = .unsignedInt(1)
+        XCTAssertThrowsError(try plain.errorHint(), "a hint that is not text is a violation")
+
+        let log = Frame.log(id: .newUUID(), level: "warn", attributionClass: .internal, message: "m")
+        XCTAssertThrowsError(try log.errorHint(), "only an ERR carries a hint")
+    }
+
     // TEST7117: non-progress LOG carries the same source attribution tuple as
     // ERR, including an optional argument URN, through the actual wire codec.
     func test7117_logFrameArgUrnRoundtrip() throws {

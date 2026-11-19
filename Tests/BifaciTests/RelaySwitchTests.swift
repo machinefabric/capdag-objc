@@ -1656,8 +1656,15 @@ private func peerTestExpiry() -> PeerRefusal {
     PeerRefusal(
         code: "TEST_PROVIDER_TIMEOUT",
         attributionClass: .environment,
-        message: "testcartridge, which provides peer-provided, was not started in time"
+        message: "testcartridge, which provides peer-provided, was not started in time",
+        hint: "capdag cartridge install testcartridge, then run the command again"
     )
+}
+
+/// What the caller answers when its peer call ends with `refusal`'s ERR.
+private func peerAnsweredWith(_ refusal: PeerRefusal) -> String {
+    guard let hint = refusal.hint else { return "err:\(refusal.code):\(refusal.message)" }
+    return "err:\(refusal.code):\(refusal.message)|hint:\(hint)"
 }
 
 /// A count several threads add to.
@@ -1670,7 +1677,7 @@ private final class PeerCounter: @unchecked Sendable {
 
 /// A master whose cartridge makes peer calls: each call's answer is
 /// "ok:<the bytes the peer answered>", or "err:<CODE>:<message>" with the ERR
-/// the call ended with.
+/// the call ended with — followed by "|hint:<hint>" when that ERR carried one.
 private final class PeerCaller: @unchecked Sendable {
     let writer: FrameWriter
     private let seq = SeqAssigner()
@@ -1695,7 +1702,13 @@ private final class PeerCaller: @unchecked Sendable {
                 record("ok:" + String(decoding: body, as: UTF8.self))
             case .err:
                 bodies[frame.id] = nil
-                record("err:\(frame.errorCode ?? ""):\(frame.errorMessage ?? "")")
+                var answer = "err:\(frame.errorCode ?? ""):\(frame.errorMessage ?? "")"
+                do {
+                    if let hint = try frame.errorHint() { answer += "|hint:\(hint)" }
+                } catch {
+                    answer = "malformed:\(error)"
+                }
+                record(answer)
             default:
                 break
             }
@@ -1886,20 +1899,24 @@ extension CborRelaySwitchTests {
     }
 
     // TEST464: A provider that cannot bring what serves the cap ends the held
-    // call with its own ERR — its code and its message, which name what is
-    // missing and what to do.
+    // call with its own ERR — its code, its message naming what is missing,
+    // and its hint, the command that brings it, as the ERR's own hint.
     func test464_refusedProvisionEndsTheCallWithTheProvidersErr() throws {
         let refusal = PeerRefusal(
             code: "CARTRIDGE_INSTALL_FAILED",
             attributionClass: .environment,
-            message: "testcartridge provides peer-provided and is not installed; " +
-                "install it with: capdag cartridge install testcartridge"
+            message: "testcartridge provides peer-provided and is not installed",
+            hint: "capdag cartridge install testcartridge"
         )
         let (_, caller, stop) = try peerSwitch(TestPeerProvider(refusal: refusal), peerRoomy)
         defer { stop() }
 
         try caller.call(Data("hello".utf8))
-        XCTAssertEqual(caller.answer(), "err:\(refusal.code):\(refusal.message)")
+        XCTAssertEqual(
+            caller.answer(),
+            "err:CARTRIDGE_INSTALL_FAILED:testcartridge provides peer-provided and is not installed" +
+                "|hint:capdag cartridge install testcartridge"
+        )
     }
 
     // TEST465: A held call waits no longer than its deadline: it ends with the
@@ -1915,7 +1932,7 @@ extension CborRelaySwitchTests {
         let started = Date()
         try caller.call(Data("hello".utf8))
         let expired = peerTestExpiry()
-        XCTAssertEqual(caller.answer(), "err:\(expired.code):\(expired.message)")
+        XCTAssertEqual(caller.answer(), peerAnsweredWith(expired))
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.5, "the call ended at its deadline, not when the provider finished")
         XCTAssertEqual(provider.served.value, 0, "the expired call was not replayed")
 
@@ -1990,7 +2007,7 @@ extension CborRelaySwitchTests {
 
         try caller.call(Data("hello".utf8))
         let expired = peerTestExpiry()
-        XCTAssertEqual(caller.answer(), "err:\(expired.code):\(expired.message)")
+        XCTAssertEqual(caller.answer(), peerAnsweredWith(expired))
         XCTAssertEqual(provider.asked.value, 1)
     }
 

@@ -28,21 +28,25 @@ public let PEER_PROVIDER_TIMEOUT = "PEER_PROVIDER_TIMEOUT"
 /// Why a held request ends without its provider: the ERR its caller is
 /// answered with, in the vocabulary of every ERR (docs/failure-taxonomy.md).
 /// The message is for the person who reads the run's failure: it names what
-/// is missing and the command that brings it.
+/// is missing; the hint, when there is something to do, is the command that
+/// brings it, and rides the ERR's own hint.
 public struct PeerRefusal: Error, Equatable, Sendable {
     public let code: String
     public let attributionClass: AttributionClass
     public let message: String
+    public let hint: String?
 
-    public init(code: String, attributionClass: AttributionClass, message: String) {
+    public init(code: String, attributionClass: AttributionClass, message: String, hint: String? = nil) {
         self.code = code
         self.attributionClass = attributionClass
         self.message = message
+        self.hint = hint
     }
 
     /// The ERR answering request `rid` (routing id `xid`) with this refusal.
     func errFrame(rid: MessageId, xid: MessageId) -> Frame {
         var frame = Frame.err(id: rid, code: code, attributionClass: attributionClass, message: message)
+        if let hint { frame = frame.withHint(hint) }
         frame.routingId = xid
         return frame
     }

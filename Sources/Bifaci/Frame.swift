@@ -527,6 +527,21 @@ public struct Frame: @unchecked Sendable {
         return frame
     }
 
+    /// The same ERR frame with the emitter's `hint`: the next thing a person
+    /// does about the failure, such as the command that installs what is
+    /// missing. A hint is advice, not identity: it changes neither the code
+    /// nor the class. The key is ABSENT when the emitter has none, never an
+    /// empty string. (matches Rust `Frame::with_hint`)
+    public func withHint(_ hint: String) -> Frame {
+        precondition(frameType == .err, "only an ERR frame carries a hint")
+        precondition(!hint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "ERR hint must be nonempty when present")
+        var frame = self
+        var meta = frame.meta ?? [:]
+        meta["hint"] = .utf8String(hint)
+        frame.meta = meta
+        return frame
+    }
+
     /// Create a HEARTBEAT frame for health monitoring.
     /// Either side can send; receiver must respond with HEARTBEAT using the same ID.
     public static func heartbeat(id: MessageId) -> Frame {
@@ -751,6 +766,26 @@ public struct Frame: @unchecked Sendable {
             throw FrameError.protocolError("diagnostic arg_urn must not be empty")
         }
         return argUrn
+    }
+
+    /// The emitter's hint on an ERR frame: what a person does next. nil when
+    /// the emitter gave none; a hint that is not text, or is empty, is a
+    /// protocol violation by the emitter, never read as no hint.
+    /// (matches Rust `Frame::error_hint`)
+    public func errorHint() throws -> String? {
+        guard frameType == .err else {
+            throw FrameError.protocolError("\(frameType) frames do not carry a hint")
+        }
+        guard let meta, let value = meta["hint"] else {
+            return nil
+        }
+        guard case .utf8String(let hint) = value else {
+            throw FrameError.protocolError("ERR hint must be text when present")
+        }
+        guard !hint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FrameError.protocolError("ERR hint must not be empty")
+        }
+        return hint
     }
 
     /// Get error message if this is an ERR frame

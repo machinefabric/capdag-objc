@@ -1027,6 +1027,33 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(identity.message, "prompt is invalid")
         XCTAssertEqual(identity.argUrn, "media:enc=utf8;prompt")
     }
+
+    // TEST7189: a handler that cannot go on without its peer's answer, and
+    // throws the peer's error as it came, ends its request with the peer's
+    // ERR — its code, class, message and hint — not a HANDLER_ERROR of its
+    // own. (mirrors Rust TEST7189)
+    func test7189_aForwardedPeerErrorEndsTheRequestAsThePeersErr() throws {
+        let refused = StreamError.remoteError(
+            code: "CARTRIDGE_INSTALL_FAILED",
+            attributionClass: .environment,
+            message: "ggufcartridge provides the inference cap and is not installed, and installing it failed",
+            argUrn: nil,
+            hint: "capdag cartridge install ggufcartridge"
+        )
+        let frame = handlerErrFrame(id: .newUUID(), error: refused)
+        XCTAssertEqual(frame.errorCode, "CARTRIDGE_INSTALL_FAILED")
+        XCTAssertEqual(try frame.attributionClass(), .environment)
+        XCTAssertEqual(
+            frame.errorMessage,
+            "ggufcartridge provides the inference cap and is not installed, and installing it failed"
+        )
+        XCTAssertEqual(try frame.errorHint(), "capdag cartridge install ggufcartridge")
+
+        struct Broke: Error {}
+        let own = handlerErrFrame(id: .newUUID(), error: Broke())
+        XCTAssertEqual(own.errorCode, "HANDLER_ERROR")
+        XCTAssertNil(try own.errorHint())
+    }
 }
 
 // MARK: - Mock FrameSenders

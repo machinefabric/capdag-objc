@@ -29,12 +29,17 @@ public protocol ClassifiedFailure: Error {
     /// at the emit source (docs/failure-taxonomy.md); nil when the failure
     /// has no attribution.
     var failureArgUrn: String? { get }
+    /// What a person does next — the command that brings what is missing —
+    /// when the emit source can say; it rides the ERR frame's hint.
+    var failureHint: String? { get }
 }
 
 public extension ClassifiedFailure {
     /// A classified failure that declares no argument attribution carries
     /// none — attribution is opt-in at the emit source, never inferred.
     var failureArgUrn: String? { nil }
+    /// A classified failure that declares no hint gives none.
+    var failureHint: String? { nil }
 }
 
 /// A handler failure carrying its FULL identity: the machine-readable code
@@ -54,17 +59,21 @@ public struct ClassifiedError: ClassifiedFailure, CustomStringConvertible, Senda
     /// at the emit source alongside the class (docs/failure-taxonomy.md);
     /// nil when the failure has no attribution.
     public let argUrn: String?
+    /// What a person does next, when the emit source can say; nil otherwise.
+    public let hint: String?
 
-    public init(code: String, attributionClass: AttributionClass, message: String, argUrn: String? = nil) {
+    public init(code: String, attributionClass: AttributionClass, message: String, argUrn: String? = nil, hint: String? = nil) {
         self.code = code
         self.attributionClass = attributionClass
         self.message = message
         self.argUrn = argUrn
+        self.hint = hint
     }
 
     public var failureCode: String { code }
     public var failureMessage: String { message }
     public var failureArgUrn: String? { argUrn }
+    public var failureHint: String? { hint }
 
     public var description: String {
         return "\(code): \(message)"
@@ -72,25 +81,40 @@ public struct ClassifiedError: ClassifiedFailure, CustomStringConvertible, Senda
 }
 
 /// Resolve the identity a failed handler's terminal ERR frame declares
-/// (docs/failure-taxonomy.md): the code, class, and argument attribution
-/// from the emit source when the thrown error is classified,
-/// HANDLER_ERROR/`.internal` without attribution when the handler never
-/// declared one. (matches the Rust RuntimeError accessors at the frame-emit
-/// boundary)
-public func classifyHandlerError(_ error: Error) -> (code: String, attributionClass: AttributionClass, message: String, argUrn: String?) {
+/// (docs/failure-taxonomy.md): the code, class, argument attribution and
+/// hint from the emit source when the thrown error is classified,
+/// HANDLER_ERROR/`.internal` without attribution or hint when the handler
+/// never declared one. (matches the Rust RuntimeError accessors at the
+/// frame-emit boundary)
+public func classifyHandlerError(_ error: Error) -> (code: String, attributionClass: AttributionClass, message: String, argUrn: String?, hint: String?) {
     if let classified = error as? ClassifiedFailure {
-        return (classified.failureCode, classified.attributionClass, classified.failureMessage, classified.failureArgUrn)
+        return (classified.failureCode, classified.attributionClass, classified.failureMessage, classified.failureArgUrn, classified.failureHint)
     }
     // A classified op-layer failure keeps the identity it declared
     // (matches Rust dispatch_op's OpError → RuntimeError mapping).
     if let opError = error as? OpError, let code = opError.failureCode {
-        return (code, opError.attributionClass, opError.failureReason, opError.failureArgUrn)
+        return (code, opError.attributionClass, opError.failureReason, opError.failureArgUrn, nil)
     }
-    // A peer's error propagated as-is keeps the class and attribution the
-    // PEER's frame declared.
+    // A peer's error propagated as-is keeps the class, attribution and hint
+    // the PEER's frame declared.
     if let stream = error as? StreamError,
-       case .remoteError(let code, let attributionClass, let message, let argUrn) = stream {
-        return (code, attributionClass, message, argUrn)
+       case .remoteError(let code, let attributionClass, let message, let argUrn, let hint) = stream {
+        return (code, attributionClass, message, argUrn, hint)
     }
-    return ("HANDLER_ERROR", .internal, String(describing: error), nil)
+    return ("HANDLER_ERROR", .internal, String(describing: error), nil, nil)
+}
+
+/// The ERR frame a failed handler ends request `id` with: its classified
+/// identity and its hint. (matches Rust `handler_err_frame`)
+public func handlerErrFrame(id: MessageId, error: Error) -> Frame {
+    let identity = classifyHandlerError(error)
+    let frame = Frame.err(
+        id: id,
+        code: identity.code,
+        attributionClass: identity.attributionClass,
+        message: identity.message,
+        argUrn: identity.argUrn
+    )
+    guard let hint = identity.hint else { return frame }
+    return frame.withHint(hint)
 }
