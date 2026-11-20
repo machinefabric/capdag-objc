@@ -2,7 +2,7 @@
 
 Generated from the test catalogue. Edit the tests, not this file.
 
-1085 tests: 1084 numbered, 1 unnumbered.
+1086 tests: 1085 numbered, 1 unnumbered.
 
 ## Numbered
 
@@ -709,6 +709,7 @@ Generated from the test catalogue. Edit the tests, not this file.
 | TEST1805 | capdag/capdag-objc | objc | `test1805_kind_invariant_under_canonical_spellings` | Tests/CapDAGTests/CSCapUrnTests.m:1698 | TEST1805: Kind is invariant under canonicalization. The same morphism written in many surface forms must classify the same way once parsed. This pins the rule that kind is a property of the cap as a structured object, not of any particular spelling. |
 | TEST1810 | capdag/capdag-objc | objc | `test1810_media_void_is_atomic` | Tests/CapDAGTests/CSMediaUrnTests.m:520 | TEST1810: media:void is atomic — refinements are parse errors. Mirrored across every language port (Rust, Go, Python, Swift/ObjC, JS) under the SAME number. Any divergence is a wire-level inconsistency — the unit type's atomicity is part of the protocol's deepest layer, not a per-port detail. The bare `media:void` parses successfully; any combination with another tag (marker or key=value) MUST fail with VoidNotAtomic. This forecloses a fake taxonomy of unit values; reasons or labels for *why* void is used belong on the cap URN's non-directional tags or in cap args. |
 | TEST1811 | capdag/capdag-objc | objc | `test1811_void_atomicity_reads_the_marker` | Tests/CapDAGTests/CSMediaUrnTests.m:554 | TEST1811: atomicity belongs to the void marker alone. media:void;enc=utf8 is refused with VoidNotAtomic, naming enc; media:!void;enc=utf8 (must not be void) and media:?void;enc=utf8 (void left open) name void without the marker, so each parses as an ordinary media URN that is not void. |
+| TEST1812 | capdag/capdag-objc | objc | `test1812_marker_predicates_read_the_marker` | Tests/CapDAGTests/CSMediaUrnTests.m:571 | TEST1812: every marker predicate reads its marker, never the key's presence. For each marker x, the predicate is true for media:x and false for media:!x (must not have x) and media:?x (x left open); the negated predicates (is_scalar, is_opaque) are the reverse. The Objective-C library has no live-feed predicate. |
 | TEST1820 | capdag/capdag-objc | objc | `test1820_specificity_question_is_zero` | Tests/CapDAGTests/CSCapUrnTests.m:1894 | TEST1820: A `?`-valued cap-tag scores 0. Same as missing. |
 | TEST1821 | capdag/capdag-objc | objc | `test1821_specificity_must_not_have_is_five` | Tests/CapDAGTests/CSCapUrnTests.m:1908 | TEST1821: A `!`-valued cap-tag scores 5 (top of negative chain). |
 | TEST1822 | capdag/capdag-objc | objc | `test1822_specificity_must_have_any_is_two` | Tests/CapDAGTests/CSCapUrnTests.m:1917 | TEST1822: A `*`-valued cap-tag (including bare markers) scores 2. |

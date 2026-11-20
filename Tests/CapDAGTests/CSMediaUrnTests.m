@@ -567,4 +567,47 @@
     }
 }
 
+// TEST1812: every marker predicate reads its marker, never the key's presence. For each marker x, the predicate is true for media:x and false for media:!x (must not have x) and media:?x (x left open); the negated predicates (is_scalar, is_opaque) are the reverse. The Objective-C library has no live-feed predicate.
+- (void)test1812_marker_predicates_read_the_marker {
+    NSDictionary<NSString *, BOOL (^)(CSMediaUrn *)> *predicates = @{
+        @"list": ^BOOL(CSMediaUrn *u) { return [u isList]; },
+        @"record": ^BOOL(CSMediaUrn *u) { return [u isRecord]; },
+        @"image": ^BOOL(CSMediaUrn *u) { return [u isImage]; },
+        @"audio": ^BOOL(CSMediaUrn *u) { return [u isAudio]; },
+        @"video": ^BOOL(CSMediaUrn *u) { return [u isVideo]; },
+        @"numeric": ^BOOL(CSMediaUrn *u) { return [u isNumeric]; },
+        @"bool": ^BOOL(CSMediaUrn *u) { return [u isBool]; },
+        @"void": ^BOOL(CSMediaUrn *u) { return [u isVoid]; },
+        @"file-path": ^BOOL(CSMediaUrn *u) { return [u isFilePath]; },
+    };
+    NSDictionary<NSString *, BOOL (^)(CSMediaUrn *)> *negated = @{
+        @"list": ^BOOL(CSMediaUrn *u) { return [u isScalar]; },
+        @"record": ^BOOL(CSMediaUrn *u) { return [u isOpaque]; },
+    };
+    CSMediaUrn *(^parse)(NSString *) = ^CSMediaUrn *(NSString *s) {
+        NSError *e = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:s error:&e];
+        XCTAssertNotNil(urn, @"%@: %@", s, e);
+        return urn;
+    };
+    for (NSString *marker in predicates) {
+        BOOL (^predicate)(CSMediaUrn *) = predicates[marker];
+        NSString *bare = [@"media:" stringByAppendingString:marker];
+        NSString *absent = [@"media:!" stringByAppendingString:marker];
+        NSString *open = [@"media:?" stringByAppendingString:marker];
+        XCTAssertTrue(predicate(parse(bare)), @"%@", bare);
+        XCTAssertFalse(predicate(parse(absent)), @"%@", absent);
+        XCTAssertFalse(predicate(parse(open)), @"%@", open);
+    }
+    for (NSString *marker in negated) {
+        BOOL (^predicate)(CSMediaUrn *) = negated[marker];
+        NSString *bare = [@"media:" stringByAppendingString:marker];
+        NSString *absent = [@"media:!" stringByAppendingString:marker];
+        NSString *open = [@"media:?" stringByAppendingString:marker];
+        XCTAssertFalse(predicate(parse(bare)), @"%@", bare);
+        XCTAssertTrue(predicate(parse(absent)), @"%@", absent);
+        XCTAssertTrue(predicate(parse(open)), @"%@", open);
+    }
+}
+
 @end

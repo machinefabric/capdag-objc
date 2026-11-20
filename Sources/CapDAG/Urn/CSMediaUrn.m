@@ -223,23 +223,23 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 }
 
 - (BOOL)isImage {
-    return [self getTag:@"image"] != nil;
+    return [self hasMarkerTag:@"image"];
 }
 
 - (BOOL)isAudio {
-    return [self getTag:@"audio"] != nil;
+    return [self hasMarkerTag:@"audio"];
 }
 
 - (BOOL)isVideo {
-    return [self getTag:@"video"] != nil;
+    return [self hasMarkerTag:@"video"];
 }
 
 - (BOOL)isNumeric {
-    return [self getTag:@"numeric"] != nil;
+    return [self hasMarkerTag:@"numeric"];
 }
 
 - (BOOL)isBool {
-    return [self getTag:@"bool"] != nil;
+    return [self hasMarkerTag:@"bool"];
 }
 
 - (BOOL)isFilePath {
