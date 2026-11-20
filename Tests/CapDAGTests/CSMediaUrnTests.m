@@ -239,11 +239,15 @@
     }
 }
 
-// TEST068: Test is_void returns true when void flag or type=void tag is present
+// TEST068: is_void is true only for the void marker: media:void; not media:!void (must not be void), media:?void (unconstrained), a URN with no void tag, or media:
 - (void)test068_is_void {
-    NSError *e;
+    NSError *e = nil;
     XCTAssertTrue([[CSMediaUrn fromString:CSMediaVoid error:&e] isVoid]);
-    XCTAssertFalse([[CSMediaUrn fromString:@"media:string" error:&e] isVoid]);
+    for (NSString *s in @[@"media:!void", @"media:?void", @"media:string", @"media:"]) {
+        CSMediaUrn *urn = [CSMediaUrn fromString:s error:&e];
+        XCTAssertNotNil(urn, @"%@: %@", s, e);
+        XCTAssertFalse([urn isVoid], @"%@", s);
+    }
 }
 
 // TEST546: is_image returns true only when image marker tag is present; a format conforms to its own medium and to no other
@@ -543,6 +547,23 @@
         XCTAssertEqual(err.code, CSMediaUrnErrorVoidNotAtomic,
                        @"%@: expected CSMediaUrnErrorVoidNotAtomic, got code %ld (%@)",
                        input, (long)err.code, err.localizedDescription);
+    }
+}
+
+// TEST1811: atomicity belongs to the void marker alone. media:void;enc=utf8 is refused with VoidNotAtomic, naming enc; media:!void;enc=utf8 (must not be void) and media:?void;enc=utf8 (void left open) name void without the marker, so each parses as an ordinary media URN that is not void.
+- (void)test1811_void_atomicity_reads_the_marker {
+    NSError *err = nil;
+    XCTAssertNil([CSMediaUrn fromString:@"media:void;enc=utf8" error:&err]);
+    XCTAssertEqualObjects(err.domain, CSMediaUrnErrorDomain);
+    XCTAssertEqual(err.code, CSMediaUrnErrorVoidNotAtomic, @"%@", err.localizedDescription);
+    XCTAssertTrue([err.localizedDescription containsString:@"extra tag(s): enc."], @"%@", err.localizedDescription);
+
+    for (NSString *input in @[@"media:!void;enc=utf8", @"media:?void;enc=utf8"]) {
+        NSError *e = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:input error:&e];
+        XCTAssertNotNil(urn, @"%@ must parse: it does not say void (%@)", input, e);
+        XCTAssertFalse([urn isVoid], @"%@ is not void", input);
+        XCTAssertEqualObjects([urn getTag:@"enc"], @"utf8", @"%@ keeps its other tags", input);
     }
 }
 

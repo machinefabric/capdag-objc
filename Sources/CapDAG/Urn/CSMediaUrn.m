@@ -40,8 +40,9 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     // Enforce media:void atomicity. The unit type has no lattice
     // underneath it; refinements like media:void;text or
     // media:void;reason=warmup are conceptually wrong. Reasons or
-    // labels belong on cap-tags or args.
-    if (urn.tags[@"void"] != nil && urn.tags.count > 1) {
+    // labels belong on cap-tags or args. Only the void marker is atomic:
+    // media:!void;… and media:?void;… do not say void.
+    if ([urn.tags[@"void"] isEqualToString:@"*"] && urn.tags.count > 1) {
         NSMutableArray<NSString *> *extras = [NSMutableArray array];
         for (NSString *key in urn.tags) {
             if (![key isEqualToString:@"void"]) {
@@ -214,7 +215,7 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 }
 
 - (BOOL)isVoid {
-    return [self getTag:@"void"] != nil;
+    return [self hasMarkerTag:@"void"];
 }
 
 - (BOOL)isTop {
