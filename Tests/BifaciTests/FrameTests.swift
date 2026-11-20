@@ -896,7 +896,8 @@ final class CborFrameTests: XCTestCase {
     }
 
     @available(macOS 10.15.4, iOS 13.4, *)
-    // TEST222: Test read_frame handles truncated length prefix (fewer than 4 bytes available)
+    // TEST222: a stream that ends inside a length prefix ended part way
+    // through a frame: readFrame says so, and never reads it as the clean end.
     func test222_truncatedLengthPrefix() throws {
         let pipe = Pipe()
         // Write only 2 bytes (need 4 for length prefix)
@@ -904,13 +905,23 @@ final class CborFrameTests: XCTestCase {
         pipe.fileHandleForWriting.closeFile()
 
         XCTAssertThrowsError(try readFrame(from: pipe.fileHandleForReading, limits: Limits())) { error in
-            // Should produce an I/O or protocol error
-            if case FrameError.ioError = error {
-                // Expected - truncated read
-            } else if case FrameError.invalidFrame = error {
-                // Also acceptable
-            } else {
-                // Any error is acceptable for truncated data
+            guard case FrameError.unexpectedEof = error else {
+                return XCTFail("a cut length prefix is an unexpected end, got \(error)")
+            }
+        }
+    }
+
+    @available(macOS 10.15.4, iOS 13.4, *)
+    // TEST13213: a stream that ends right after a whole length prefix, before
+    // any of the frame it announces, ended part way through that frame.
+    func test13213_aStreamEndingAfterALengthPrefixIsAnUnexpectedEnd() throws {
+        let pipe = Pipe()
+        pipe.fileHandleForWriting.write(Data([0x00, 0x00, 0x00, 0x10]))
+        pipe.fileHandleForWriting.closeFile()
+
+        XCTAssertThrowsError(try readFrame(from: pipe.fileHandleForReading, limits: Limits())) { error in
+            guard case FrameError.unexpectedEof = error else {
+                return XCTFail("a frame announced and never sent is an unexpected end, got \(error)")
             }
         }
     }
