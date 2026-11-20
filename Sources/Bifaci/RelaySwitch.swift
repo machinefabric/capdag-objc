@@ -261,8 +261,13 @@ private final class MasterConnection: @unchecked Sendable {
     /// probe) fails, or when the master dies; cleared when a
     /// deferred probe later passes and the master flips healthy.
     var lastError: String?
+    /// The identity probe this master's health waits on, while one is
+    /// open. Only its answer settles the master; the answer of a probe it
+    /// replaced (a reattach, a later probe) is ignored. Guarded by the
+    /// switch lock.
+    var identityProbe: RoutingKey?
 
-    init(id: String, socketWriter: FrameWriter, seqAssigner: SeqAssigner, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], hostProtocolStats: HostProtocolStats? = nil, healthy: Bool, lastError: String? = nil) {
+    init(id: String, socketWriter: FrameWriter, seqAssigner: SeqAssigner, reorderBuffer: ReorderBuffer? = nil, manifest: Data, limits: Limits, caps: [String], installedCartridges: [InstalledCartridgeRecord], hostProtocolStats: HostProtocolStats? = nil, healthy: Bool, lastError: String? = nil, identityProbe: RoutingKey? = nil) {
         self.id = id
         self.socketWriter = socketWriter
         self.seqAssigner = seqAssigner
@@ -273,7 +278,8 @@ private final class MasterConnection: @unchecked Sendable {
         self.hostProtocolStats = hostProtocolStats
         self.healthy = healthy
         self.lastError = lastError
-        self.reorderBuffer = ReorderBuffer(maxBufferPerFlow: limits.maxReorderBuffer)
+        self.identityProbe = identityProbe
+        self.reorderBuffer = reorderBuffer ?? ReorderBuffer(maxBufferPerFlow: limits.maxReorderBuffer)
     }
 }
 
@@ -419,6 +425,136 @@ private final class ResponseChannel: @unchecked Sendable {
     }
 }
 
+// MARK: - Identity probes
+
+/// How long an identity probe may go unanswered before its master is
+/// reported overdue. Starting the cartridge that answers identity is part
+/// of the round trip, and a cold start can outlast any fixed bound, so the
+/// window does not end the probe: past it the master is reported overdue,
+/// stays unverified, and the answer, whenever it comes, settles it. Mirrors
+/// Rust `IDENTITY_PROBE_WINDOW`.
+public let IDENTITY_PROBE_WINDOW: TimeInterval = 30.0
+
+/// An identity probe the switch has sent and whose answer it waits for.
+/// Its answer is delivered on `channel` by the master's reader.
+private final class OpenIdentityProbe: @unchecked Sendable {
+    let masterIdx: Int
+    let key: RoutingKey
+    let channel: ResponseChannel
+    let nonce: Data
+    /// The echo received so far.
+    var echoed: Data
+    let sentAt: Date
+    let window: TimeInterval
+    /// Whether the master has been reported overdue.
+    var overdue: Bool
+
+    init(masterIdx: Int, key: RoutingKey, channel: ResponseChannel, nonce: Data, echoed: Data, sentAt: Date, window: TimeInterval, overdue: Bool) {
+        self.masterIdx = masterIdx
+        self.key = key
+        self.channel = channel
+        self.nonce = nonce
+        self.echoed = echoed
+        self.sentAt = sentAt
+        self.window = window
+        self.overdue = overdue
+    }
+}
+
+/// A job for the identity-probe driver.
+private enum IdentityProbeJob {
+    /// Probe this master through the switch (its advertised caps went from
+    /// empty to non-empty).
+    case probe(Int)
+    /// Wait for the answer to a probe already sent: `addMaster`'s, left
+    /// unanswered when its window ended.
+    case await(OpenIdentityProbe)
+}
+
+/// Where a master's reader puts what it reads until `addMaster` has
+/// committed the master's slot (`diverting`), instead of handling it.
+/// `addMaster` waits on its identity probe through this rather than reading
+/// the socket itself, so the reader is the only reader of the socket and the
+/// wait can end at its window without a read part-way through a frame. Each
+/// read is a frame, EOF (`frame` and `error` both nil), or the error that
+/// ended the connection.
+private final class ReaderDiversion: @unchecked Sendable {
+    let cond = NSCondition()
+    var diverting = true
+    var pending: [(frame: Frame?, error: Error?)] = []
+
+    /// The oldest read not yet handled, waiting until `deadline` for one;
+    /// nil when none came.
+    func pop(until deadline: Date) -> (frame: Frame?, error: Error?)? {
+        cond.lock()
+        defer { cond.unlock() }
+        while pending.isEmpty {
+            if !cond.wait(until: deadline) { break }
+        }
+        return pending.isEmpty ? nil : pending.removeFirst()
+    }
+}
+
+/// What one frame of an identity probe's answer does to the probe: the
+/// answer is STREAM_START, CHUNK(nonce)…, STREAM_END, END, or an ERR.
+/// Returns `done == false` while the answer is still coming; done with no
+/// failure when it verified the probe.
+private func identityAnswerStep(_ frame: Frame, nonce: Data, echoed: inout Data) -> (done: Bool, failure: String?) {
+    switch frame.frameType {
+    case .streamStart, .streamEnd:
+        return (false, nil)
+    case .chunk:
+        if let payload = frame.payload {
+            echoed.append(payload)
+        }
+        return (false, nil)
+    case .end:
+        if echoed != nonce {
+            return (true, "identity payload mismatch (expected \(nonce.count) bytes, got \(echoed.count))")
+        }
+        return (true, nil)
+    case .err:
+        guard let code = frame.errorCode, !code.isEmpty else {
+            return (true, "identity failed: ERR frame missing required text code")
+        }
+        guard let msg = frame.errorMessage, !msg.isEmpty else {
+            return (true, "identity failed: ERR frame missing required text message")
+        }
+        return (true, "identity failed: [\(code)] \(msg)")
+    case .log, .credit, .heartbeat:
+        // Control/side-channel frames are legal ANYWHERE during the probe
+        // (spec 12.4: LOG interleaves without affecting data flow;
+        // CREDIT/HEARTBEAT are the control plane the writer gate itself
+        // exempts, L4). A cartridge crediting its probe input as it
+        // consumes (L10) must not fail identity verification.
+        return (false, nil)
+    default:
+        return (true, "identity: unexpected frame type \(frame.frameType)")
+    }
+}
+
+/// What a master still waiting on its identity probe reports.
+private func identityProbeOverdueMessage(_ masterIdx: Int, _ window: TimeInterval) -> String {
+    return "master \(masterIdx): identity probe unanswered after \(window)s — the master stays unverified until the host answers it " +
+        "(the cartridge answering identity is still starting, or the probe or its answer was lost on the way)"
+}
+
+/// An identity probe's REQ and body — STREAM_START, CHUNK(nonce),
+/// STREAM_END, END — on the flow (xid, rid). Seq is the writer's to assign.
+private func identityProbeFrames(rid: MessageId, xid: MessageId, nonce: Data, streamId: String) -> [Frame] {
+    var frames = [
+        Frame.req(id: rid, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor"),
+        Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:"),
+        Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: Frame.computeChecksum(nonce)),
+        Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1),
+        Frame.end(id: rid),
+    ]
+    for i in frames.indices {
+        frames[i].routingId = xid
+    }
+    return frames
+}
+
 // MARK: - Relay Switch
 
 /// Cap-aware routing multiplexer for multiple RelayMasters.
@@ -536,23 +672,26 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    /// Response channels for in-flight deferred identity probes, keyed
-    /// by the probe's (xid, rid). The master reader thread diverts a
-    /// frame whose (xid, rid) matches a registered channel here instead
-    /// of enqueueing it for the engine — the mechanism that lets the
-    /// probe driver await the host's nonce echo end-to-end. Mirrors
-    /// Rust's `external_response_channels`.
-    private var externalResponseChannels: [RoutingKey: ResponseChannel] = [:]
+    /// Response channels for open identity probes, keyed by the probe's
+    /// (xid, rid), with the master each probes. The master reader thread
+    /// diverts a frame whose (xid, rid) matches a registered channel here
+    /// instead of enqueueing it for the engine — the mechanism that lets
+    /// the probe driver await the host's nonce echo end-to-end — and when
+    /// the master's connection ends, it ends the master's probes with a
+    /// MASTER_DIED ERR. Mirrors Rust's request-table response channels.
+    private var externalResponseChannels: [RoutingKey: (masterIdx: Int, channel: ResponseChannel)] = [:]
 
-    /// Queue of master indexes whose advertised cap set transitioned
-    /// from empty to non-empty since the last identity probe. The probe
-    /// driver thread drains this and runs an end-to-end identity probe
-    /// against each, gating cap-table publication on probe success —
-    /// the runtime counterpart to the synchronous `addMaster` probe.
-    /// Mirrors Rust's `pending_identity_probes` channel.
-    private var pendingIdentityProbes: [Int] = []
-    /// Wakes the probe driver when a master index is queued (or on
-    /// shutdown).
+    /// Queue of identity-probe jobs: masters whose advertised cap set
+    /// transitioned from empty to non-empty, and `addMaster` probes left
+    /// unanswered at the end of their window. The probe driver thread runs
+    /// each, gating cap-table publication on its answer. Mirrors Rust's
+    /// `pending_identity_probes` channel.
+    private var pendingIdentityProbes: [IdentityProbeJob] = []
+    /// How long an identity probe may go unanswered before its master is
+    /// reported overdue (`IDENTITY_PROBE_WINDOW`). The probe stays open
+    /// after it. Guarded by `lock`.
+    private var identityProbeWindow: TimeInterval = IDENTITY_PROBE_WINDOW
+    /// Wakes the probe driver when a job is queued (or on shutdown).
     private let probeSemaphore = DispatchSemaphore(value: 0)
     /// Whether the probe driver thread has been spawned. Spawned lazily
     /// the first time a probe is queued; idempotent thereafter.
@@ -760,8 +899,10 @@ public final class RelaySwitch: @unchecked Sendable {
 
         // Phase 2: All masters verified — spawn reader threads
         for (masterIdx, reader) in pendingReaders {
+            let diversion = ReaderDiversion()
+            diversion.diverting = false
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.readerLoop(masterIdx: masterIdx, reader: reader)
+                self?.readerLoop(masterIdx: masterIdx, reader: reader, diversion: diversion)
             }
         }
 
@@ -802,97 +943,138 @@ public final class RelaySwitch: @unchecked Sendable {
 
     // MARK: - Reader Loop
 
-    private func readerLoop(masterIdx: Int, reader: FrameReader) {
+    /// Read a master's socket until its connection ends. Every read goes to
+    /// `addMaster` while the diversion holds it, then is handled.
+    private func readerLoop(masterIdx: Int, reader: FrameReader, diversion: ReaderDiversion) {
         var mutableReader = reader
-        // On exit the slot is detached: the connection is gone whether
-        // or not the pump has processed the error yet, so a reattach
-        // for this id is legitimate from this moment.
-        defer {
-            lock.lock()
-            if masterIdx < masters.count {
-                masters[masterIdx].detached = true
-            }
-            lock.unlock()
-        }
         while true {
             // Check shutdown flag before reading
             if isShutdown { return }
 
+            var frame: Frame? = nil
+            var readError: Error? = nil
             do {
-                guard let frame = try mutableReader.read() else {
-                    enqueueFrame(masterIdx: masterIdx, frame: nil, error: nil)
-                    return
-                }
-
-                // Check shutdown after read
-                if isShutdown { return }
-
-                // Intercept RelayNotify before sending to queue
-                if frame.frameType == .relayNotify {
-                    lock.lock()
-                    if !isShutdown,
-                       let manifest = frame.relayNotifyManifest,
-                       let limits = frame.relayNotifyLimits {
-                        // Detect an empty→non-empty cap transition and, if so,
-                        // hold the master unhealthy and queue a deferred
-                        // runtime identity probe before its new caps become
-                        // routable. See applyRelayNotifyUpdate. A malformed
-                        // payload is logged and skipped — never thrown with
-                        // the lock held (that would deadlock this thread's
-                        // own catch handler below).
-                        do {
-                            try applyRelayNotifyUpdate(sourceIdx: masterIdx, manifest: manifest, newLimits: limits)
-                        } catch {
-                            fputs("[RelaySwitch] master \(masterIdx): RelayNotify update failed: \(error)\n", stderr)
-                        }
-                    }
-                    lock.unlock()
-                    continue
-                }
-
-                // Pass through reorder buffer
-                lock.lock()
-                let shutdownDuringReorder = isShutdown
-                let reorderBuffer = shutdownDuringReorder ? nil : masters[masterIdx].reorderBuffer
-                lock.unlock()
-
-                guard let buffer = reorderBuffer else { return }
-
-                let readyFrames = try buffer.accept(frame)
-
-                for readyFrame in readyFrames {
-                    if readyFrame.frameType.isTerminal {
-                        let key = FlowKey.fromFrame(readyFrame)
-                        buffer.cleanupFlow(key)
-                    }
-
-                    // Divert frames belonging to an in-flight deferred
-                    // identity probe to that probe's response channel
-                    // instead of surfacing them to the engine. The probe
-                    // driver registered the channel keyed by the probe's
-                    // (xid, rid); the host echoes the nonce on that same
-                    // flow. Mirrors Rust's external_response_channels
-                    // delivery in the master-read path.
-                    if let xid = readyFrame.routingId {
-                        let probeKey = RoutingKey(xid: xid, rid: readyFrame.id)
-                        lock.lock()
-                        let channel = externalResponseChannels[probeKey]
-                        lock.unlock()
-                        if let channel = channel {
-                            channel.deliver(readyFrame)
-                            continue
-                        }
-                    }
-
-                    enqueueFrame(masterIdx: masterIdx, frame: readyFrame, error: nil)
-                }
+                frame = try mutableReader.read()
             } catch {
-                // Don't enqueue errors if we're shutting down
-                if isShutdown { return }
+                readError = error
+            }
 
-                enqueueFrame(masterIdx: masterIdx, frame: nil, error: error)
+            // Check shutdown after read
+            if isShutdown { return }
+
+            diversion.cond.lock()
+            let diverted = diversion.diverting
+            if diverted {
+                diversion.pending.append((frame: frame, error: readError))
+                diversion.cond.broadcast()
+            }
+            diversion.cond.unlock()
+
+            if diverted {
+                if frame == nil { return }
+            } else if !handleMasterRead(masterIdx: masterIdx, frame: frame, error: readError) {
                 return
             }
+        }
+    }
+
+    /// Handle one read of a master's socket: a frame, EOF (`frame` and
+    /// `error` both nil), or the error that ended the connection. Returns
+    /// whether the connection goes on.
+    private func handleMasterRead(masterIdx: Int, frame: Frame?, error: Error?) -> Bool {
+        guard let frame = frame, error == nil else {
+            // The connection is gone. The slot is detached from this moment,
+            // whether or not the pump has processed the end yet, so a
+            // reattach for this id is legitimate; and the master's open
+            // identity probes end, as a death ends its other requests.
+            if isShutdown { return false }
+            lock.lock()
+            if masterIdx < masters.count {
+                masters[masterIdx].detached = true
+            }
+            endIdentityProbesLocked(ofMaster: masterIdx)
+            lock.unlock()
+            enqueueFrame(masterIdx: masterIdx, frame: nil, error: error)
+            return false
+        }
+
+        // Intercept RelayNotify before sending to queue
+        if frame.frameType == .relayNotify {
+            lock.lock()
+            if !isShutdown,
+               let manifest = frame.relayNotifyManifest,
+               let limits = frame.relayNotifyLimits {
+                // Detect an empty→non-empty cap transition and, if so,
+                // hold the master unhealthy and queue a deferred
+                // runtime identity probe before its new caps become
+                // routable. See applyRelayNotifyUpdate. A malformed
+                // payload is logged and skipped — never thrown with
+                // the lock held.
+                do {
+                    try applyRelayNotifyUpdate(sourceIdx: masterIdx, manifest: manifest, newLimits: limits)
+                } catch {
+                    fputs("[RelaySwitch] master \(masterIdx): RelayNotify update failed: \(error)\n", stderr)
+                }
+            }
+            lock.unlock()
+            return true
+        }
+
+        // Pass through reorder buffer
+        lock.lock()
+        let reorderBuffer = isShutdown ? nil : masters[masterIdx].reorderBuffer
+        lock.unlock()
+
+        guard let buffer = reorderBuffer else { return false }
+
+        let readyFrames: [Frame]
+        do {
+            readyFrames = try buffer.accept(frame)
+        } catch {
+            return handleMasterRead(masterIdx: masterIdx, frame: nil, error: error)
+        }
+
+        for readyFrame in readyFrames {
+            if readyFrame.frameType.isTerminal {
+                let key = FlowKey.fromFrame(readyFrame)
+                buffer.cleanupFlow(key)
+            }
+
+            // Divert frames belonging to an open identity probe to that
+            // probe's response channel instead of surfacing them to the
+            // engine. The probe registered the channel keyed by its
+            // (xid, rid); the host echoes the nonce on that same flow.
+            if let xid = readyFrame.routingId {
+                let probeKey = RoutingKey(xid: xid, rid: readyFrame.id)
+                lock.lock()
+                let channel = externalResponseChannels[probeKey]?.channel
+                lock.unlock()
+                if let channel = channel {
+                    channel.deliver(readyFrame)
+                    continue
+                }
+            }
+
+            enqueueFrame(masterIdx: masterIdx, frame: readyFrame, error: nil)
+        }
+        return true
+    }
+
+    /// End the open identity probes of a master whose connection is gone:
+    /// each gets the MASTER_DIED ERR a death gives every request to the
+    /// master, and its request ends. Caller holds `lock`.
+    private func endIdentityProbesLocked(ofMaster masterIdx: Int) {
+        for (key, entry) in externalResponseChannels where entry.masterIdx == masterIdx {
+            externalResponseChannels.removeValue(forKey: key)
+            requests.terminate(key, kind: .masterDied)
+            var errFrame = Frame.err(
+                id: key.rid,
+                code: "MASTER_DIED",
+                attributionClass: .environment,
+                message: "Relay master \(masterIdx) connection closed"
+            )
+            errFrame.routingId = key.xid
+            entry.channel.deliver(errFrame)
         }
     }
 
@@ -1041,6 +1223,23 @@ public final class RelaySwitch: @unchecked Sendable {
         try socketWriter.write(Frame.policy(policy))
 
         let seqAssigner = SeqAssigner()
+        // The master's inbound reorder buffer is in use from the first frame
+        // the probe reads, so a probe answer half-read here and finished
+        // after the slot joins is one flow to it.
+        let reorderBuffer = ReorderBuffer(maxBufferPerFlow: masterLimits.maxReorderBuffer)
+
+        // The master's reader starts now and is the only reader of its
+        // socket from here on. Until the slot is committed below, the reader
+        // hands what it reads to this call instead of handling it: to the
+        // identity probe while it waits, and in any case so a capless
+        // master's immediate empty→non-empty RelayNotify is not handled
+        // before the slot exists (its runtime probe would never run).
+        let diversion = ReaderDiversion()
+        let boundIdx = masterIdx
+        let boundReader = socketReader
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.readerLoop(masterIdx: boundIdx, reader: boundReader, diversion: diversion)
+        }
 
         // End-to-end identity verification. Only meaningful when the host
         // advertises at least one cap — otherwise there is no cartridge
@@ -1051,10 +1250,20 @@ public final class RelaySwitch: @unchecked Sendable {
         // the master is registered UNHEALTHY with `lastError` set, so its
         // installed_cartridges remain visible to the inventory aggregate
         // while its caps are held back from routing (cap_table skips
-        // unhealthy masters). Mirrors Rust `add_master`, which captures the
-        // failure into `identity_failure` and registers unhealthy rather
-        // than returning Err.
+        // unhealthy masters). Mirrors Rust `add_master`.
+        //
+        // Starting the cartridge that answers identity is part of the round
+        // trip, and its cold start has no fixed bound, so the wait here is
+        // bounded by the probe window and the master joins when it ends,
+        // answered or not. A probe unanswered at the end of its window is
+        // not a failure: the master joins unverified and reported overdue,
+        // the probe stays open, and its answer, whenever it comes, verifies
+        // the master (the probe driver waits for it).
+        lock.lock()
+        let window = identityProbeWindow
+        lock.unlock()
         var identityFailure: String? = nil
+        var openProbe: OpenIdentityProbe? = nil
         if !caps.isEmpty {
             lock.lock()
             xidCounter += 1
@@ -1063,90 +1272,84 @@ public final class RelaySwitch: @unchecked Sendable {
 
             let nonce = identityNonce()
             let reqId = MessageId.newUUID()
-            let streamId = "identity-verify"
-
+            let sentAt = Date()
+            var failure: String? = nil
             do {
-                var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-                req.routingId = xid
-                seqAssigner.assign(&req)
-                try socketWriter.write(req)
-
-                var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
-                ss.routingId = xid
-                seqAssigner.assign(&ss)
-                try socketWriter.write(ss)
-
-                let checksum = Frame.computeChecksum(nonce)
-                var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-                chunk.routingId = xid
-                seqAssigner.assign(&chunk)
-                try socketWriter.write(chunk)
-
-                var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
-                se.routingId = xid
-                seqAssigner.assign(&se)
-                try socketWriter.write(se)
-
-                var end = Frame.end(id: reqId)
-                end.routingId = xid
-                seqAssigner.assign(&end)
-                try socketWriter.write(end)
-
-                seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
-
-                // Read response
-                var accumulated = Data()
-                probeLoop: while true {
-                    guard let frame = try socketReader.read() else {
-                        identityFailure = "new master \(masterIdx): connection closed during identity verification"
-                        break
-                    }
-
-                    switch frame.frameType {
-                    case .relayNotify:
-                        if let manifest = frame.relayNotifyManifest {
-                            capsPayload = manifest
-                            notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                            caps = notifyPayload.capUrns()
-                        }
-                        if let newLimits = frame.relayNotifyLimits {
-                            masterLimits = newLimits
-                        }
-                    case .streamStart, .streamEnd:
-                        break
-                    case .chunk:
-                        if let payload = frame.payload {
-                            accumulated.append(payload)
-                        }
-                    case .end:
-                        if accumulated != nonce {
-                            identityFailure = "new master \(masterIdx): identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))"
-                        }
-                        break probeLoop
-                    case .err:
-                        let code = frame.errorCode ?? "UNKNOWN"
-                        let msg = frame.errorMessage ?? "no message"
-                        identityFailure = "new master \(masterIdx): identity verification failed: [\(code)] \(msg)"
-                        break probeLoop
-                    case .log, .credit, .heartbeat:
-                        // Control/side-channel frames are legal ANYWHERE during the
-                        // probe (spec 12.4: LOG interleaves without affecting data
-                        // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A cartridge crediting its
-                        // probe input as it consumes (L10) must not fail identity
-                        // verification.
-                        break
-                    default:
-                        identityFailure = "new master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)"
-                        break probeLoop
-                    }
+                for var frame in identityProbeFrames(rid: reqId, xid: xid, nonce: nonce, streamId: "identity-verify") {
+                    seqAssigner.assign(&frame)
+                    try socketWriter.write(frame)
                 }
+                seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
             } catch {
-                identityFailure = "new master \(masterIdx): identity verification error: \(error)"
+                failure = "identity send failed: \(error)"
             }
 
-            if let failure = identityFailure {
-                fputs("[RelaySwitch] addMaster: identity verification FAILED for master \(masterIdx) — registering unhealthy so installed_cartridges stay visible: \(failure)\n", stderr)
+            var echoed = Data()
+            var answered = failure != nil
+            let deadline = sentAt.addingTimeInterval(window)
+            probeLoop: while !answered {
+                guard let read = diversion.pop(until: deadline) else { break }
+                if let error = read.error {
+                    failure = "identity read failed: \(error)"
+                    break
+                }
+                guard let frame = read.frame else {
+                    failure = "closed during identity verification"
+                    break
+                }
+                if frame.frameType == .relayNotify {
+                    if let manifest = frame.relayNotifyManifest {
+                        do {
+                            notifyPayload = try Self.parseRelayNotifyPayload(manifest)
+                        } catch {
+                            failure = "RelayNotify reparse failed: \(error)"
+                            break probeLoop
+                        }
+                        capsPayload = manifest
+                        caps = notifyPayload.capUrns()
+                    }
+                    if let newLimits = frame.relayNotifyLimits {
+                        masterLimits = newLimits
+                    }
+                    continue
+                }
+                let readyFrames: [Frame]
+                do {
+                    readyFrames = try reorderBuffer.accept(frame)
+                } catch {
+                    failure = "identity read failed: \(error)"
+                    break
+                }
+                for readyFrame in readyFrames {
+                    if readyFrame.frameType.isTerminal {
+                        reorderBuffer.cleanupFlow(FlowKey.fromFrame(readyFrame))
+                    }
+                    let step = identityAnswerStep(readyFrame, nonce: nonce, echoed: &echoed)
+                    if step.done {
+                        answered = true
+                        failure = step.failure
+                        break
+                    }
+                }
+            }
+
+            let elapsedMs = Int(Date().timeIntervalSince(sentAt) * 1000)
+            if let failure = failure {
+                identityFailure = "new master \(masterIdx): \(failure) (after \(elapsedMs) ms)"
+                fputs("[RelaySwitch] addMaster: identity verification FAILED for master \(masterIdx) — registering unhealthy so installed_cartridges stay visible: \(identityFailure!)\n", stderr)
+            } else if !answered {
+                identityFailure = identityProbeOverdueMessage(masterIdx, window)
+                fputs("[RelaySwitch] addMaster: \(identityFailure!) — registering it unverified; the probe stays open\n", stderr)
+                openProbe = OpenIdentityProbe(
+                    masterIdx: masterIdx,
+                    key: RoutingKey(xid: xid, rid: reqId),
+                    channel: ResponseChannel(),
+                    nonce: nonce,
+                    echoed: echoed,
+                    sentAt: sentAt,
+                    window: window,
+                    overdue: true
+                )
             }
         }
         let healthyAtRegister = identityFailure == nil
@@ -1163,6 +1366,21 @@ public final class RelaySwitch: @unchecked Sendable {
         lock.lock()
         var registrationDone = false
         defer { if !registrationDone { lock.unlock() } }
+        // An unanswered probe's answer will come through the reader: its
+        // channel and request are registered before the reader stops handing
+        // reads to this call, so no part of the answer misses them.
+        if let probe = openProbe {
+            let probeState = RequestState(
+                routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: masterIdx),
+                origin: nil,
+                externalChannel: nil,
+                isPeer: false,
+                initialCredit: masterLimits.initialCredit
+            )
+            probeState.capUrn = CSCapIdentity as String
+            try requests.register(probe.key, probeState)
+            externalResponseChannels[probe.key] = (masterIdx: masterIdx, channel: probe.channel)
+        }
         if existingIdx == nil {
             // Append. The captured `masterIdx` MUST equal the new
             // length; if not, a concurrent appender bypassed
@@ -1177,13 +1395,15 @@ public final class RelaySwitch: @unchecked Sendable {
                 id: socket.id,
                 socketWriter: socketWriter,
                 seqAssigner: seqAssigner,
+                reorderBuffer: reorderBuffer,
                 manifest: capsPayload,
                 limits: masterLimits,
                 caps: caps,
                 installedCartridges: notifyPayload.installedCartridges,
                 hostProtocolStats: notifyPayload.hostProtocolStats,
                 healthy: healthyAtRegister,
-                lastError: identityFailure
+                lastError: identityFailure,
+                identityProbe: openProbe?.key
             )
             masters.append(masterConn)
             // Seed admission from this master's inventory, so the very first
@@ -1198,11 +1418,10 @@ public final class RelaySwitch: @unchecked Sendable {
             }
             // In-place mutation. The dead master's reader thread
             // has already exited on EOF (Swift threads aren't
-            // cancellable; we rely on the natural EOF exit). The
-            // new reader thread is wired in below.
+            // cancellable; we rely on the natural EOF exit).
             slot.socketWriter = socketWriter
             slot.seqAssigner = seqAssigner
-            slot.reorderBuffer = ReorderBuffer(maxBufferPerFlow: masterLimits.maxReorderBuffer)
+            slot.reorderBuffer = reorderBuffer
             slot.manifest = capsPayload
             slot.limits = masterLimits
             slot.caps = caps
@@ -1210,16 +1429,9 @@ public final class RelaySwitch: @unchecked Sendable {
             slot.hostProtocolStats = notifyPayload.hostProtocolStats
             slot.healthy = healthyAtRegister
             slot.lastError = identityFailure
+            slot.identityProbe = openProbe?.key
             slot.detached = false
             try configureMasterAdmissionLocked(masterIdx, notifyPayload.installedCartridges)
-        }
-
-        // Spawn reader thread bound to the slot's index. For
-        // reattach this is the existing index; for append it's
-        // `masters.count - 1`. Either way captured by value here.
-        let boundIdx = masterIdx
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.readerLoop(masterIdx: boundIdx, reader: socketReader)
         }
 
         // Rebuild tables
@@ -1228,6 +1440,27 @@ public final class RelaySwitch: @unchecked Sendable {
         rebuildLimits()
         registrationDone = true
         lock.unlock()
+
+        // The slot is in place: the reader handles its reads from now on,
+        // after what this call left unread — under the diversion's lock, so
+        // no later read overtakes them.
+        diversion.cond.lock()
+        diversion.diverting = false
+        let leftovers = diversion.pending
+        diversion.pending = []
+        for read in leftovers {
+            _ = handleMasterRead(masterIdx: masterIdx, frame: read.frame, error: read.error)
+        }
+        diversion.cond.unlock()
+
+        if let probe = openProbe {
+            // The probe driver waits for the answer.
+            lock.lock()
+            pendingIdentityProbes.append(.await(probe))
+            ensureProbeDriverStarted()
+            lock.unlock()
+            probeSemaphore.signal()
+        }
 
         return masterIdx
     }
@@ -2345,13 +2578,28 @@ public final class RelaySwitch: @unchecked Sendable {
         }
 
         guard masters[masterIdx].healthy else {
+            // Already unhealthy: its death was handled before, or it never
+            // became routable (its identity probe is open or failed). No
+            // route leads here, but a request to it — its open identity
+            // probe — still ends: nobody is left to answer it.
+            endIdentityProbesLocked(ofMaster: masterIdx)
+            failRequestsToMasterLocked(masterIdx)
             return
         }
 
         fputs("[RelaySwitch] Master \(masterIdx) died\n", stderr)
         masters[masterIdx].healthy = false
+        endIdentityProbesLocked(ofMaster: masterIdx)
+        failRequestsToMasterLocked(masterIdx)
 
-        // Find all pending requests routed to this master.
+        rebuildCapTable()
+        rebuildCapabilities()
+        rebuildLimits()
+    }
+
+    /// End every request routed to a master whose connection died, each
+    /// with a MASTER_DIED ERR to whoever waits on it. Caller holds `lock`.
+    private func failRequestsToMasterLocked(_ masterIdx: Int) {
         let deadKeys = requests.keysWhere { $0.routing.destinationMasterIdx == masterIdx }
 
         // Terminate each pending request (masterDied) and deliver a synthetic
@@ -2385,10 +2633,6 @@ public final class RelaySwitch: @unchecked Sendable {
                 }
             }
         }
-
-        rebuildCapTable()
-        rebuildCapabilities()
-        rebuildLimits()
     }
 
     // MARK: - Protocol Stats + Cancellation
@@ -2598,7 +2842,7 @@ public final class RelaySwitch: @unchecked Sendable {
         if probeRequired {
             // Hand off to the probe driver thread. Queue + signal under
             // the lock; the driver pops and runs the probe outside it.
-            pendingIdentityProbes.append(sourceIdx)
+            pendingIdentityProbes.append(.probe(sourceIdx))
             ensureProbeDriverStarted()
             probeSemaphore.signal()
         }
@@ -2639,11 +2883,11 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    /// One iteration of the probe driver: pop a queued master and probe it.
-    ///
-    /// Serially drains `pendingIdentityProbes` one entry per signal. On success
-    /// the master flips healthy and its caps become routable; on failure it
-    /// stays unhealthy with `lastError` set. Mirrors Rust's
+    /// One iteration of the probe driver: pop a queued job and start it on
+    /// a thread of its own — a probe of a master whose caps went from empty
+    /// to non-empty, or the wait for the answer to an `addMaster` probe left
+    /// unanswered at the end of its window — so a probe waiting on a slow
+    /// host never holds back another master's. Mirrors Rust's
     /// spawn_identity_probe_driver task body.
     /// Returns false when the driver must stop (the switch is shutting down).
     /// Split out from the loop so the strong reference the body needs is
@@ -2658,43 +2902,69 @@ public final class RelaySwitch: @unchecked Sendable {
             lock.unlock()
             return true
         }
-        let masterIdx = pendingIdentityProbes.removeFirst()
+        let job = pendingIdentityProbes.removeFirst()
         lock.unlock()
 
-        runIdentityProbeViaRelay(masterIdx)
+        // The probe's thread holds the switch only weakly: one waiting on a
+        // host that never answers must not keep it alive.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let probe: OpenIdentityProbe
+            switch job {
+            case .await(let open):
+                probe = open
+            case .probe(let masterIdx):
+                guard let switchRef = self else { return }
+                switch switchRef.openIdentityProbe(masterIdx) {
+                case .opened(let open):
+                    probe = open
+                case .notSent(let key, let detail):
+                    switchRef.settleIdentityProbe(masterIdx: masterIdx, key: key, failure: detail)
+                    return
+                }
+            }
+            RelaySwitch.awaitIdentityAnswer(probe, of: { self })
+        }
         return true
     }
 
-    /// Run the end-to-end runtime identity probe against `masterIdx`.
-    ///
-    /// Sends CAP_IDENTITY REQ + STREAM_START + CHUNK(nonce) + STREAM_END +
-    /// END (all on a fresh `(xid, rid)` flow) and awaits the host's nonce
-    /// echo via a response channel registered in
-    /// `externalResponseChannels` — the master reader thread diverts the
-    /// echo frames there. On success flips the master healthy and rebuilds
-    /// the cap table so its caps become routable; on failure keeps it
-    /// unhealthy and stamps `lastError`. Mirrors Rust's
-    /// run_identity_probe_via_relay + the driver's success/failure arms.
-    private func runIdentityProbeViaRelay(_ masterIdx: Int) {
-        let runtimeProbeTimeout: TimeInterval = 10.0
+    /// Shorten the identity probe window, so a test can watch a probe
+    /// outlast it.
+    internal func setIdentityProbeWindowForTest(_ window: TimeInterval) {
+        lock.lock()
+        identityProbeWindow = window
+        lock.unlock()
+    }
+
+    private enum OpenedProbe {
+        case opened(OpenIdentityProbe)
+        /// The probe could not be sent; settle it with why.
+        case notSent(RoutingKey, String)
+    }
+
+    /// Send an end-to-end identity probe to `masterIdx`: CAP_IDENTITY REQ +
+    /// STREAM_START + CHUNK(nonce) + STREAM_END + END on a fresh `(xid, rid)`
+    /// flow, its answer delivered on a response channel registered in
+    /// `externalResponseChannels` (the master reader thread diverts the
+    /// echo there) and its request registered in the table like any
+    /// request's. The probe becomes the master's open probe before anything
+    /// is sent. Mirrors Rust's open_identity_probe.
+    private func openIdentityProbe(_ masterIdx: Int) -> OpenedProbe {
         let channel = ResponseChannel()
 
-        // Build the probe flow and register its response channel + routing
-        // under the lock, then send the five frames. Holding the lock for
-        // the sends matches the rest of the switch (handleMasterFrame /
-        // sendToMaster also write under the lock); the frames are tiny so
-        // the unix-socket write does not block.
+        // Register the probe and send the five frames under the lock,
+        // matching the rest of the switch (handleMasterFrame / sendToMaster
+        // also write under the lock); the frames are tiny so the unix-socket
+        // write does not block.
         lock.lock()
-        if isShutdown || masterIdx >= masters.count {
-            lock.unlock()
-            return
-        }
+        defer { lock.unlock() }
         xidCounter += 1
         let xid = MessageId.uint(xidCounter)
         let rid = MessageId.newUUID()
         let key = RoutingKey(xid: xid, rid: rid)
-
-        externalResponseChannels[key] = channel
+        guard !isShutdown, masters.indices.contains(masterIdx) else {
+            return .notSent(key, "master \(masterIdx): identity probe for a master that does not exist")
+        }
+        masters[masterIdx].identityProbe = key
         let probeState = RequestState(
             routing: RoutingEntry(sourceMasterIdx: nil, destinationMasterIdx: masterIdx),
             origin: nil,
@@ -2703,137 +2973,101 @@ public final class RelaySwitch: @unchecked Sendable {
             initialCredit: masterInitialCredit(masterIdx)
         )
         probeState.capUrn = CSCapIdentity as String
-        try? requests.register(key, probeState)
+        do {
+            try requests.register(key, probeState)
+        } catch {
+            return .notSent(key, "master \(masterIdx): identity probe registration failed: \(error)")
+        }
+        externalResponseChannels[key] = (masterIdx: masterIdx, channel: channel)
 
         let nonce = identityNonce()
-        let streamId = "identity-verify-runtime"
-
-        var sendError: String? = nil
+        let sentAt = Date()
         do {
-            var req = Frame.req(id: rid, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-            req.routingId = xid
-            try writeToMasterIdx(masterIdx, &req)
-
-            var ss = Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:")
-            ss.routingId = xid
-            try writeToMasterIdx(masterIdx, &ss)
-
-            let checksum = Frame.computeChecksum(nonce)
-            var chunk = Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-            chunk.routingId = xid
-            try writeToMasterIdx(masterIdx, &chunk)
-
-            var se = Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1)
-            se.routingId = xid
-            try writeToMasterIdx(masterIdx, &se)
-
-            var end = Frame.end(id: rid)
-            end.routingId = xid
-            try writeToMasterIdx(masterIdx, &end)
+            for var frame in identityProbeFrames(rid: rid, xid: xid, nonce: nonce, streamId: "identity-verify-runtime") {
+                try writeToMasterIdx(masterIdx, &frame)
+            }
         } catch {
-            sendError = "identity probe send failed: \(error)"
+            return .notSent(key, "master \(masterIdx): identity probe send failed: \(error)")
         }
-        lock.unlock()
-
-        if let sendError = sendError {
-            failProbe(masterIdx: masterIdx, key: key, rid: rid, detail: sendError)
-            return
-        }
-
-        // Await the echo OUTSIDE the lock so the reader thread can deliver
-        // frames to the channel. Cartridge contract: the identity handler
-        // echoes the nonce back as STREAM_START + CHUNK(nonce) + STREAM_END
-        // + END on the same flow.
-        let deadline = DispatchTime.now() + runtimeProbeTimeout
-        var accumulated = Data()
-        // Failure detail, or `nil` once the probe has succeeded. Starts as a
-        // timeout failure so a silent channel resolves to the timeout error,
-        // matching Rust's `Result<(), String>` default. (Swift `Result`
-        // requires `Failure: Error`, which a bare `String` is not, so the
-        // outcome is modelled as an optional detail rather than a Result.)
-        var failureDetail: String? = "runtime identity probe timed out after \(runtimeProbeTimeout)s"
-
-        recvLoop: while true {
-            guard let frame = channel.recv(deadline: deadline) else {
-                failureDetail = "runtime identity probe timed out after \(runtimeProbeTimeout)s"
-                break
-            }
-            switch frame.frameType {
-            case .streamStart, .streamEnd:
-                continue
-            case .chunk:
-                if let payload = frame.payload {
-                    accumulated.append(payload)
-                }
-            case .end:
-                if accumulated != nonce {
-                    failureDetail = "identity probe payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))"
-                } else {
-                    failureDetail = nil
-                }
-                break recvLoop
-            case .err:
-                let code = frame.errorCode ?? "UNKNOWN"
-                let msg = frame.errorMessage ?? "no message"
-                failureDetail = "identity probe failed: [\(code)] \(msg)"
-                break recvLoop
-            case .log, .credit, .heartbeat:
-                // Control/side-channel frames are legal ANYWHERE during the
-                // probe (spec 12.4: LOG interleaves without affecting data
-                // flow; CREDIT/HEARTBEAT are the control plane the writer
-                // gate itself exempts, L4). A cartridge crediting its
-                // probe input as it consumes (L10) must not fail identity
-                // verification.
-                break
-            default:
-                failureDetail = "identity probe: unexpected frame type \(frame.frameType)"
-                break recvLoop
-            }
-        }
-
-        if let detail = failureDetail {
-            failProbe(masterIdx: masterIdx, key: key, rid: rid, detail: detail)
-        } else {
-            // Probe passed — flip the master back to healthy and rebuild
-            // the cap table so its caps become routable. We held it
-            // unhealthy from the moment caps went non-empty until
-            // verification completed; this is the natural reverse.
-            lock.lock()
-            cleanupProbeRouting(key: key, rid: rid, kind: .end)
-            if masterIdx < masters.count {
-                masters[masterIdx].healthy = true
-                masters[masterIdx].lastError = nil
-            }
-            rebuildCapTable()
-            rebuildCapabilities()
-            lock.unlock()
-            fputs("[RelaySwitch] runtime identity probe passed — master \(masterIdx) is now healthy\n", stderr)
-        }
+        return .opened(OpenIdentityProbe(
+            masterIdx: masterIdx,
+            key: key,
+            channel: channel,
+            nonce: nonce,
+            echoed: Data(),
+            sentAt: sentAt,
+            window: identityProbeWindow,
+            overdue: false
+        ))
     }
 
-    /// Keep the master unhealthy, stamp `lastError`, purge the probe's
-    /// routing entries, and rebuild tables. Used for both probe-send
-    /// failures and a failed / timed-out echo.
-    private func failProbe(masterIdx: Int, key: RoutingKey, rid: MessageId, detail: String) {
-        fputs("[RelaySwitch] runtime identity probe FAILED for master \(masterIdx) — remains unhealthy: \(detail)\n", stderr)
-        lock.lock()
-        cleanupProbeRouting(key: key, rid: rid, kind: .err)
-        if masterIdx < masters.count {
-            masters[masterIdx].healthy = false
-            masters[masterIdx].lastError = detail
+    /// Wait for an open identity probe's answer and settle its master with
+    /// it. Past the probe's window the master is reported overdue and the
+    /// wait goes on: the answer, whenever it comes, settles the master. The
+    /// wait ends without an answer only when the master's connection ends
+    /// (its reader gives the probe a MASTER_DIED ERR) or the switch goes
+    /// away. Holds the switch only while it reports or settles. Mirrors
+    /// Rust's await_identity_answer.
+    private static func awaitIdentityAnswer(_ probe: OpenIdentityProbe, of owner: () -> RelaySwitch?) {
+        var failure: String? = nil
+        while true {
+            // Past the window, wake now and then to notice a switch that
+            // went away while the probe waited.
+            let wake = probe.overdue
+                ? DispatchTime.now() + 1.0
+                : DispatchTime.now() + max(0, probe.window - Date().timeIntervalSince(probe.sentAt))
+            guard let frame = probe.channel.recv(deadline: wake) else {
+                guard let switchRef = owner(), !switchRef.isShutdown else { return }
+                if !probe.overdue {
+                    probe.overdue = true
+                    switchRef.reportIdentityProbeOverdue(probe)
+                }
+                continue
+            }
+            let step = identityAnswerStep(frame, nonce: probe.nonce, echoed: &probe.echoed)
+            if step.done {
+                failure = step.failure.map { "master \(probe.masterIdx): \($0)" }
+                break
+            }
         }
+        owner()?.settleIdentityProbe(masterIdx: probe.masterIdx, key: probe.key, failure: failure)
+    }
+
+    /// Report a master whose open identity probe outlasted its window.
+    private func reportIdentityProbeOverdue(_ probe: OpenIdentityProbe) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard masters.indices.contains(probe.masterIdx),
+              masters[probe.masterIdx].identityProbe == probe.key else { return }
+        let message = identityProbeOverdueMessage(probe.masterIdx, probe.window)
+        fputs("[RelaySwitch] \(message) — the probe stays open\n", stderr)
+        masters[probe.masterIdx].lastError = message
+    }
+
+    /// Settle a master with its identity probe's outcome (no failure:
+    /// verified, its caps become routable; a failure: it stays unhealthy
+    /// with why). A probe that is no longer the master's open one (the
+    /// master reattached, or was probed again) settles nothing. Mirrors
+    /// Rust's settle_identity_probe.
+    private func settleIdentityProbe(masterIdx: Int, key: RoutingKey, failure: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        // The probe's channel and request end here whichever way it did;
+        // ones its answer or a master death already ended are gone.
+        externalResponseChannels.removeValue(forKey: key)
+        requests.terminate(key, kind: failure == nil ? .end : .err)
+        guard masters.indices.contains(masterIdx),
+              masters[masterIdx].identityProbe == key else { return }
+        masters[masterIdx].identityProbe = nil
+        masters[masterIdx].healthy = failure == nil
+        masters[masterIdx].lastError = failure
         rebuildCapTable()
         rebuildCapabilities()
-        lock.unlock()
-    }
-
-    /// Purge the routing/response-channel entries a probe registered.
-    /// Termination is the single L7 cleanup point: whether the probe
-    /// succeeded (kind end) or failed/timed out (kind err), zero state for
-    /// the key remains afterwards. Caller MUST hold `lock`.
-    private func cleanupProbeRouting(key: RoutingKey, rid: MessageId, kind: TerminalKind) {
-        externalResponseChannels.removeValue(forKey: key)
-        requests.terminate(key, kind: kind)
+        if let failure = failure {
+            fputs("[RelaySwitch] identity probe FAILED — master \(masterIdx) remains unhealthy: \(failure)\n", stderr)
+        } else {
+            fputs("[RelaySwitch] identity probe answered — master \(masterIdx) is now healthy\n", stderr)
+        }
     }
 
     // MARK: - Capability Management

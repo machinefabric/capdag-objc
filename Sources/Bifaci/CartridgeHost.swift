@@ -557,6 +557,8 @@ private enum CartridgeEvent {
     case death(cartridgeIdx: Int, generation: UInt64)
     case relayFrame(Frame)
     case relayClosed
+    /// A frame could not be written to the relay: the session ends on it.
+    case relayWriteFailed(String)
     /// Periodic wakeup to republish runtime stats via RelayNotify.
     case statsRefresh
     /// Periodic wakeup to evaluate liveness and send the next probes on the
@@ -2037,6 +2039,17 @@ public final class CartridgeHost: @unchecked Sendable {
             let event = eventQueue.removeFirst()
             eventLock.unlock()
 
+            if case .relayWriteFailed(let detail) = event {
+                // A frame the relay could not take ends the session: it is
+                // lost, and every frame after it would be too, so the engine
+                // would wait on answers this host can no longer give. Mirrors
+                // the Rust host, whose run ends with the failed write.
+                stateLock.lock()
+                closed = true
+                stateLock.unlock()
+                throw CartridgeHostError.sendFailed("relay write failed: \(detail)")
+            }
+
             let shouldExit: Bool = autoreleasepool {
                 switch event {
                 case .relayFrame(let frame):
@@ -2048,6 +2061,8 @@ public final class CartridgeHost: @unchecked Sendable {
                     closed = true
                     stateLock.unlock()
                     return true
+                case .relayWriteFailed:
+                    fatalError("BUG: a failed relay write is handled before the event switch")
                 case .frame(let cartridgeIdx, let generation, let frame):
                     stateLock.lock()
                     let isCurrent = cartridges.indices.contains(cartridgeIdx)
@@ -3169,7 +3184,7 @@ public final class CartridgeHost: @unchecked Sendable {
                 handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
             case .relayFrame(let frame):
                 handleRelayFrame(frame)
-            case .relayClosed:
+            case .relayClosed, .relayWriteFailed:
                 break // Handled in run() loop
             case .statsRefresh:
                 // Only the run() loop does the actual RelayNotify push to
@@ -3195,7 +3210,20 @@ public final class CartridgeHost: @unchecked Sendable {
             os_log(.error, log: Self.log, "[sendToRelay] outboundWriter is nil — frame dropped: %{public}@ id=%{public}@", String(describing: frame.frameType), String(describing: frame.id))
             return
         }
-        try? w.write(frame)
+        writeToRelayLocked(w, frame)
+    }
+
+    /// Write one frame to the relay. A frame the relay cannot take ends the
+    /// session (`relayWriteFailed`): it is said, never swallowed. Caller
+    /// holds `outboundLock`.
+    private func writeToRelayLocked(_ writer: FrameWriter, _ frame: Frame) {
+        do {
+            try writer.write(frame)
+        } catch {
+            let detail = "\(frame.frameType) for \(frame.id) could not be written: \(error)"
+            os_log(.error, log: Self.log, "[sendToRelay] relay write failed — ending the session: %{public}@", detail)
+            pushEvent(.relayWriteFailed(detail))
+        }
     }
 
     // MARK: - Internal Helpers
@@ -3329,8 +3357,7 @@ public final class CartridgeHost: @unchecked Sendable {
         let limits = aggregateLimitsLocked()
         outboundLock.lock()
         if let writer = outboundWriter {
-            let notify = Frame.relayNotify(manifest: capsData, limits: limits)
-            try? writer.write(notify) // Ignore error if relay closed
+            writeToRelayLocked(writer, Frame.relayNotify(manifest: capsData, limits: limits))
         }
         outboundLock.unlock()
     }
