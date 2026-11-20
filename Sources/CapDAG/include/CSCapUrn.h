@@ -328,6 +328,26 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)isDispatchable:(CSCapUrn * _Nonnull)request;
 
 /**
+ * The position in `candidates` of the cap the proved ranking chooses to serve
+ * `request` (CapDAG.Exec.select): among the candidates that serve it, the one
+ * whose ranking key is least, and of equal keys the first.
+ *
+ * @param candidates The candidates, in registration order
+ * @param request The request cap
+ * @return The chosen candidate's position, or NSNotFound when none serves it
+ */
++ (NSUInteger)selectFromCandidates:(NSArray<CSCapUrn *> * _Nonnull)candidates
+                        forRequest:(CSCapUrn * _Nonnull)request;
+
+/**
+ * How this candidate ranks against `other` for `request` in the proved ranking
+ * (their CapDAG.Exec.rankingKey, the smaller first): NSOrderedAscending when
+ * this one ranks first, NSOrderedSame when the ranking cannot tell them apart.
+ */
+- (NSComparisonResult)compareRankWith:(CSCapUrn * _Nonnull)other
+                           forRequest:(CSCapUrn * _Nonnull)request;
+
+/**
  * Whether this candidate COULD serve `request`: not guaranteed, not excluded.
  * For exploring what the fabric might do — never for routing a call, which must
  * be served.

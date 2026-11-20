@@ -1445,23 +1445,123 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorNumericKey);
 }
 
-// TEST025: Test find_best_match returns most specific matching cap
+// TEST025: find_best_match chooses the serving cap closest to the request: an exact match over a refinement
 - (void)test025_bestMatch {
     NSError *error;
-    CSCapUrn *cap1 = [CSCapUrn fromString:testUrn(@"op") error:&error];
-    CSCapUrn *cap2 = [CSCapUrn fromString:testUrn(@"generate") error:&error];
-    CSCapUrn *cap3 = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
-    XCTAssertNotNil(cap1);
-    XCTAssertNotNil(cap2);
-    XCTAssertNotNil(cap3);
-
+    CSCapUrn *op = [CSCapUrn fromString:testUrn(@"op") error:&error];
+    CSCapUrn *pdf = [CSCapUrn fromString:testUrn(@"generate;ext=pdf") error:&error];
+    CSCapUrn *generate = [CSCapUrn fromString:testUrn(@"generate") error:&error];
     CSCapUrn *request = [CSCapUrn fromString:testUrn(@"generate") error:&error];
+    XCTAssertNotNil(op);
+    XCTAssertNotNil(pdf);
+    XCTAssertNotNil(generate);
     XCTAssertNotNil(request);
-    CSCapUrn *best = [CSCapMatcher findBestMatchInCaps:@[cap1, cap2, cap3] forRequest:request];
 
-    // Most specific cap that accepts the request
-    XCTAssertNotNil(best);
-    XCTAssertEqualObjects([best getTag:@"ext"], @"pdf");
+    // Both generate caps serve the request; the pdf one is more specific.
+    XCTAssertTrue([pdf isDispatchable:request]);
+    XCTAssertTrue([generate isDispatchable:request]);
+    XCTAssertGreaterThan(pdf.specificity, generate.specificity);
+
+    // The exact match wins over the more specific refinement, though it is
+    // registered after it.
+    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:@[op, pdf, generate] forRequest:request], generate);
+
+    // A refinement is chosen when nothing matches exactly.
+    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:@[op, pdf] forRequest:request], pdf);
+}
+
+// TEST563: CapMatcher::find_all_matches returns every serving cap in ranking order, closest to the request first
+- (void)test563_findAllMatches {
+    NSError *error;
+    CSCapUrn *pdf = [CSCapUrn fromString:@"cap:in=\"media:void\";test;ext=pdf;out=\"media:void\"" error:&error];
+    CSCapUrn *exact = [CSCapUrn fromString:@"cap:in=\"media:void\";test;out=\"media:void\"" error:&error];
+    CSCapUrn *different = [CSCapUrn fromString:@"cap:in=\"media:void\";different;out=\"media:void\"" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:void\";test;out=\"media:void\"" error:&error];
+    XCTAssertNotNil(pdf);
+    XCTAssertNotNil(exact);
+    XCTAssertNotNil(different);
+    XCTAssertNotNil(request);
+
+    NSArray<CSCapUrn *> *matches = [CSCapMatcher findAllMatchesInCaps:@[pdf, exact, different] forRequest:request];
+
+    // The two test caps serve the request; the different one does not. The
+    // exact match ranks before the more specific refinement.
+    XCTAssertEqual(matches.count, 2u);
+    XCTAssertEqual(matches[0], exact);
+    XCTAssertEqual(matches[1], pdf);
+}
+
+// TEST564: CapMatcher::are_compatible detects bidirectional overlap
+- (void)test564_areCompatible {
+    NSError *error;
+    CSCapUrn *test = [CSCapUrn fromString:@"cap:in=\"media:void\";test;out=\"media:void\"" error:&error];
+    CSCapUrn *pdf = [CSCapUrn fromString:@"cap:in=\"media:void\";test;ext=pdf;out=\"media:void\"" error:&error];
+    CSCapUrn *different = [CSCapUrn fromString:@"cap:in=\"media:void\";different;out=\"media:void\"" error:&error];
+    XCTAssertNotNil(test);
+    XCTAssertNotNil(pdf);
+    XCTAssertNotNil(different);
+
+    // test is on one chain with test;ext=pdf
+    XCTAssertTrue([CSCapMatcher areCompatible:@[test] with:@[pdf]]);
+    // test and different are not
+    XCTAssertFalse([CSCapMatcher areCompatible:@[test] with:@[different]]);
+    // Empty sets are not compatible
+    XCTAssertFalse([CSCapMatcher areCompatible:@[] with:@[test]]);
+    XCTAssertFalse([CSCapMatcher areCompatible:@[test] with:@[]]);
+}
+
+// TEST477: CapMatcher keeps the first registered of candidates the ranking cannot tell apart
+- (void)test477_matcherFirstRegisteredOfEqualRankWins {
+    NSError *error;
+    CSCapUrn *zeta = [CSCapUrn fromString:@"cap:engine=zeta;in=\"media:document;ext=pdf\";out=\"media:ext=png;image\";thumbnail" error:&error];
+    CSCapUrn *alpha = [CSCapUrn fromString:@"cap:engine=alpha;in=\"media:document;ext=pdf\";out=\"media:ext=png;image\";thumbnail" error:&error];
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:in=\"media:document;ext=pdf\";out=\"media:ext=png;image\";thumbnail" error:&error];
+    XCTAssertNotNil(zeta);
+    XCTAssertNotNil(alpha);
+    XCTAssertNotNil(request);
+
+    // Both serve the request, and they rank alike.
+    XCTAssertTrue([zeta isDispatchable:request]);
+    XCTAssertTrue([alpha isDispatchable:request]);
+    XCTAssertEqual(zeta.specificity, alpha.specificity);
+
+    for (NSArray<CSCapUrn *> *order in @[@[zeta, alpha], @[alpha, zeta]]) {
+        XCTAssertEqual([CSCapMatcher findBestMatchInCaps:order forRequest:request], order[0]);
+        NSArray<CSCapUrn *> *matches = [CSCapMatcher findAllMatchesInCaps:order forRequest:request];
+        XCTAssertEqual(matches.count, 2u);
+        XCTAssertEqual(matches[0], order[0]);
+        XCTAssertEqual(matches[1], order[1]);
+    }
+}
+
+// TEST484: CapMatcher chooses among the caps that serve the request, never among those the request accepts as a pattern
+- (void)test484_matcherRanksServingCapsNotAcceptedOnes {
+    NSError *error;
+    CSCapUrn *request = [CSCapUrn fromString:@"cap:extract;in=\"media:document;ext=pdf\";out=media:record" error:&error];
+    // Takes any document, so it takes the pdf the request sends.
+    CSCapUrn *broader = [CSCapUrn fromString:@"cap:extract;in=media:document;out=media:record" error:&error];
+    // Takes only a version-2 pdf, so not every pdf the request may send.
+    CSCapUrn *narrower = [CSCapUrn fromString:@"cap:extract;in=\"media:document;ext=pdf;v=2\";out=media:record" error:&error];
+    XCTAssertNotNil(request);
+    XCTAssertNotNil(broader);
+    XCTAssertNotNil(narrower);
+
+    XCTAssertTrue([broader isDispatchable:request]);
+    XCTAssertFalse([narrower isDispatchable:request]);
+    // Read as a pattern, the request fits the narrower cap and not the broader
+    // one, and the narrower one is the more specific.
+    XCTAssertTrue([request accepts:narrower]);
+    XCTAssertFalse([request accepts:broader]);
+    XCTAssertGreaterThan(narrower.specificity, broader.specificity);
+
+    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:@[broader, narrower] forRequest:request], broader);
+    NSArray<CSCapUrn *> *matches = [CSCapMatcher findAllMatchesInCaps:@[broader, narrower] forRequest:request];
+    XCTAssertEqual(matches.count, 1u);
+    XCTAssertEqual(matches[0], broader);
+
+    // Nothing serves when only the narrower cap is registered.
+    XCTAssertNil([CSCapMatcher findBestMatchInCaps:@[narrower] forRequest:request]);
+    XCTAssertEqual([CSCapMatcher findAllMatchesInCaps:@[narrower] forRequest:request].count, 0u);
 }
 
 // TEST034: Test empty values are rejected

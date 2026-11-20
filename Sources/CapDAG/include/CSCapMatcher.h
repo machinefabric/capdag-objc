@@ -1,9 +1,6 @@
 //
 //  CSCapMatcher.h
-//  Cap Matching Logic
-//
-//  Provides utilities for finding the best cap match from a collection
-//  based on specificity and compatibility rules.
+//  Choosing among registered caps for a request
 //
 
 #import <Foundation/Foundation.h>
@@ -12,45 +9,41 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /**
- * Utility class for cap matching operations
+ * Choosing among registered caps for a request, as the proved ranking does
+ * (CapDAG.Exec.select): only the caps that serve the request
+ * (-[CSCapUrn isDispatchable:]) are considered, the one whose specificity is
+ * closest to the request's ranks first (an exact match, then the nearest
+ * refinement, then the nearest fallback), and of caps that rank alike the first
+ * registered comes first. `caps` is in registration order.
  */
 @interface CSCapMatcher : NSObject
 
 /**
- * Find the most specific cap that can handle a request
- * @param caps Array of available caps
- * @param request The requested cap
- * @return The best matching cap or nil if none can handle the request
+ * The cap the ranking chooses to serve `request`
+ * (+[CSCapUrn selectFromCandidates:forRequest:]).
+ * @param caps Registered caps, in registration order
+ * @param request The request to serve
+ * @return The chosen cap, or nil when no cap serves the request
  */
-+ (nullable CSCapUrn *)findBestMatchInCaps:(NSArray<CSCapUrn *> * _Nonnull)caps 
-                                              forRequest:(CSCapUrn * _Nonnull)request;
++ (nullable CSCapUrn *)findBestMatchInCaps:(NSArray<CSCapUrn *> * _Nonnull)caps
+                                forRequest:(CSCapUrn * _Nonnull)request;
 
 /**
- * Find all caps that can handle a request
- * @param caps Array of available caps
- * @param request The requested cap
- * @return Array of caps that can handle the request, sorted by specificity (most specific first)
+ * Every cap that serves `request`, in ranking order: the one
+ * findBestMatchInCaps:forRequest: chooses first, and caps that rank alike in
+ * registration order.
+ * @param caps Registered caps, in registration order
+ * @param request The request to serve
  */
-+ (NSArray<CSCapUrn *> * _Nonnull)findAllMatchesInCaps:(NSArray<CSCapUrn *> * _Nonnull)caps 
-                                                  forRequest:(CSCapUrn * _Nonnull)request;
++ (NSArray<CSCapUrn *> * _Nonnull)findAllMatchesInCaps:(NSArray<CSCapUrn *> * _Nonnull)caps
+                                            forRequest:(CSCapUrn * _Nonnull)request;
 
 /**
- * Sort caps by specificity
- * @param caps Array of caps to sort
- * @return Array sorted by specificity (most specific first)
+ * Whether two cap sets overlap: some cap of one is comparable with some cap of
+ * the other (-[CSCapUrn isComparable:]).
  */
-+ (NSArray<CSCapUrn *> * _Nonnull)sortCapsBySpecificity:(NSArray<CSCapUrn *> * _Nonnull)caps;
-
-/**
- * Check if a cap accepts a request with additional context
- * @param cap The cap to check
- * @param request The requested cap
- * @param context Additional context for matching (optional)
- * @return YES if the cap accepts the request
- */
-+ (BOOL)cap:(CSCapUrn * _Nonnull)cap
-    acceptsRequest:(CSCapUrn * _Nonnull)request
-         withContext:(nullable NSDictionary<NSString *, id> *)context;
++ (BOOL)areCompatible:(NSArray<CSCapUrn *> * _Nonnull)caps1
+                 with:(NSArray<CSCapUrn *> * _Nonnull)caps2;
 
 @end
 

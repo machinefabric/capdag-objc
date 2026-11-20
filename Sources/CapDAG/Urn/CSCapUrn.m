@@ -804,6 +804,89 @@ NSString *CSCapKindToString(CSCapKind kind) {
     return CSCapModelRelation(capdagFormal_dispatch, _formal, request->_formal, @"decide dispatch");
 }
 
+/// This candidate's key in the proved ranking for `request` (CapDAG.Exec.rankingKey); owned.
+- (lungo_value *)rankingKeyFor:(CSCapUrn *)request {
+    lungo_value *key = NULL;
+    lungo_error *error = NULL;
+    if (capdagFormal_ranking_key(_formal, request->_formal, &key, &error) != LUNGO_OK) {
+        CSCapModelFailed(@"rank a cap", error);
+    }
+    return key;
+}
+
+/// A part of a ranking key, which the model gives as a natural number.
+static uint64_t CSCapRankingKeyPart(const lungo_value *part) {
+    uint64_t value = 0;
+    if (!lungo_value_get_nat(part, &value)) {
+        @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                       reason:@"capdag: a ranking key does not fit"
+                                     userInfo:nil];
+    }
+    return value;
+}
+
+/// Orders two ranking keys as the model does: by their first part, then by their second.
+static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lungo_value *b) {
+    uint64_t a1 = CSCapRankingKeyPart(lungo_value_first(a)), b1 = CSCapRankingKeyPart(lungo_value_first(b));
+    if (a1 != b1) return a1 < b1 ? NSOrderedAscending : NSOrderedDescending;
+    uint64_t a2 = CSCapRankingKeyPart(lungo_value_second(a)), b2 = CSCapRankingKeyPart(lungo_value_second(b));
+    if (a2 != b2) return a2 < b2 ? NSOrderedAscending : NSOrderedDescending;
+    return NSOrderedSame;
+}
+
+- (NSComparisonResult)compareRankWith:(CSCapUrn *)other forRequest:(CSCapUrn *)request {
+    lungo_value *mine = [self rankingKeyFor:request];
+    lungo_value *theirs = [other rankingKeyFor:request];
+    NSComparisonResult order = CSCapCompareRankingKeys(mine, theirs);
+    lungo_value_free(mine);
+    lungo_value_free(theirs);
+    return order;
+}
+
++ (NSUInteger)selectFromCandidates:(NSArray<CSCapUrn *> *)candidates forRequest:(CSCapUrn *)request {
+    lungo_value **items = calloc(MAX(candidates.count, (NSUInteger)1), sizeof(lungo_value *));
+    for (NSUInteger i = 0; i < candidates.count; i++) {
+        items[i] = lungo_value_clone(candidates[i]->_formal);
+    }
+    lungo_value *list = lungo_value_list(items, (size_t)candidates.count);
+    free(items);
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    if (capdagFormal_select(list, request->_formal, &result, &error) != LUNGO_OK) {
+        lungo_value_free(list);
+        CSCapModelFailed(@"select a cap", error);
+    }
+    lungo_value_free(list);
+    const lungo_value *chosen = lungo_value_get_option(result);
+    if (!chosen) {
+        lungo_value_free(result);
+        return NSNotFound;
+    }
+    // The model returns the cap it chose; it is the first candidate that serves the request
+    // with the chosen cap's key, since the model keeps the first of equal keys.
+    lungo_value *key = NULL;
+    if (capdagFormal_ranking_key(chosen, request->_formal, &key, &error) != LUNGO_OK) {
+        lungo_value_free(result);
+        CSCapModelFailed(@"rank a cap", error);
+    }
+    lungo_value_free(result);
+    NSUInteger position = NSNotFound;
+    for (NSUInteger i = 0; i < candidates.count && position == NSNotFound; i++) {
+        CSCapUrn *candidate = candidates[i];
+        if (![candidate isDispatchable:request]) continue;
+        lungo_value *candidateKey = [candidate rankingKeyFor:request];
+        if (CSCapCompareRankingKeys(candidateKey, key) == NSOrderedSame) position = i;
+        lungo_value_free(candidateKey);
+    }
+    lungo_value_free(key);
+    if (position == NSNotFound) {
+        @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                       reason:[NSString stringWithFormat:@"capdag: the model chose a cap to serve %@ that is none of the candidates", [request toString]]
+                                     userInfo:nil];
+    }
+    return position;
+}
+
 /// Whether this candidate COULD serve `request`: not guaranteed, not excluded.
 - (BOOL)mayDispatch:(CSCapUrn *)request {
     return CSCapModelRelation(capdagFormal_may_dispatch, _formal, request->_formal, @"decide possible dispatch");

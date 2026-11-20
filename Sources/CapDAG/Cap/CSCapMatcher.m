@@ -1,73 +1,42 @@
 //
 //  CSCapMatcher.m
-//  Cap Matching Implementation
+//  Choosing among registered caps for a request
 //
 
 #import "CSCapMatcher.h"
 
 @implementation CSCapMatcher
 
-+ (nullable CSCapUrn *)findBestMatchInCaps:(NSArray<CSCapUrn *> *)caps 
-                                              forRequest:(CSCapUrn *)request {
-    NSArray<CSCapUrn *> *matches = [self findAllMatchesInCaps:caps forRequest:request];
-    return matches.firstObject;
++ (nullable CSCapUrn *)findBestMatchInCaps:(NSArray<CSCapUrn *> *)caps
+                                forRequest:(CSCapUrn *)request {
+    NSUInteger index = [CSCapUrn selectFromCandidates:caps forRequest:request];
+    return index == NSNotFound ? nil : caps[index];
 }
 
 + (NSArray<CSCapUrn *> *)findAllMatchesInCaps:(NSArray<CSCapUrn *> *)caps
-                                                  forRequest:(CSCapUrn *)request {
-    NSMutableArray<CSCapUrn *> *matches = [NSMutableArray array];
-
-    // Request is pattern, cap is instance
+                                   forRequest:(CSCapUrn *)request {
+    NSMutableArray<CSCapUrn *> *serving = [NSMutableArray array];
     for (CSCapUrn *cap in caps) {
-        if ([request accepts:cap]) {
-            [matches addObject:cap];
+        if ([cap isDispatchable:request]) {
+            [serving addObject:cap];
         }
     }
-
-    return [self sortCapsBySpecificity:matches];
-}
-
-+ (NSArray<CSCapUrn *> *)sortCapsBySpecificity:(NSArray<CSCapUrn *> *)caps {
-    return [caps sortedArrayUsingComparator:^NSComparisonResult(CSCapUrn *cap1, CSCapUrn *cap2) {
-        // Sort by specificity first (higher specificity first)
-        NSUInteger spec1 = [cap1 specificity];
-        NSUInteger spec2 = [cap2 specificity];
-        
-        if (spec1 != spec2) {
-            return spec1 > spec2 ? NSOrderedAscending : NSOrderedDescending;
-        }
-        
-        // If same specificity, sort by tag count (more tags first)
-        NSUInteger count1 = cap1.tags.count;
-        NSUInteger count2 = cap2.tags.count;
-        
-        if (count1 != count2) {
-            return count1 > count2 ? NSOrderedAscending : NSOrderedDescending;
-        }
-        
-        // If same tag count, sort alphabetically for deterministic ordering
-        return [[cap1 toString] compare:[cap2 toString]];
+    // A stable sort, so caps of equal key keep their registration order.
+    return [serving sortedArrayWithOptions:NSSortStable
+                           usingComparator:^NSComparisonResult(CSCapUrn *a, CSCapUrn *b) {
+        return [a compareRankWith:b forRequest:request];
     }];
 }
 
-+ (BOOL)cap:(CSCapUrn *)cap
-    acceptsRequest:(CSCapUrn *)request
-         withContext:(nullable NSDictionary<NSString *, id> *)context {
-    // Basic cap matching - request is pattern, cap is instance
-    if (![request accepts:cap]) {
-        return NO;
++ (BOOL)areCompatible:(NSArray<CSCapUrn *> *)caps1 with:(NSArray<CSCapUrn *> *)caps2 {
+    for (CSCapUrn *c1 in caps1) {
+        for (CSCapUrn *c2 in caps2) {
+            if ([c1 isComparable:c2]) {
+                return YES;
+            }
+        }
     }
-    
-    // If no context provided, basic matching is sufficient
-    if (!context) {
-        return YES;
-    }
-    
-    // Context-based filtering could be implemented here
-    // For example, checking file type compatibility, version requirements, etc.
-    // This is extensible for future use cases
-    
-    return YES;
+    return NO;
 }
 
 @end
