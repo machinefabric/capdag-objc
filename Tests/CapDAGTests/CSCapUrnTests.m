@@ -1464,10 +1464,12 @@ static NSString* testUrn(NSString *tags) {
 
     // The exact match wins over the more specific refinement, though it is
     // registered after it.
-    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:@[op, pdf, generate] forRequest:request], generate);
+    NSArray<CSCapUrn *> *withExact = @[op, pdf, generate];
+    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:withExact forRequest:request], generate);
 
     // A refinement is chosen when nothing matches exactly.
-    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:@[op, pdf] forRequest:request], pdf);
+    NSArray<CSCapUrn *> *withoutExact = @[op, pdf];
+    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:withoutExact forRequest:request], pdf);
 }
 
 // TEST563: CapMatcher::find_all_matches returns every serving cap in ranking order, closest to the request first
@@ -1554,8 +1556,9 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([request accepts:broader]);
     XCTAssertGreaterThan(narrower.specificity, broader.specificity);
 
-    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:@[broader, narrower] forRequest:request], broader);
-    NSArray<CSCapUrn *> *matches = [CSCapMatcher findAllMatchesInCaps:@[broader, narrower] forRequest:request];
+    NSArray<CSCapUrn *> *registered = @[broader, narrower];
+    XCTAssertEqual([CSCapMatcher findBestMatchInCaps:registered forRequest:request], broader);
+    NSArray<CSCapUrn *> *matches = [CSCapMatcher findAllMatchesInCaps:registered forRequest:request];
     XCTAssertEqual(matches.count, 1u);
     XCTAssertEqual(matches[0], broader);
 
