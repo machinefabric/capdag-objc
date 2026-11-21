@@ -344,14 +344,14 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
 - (void)test1978_AManifestPinningADefinitionAtZeroIsRefused {
     CSFabricRegistry *reg = [self unreachableRegistry:@"1978" version:14];
     NSError *error = nil;
-    XCTAssertTrue([reg ingestManifestDictionary:@{@"version": @14, @"previous": @13, @"caps": @{@"cap:effect=none": @13},
-                                                  @"media": @{}, @"aliases": @{}, @"dims": @{}}
-                                          error:&error], @"%@", error);
+    XCTAssertTrue(([reg ingestManifestDictionary:@{@"version": @14, @"previous": @13, @"caps": @{@"cap:effect=none": @13},
+                                                   @"media": @{}, @"aliases": @{}, @"dims": @{}}
+                                           error:&error]), @"%@", error);
 
     error = nil;
-    XCTAssertFalse([reg ingestManifestDictionary:@{@"version": @14, @"previous": @13, @"caps": @{@"cap:effect=none": @13},
-                                                   @"media": @{@"media:": @0}, @"aliases": @{}, @"dims": @{}}
-                                           error:&error]);
+    XCTAssertFalse(([reg ingestManifestDictionary:@{@"version": @14, @"previous": @13, @"caps": @{@"cap:effect=none": @13},
+                                                    @"media": @{@"media:": @0}, @"aliases": @{}, @"dims": @{}}
+                                            error:&error]));
     XCTAssertTrue([error.localizedDescription containsString:@"manifest v14 pins 'media:' at 0, which is no definition version"], @"%@", error);
 
     XCTAssertThrows([self unreachableRegistry:@"1978-zero" version:0], @"a registry is pinned at manifest 1 or later");
