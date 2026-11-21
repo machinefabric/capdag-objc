@@ -1126,13 +1126,6 @@ NSString * const CSOutputCarriesInput = @"input";
         supportedModelTypes = (NSArray<NSString *> *)supportedModelTypesRaw;
     }
 
-    // Parse default_model_spec (optional; omitted when nil)
-    NSString *defaultModelSpec = nil;
-    id defaultModelSpecRaw = dictionary[@"default_model_spec"];
-    if (defaultModelSpecRaw && [defaultModelSpecRaw isKindOfClass:[NSString class]]) {
-        defaultModelSpec = (NSString *)defaultModelSpecRaw;
-    }
-
     CSCap *cap = [self capWithUrn:capUrn
                             title:title
                           aliases:aliases
@@ -1145,7 +1138,6 @@ NSString * const CSOutputCarriesInput = @"input";
     cap->_isAbstract = isAbstract;
     cap->_registeredBy = registeredBy;
     cap->_supportedModelTypes = [supportedModelTypes copy];
-    cap->_defaultModelSpec = [defaultModelSpec copy];
     cap->_version = version;
     cap->_dims = dims;
     return cap;
@@ -1207,10 +1199,6 @@ NSString * const CSOutputCarriesInput = @"input";
 
     if (self.supportedModelTypes && self.supportedModelTypes.count > 0) {
         dict[@"supported_model_types"] = self.supportedModelTypes;
-    }
-
-    if (self.defaultModelSpec) {
-        dict[@"default_model_spec"] = self.defaultModelSpec;
     }
 
     return [dict copy];
@@ -1314,10 +1302,6 @@ NSString * const CSOutputCarriesInput = @"input";
     if ((self.supportedModelTypes == nil) != (other.supportedModelTypes == nil)) return NO;
     if (self.supportedModelTypes && ![self.supportedModelTypes isEqualToArray:other.supportedModelTypes]) return NO;
 
-    // DefaultModelSpec
-    if ((self.defaultModelSpec == nil) != (other.defaultModelSpec == nil)) return NO;
-    if (self.defaultModelSpec && ![self.defaultModelSpec isEqualToString:other.defaultModelSpec]) return NO;
-
     return YES;
 }
 
@@ -1334,7 +1318,6 @@ NSString * const CSOutputCarriesInput = @"input";
     hash ^= [self.metadataJSON hash];
     hash ^= [self.registeredBy hash];
     hash ^= [self.supportedModelTypes hash];
-    hash ^= [self.defaultModelSpec hash];
     return hash;
 }
 
@@ -1355,7 +1338,6 @@ NSString * const CSOutputCarriesInput = @"input";
     copy->_isAbstract = self.isAbstract;
     copy->_registeredBy = [self.registeredBy copy];
     copy->_supportedModelTypes = [self.supportedModelTypes copy];
-    copy->_defaultModelSpec = [self.defaultModelSpec copy];
     copy->_version = self.version;
     copy->_dims = [self.dims copy];
     return copy;
@@ -1375,7 +1357,6 @@ NSString * const CSOutputCarriesInput = @"input";
     [coder encodeObject:self.metadataJSON forKey:@"metadataJSON"];
     [coder encodeObject:self.registeredBy forKey:@"registeredBy"];
     [coder encodeObject:self.supportedModelTypes forKey:@"supportedModelTypes"];
-    [coder encodeObject:self.defaultModelSpec forKey:@"defaultModelSpec"];
     [coder encodeObject:@(self.version) forKey:@"version"];
 }
 
@@ -1398,7 +1379,6 @@ NSString * const CSOutputCarriesInput = @"input";
     }
 
     NSArray<NSString *> *supportedModelTypes = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [NSString class], nil] forKey:@"supportedModelTypes"];
-    NSString *defaultModelSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"defaultModelSpec"];
 
     CSCap *cap = [CSCap capWithUrn:capUrn
                             title:title
@@ -1412,7 +1392,6 @@ NSString * const CSOutputCarriesInput = @"input";
     cap->_isAbstract = isAbstract;
     cap->_registeredBy = registeredBy;
     cap->_supportedModelTypes = supportedModelTypes ?: @[];
-    cap->_defaultModelSpec = defaultModelSpec;
     cap->_version = [[coder decodeObjectOfClass:[NSNumber class] forKey:@"version"] unsignedIntValue];
     NSArray<CSDimRef *> *dims = [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSArray class], [CSDimRef class], nil] forKey:@"dims"];
     if (!dims) return nil;
@@ -1461,7 +1440,6 @@ NSString * const CSOutputCarriesInput = @"input";
     cap->_outputs = [outputs copy];
     cap->_metadataJSON = [metadataJSON copy];
     cap->_supportedModelTypes = @[];
-    cap->_defaultModelSpec = nil;
     cap->_version = 0;
     return cap;
 }
@@ -1540,6 +1518,47 @@ NSString * const CSOutputCarriesInput = @"input";
 
 - (NSArray<CSCapArg *> *)getArgs {
     return self.args ?: @[];
+}
+
+- (BOOL)modelSpecArg:(CSCapArg *_Nullable *_Nonnull)outArg error:(NSError *_Nullable *_Nullable)error {
+    NSError *(^refusal)(NSString *) = ^NSError *(NSString *message) {
+        return [NSError errorWithDomain:@"CSCapError" code:1 userInfo:@{NSLocalizedDescriptionKey: message}];
+    };
+    NSError *parseError = nil;
+    CSMediaUrn *modelSpec = [CSMediaUrn fromString:CSMediaModelSpec error:&parseError];
+    NSAssert(modelSpec != nil, @"CSMediaModelSpec is a media URN: %@", parseError);
+    CSCapArg *found = nil;
+    for (CSCapArg *arg in [self getArgs]) {
+        CSMediaUrn *argUrn = [CSMediaUrn fromString:arg.mediaUrn error:&parseError];
+        if (!argUrn) {
+            if (error) *error = refusal([NSString stringWithFormat:@"cap '%@' argument '%@' has a media URN that does not parse: %@",
+                                         [self urnString], arg.mediaUrn, parseError.localizedDescription]);
+            return NO;
+        }
+        if (![argUrn conformsTo:modelSpec]) continue;
+        if (found) {
+            if (error) *error = refusal([NSString stringWithFormat:@"cap '%@' declares two model-spec arguments, '%@' and '%@'",
+                                         [self urnString], found.mediaUrn, arg.mediaUrn]);
+            return NO;
+        }
+        found = arg;
+    }
+    *outArg = found;
+    return YES;
+}
+
+- (BOOL)defaultModelSpec:(NSString *_Nullable *_Nonnull)outSpec error:(NSError *_Nullable *_Nullable)error {
+    CSCapArg *arg = nil;
+    if (![self modelSpecArg:&arg error:error]) return NO;
+    *outSpec = nil;
+    if (!arg || arg.defaultValue == nil || arg.defaultValue == [NSNull null]) return YES;
+    if (![arg.defaultValue isKindOfClass:[NSString class]]) {
+        if (error) *error = [NSError errorWithDomain:@"CSCapError" code:1 userInfo:@{NSLocalizedDescriptionKey:
+            [NSString stringWithFormat:@"cap '%@' model-spec argument '%@' declares a default that is not a string", [self urnString], arg.mediaUrn]}];
+        return NO;
+    }
+    *outSpec = arg.defaultValue;
+    return YES;
 }
 
 - (NSArray<CSCapArg *> *)getRequiredArgs {
