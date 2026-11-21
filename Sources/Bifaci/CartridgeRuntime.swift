@@ -1830,6 +1830,9 @@ internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGran
     // Whether the response reached its END — or the error that ends it has
     // been reported, which also ends it.
     var ended = false
+    // The response's frames are checked in order with the proved model
+    // (12.4); a violation is the response's protocol error.
+    var flow = ReceivedFlow()
 
     func protocolError(_ message: String) -> (PeerResponseItem, InputGrantEmitter?) {
         ended = true
@@ -1844,6 +1847,9 @@ internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGran
             return nil
         }
         while let frame = responseRx.next() {
+            if let violation = flow.receive(frame) {
+                return protocolError(violation)
+            }
             switch frame.frameType {
             case .streamStart:
                 guard let streamId = frame.streamId else {
@@ -1979,7 +1985,8 @@ internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGran
 /// is never buffered to completion. When `credit` is supplied, the demux
 /// keeps per-stream credit windows (initialCredit + grants) and surfaces an
 /// over-window chunk as a CREDIT_VIOLATION error of that stream alone, the
-/// request going on (L12); handler
+/// request going on (L12); every frame is checked in order with the proved
+/// model first (`ReceivedFlow`, 12.4); handler
 /// consumption emits batched grants (window/2) via each stream's
 /// `InputGrantEmitter` (L10).
 ///
@@ -2028,9 +2035,18 @@ internal func demuxMultiStream(
         // connection ended. Every other way out of the loop is END, an ERR,
         // or an error already delivered.
         var cutShort = false
+        // The call's frames are checked in order with the proved model (12.4).
+        var flow = ReceivedFlow()
         loop: while true {
             guard let frame = frameIterator.next() else {
                 cutShort = true
+                break loop
+            }
+            if let violation = flow.receive(frame) {
+                for (_, queue) in streamChannels {
+                    queue.push(.failure(.protocolError(violation)))
+                }
+                streamsQueue.push(.failure(.protocolError(violation)))
                 break loop
             }
             switch frame.frameType {
