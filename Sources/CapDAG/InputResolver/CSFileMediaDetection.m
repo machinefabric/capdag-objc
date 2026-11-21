@@ -100,14 +100,6 @@ const NSUInteger CSMaxContentInspectionBytes = 100 * 1024;
 
 @end
 
-/// One file media type a file's extension names, with the validation rules
-/// its definition declares (nil when it declares none). Mirrors Rust:
-/// FileMediaCandidate
-@interface CSFileMediaCandidate : NSObject
-@property (nonatomic, strong) CSMediaUrn *urn;
-@property (nonatomic, copy, nullable) NSDictionary *validation;
-@end
-
 @implementation CSFileMediaCandidate
 @end
 
@@ -276,14 +268,11 @@ static lungo_value *_Nullable CSRulesVerdict(NSData *content, CSFileMediaCandida
 
 #pragma mark - The decision
 
-/// The candidates that stand (the model's `stands`), in the candidates'
-/// order, given the consulted adapters' URNs and what their cartridges
-/// claimed; nil with *failure when a definition's rules cannot be read.
-static NSArray<CSMediaUrn *> *_Nullable CSSurvivingCandidates(NSData *content,
-                                                              NSArray<CSFileMediaCandidate *> *candidates,
-                                                              NSArray<CSMediaUrn *> *owners,
-                                                              NSArray<CSMediaUrn *> *claims,
-                                                              NSString **failure) {
+NSArray<CSMediaUrn *> *_Nullable CSSurvivingCandidates(NSData *content,
+                                                       NSArray<CSFileMediaCandidate *> *candidates,
+                                                       NSArray<CSMediaUrn *> *owners,
+                                                       NSArray<CSMediaUrn *> *claims,
+                                                       NSString *_Nullable *_Nonnull failure) {
     NSUInteger n = candidates.count;
     lungo_value **modelled = calloc(MAX(n, (NSUInteger)1), sizeof(lungo_value *));
     for (NSUInteger i = 0; i < n; i++) {
@@ -320,10 +309,7 @@ static NSArray<CSMediaUrn *> *_Nullable CSSurvivingCandidates(NSData *content,
     return standing;
 }
 
-/// Of what stands, the most specific member of each line of refinement (the
-/// model's `mostSpecific`), in order, written as capdag writes media URNs.
-/// This library has no value adapters to refine what stands first.
-static NSArray<NSString *> *CSSettle(NSArray<CSMediaUrn *> *survivors) {
+NSArray<NSString *> *CSSettle(NSArray<CSMediaUrn *> *survivors) {
     NSMutableArray<CSMediaUrn *> *distinct = [NSMutableArray arrayWithCapacity:survivors.count];
     for (CSMediaUrn *urn in survivors) {
         BOOL seen = NO;

@@ -119,6 +119,30 @@ FOUNDATION_EXPORT const NSUInteger CSMaxContentInspectionBytes;
 
 @end
 
+/// One file media type a file's extension names, with the validation rules its
+/// definition declares (the definition's `validation` object, or nil).
+/// Mirrors Rust: FileMediaCandidate
+@interface CSFileMediaCandidate : NSObject
+@property (nonatomic, strong) CSMediaUrn *urn;
+@property (nonatomic, copy, nullable) NSDictionary *validation;
+@end
+
+/// The candidates that stand (the model's `stands`), in the candidates'
+/// order, given the consulted adapters' URNs and what their cartridges
+/// claimed; nil with `failure` set when a definition's rules cannot be read,
+/// naming it.
+/// Mirrors Rust: surviving_candidates
+NSArray<CSMediaUrn *> *_Nullable CSSurvivingCandidates(NSData *content,
+                                                       NSArray<CSFileMediaCandidate *> *candidates,
+                                                       NSArray<CSMediaUrn *> *owners,
+                                                       NSArray<CSMediaUrn *> *claims,
+                                                       NSString *_Nullable *_Nonnull failure);
+
+/// Of what stands, the most specific member of each line of refinement (the
+/// model's `mostSpecific`), in order, written as capdag writes media URNs.
+/// Mirrors Rust: settle, with no value adapters
+NSArray<NSString *> *CSSettle(NSArray<CSMediaUrn *> *survivors);
+
 /// The one media a host that cannot ask uses: the most specific, the first of
 /// them on a tie (the model's `primary`). nil with no error only for an empty
 /// list; nil with `error` set when a member is no media URN, naming it.
