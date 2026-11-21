@@ -1446,4 +1446,48 @@ static NSDictionary *capJSON(NSString *json) {
     XCTAssertFalse([cap primaryInputIsSequence]);
 }
 
+// TEST1983: a cap's default model is its model-spec argument's default, the
+// value a run uses; a cap with no model-spec argument has none, and a cap that
+// declares two is an error naming it. A body that still carries a stored
+// `default_model_spec` is read, and the stored value is not used.
+- (void)test1983_TheDefaultModelIsTheModelSpecArgumentsDefault {
+    NSDictionary *prompt = @{@"media_urn": @"media:enc=utf8;plain-text", @"name": @"prompt", @"required": @YES,
+                             @"sources": @[@{@"stdin": @"media:enc=utf8;plain-text"}]};
+    NSDictionary *(^model)(NSString *, NSString *) = ^NSDictionary *(NSString *name, NSString *defaultValue) {
+        NSMutableDictionary *arg = [@{@"media_urn": @"media:candle;enc=utf8;llm;model-spec", @"name": name, @"required": @NO,
+                                      @"sources": @[@{@"cli_flag": [@"--" stringByAppendingString:name]}]} mutableCopy];
+        if (defaultValue) arg[@"default_value"] = defaultValue;
+        return arg;
+    };
+    CSCap *(^cap)(NSArray *, NSDictionary *) = ^CSCap *(NSArray *args, NSDictionary *extra) {
+        NSMutableDictionary *dict = [@{@"urn": @"cap:in=\"media:enc=utf8;plain-text\";generate;out=\"media:enc=utf8;ext=txt;plain-text\"",
+                                       @"title": @"Generate", @"aliases": @[@"generate"], @"args": args} mutableCopy];
+        [dict addEntriesFromDictionary:extra];
+        NSError *error = nil;
+        CSCap *parsed = [CSCap capWithDictionary:dict error:&error];
+        XCTAssertNotNil(parsed, @"%@", error);
+        return parsed;
+    };
+
+    NSError *error = nil;
+    NSString *spec = nil;
+    XCTAssertTrue([cap(@[prompt, model(@"model-spec", @"hf:a/b")], @{}) defaultModelSpec:&spec error:&error], @"%@", error);
+    XCTAssertEqualObjects(spec, @"hf:a/b");
+    CSCapArg *arg = nil;
+    XCTAssertTrue([cap(@[prompt, model(@"model-spec", @"hf:a/b")], @{}) modelSpecArg:&arg error:&error], @"%@", error);
+    XCTAssertEqualObjects(arg.name, @"model-spec");
+
+    spec = @"unset";
+    XCTAssertTrue([cap(@[prompt], @{}) defaultModelSpec:&spec error:&error], @"%@", error);
+    XCTAssertNil(spec, @"no model-spec argument, no default");
+
+    error = nil;
+    XCTAssertFalse([cap(@[prompt, model(@"model-a", nil), model(@"model-b", nil)], @{}) defaultModelSpec:&spec error:&error]);
+    XCTAssertTrue([error.localizedDescription containsString:@"declares two model-spec arguments"], @"%@", error);
+
+    spec = @"unset";
+    XCTAssertTrue([cap(@[prompt], @{@"default_model_spec": @"hf:stored/model"}) defaultModelSpec:&spec error:&error], @"%@", error);
+    XCTAssertNil(spec, @"a stored default is not the cap's");
+}
+
 @end
