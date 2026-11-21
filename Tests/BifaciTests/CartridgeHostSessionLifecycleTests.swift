@@ -76,7 +76,8 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
 
         host.handleCartridgeDeathForTest(
             cartridgeIdx: idx,
-            generation: initial.generation - 1
+            generation: initial.generation - 1,
+            stream: .closed
         )
 
         let afterStaleDeath = host.cartridgeProcessStateForTest(cartridgeIdx: idx)
@@ -86,7 +87,8 @@ final class CartridgeHostSessionLifecycleTests: XCTestCase {
 
         host.handleCartridgeDeathForTest(
             cartridgeIdx: idx,
-            generation: initial.generation
+            generation: initial.generation,
+            stream: .closed
         )
 
         let afterCurrentDeath = host.cartridgeProcessStateForTest(cartridgeIdx: idx)

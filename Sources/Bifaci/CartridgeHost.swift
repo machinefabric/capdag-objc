@@ -551,10 +551,144 @@ public struct CartridgeProcessInfo: Sendable {
 
 // MARK: - Internal Types
 
+/// How a cartridge's output stream ended, as its reader saw it.
+enum CartridgeStreamEnd: Equatable {
+    /// The stream ended between two frames.
+    case closed
+    /// A read failed, or the stream ended part way through a frame.
+    case broken(String)
+    /// The cartridge wrote something that is not a frame.
+    case malformed(String)
+
+    static func fromReadError(_ error: Error) -> CartridgeStreamEnd {
+        guard let frameError = error as? FrameError else {
+            return .broken(error.localizedDescription)
+        }
+        let said = frameError.errorDescription ?? "\(frameError)"
+        switch frameError {
+        case .unexpectedEof, .ioError:
+            return .broken(said)
+        case .encodeError, .decodeError, .frameTooLarge, .invalidFrame, .protocolError, .handshakeFailed:
+            return .malformed(said)
+        }
+    }
+}
+
+/// How a dead cartridge's process ended.
+enum CartridgeProcessEnd: Equatable {
+    /// It has no process: an attached cartridge.
+    case noProcess
+    /// It exited, with this `waitpid` status.
+    case exited(Int32)
+    /// It was still running when the host gave up on it, and the host killed it.
+    case killed
+    /// Whether it had exited could not be asked.
+    case unknown(String)
+}
+
+/// How long a cartridge whose output ended on its own is given to exit before
+/// the host takes it to be still running. A crashing process closes its output
+/// before it can be collected, so the end of the stream usually arrives first;
+/// asked at once (`WNOHANG`), a crash read as "stdout closed while process
+/// still running" and was then killed by the host. Mirrors the reference
+/// host's EXIT_WAIT_LIMIT.
+let CARTRIDGE_EXIT_WAIT_LIMIT: TimeInterval = 5.0
+/// How often the process is asked whether it has exited.
+let CARTRIDGE_REAP_POLL: TimeInterval = 0.02
+/// How long a dead cartridge's stderr is read for after its process ended.
+let CARTRIDGE_STDERR_DRAIN_LIMIT: TimeInterval = 0.5
+
+/// Wait, by asking, up to `limit` for `pid` to exit, and collect it. A process
+/// still running then is killed, and collected.
+func awaitCartridgeExit(pid: pid_t, limit: TimeInterval) -> CartridgeProcessEnd {
+    let deadline = Date().addingTimeInterval(limit)
+    var status: Int32 = 0
+    while true {
+        let reaped = waitpid(pid, &status, WNOHANG)
+        if reaped == pid {
+            return .exited(status)
+        }
+        if reaped < 0 {
+            let error = String(cString: strerror(errno))
+            kill(pid, SIGKILL)
+            return .unknown("waitpid failed: \(error)")
+        }
+        if Date() >= deadline {
+            break
+        }
+        Thread.sleep(forTimeInterval: CARTRIDGE_REAP_POLL)
+    }
+    kill(pid, SIGKILL)
+    if waitpid(pid, &status, 0) < 0 {
+        return .unknown("waitpid failed after the kill: \(String(cString: strerror(errno)))")
+    }
+    return .killed
+}
+
+private let cartridgeSignalNames: [Int32: String] = [
+    SIGHUP: "SIGHUP", SIGINT: "SIGINT", SIGQUIT: "SIGQUIT", SIGILL: "SIGILL",
+    SIGTRAP: "SIGTRAP", SIGABRT: "SIGABRT", SIGBUS: "SIGBUS", SIGFPE: "SIGFPE",
+    SIGKILL: "SIGKILL", SIGUSR1: "SIGUSR1", SIGSEGV: "SIGSEGV", SIGUSR2: "SIGUSR2",
+    SIGPIPE: "SIGPIPE", SIGALRM: "SIGALRM", SIGTERM: "SIGTERM", SIGXCPU: "SIGXCPU",
+    SIGXFSZ: "SIGXFSZ", SIGSYS: "SIGSYS",
+]
+
+/// How a process ended, from its `waitpid` status: its exit code, or the
+/// signal that killed it.
+func describeCartridgeExit(_ status: Int32) -> String {
+    let signal = status & 0x7F
+    if signal == 0 {
+        return "exit code \((status >> 8) & 0xFF)"
+    }
+    var named = cartridgeSignalNames[signal].map { "killed by signal \(signal) (\($0))" }
+        ?? "killed by signal \(signal)"
+    if status & 0x80 != 0 {
+        named += ", and dumped core"
+    }
+    return named
+}
+
+/// What happened to a cartridge that died without the host ending it: how its
+/// output ended and how its process did, in one sentence naming it. Mirrors
+/// the reference host's `death_report`.
+func cartridgeDeathReport(
+    cartridge: String,
+    stream: CartridgeStreamEnd,
+    process: CartridgeProcessEnd
+) -> String {
+    let waited = Int(CARTRIDGE_EXIT_WAIT_LIMIT)
+    let ended: String
+    switch process {
+    case .killed:
+        switch stream {
+        case .closed:
+            return "Cartridge \(cartridge) closed its output and was still running \(waited)s later, so it was killed."
+        case .broken(let error):
+            return "Cartridge \(cartridge) stopped answering: reading its output failed: \(error), and it was still running \(waited)s later, so it was killed."
+        case .malformed(let error):
+            return "Cartridge \(cartridge) wrote output that is not a frame (\(error)), so it was killed."
+        }
+    case .exited(let status):
+        ended = "Cartridge \(cartridge) exited unexpectedly (\(describeCartridgeExit(status)))"
+    case .noProcess:
+        ended = "Cartridge \(cartridge) disconnected unexpectedly"
+    case .unknown(let error):
+        ended = "Cartridge \(cartridge) stopped unexpectedly, and was killed because whether it had exited could not be read (\(error))"
+    }
+    switch stream {
+    case .closed:
+        return "\(ended)."
+    case .broken(let error):
+        return "\(ended): reading its output failed: \(error)."
+    case .malformed(let error):
+        return "\(ended): its output is not a frame: \(error)."
+    }
+}
+
 /// Events from reader threads, delivered to the main run() loop.
 private enum CartridgeEvent {
     case frame(cartridgeIdx: Int, generation: UInt64, frame: Frame)
-    case death(cartridgeIdx: Int, generation: UInt64)
+    case death(cartridgeIdx: Int, generation: UInt64, stream: CartridgeStreamEnd)
     case relayFrame(Frame)
     case relayClosed
     /// Periodic wakeup to republish runtime stats via RelayNotify.
@@ -2057,8 +2191,8 @@ public final class CartridgeHost: @unchecked Sendable {
                         handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
                     }
                     return false
-                case .death(let cartridgeIdx, let generation):
-                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
+                case .death(let cartridgeIdx, let generation, let stream):
+                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation, stream: stream)
                     return false
                 case .statsRefresh:
                     // Re-emit RelayNotify only when at least one cartridge is
@@ -2604,7 +2738,11 @@ public final class CartridgeHost: @unchecked Sendable {
                     let generation = cartridge.generation
                     stateLock.unlock()
                     cartridge.killProcess()
-                    handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
+                    handleCartridgeDeath(
+                        cartridgeIdx: cartridgeIdx,
+                        generation: generation,
+                        stream: .malformed("heartbeat reply missing or malformed concurrency-pool state map")
+                    )
                     return
                 }
                 if case .unsignedInt(let v) = meta["footprint_mb"] {
@@ -2732,7 +2870,7 @@ public final class CartridgeHost: @unchecked Sendable {
         stateLock.unlock()
 
         for entry in expired {
-            handleCartridgeDeath(cartridgeIdx: entry.idx, generation: entry.generation)
+            handleCartridgeDeath(cartridgeIdx: entry.idx, generation: entry.generation, stream: nil)
         }
 
         stateLock.lock()
@@ -2774,7 +2912,7 @@ public final class CartridgeHost: @unchecked Sendable {
                     cartridges[entry.idx].shutdownReason = .heartbeatTimeout
                 }
                 stateLock.unlock()
-                handleCartridgeDeath(cartridgeIdx: entry.idx, generation: entry.generation)
+                handleCartridgeDeath(cartridgeIdx: entry.idx, generation: entry.generation, stream: nil)
             }
         }
     }
@@ -2791,7 +2929,11 @@ public final class CartridgeHost: @unchecked Sendable {
     ///    "CARTRIDGE_UNHEALTHY" and retire the full process generation.
     /// 4. **`.appExit`**: Clean shutdown. No ERR frames — the relay
     ///    connection is closing anyway.
-    private func handleCartridgeDeath(cartridgeIdx: Int, generation: UInt64) {
+    ///
+    /// `stream` is how the cartridge's output ended, as its reader saw it, or
+    /// `nil` when the host is ending a cartridge whose output is still open
+    /// (a heartbeat timeout), which always has a shutdown reason.
+    private func handleCartridgeDeath(cartridgeIdx: Int, generation: UInt64, stream: CartridgeStreamEnd?) {
         stateLock.lock()
         guard cartridges.indices.contains(cartridgeIdx),
               cartridges[cartridgeIdx].generation == generation else {
@@ -2833,40 +2975,35 @@ public final class CartridgeHost: @unchecked Sendable {
         cartridge.shutdownReason = nil  // Reset for potential respawn
         cartridge.pendingHeartbeats.removeAll()
 
-        // Check process status and kill if still running.
-        // The reader thread got EOF on stdout, but the process may still be alive
-        // (e.g. if a library closed stdout). We must kill before reading stderr,
-        // because readToEnd blocks until the pipe's write end closes.
-        var exitInfo = ""
+        // How the process ended. One the host ended itself has been killed
+        // already. One whose output ended on its own is given time to exit,
+        // since a crash closes its output before it is collected; one that
+        // wrote something that is not a frame is not going to exit for it,
+        // and is ended now.
+        var processEnd = CartridgeProcessEnd.noProcess
         if let p = cartridge.pid {
-            var status: Int32 = 0
-            var wpid = waitpid(p, &status, WNOHANG)
-            if wpid == 0 {
-                // Process still running — stdout closed but process alive.
-                // Kill it so we can collect stderr.
-                kill(p, SIGTERM)
-                Thread.sleep(forTimeInterval: 0.1)
-                wpid = waitpid(p, &status, WNOHANG)
-                if wpid == 0 {
-                    kill(p, SIGKILL)
-                    wpid = waitpid(p, &status, 0)  // blocking wait
+            var waitLimit: TimeInterval = 0
+            if reason == nil {
+                switch stream {
+                case .closed?, .broken?:
+                    waitLimit = CARTRIDGE_EXIT_WAIT_LIMIT
+                case .malformed?, nil:
+                    waitLimit = 0
                 }
-                exitInfo = "stdout closed while process still running"
             }
-            if wpid > 0 {
-                if (status & 0x7F) != 0 {
-                    let sig = status & 0x7F
-                    let info = "killed by signal \(sig)"
-                    exitInfo = exitInfo.isEmpty ? info : "\(exitInfo), \(info)"
-                } else {
-                    let code = (status >> 8) & 0xFF
-                    let info = "exit code \(code)"
-                    exitInfo = exitInfo.isEmpty ? info : "\(exitInfo), \(info)"
-                }
-            } else if wpid < 0 {
-                exitInfo = "waitpid failed (errno=\(errno))"
-            }
+            processEnd = awaitCartridgeExit(pid: p, limit: waitLimit)
             cartridge.pid = nil
+        }
+        let exitInfo: String
+        switch processEnd {
+        case .noProcess:
+            exitInfo = ""
+        case .exited(let status):
+            exitInfo = describeCartridgeExit(status)
+        case .killed:
+            exitInfo = "killed by the host"
+        case .unknown(let error):
+            exitInfo = "its exit status could not be read: \(error)"
         }
 
         // The process is gone, so release the old stdout ownership and its
@@ -2882,8 +3019,16 @@ public final class CartridgeHost: @unchecked Sendable {
         // The stderr drain thread has been reading all along; its tail is
         // the death report. No `readToEnd` here: it would block for as long
         // as ANY holder of the pipe's write end lives (a grandchild the
-        // cartridge spawned, say), under the host lock.
+        // cartridge spawned, say), under the host lock. The drain is given
+        // a bounded moment to read the last lines the process wrote.
+        if let drain = cartridge.stderrThread {
+            let drainDeadline = Date().addingTimeInterval(CARTRIDGE_STDERR_DRAIN_LIMIT)
+            while !drain.isFinished && Date() < drainDeadline {
+                Thread.sleep(forTimeInterval: CARTRIDGE_REAP_POLL)
+            }
+        }
         let stderrContent = cartridge.takeStderrTail()
+            .trimmingCharacters(in: .newlines)
         if let stderrHandle = cartridge.stderrHandle {
             try? stderrHandle.close()
             cartridge.stderrHandle = nil
@@ -2946,10 +3091,14 @@ public final class CartridgeHost: @unchecked Sendable {
         switch reason {
         case nil:
             // Unexpected death — genuine crash mid-flight
-            let exitSuffix = exitInfo.isEmpty ? "" : " (\(exitInfo))"
-            let msg = stderrContent.isEmpty
-                ? "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix)."
-                : "Cartridge \(cartridgePath) exited unexpectedly\(exitSuffix). stderr:\n\(stderrContent)"
+            guard let stream else {
+                preconditionFailure(
+                    "a cartridge the host ends itself always has a shutdown reason; "
+                        + "one with none died on its own, and its reader saw how its output ended"
+                )
+            }
+            let what = cartridgeDeathReport(cartridge: cartridgePath, stream: stream, process: processEnd)
+            let msg = stderrContent.isEmpty ? what : "\(what) stderr:\n\(stderrContent)"
             errInfo = (code: "CARTRIDGE_DIED", attributionClass: .environment, message: msg)
             cartridge.lastDeathMessage = msg
         case .oomKill:
@@ -3070,7 +3219,8 @@ public final class CartridgeHost: @unchecked Sendable {
                             // EOF — cartridge closed stdout
                             self?.pushEvent(.death(
                                 cartridgeIdx: cartridgeIdx,
-                                generation: generation
+                                generation: generation,
+                                stream: .closed
                             ))
                             return true
                         }
@@ -3081,10 +3231,12 @@ public final class CartridgeHost: @unchecked Sendable {
                         ))
                         return false
                     } catch {
-                        // Read error — treat as death
+                        // The stream broke, or carried something that is
+                        // not a frame: the death says which.
                         self?.pushEvent(.death(
                             cartridgeIdx: cartridgeIdx,
-                            generation: generation
+                            generation: generation,
+                            stream: CartridgeStreamEnd.fromReadError(error)
                         ))
                         return true
                     }
@@ -3165,8 +3317,8 @@ public final class CartridgeHost: @unchecked Sendable {
                 if isCurrent {
                     handleCartridgeFrame(cartridgeIdx: cartridgeIdx, frame: frame)
                 }
-            case .death(let cartridgeIdx, let generation):
-                handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
+            case .death(let cartridgeIdx, let generation, let stream):
+                handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation, stream: stream)
             case .relayFrame(let frame):
                 handleRelayFrame(frame)
             case .relayClosed:
@@ -3854,8 +4006,27 @@ public final class CartridgeHost: @unchecked Sendable {
     /// Test-only: deliver a reader death event with its captured process
     /// generation. This invokes the production teardown transition so tests
     /// can prove that a retired reader cannot kill a replacement process.
-    internal func handleCartridgeDeathForTest(cartridgeIdx: Int, generation: UInt64) {
-        handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation)
+    internal func handleCartridgeDeathForTest(
+        cartridgeIdx: Int,
+        generation: UInt64,
+        stream: CartridgeStreamEnd
+    ) {
+        handleCartridgeDeath(cartridgeIdx: cartridgeIdx, generation: generation, stream: stream)
+    }
+
+    /// Test-only: give a cartridge a process the host owns, as a spawn does,
+    /// so a death collects it.
+    internal func setCartridgePidForTest(cartridgeIdx: Int, pid: pid_t) {
+        stateLock.lock()
+        cartridges[cartridgeIdx].pid = pid
+        stateLock.unlock()
+    }
+
+    /// Test-only: the message a cartridge's last death was reported with.
+    internal func lastDeathMessageForTest(cartridgeIdx: Int) -> String? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return cartridges[cartridgeIdx].lastDeathMessage
     }
 
     /// Test-only snapshot of the generation-safe process state.
