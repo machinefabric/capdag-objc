@@ -67,11 +67,11 @@ static lungo_value *CSCapQueryTagPattern(NSDictionary<NSString *, NSString *> *t
     return _asked;
 }
 
-+ (instancetype)fromRequest:(CSCapUrn *)request {
++ (instancetype)fromCall:(CSCapUrn *)call {
     lungo_value *query = NULL;
     lungo_error *error = NULL;
-    if (capdagFormal_query_of_request(request.formalValue, &query, &error) != LUNGO_OK) CSCapQueryFailed(@"read a request", error);
-    return [[self alloc] initWithFormal:query asked:[NSString stringWithFormat:@"request %@", [request toString]]];
+    if (capdagFormal_query_of_call(call.formalValue, &query, &error) != LUNGO_OK) CSCapQueryFailed(@"read a call", error);
+    return [[self alloc] initWithFormal:query asked:[NSString stringWithFormat:@"call %@", [call toString]]];
 }
 
 + (instancetype)fromPattern:(CSCapUrn *)pattern {

@@ -774,10 +774,11 @@ NSString *CSCapKindToString(CSCapKind kind) {
 }
 
 /// Whether `cap` fits this cap read as a PATTERN over caps — what a search asks: `cap`'s input
-/// is within this pattern's, its output covers the pattern's, its effect is the pattern's (a
+/// is within this pattern's, its output is within the pattern's — everything it gives is of the
+/// type the pattern names, its declared output read complete — its effect is the pattern's (a
 /// pattern's ?effect fits any), and its cap-tags — complete: a cap has the tags it has — satisfy
-/// the pattern's. A side the pattern leaves open is not asked about. Decided by the proved
-/// model (CapDAG.Exec.accepts, which is CapDAG.fits).
+/// the pattern's. An output the pattern leaves open asks nothing. Decided by the proved model
+/// (CapDAG.Exec.accepts, which is CapDAG.fits).
 - (BOOL)accepts:(CSCapUrn *)cap {
     if (!cap) {
         return YES;
@@ -795,11 +796,12 @@ NSString *CSCapKindToString(CSCapKind kind) {
 
 #pragma mark - Dispatch predicates
 
-/// Whether this candidate SERVES `request`, decided by the proved model (CapDAG.Exec.dispatch,
-/// which is CapDAG.serves). The candidate takes at least what the request sends, gives at
-/// least what it needs, has the effect asked for unless the request says ?effect, and has the
-/// cap-tags asked for, its own tags being complete. An input the request leaves open is not
-/// established — "some input", not "any input" — and every candidate passes that side.
+/// Whether this candidate SERVES the call `request`, decided by the proved model
+/// (CapDAG.Exec.dispatch, which is CapDAG.serves). The candidate takes at least what the call
+/// sends; what it gives for that — its declared output read complete, or, for effect=none and
+/// effect=patch, what is sent with the effect applied — is inside what the call asks for; it has
+/// the effect asked for unless the call says ?effect; and it has the cap-tags asked for, its own
+/// tags being complete. A call whose input is media: (or omitted) sends anything.
 - (BOOL)isDispatchable:(CSCapUrn *)request {
     return CSCapModelRelation(capdagFormal_dispatch, _formal, request->_formal, @"decide dispatch");
 }
@@ -950,42 +952,32 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
         return nil;
     }
 
-    if (effect == CSCapEffectNone) {
-        parseError = nil;
-        BOOL outputConforms = [runtimeInput satisfies:declaredOut error:&parseError];
-        if (!outputConforms) {
-            if (error) {
-                NSString *message = parseError
-                    ? [NSString stringWithFormat:@"Failed to validate runtime output '%@' against declared output '%@': %@", [runtimeInput toString], [declaredOut toString], parseError.localizedDescription]
-                    : [NSString stringWithFormat:@"Inferred runtime output '%@' does not conform to declared output '%@'", [runtimeInput toString], [declaredOut toString]];
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidEffectApplication
-                                         userInfo:@{NSLocalizedDescriptionKey: message}];
-            }
-            return nil;
-        }
-        return runtimeInput;
+    // What the cap gives for it is the proved model's (CapDAG.Exec.capGives, which is
+    // Cap.gives): its declared output, the input itself, or the input with the keys the
+    // declared input and output disagree on set to the output's.
+    lungo_value *given = NULL;
+    lungo_error *modelError = NULL;
+    if (capdagFormal_cap_gives(_formal, runtimeInput.inner.formalValue, &given, &modelError) != LUNGO_OK) {
+        CSCapModelFailed(@"say what a cap gives", modelError);
     }
-
-    if (effect == CSCapEffectDeclared) {
-        return declaredOut;
+    NSMutableDictionary<NSString *, NSString *> *givenTags = [NSMutableDictionary dictionary];
+    for (size_t i = 0; i < lungo_value_count(given); i++) {
+        const lungo_value *pair = lungo_value_item(given, i);
+        size_t keyLength = 0, valueLength = 0;
+        const char *key = lungo_value_get_string(lungo_value_first(pair), &keyLength);
+        const char *value = lungo_value_get_string(lungo_value_second(pair), &valueLength);
+        givenTags[[[NSString alloc] initWithBytes:key length:keyLength encoding:NSUTF8StringEncoding]] =
+            [[NSString alloc] initWithBytes:value length:valueLength encoding:NSUTF8StringEncoding];
     }
-
-    CSTaggedUrnCoordinateDelta *delta = [declaredOut deltaFrom:declaredIn error:&parseError];
-    if (!delta) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidEffectApplication
-                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to compute output-input media delta for patch effect: %@", parseError.localizedDescription ?: @"unknown error"]}];
-        }
-        return nil;
-    }
-    CSMediaUrn *result = [runtimeInput applyDelta:delta error:&parseError];
+    lungo_value_free(given);
+    parseError = nil;
+    CSTaggedUrn *givenUrn = [CSTaggedUrn fromPrefix:@"media" tags:givenTags error:&parseError];
+    CSMediaUrn *result = givenUrn ? [CSMediaUrn fromTaggedUrn:givenUrn error:&parseError] : nil;
     if (!result) {
         if (error) {
             *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                          code:CSCapUrnErrorInvalidEffectApplication
-                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to apply patch effect delta to runtime media '%@': %@", [runtimeInput toString], parseError.localizedDescription ?: @"unknown error"]}];
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"What '%@' gives for runtime input '%@' is not a media URN: %@", [self toString], [runtimeInput toString], parseError.localizedDescription ?: @"unknown error"]}];
         }
         return nil;
     }
@@ -1009,21 +1001,18 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
 - (BOOL)isConformantRuntimeOutput:(CSMediaUrn *)runtimeInput
                     runtimeOutput:(CSMediaUrn *)runtimeOutput
                             error:(NSError **)error {
-    // THE effect-audit predicate: every check of "did the cap emit what its
-    // effect promised" must go through it — never a hand-rolled combination
-    // of inferRuntimeOutputMedia with equality or conformance checks, so the
-    // contract has exactly one definition.
+    // THE effect-audit predicate: every check of "did the cap emit what its effect promised"
+    // goes through it, so the contract has exactly one definition — the proved model's
+    // (CapDAG.Exec.audit, which is Cap.audits). Both media are those of values that exist, read
+    // complete. effect=declared promises its declared out=, read complete — what it does not
+    // mention, the cap does not give — so the emission must be inside it: a cap declaring
+    // out=media:record may emit media:record, and not media:enc=utf8;fmt=json;record.
+    // effect=none / effect=patch give exactly what their effect makes of the input, so the
+    // emission must be that.
     //
-    // effect=none / effect=patch compute an EXACT runtime output type, so
-    // the emission must be tag-equivalent to the inference (a more specific
-    // emission is still a lie). effect=declared promises only the declared
-    // out=, so the emission must conform to it — more specific is legal,
-    // more generic fails.
-    //
-    // Returns NO with *error set when the inference itself is impossible
-    // (nonconforming runtime input, unconstrained ?effect, inconsistent URN
-    // state) — an upstream contract break, not an emission mismatch.
-    // Returns NO with no error for a clean nonconformant emission.
+    // Returns NO with *error set when the input itself is wrong (nonconforming runtime input,
+    // unconstrained ?effect, inconsistent URN state) — an upstream contract break, not an
+    // emission mismatch. Returns NO with no error for a clean nonconformant emission.
     NSError *inferError = nil;
     CSMediaUrn *inferred = [self inferRuntimeOutputMedia:runtimeInput error:&inferError];
     if (!inferred) {
@@ -1035,31 +1024,15 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
         }
         return NO;
     }
-
-    CSCapEffect effect = [self effect];
-    if (effect == CSCapEffectNone || effect == CSCapEffectPatch) {
-        return [runtimeOutput isEquivalentTo:inferred];
+    lungo_value *answer = NULL;
+    lungo_error *modelError = NULL;
+    if (capdagFormal_audit(_formal, runtimeInput.inner.formalValue, runtimeOutput.inner.formalValue,
+                           &answer, &modelError) != LUNGO_OK) {
+        CSCapModelFailed(@"audit an emission", modelError);
     }
-    if (effect == CSCapEffectDeclared) {
-        NSError *compareError = nil;
-        BOOL conforms = [runtimeOutput satisfies:inferred error:&compareError];
-        if (!conforms && compareError) {
-            if (error) {
-                *error = compareError;
-            }
-            return NO;
-        }
-        return conforms;
-    }
-    // CSCapEffectAny is unreachable — inferRuntimeOutputMedia already
-    // rejected it above — but the audit must never silently pass an
-    // unhandled effect.
-    if (error) {
-        *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                     code:CSCapUrnErrorInvalidEffectApplication
-                                 userInfo:@{NSLocalizedDescriptionKey: @"Cannot audit an emission against an unconstrained effect request"}];
-    }
-    return NO;
+    BOOL keeps = lungo_value_get_bool(answer);
+    lungo_value_free(answer);
+    return keeps;
 }
 
 - (BOOL)isComparable:(CSCapUrn *)other {

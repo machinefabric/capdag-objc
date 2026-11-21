@@ -66,7 +66,7 @@
         CSCapUrn *q = [CSCapUrn fromString:r[@"request"] error:&error];
         XCTAssertNotNil(c);
         XCTAssertNotNil(q);
-        CSCapQuery *request = [CSCapQuery fromRequest:q];
+        CSCapQuery *request = [CSCapQuery fromCall:q];
         NSString *grade = CSMatchGradeName([request grade:c]);
         if (![grade isEqualToString:r[@"grade"]]) {
             [wrong addObject:[NSString stringWithFormat:@"grade of %@ for %@: model %@, got %@", r[@"candidate"], r[@"request"], r[@"grade"], grade]];
