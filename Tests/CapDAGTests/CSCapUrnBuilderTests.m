@@ -7,6 +7,7 @@
 
 #import <XCTest/XCTest.h>
 #import "CapDAG.h"
+@import TaggedUrn;
 
 @interface CSCapUrnBuilderTests : XCTestCase
 @end
@@ -45,9 +46,9 @@
     XCTAssertNil(error);
 
     XCTAssertTrue([cap hasMarkerTag:@"generate"]);
-    XCTAssertEqualObjects([cap getTag:@"target"], @"thumbnail");
-    XCTAssertEqualObjects([cap getTag:@"format"], @"pdf");
-    XCTAssertEqualObjects([cap getTag:@"output"], @"binary");
+    XCTAssertEqualObjects([cap exactValue:@"target"], @"thumbnail");
+    XCTAssertEqualObjects([cap exactValue:@"format"], @"pdf");
+    XCTAssertEqualObjects([cap exactValue:@"output"], @"binary");
     XCTAssertEqualObjects([cap getInSpec], @"media:void");
     XCTAssertEqualObjects([cap getOutSpec], @"media:enc=utf8;record");
 }
@@ -66,8 +67,9 @@
 
     XCTAssertEqualObjects([cap getInSpec], @"media:string");
     XCTAssertEqualObjects([cap getOutSpec], @"media:");
-    XCTAssertEqualObjects([cap getTag:@"in"], @"media:string");
-    XCTAssertEqualObjects([cap getTag:@"out"], @"media:");
+    XCTAssertEqualObjects([cap getInSpec], @"media:string");
+    XCTAssertEqualObjects([cap getOutSpec], @"media:");
+    XCTAssertNil([cap getTag:@"in"], @"the direction is no cap-tag");
 }
 
 // TEST6316: Builder custom tags
@@ -84,9 +86,9 @@
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
 
-    XCTAssertEqualObjects([cap getTag:@"engine"], @"v2");
-    XCTAssertEqualObjects([cap getTag:@"quality"], @"high");
-    XCTAssertEqualObjects([cap getTag:@"op"], @"compress");
+    XCTAssertEqualObjects([cap exactValue:@"engine"], @"v2");
+    XCTAssertEqualObjects([cap exactValue:@"quality"], @"high");
+    XCTAssertEqualObjects([cap exactValue:@"op"], @"compress");
 }
 
 // TEST6319: Builder tag overrides
@@ -103,8 +105,8 @@
     XCTAssertNotNil(cap);
     XCTAssertNil(error);
 
-    XCTAssertEqualObjects([cap getTag:@"op"], @"convert");
-    XCTAssertEqualObjects([cap getTag:@"format"], @"jpg");
+    XCTAssertEqualObjects([cap exactValue:@"op"], @"convert");
+    XCTAssertEqualObjects([cap exactValue:@"format"], @"jpg");
 }
 
 // TEST6322: Builder missing in spec fails
@@ -201,14 +203,14 @@
     NSString *expected = @"cap:codec=h264;format=mp4;framerate=30fps;output=binary;quality=1080p;target=video;transcode;type=media";
     XCTAssertEqualObjects([cap toString], expected);
 
-    XCTAssertEqualObjects([cap getTag:@"type"], @"media");
+    XCTAssertEqualObjects([cap exactValue:@"type"], @"media");
     XCTAssertTrue([cap hasMarkerTag:@"transcode"]);
-    XCTAssertEqualObjects([cap getTag:@"target"], @"video");
-    XCTAssertEqualObjects([cap getTag:@"format"], @"mp4");
-    XCTAssertEqualObjects([cap getTag:@"codec"], @"h264");
-    XCTAssertEqualObjects([cap getTag:@"quality"], @"1080p");
-    XCTAssertEqualObjects([cap getTag:@"framerate"], @"30fps");
-    XCTAssertEqualObjects([cap getTag:@"output"], @"binary");
+    XCTAssertEqualObjects([cap exactValue:@"target"], @"video");
+    XCTAssertEqualObjects([cap exactValue:@"format"], @"mp4");
+    XCTAssertEqualObjects([cap exactValue:@"codec"], @"h264");
+    XCTAssertEqualObjects([cap exactValue:@"quality"], @"1080p");
+    XCTAssertEqualObjects([cap exactValue:@"framerate"], @"30fps");
+    XCTAssertEqualObjects([cap exactValue:@"output"], @"binary");
 
     // Cap-URN spec: 10000 * spec_U(out) + 100 * spec_U(in) + spec_U(y).
     //   out = media: -> 0
@@ -237,8 +239,8 @@
     // Cap-URN spec: out=0, in=0, y = 3 markers × 2 = 6.
     XCTAssertEqual([cap specificity], 6);
 
-    XCTAssertEqualObjects([cap getTag:@"ext"], @"*");
-    XCTAssertEqualObjects([cap getTag:@"quality"], @"*");
+    XCTAssertTrue([cap hasMarkerTag:@"ext"]);
+    XCTAssertTrue([cap hasMarkerTag:@"quality"]);
     XCTAssertEqualObjects([cap getInSpec], @"media:");
     XCTAssertEqualObjects([cap getOutSpec], @"media:");
 }
@@ -280,7 +282,7 @@
     [builder3 outSpec:@"media:enc=utf8;record"];
     [builder3 tag:@"op" value:@"generate"];
     [builder3 tag:@"target" value:@"thumbnail"];
-    [builder3 tag:@"ext" value:@"*"];
+    [builder3 marker:@"ext"];
     CSCapUrn *wildcardRequest = [builder3 build:&error];
 
     XCTAssertNotNil(specificCap);
