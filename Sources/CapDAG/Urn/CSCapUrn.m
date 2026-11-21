@@ -35,31 +35,140 @@ static CSCapEffect CSCapEffectFromString(NSString *effectValue) {
     return CSCapEffectDeclared;
 }
 
-static NSString * _Nullable CSCapNormalizeEffectValue(NSString * _Nullable rawValue, NSError **error) {
-    if (!rawValue) {
-        return @"declared";
+static NSArray<NSString *> *CSCapStructuralKeys(void) {
+    return @[@"in", @"out", @"effect"];
+}
+
+static NSError *CSCapError(CSCapUrnError code, NSString *message) {
+    return [NSError errorWithDomain:CSCapUrnErrorDomain code:code userInfo:@{NSLocalizedDescriptionKey: message}];
+}
+
+/// A tag a parsed tag map holds, as written, for an error that names it.
+static NSString *CSCapWrittenTag(NSString *key, CSTagConstraint *constraint) {
+    NSError *error = nil;
+    CSTaggedUrn *urn = [CSTaggedUrn fromPrefix:@"cap" tags:@{key: constraint} error:&error];
+    NSCAssert(urn != nil, @"a stored tag is writable: %@", error);
+    return [[urn toString] substringFromIndex:4];
+}
+
+/// The cap URN error a tagged URN's error is, by its code.
+static NSError *CSCapErrorFromTaggedUrnError(NSError *taggedError) {
+    if (![taggedError.domain isEqualToString:CSTaggedUrnErrorDomain]) {
+        @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                       reason:[NSString stringWithFormat:@"capdag: a tagged URN failed with no tagged URN error: %@", taggedError]
+                                     userInfo:nil];
     }
-    if ([rawValue isEqualToString:@"*"] || [rawValue isEqualToString:@"?"]) {
-        return @"?";
+    CSCapUrnError code;
+    switch ((CSTaggedUrnError)taggedError.code) {
+        case CSTaggedUrnErrorInvalidFormat: code = CSCapUrnErrorInvalidFormat; break;
+        case CSTaggedUrnErrorEmptyTag: code = CSCapUrnErrorEmptyTag; break;
+        case CSTaggedUrnErrorInvalidCharacter: code = CSCapUrnErrorInvalidCharacter; break;
+        case CSTaggedUrnErrorInvalidTagFormat: code = CSCapUrnErrorInvalidTagFormat; break;
+        case CSTaggedUrnErrorMissingPrefix: code = CSCapUrnErrorMissingCapPrefix; break;
+        case CSTaggedUrnErrorDuplicateKey: code = CSCapUrnErrorDuplicateKey; break;
+        case CSTaggedUrnErrorUnterminatedQuote: code = CSCapUrnErrorUnterminatedQuote; break;
+        case CSTaggedUrnErrorInvalidEscapeSequence: code = CSCapUrnErrorInvalidEscapeSequence; break;
+        case CSTaggedUrnErrorEmptyPrefix: code = CSCapUrnErrorMissingCapPrefix; break;
+        case CSTaggedUrnErrorPrefixMismatch: code = CSCapUrnErrorMissingCapPrefix; break;
+        case CSTaggedUrnErrorWhitespaceInInput: code = CSCapUrnErrorInvalidCharacter; break;
+        default:
+            @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                           reason:[NSString stringWithFormat:@"capdag: tagged URN error code %ld has no cap URN code", (long)taggedError.code]
+                                         userInfo:nil];
     }
-    if ([rawValue isEqualToString:@"declared"] ||
-        [rawValue isEqualToString:@"none"] ||
-        [rawValue isEqualToString:@"patch"]) {
-        return rawValue;
+    return CSCapError(code, taggedError.localizedDescription);
+}
+
+static CSCapUrnError CSCapDirectionCode(NSString *side) {
+    return [side isEqualToString:@"in"] ? CSCapUrnErrorInvalidInSpec : CSCapUrnErrorInvalidOutSpec;
+}
+
+/// What a direction side says when its value is no media URN: a value that does not even name
+/// the media prefix, in the validation rules' words, and one that names it but does not parse,
+/// with the parser's reason.
+static NSError *CSCapDirectionError(NSString *side, NSString *value, NSError *mediaError) {
+    NSError *underlying = mediaError.userInfo[NSUnderlyingErrorKey];
+    BOOL noMediaPrefix =
+        ([mediaError.domain isEqualToString:CSMediaUrnErrorDomain] && mediaError.code == CSMediaUrnErrorInvalidPrefix)
+        || ([underlying.domain isEqualToString:CSTaggedUrnErrorDomain]
+            && (underlying.code == CSTaggedUrnErrorMissingPrefix || underlying.code == CSTaggedUrnErrorEmptyPrefix));
+    if (noMediaPrefix) {
+        return CSCapError(CSCapDirectionCode(side),
+                          [NSString stringWithFormat:@"Invalid '%@' media URN: %@. Must start with 'media:' or be '*'", side, value]);
     }
-    if (rawValue.length == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidEffect
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Empty value for 'effect' tag is not allowed"}];
-        }
+    return CSCapError(CSCapDirectionCode(side),
+                      [NSString stringWithFormat:@"Invalid '%@' media URN: %@: %@", side, value, mediaError.localizedDescription]);
+}
+
+/// A direction side's media URN, in canonical form. An empty value is refused.
+static NSString * _Nullable CSCapDirectionMedia(NSString *side, NSString *value, NSError **error) {
+    if (value.length == 0) {
+        if (error) *error = CSCapError(CSCapDirectionCode(side), [NSString stringWithFormat:@"Empty value for '%@' tag is not allowed", side]);
         return nil;
     }
+    NSError *mediaError = nil;
+    CSMediaUrn *media = [CSMediaUrn fromString:value error:&mediaError];
+    if (!media) {
+        if (error) *error = CSCapDirectionError(side, value, mediaError);
+        return nil;
+    }
+    return [media toString];
+}
+
+/// A direction spec given as text to a constructor or the builder: `*` is the top media
+/// `media:`, as the marker is in parsing; anything else is a media URN, in canonical form.
+static NSString * _Nullable CSCapDirectionSpec(NSString *side, NSString *raw, NSError **error) {
+    if ([raw isEqualToString:@"*"]) {
+        return @"media:";
+    }
+    return CSCapDirectionMedia(side, raw, error);
+}
+
+/// A direction tag as a cap's tag map holds it: missing, or the marker (`in`, `in=*`), is
+/// `media:`; an exact value is that media URN in canonical form; any other form is refused.
+static NSString * _Nullable CSCapProcessDirectionTag(CSTagConstraint * _Nullable tag, NSString *side, NSError **error) {
+    if (!tag || tag.kind == CSTagConstraintKindPresent) {
+        return @"media:";
+    }
+    if (tag.kind == CSTagConstraintKindExact) {
+        return CSCapDirectionMedia(side, tag.value, error);
+    }
     if (error) {
-        *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                     code:CSCapUrnErrorInvalidEffect
-                                 userInfo:@{NSLocalizedDescriptionKey:
-                                                [NSString stringWithFormat:@"Unsupported effect '%@'. Supported values are declared, none, patch, or explicit unconstrained ?effect/effect=*", rawValue]}];
+        *error = CSCapError(CSCapDirectionCode(side),
+                            [NSString stringWithFormat:@"Invalid '%@' media URN: %@. Must start with 'media:' or be '*'", side, CSCapWrittenTag(side, tag)]);
+    }
+    return nil;
+}
+
+/// The effect a cap's tag map writes: none is declared; the marker or `?effect` is the
+/// unconstrained `?`; an exact declared, none or patch is that effect; anything else is
+/// refused, named as written.
+static NSString * _Nullable CSCapNormalizeEffectValue(CSTagConstraint * _Nullable raw, NSError **error) {
+    if (!raw) {
+        return @"declared";
+    }
+    if (raw.kind == CSTagConstraintKindPresent || raw.kind == CSTagConstraintKindUnconstrained) {
+        return @"?";
+    }
+    if (raw.kind == CSTagConstraintKindExact
+        && ([raw.value isEqualToString:@"declared"] || [raw.value isEqualToString:@"none"] || [raw.value isEqualToString:@"patch"])) {
+        return raw.value;
+    }
+    if (error) {
+        *error = CSCapError(CSCapUrnErrorInvalidEffect,
+                            [NSString stringWithFormat:@"Unsupported effect '%@'. Supported values are declared, none, patch, or explicit unconstrained ?effect/effect=*", CSCapWrittenTag(@"effect", raw)]);
+    }
+    return nil;
+}
+
+/// An effect given as text to a constructor: declared, none, patch or ?.
+static NSString * _Nullable CSCapParseEffect(NSString *effect, NSError **error) {
+    if ([@[@"declared", @"none", @"patch", @"?"] containsObject:effect]) {
+        return effect;
+    }
+    if (error) {
+        *error = CSCapError(CSCapUrnErrorInvalidEffect,
+                            [NSString stringWithFormat:@"Unsupported effect '%@'. Supported values are declared, none, patch, or ?", effect]);
     }
     return nil;
 }
@@ -119,7 +228,7 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
 @property (nonatomic, strong) NSString *inSpec;
 @property (nonatomic, strong) NSString *outSpec;
 @property (nonatomic, strong) NSString *effectSpec;
-@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *mutableTags;
+@property (nonatomic, strong) NSDictionary<NSString *, CSTagConstraint *> *mutableTags;
 - (instancetype)initWithInSpec:(NSString *)inSpec
                        outSpec:(NSString *)outSpec
                     effectSpec:(NSString *)effectSpec
@@ -131,10 +240,10 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
 + (CSCapUrn *)mustCreateFromInSpec:(NSString *)inSpec
                            outSpec:(NSString *)outSpec
                             effect:(NSString *)effect
-                              tags:(NSDictionary<NSString *, NSString *> *)tags
+                              tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags
                            context:(NSString *)context {
     NSError *error = nil;
-    CSCapUrn *result = [self fromInSpec:inSpec outSpec:outSpec effect:effect tags:tags error:&error];
+    CSCapUrn *result = [self fromCanonicalInSpec:inSpec outSpec:outSpec effect:effect tags:tags error:&error];
     if (!result) {
         [NSException raise:NSInternalInconsistencyException
                     format:@"%@ produced an illegal cap declaration: %@", context, error.localizedDescription ?: @"unknown error"];
@@ -145,7 +254,7 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
 + (BOOL)validateAdmissibleInSpec:(NSString *)inSpec
                          outSpec:(NSString *)outSpec
                           effect:(NSString *)effect
-                            tags:(NSDictionary<NSString *, NSString *> *)tags
+                            tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags
                            error:(NSError **)error {
     NSError *parseError = nil;
     CSMediaUrn *inMedia = [CSMediaUrn fromString:inSpec error:&parseError];
@@ -237,355 +346,86 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
     return YES;
 }
 
-- (NSDictionary<NSString *, NSString *> *)tags {
-    return [self.mutableTags copy];
-}
-
-// Note: Utility methods (needsQuoting, quoteValue) are delegated to CSTaggedUrn
-
-#pragma mark - Media URN Validation
-
-+ (BOOL)isValidMediaUrnOrWildcard:(NSString *)value {
-    return [value isEqualToString:@"*"] || [value hasPrefix:@"media:"];
+- (NSDictionary<NSString *, CSTagConstraint *> *)tags {
+    return self.mutableTags;
 }
 
 #pragma mark - Parsing
 
-/// Convert CSTaggedUrnError to CSCapUrnError with appropriate error code
-+ (NSError *)capUrnErrorFromTaggedUrnError:(NSError *)taggedError {
-    NSString *msg = taggedError.localizedDescription ?: @"";
-    NSString *msgLower = [msg lowercaseString];
-
-    CSCapUrnError code;
-    if ([msgLower containsString:@"invalid character"]) {
-        code = CSCapUrnErrorInvalidCharacter;
-    } else if ([msgLower containsString:@"duplicate"]) {
-        code = CSCapUrnErrorDuplicateKey;
-    } else if ([msgLower containsString:@"unterminated"] || [msgLower containsString:@"unclosed"]) {
-        code = CSCapUrnErrorUnterminatedQuote;
-    } else if ([msgLower containsString:@"expected"] && [msgLower containsString:@"after quoted"]) {
-        // "expected ';' or end after quoted value" - treat as unterminated quote for compatibility
-        code = CSCapUrnErrorUnterminatedQuote;
-    } else if ([msgLower containsString:@"numeric"]) {
-        code = CSCapUrnErrorNumericKey;
-    } else if ([msgLower containsString:@"escape"]) {
-        code = CSCapUrnErrorInvalidEscapeSequence;
-    } else if ([msgLower containsString:@"incomplete"] || [msgLower containsString:@"missing value"]) {
-        code = CSCapUrnErrorInvalidTagFormat;
-    } else {
-        code = CSCapUrnErrorInvalidFormat;
-    }
-
-    return [NSError errorWithDomain:CSCapUrnErrorDomain
-                               code:code
-                           userInfo:@{NSLocalizedDescriptionKey: msg}];
-}
-
-/// Process a direction tag (in or out) with wildcard expansion
-/// - Missing tag → "media:" (wildcard)
-/// - tag=* → "media:" (wildcard)
-/// - tag= (empty) → error
-/// - tag=value → value (validated later)
-+ (nullable NSString *)processDirectionTag:(CSTaggedUrn *)taggedUrn tagName:(NSString *)tagName error:(NSError **)error {
-    NSString *value = [taggedUrn getTag:tagName];
-
-    if (!value) {
-        // Missing tag - default to media: wildcard
-        return @"media:";
-    }
-
-    if ([value isEqualToString:@"*"]) {
-        // Replace * with media: wildcard
-        return @"media:";
-    }
-
-    if ([value length] == 0) {
-        // Empty value is not allowed (in= or out= with nothing after =)
-        if (error) {
-            NSString *errorMsg = [NSString stringWithFormat:@"Empty value for '%@' tag is not allowed", tagName];
-            NSInteger errorCode = [tagName isEqualToString:@"in"] ? CSCapUrnErrorInvalidInSpec : CSCapUrnErrorInvalidOutSpec;
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:errorCode
-                                     userInfo:@{NSLocalizedDescriptionKey: errorMsg}];
-        }
-        return nil;
-    }
-
-    // Regular value - will be validated as MediaUrn later
-    return value;
-}
-
 + (nullable instancetype)fromString:(NSString *)string error:(NSError **)error {
-    if (!string || string.length == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidFormat
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Cap identifier cannot be empty"}];
-        }
-        return nil;
-    }
-
-    // Check for "cap:" prefix early to give better error messages
-    if (string.length < 4 || [[string substringToIndex:4] caseInsensitiveCompare:@"cap:"] != NSOrderedSame) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorMissingCapPrefix
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Cap identifier must start with 'cap:'"}];
-        }
-        return nil;
-    }
-
-    // Use CSTaggedUrn for parsing
     NSError *parseError = nil;
     CSTaggedUrn *taggedUrn = [CSTaggedUrn fromString:string error:&parseError];
-    if (parseError) {
-        if (error) {
-            *error = [self capUrnErrorFromTaggedUrnError:parseError];
-        }
+    if (!taggedUrn) {
+        if (error) *error = CSCapErrorFromTaggedUrnError(parseError);
         return nil;
     }
-
-    // Double-check prefix (should always be 'cap' after the early check above)
-    if (![[taggedUrn.prefix lowercaseString] isEqualToString:@"cap"]) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorMissingCapPrefix
-                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Expected 'cap:' prefix, got '%@:'", taggedUrn.prefix]}];
-        }
+    if (![taggedUrn.prefix isEqualToString:@"cap"]) {
+        if (error) *error = CSCapError(CSCapUrnErrorMissingCapPrefix, @"Cap identifier must start with 'cap:'");
         return nil;
     }
-
-    // Process in and out tags with wildcard expansion (exactly matching Rust behavior)
-    // - Missing tag → "media:" (wildcard)
-    // - tag=* → "media:" (wildcard)
-    // - tag= (empty) → error
-    // - tag=value → value (validated later)
-    NSString *inSpecValue = [self processDirectionTag:taggedUrn tagName:@"in" error:error];
-    if (!inSpecValue) {
-        return nil;
-    }
-    NSString *outSpecValue = [self processDirectionTag:taggedUrn tagName:@"out" error:error];
-    if (!outSpecValue) {
-        return nil;
-    }
-    NSString *effectValue = CSCapNormalizeEffectValue([taggedUrn getTag:@"effect"], error);
-    if (!effectValue) {
-        return nil;
-    }
-
-    // Validate that in and out specs are valid media URNs (or wildcard "media:")
-    // After processing, "media:" is the wildcard (not "*")
-    if (![inSpecValue isEqualToString:@"media:"]) {
-        NSError *mediaError = nil;
-        CSMediaUrn *inMediaUrn = [CSMediaUrn fromString:inSpecValue error:&mediaError];
-        if (!inMediaUrn) {
-            if (error) {
-                NSString *errorMsg = mediaError ? mediaError.localizedDescription : @"Unknown error";
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidInSpec
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid media URN for in spec '%@': %@", inSpecValue, errorMsg]}];
-            }
-            return nil;
-        }
-    }
-    if (![outSpecValue isEqualToString:@"media:"]) {
-        NSError *mediaError = nil;
-        CSMediaUrn *outMediaUrn = [CSMediaUrn fromString:outSpecValue error:&mediaError];
-        if (!outMediaUrn) {
-            if (error) {
-                NSString *errorMsg = mediaError ? mediaError.localizedDescription : @"Unknown error";
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidOutSpec
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid media URN for out spec '%@': %@", outSpecValue, errorMsg]}];
-            }
-            return nil;
-        }
-    }
-
-    // Build remaining tags (excluding in/out)
-    NSMutableDictionary<NSString *, NSString *> *remainingTags = [NSMutableDictionary dictionary];
-    for (NSString *key in taggedUrn.tags) {
-        NSString *keyLower = [key lowercaseString];
-        if (![keyLower isEqualToString:@"in"] && ![keyLower isEqualToString:@"out"] && ![keyLower isEqualToString:@"effect"]) {
-            remainingTags[keyLower] = taggedUrn.tags[key];
-        }
-    }
-
-    return [self fromInSpec:inSpecValue outSpec:outSpecValue effect:effectValue tags:remainingTags error:error];
+    return [self fromTags:taggedUrn.tags error:error];
 }
 
-+ (nullable instancetype)fromTags:(NSDictionary<NSString *, NSString *> *)tags error:(NSError **)error {
-    if (!tags) {
-        tags = @{};
-    }
-
-    // Normalize keys to lowercase; values preserved as-is
-    NSMutableDictionary<NSString *, NSString *> *normalizedTags = [NSMutableDictionary dictionary];
++ (nullable instancetype)fromTags:(NSDictionary<NSString *, CSTagConstraint *> *)tags error:(NSError **)error {
+    NSMutableDictionary<NSString *, CSTagConstraint *> *rest = [NSMutableDictionary dictionary];
+    CSTagConstraint *inTag = nil, *outTag = nil, *effectTag = nil;
     for (NSString *key in tags) {
-        NSString *value = tags[key];
-        normalizedTags[[key lowercaseString]] = value;
+        NSString *keyLower = [key lowercaseString];
+        if ([keyLower isEqualToString:@"in"]) inTag = tags[key];
+        else if ([keyLower isEqualToString:@"out"]) outTag = tags[key];
+        else if ([keyLower isEqualToString:@"effect"]) effectTag = tags[key];
+        else rest[key] = tags[key];
     }
-
-    // Process in and out tags with wildcard expansion
-    // - Missing tag → "media:" (wildcard)
-    // - tag=* → "media:" (wildcard)
-    // - tag= (empty) → error
-    // - tag=value → value (validated later)
-    NSString *inSpecValue = normalizedTags[@"in"];
-    if (!inSpecValue || [inSpecValue isEqualToString:@"*"]) {
-        inSpecValue = @"media:";
-    } else if ([inSpecValue length] == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidInSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Empty value for 'in' tag is not allowed"}];
-        }
-        return nil;
-    }
-
-    NSString *outSpecValue = normalizedTags[@"out"];
-    if (!outSpecValue || [outSpecValue isEqualToString:@"*"]) {
-        outSpecValue = @"media:";
-    } else if ([outSpecValue length] == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidOutSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Empty value for 'out' tag is not allowed"}];
-        }
-        return nil;
-    }
-
-    NSString *effectValue = CSCapNormalizeEffectValue(normalizedTags[@"effect"], error);
-    if (!effectValue) {
-        return nil;
-    }
-
-    // Validate that in and out specs are valid media URNs (or wildcard "media:")
-    // After processing, "media:" is the wildcard (not "*")
-    if (![inSpecValue isEqualToString:@"media:"]) {
-        NSError *mediaError = nil;
-        CSMediaUrn *inMediaUrn = [CSMediaUrn fromString:inSpecValue error:&mediaError];
-        if (!inMediaUrn) {
-            if (error) {
-                NSString *errorMsg = mediaError ? mediaError.localizedDescription : @"Unknown error";
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidInSpec
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid media URN for in spec '%@': %@", inSpecValue, errorMsg]}];
-            }
-            return nil;
-        }
-    }
-    if (![outSpecValue isEqualToString:@"media:"]) {
-        NSError *mediaError = nil;
-        CSMediaUrn *outMediaUrn = [CSMediaUrn fromString:outSpecValue error:&mediaError];
-        if (!outMediaUrn) {
-            if (error) {
-                NSString *errorMsg = mediaError ? mediaError.localizedDescription : @"Unknown error";
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidOutSpec
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid media URN for out spec '%@': %@", outSpecValue, errorMsg]}];
-            }
-            return nil;
-        }
-    }
-
-    // Build remaining tags (excluding in/out)
-    NSMutableDictionary<NSString *, NSString *> *remainingTags = [NSMutableDictionary dictionary];
-    for (NSString *key in normalizedTags) {
-        if (![key isEqualToString:@"in"] && ![key isEqualToString:@"out"] && ![key isEqualToString:@"effect"]) {
-            remainingTags[key] = normalizedTags[key];
-        }
-    }
-
-    return [self fromInSpec:inSpecValue outSpec:outSpecValue effect:effectValue tags:remainingTags error:error];
+    NSString *inSpec = CSCapProcessDirectionTag(inTag, @"in", error);
+    if (!inSpec) return nil;
+    NSString *outSpec = CSCapProcessDirectionTag(outTag, @"out", error);
+    if (!outSpec) return nil;
+    NSString *effect = CSCapNormalizeEffectValue(effectTag, error);
+    if (!effect) return nil;
+    return [self fromCanonicalInSpec:inSpec outSpec:outSpec effect:effect tags:rest error:error];
 }
 
 + (nullable instancetype)fromInSpec:(NSString *)inSpec
                             outSpec:(NSString *)outSpec
                              effect:(NSString *)effect
-                               tags:(NSDictionary<NSString *, NSString *> *)tags
+                               tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags
                               error:(NSError **)error {
-    // Apply wildcard expansion to in/out specs (exactly matching Rust behavior)
-    // - nil or "*" → "media:"
-    // - Empty string → error
-    // - Other value → validate as MediaUrn
+    NSString *canonicalIn = CSCapDirectionSpec(@"in", inSpec, error);
+    if (!canonicalIn) return nil;
+    NSString *canonicalOut = CSCapDirectionSpec(@"out", outSpec, error);
+    if (!canonicalOut) return nil;
+    NSString *parsedEffect = CSCapParseEffect(effect, error);
+    if (!parsedEffect) return nil;
+    return [self fromCanonicalInSpec:canonicalIn outSpec:canonicalOut effect:parsedEffect tags:tags error:error];
+}
 
-    // Process in spec
-    NSString *processedInSpec;
-    if (!inSpec || [inSpec isEqualToString:@"*"]) {
-        processedInSpec = @"media:";
-    } else if ([inSpec length] == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidInSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Empty value for 'in' spec is not allowed"}];
-        }
-        return nil;
-    } else {
-        processedInSpec = inSpec;
-    }
-
-    // Process out spec
-    NSString *processedOutSpec;
-    if (!outSpec || [outSpec isEqualToString:@"*"]) {
-        processedOutSpec = @"media:";
-    } else if ([outSpec length] == 0) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidOutSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Empty value for 'out' spec is not allowed"}];
-        }
-        return nil;
-    } else {
-        processedOutSpec = outSpec;
-    }
-
-    // Validate that in and out specs are valid media URNs (or wildcard "media:")
-    if (![processedInSpec isEqualToString:@"media:"]) {
-        NSError *mediaError = nil;
-        CSMediaUrn *inMediaUrn = [CSMediaUrn fromString:processedInSpec error:&mediaError];
-        if (!inMediaUrn) {
+/// A cap from parts already in canonical form: the direction specs as media URNs the parser or
+/// a cap made, and a known effect. The cap-tags are checked here: a structural key is refused,
+/// and every key and constraint must be one a URN can write.
++ (nullable instancetype)fromCanonicalInSpec:(NSString *)inSpec
+                                     outSpec:(NSString *)outSpec
+                                      effect:(NSString *)effect
+                                        tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags
+                                       error:(NSError **)error {
+    for (NSString *key in tags) {
+        if ([CSCapStructuralKeys() containsObject:[key lowercaseString]]) {
             if (error) {
-                NSString *errorMsg = mediaError ? mediaError.localizedDescription : @"Unknown error";
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidInSpec
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid media URN for in spec '%@': %@", processedInSpec, errorMsg]}];
+                *error = CSCapError(CSCapUrnErrorInvalidTagFormat,
+                                    [NSString stringWithFormat:@"reserved structural key '%@' must be passed as inSpec, outSpec or effect, not as a tag", key]);
             }
             return nil;
         }
     }
-    if (![processedOutSpec isEqualToString:@"media:"]) {
-        NSError *mediaError = nil;
-        CSMediaUrn *outMediaUrn = [CSMediaUrn fromString:processedOutSpec error:&mediaError];
-        if (!outMediaUrn) {
-            if (error) {
-                NSString *errorMsg = mediaError ? mediaError.localizedDescription : @"Unknown error";
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorInvalidOutSpec
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid media URN for out spec '%@': %@", processedOutSpec, errorMsg]}];
-            }
-            return nil;
-        }
-    }
-
-    NSString *normalizedEffect = CSCapNormalizeEffectValue(effect, error);
-    if (!normalizedEffect) {
-        return nil;
-    }
-
     NSError *tagError = nil;
-    CSTaggedUrn *validatedTags = [CSTaggedUrn fromPrefix:@"cap" tags:tags ?: @{} error:&tagError];
+    CSTaggedUrn *validatedTags = [CSTaggedUrn fromPrefix:@"cap" tags:tags error:&tagError];
     if (!validatedTags) {
-        if (error) {
-            *error = [self capUrnErrorFromTaggedUrnError:tagError];
-        }
+        if (error) *error = CSCapErrorFromTaggedUrnError(tagError);
         return nil;
     }
-
-    if (![self validateAdmissibleInSpec:processedInSpec outSpec:processedOutSpec effect:normalizedEffect tags:validatedTags.tags error:error]) {
+    if (![self validateAdmissibleInSpec:inSpec outSpec:outSpec effect:effect tags:validatedTags.tags error:error]) {
         return nil;
     }
-    return [[CSCapUrn alloc] initWithInSpec:processedInSpec outSpec:processedOutSpec effectSpec:normalizedEffect tagUrn:validatedTags];
+    return [[CSCapUrn alloc] initWithInSpec:inSpec outSpec:outSpec effectSpec:effect tagUrn:validatedTags];
 }
 
 /// The one way a cap is made: the fields, and the model's value built from exactly them. Every
@@ -598,7 +438,7 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
         _inSpec = [inSpec copy];
         _outSpec = [outSpec copy];
         _effectSpec = [effectSpec copy];
-        _mutableTags = [tagUrn.tags mutableCopy];
+        _mutableTags = [tagUrn.tags copy];
         _formal = capdagFormal_wf_cap_mk(CSCapModelMedia(_inSpec), CSCapModelMedia(_outSpec),
                                          lungo_value_clone(tagUrn.formalValue), CSCapModelEffect(_effectSpec));
     }
@@ -671,96 +511,67 @@ NSString *CSCapKindToString(CSCapKind kind) {
     return @"";
 }
 
-- (nullable NSString *)getTag:(NSString *)key {
-    NSString *keyLower = [key lowercaseString];
-    if ([keyLower isEqualToString:@"in"]) {
-        return self.inSpec;
-    }
-    if ([keyLower isEqualToString:@"out"]) {
-        return self.outSpec;
-    }
-    if ([keyLower isEqualToString:@"effect"]) {
-        return self.effectSpec;
-    }
-    return self.mutableTags[keyLower];
+- (nullable CSTagConstraint *)getTag:(NSString *)key {
+    return self.mutableTags[[key lowercaseString]];
+}
+
+- (nullable NSString *)exactValue:(NSString *)key {
+    CSTagConstraint *constraint = [self getTag:key];
+    return constraint.kind == CSTagConstraintKindExact ? constraint.value : nil;
 }
 
 - (BOOL)hasTag:(NSString *)key withValue:(NSString *)value {
-    NSString *keyLower = [key lowercaseString];
-    NSString *tagValue;
-    if ([keyLower isEqualToString:@"in"]) {
-        tagValue = self.inSpec;
-    } else if ([keyLower isEqualToString:@"out"]) {
-        tagValue = self.outSpec;
-    } else if ([keyLower isEqualToString:@"effect"]) {
-        tagValue = self.effectSpec;
-    } else {
-        tagValue = self.mutableTags[keyLower];
-    }
     // Case-sensitive value comparison
-    return tagValue && [tagValue isEqualToString:value];
+    return [[self exactValue:key] isEqualToString:value];
 }
 
 - (BOOL)hasMarkerTag:(NSString *)tagName {
-    NSString *keyLower = [tagName lowercaseString];
-    // Marker semantics live on the tag map only — direction specs (in/out)
-    // are not markers.
-    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"] || [keyLower isEqualToString:@"effect"]) {
-        return NO;
-    }
-    NSString *tagValue = self.mutableTags[keyLower];
-    return tagValue && [tagValue isEqualToString:@"*"];
+    return [self getTag:tagName].kind == CSTagConstraintKindPresent;
 }
 
-- (CSCapUrn *)withTag:(NSString *)key value:(NSString *)value {
-    NSString *keyLower = [key lowercaseString];
-    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"] || [keyLower isEqualToString:@"effect"]) {
-        [NSException raise:NSInvalidArgumentException
-                    format:@"Reserved structural key '%@' must be changed via withInSpec:, withOutSpec:, or withEffect:", keyLower];
-    }
-    if (value.length == 0) {
-        [NSException raise:NSInvalidArgumentException
-                    format:@"Empty value for key '%@' is not allowed (use '*' for wildcard)", key];
-    }
+- (nullable CSCapUrn *)withTag:(NSString *)key constraint:(CSTagConstraint *)constraint error:(NSError **)error {
     NSMutableDictionary *newTags = [self.mutableTags mutableCopy];
-    newTags[keyLower] = value;
-    return [[self class] mustCreateFromInSpec:self.inSpec
-                                      outSpec:self.outSpec
-                                       effect:self.effectSpec
-                                         tags:newTags
-                                      context:@"CSCapUrn.withTag"];
+    newTags[[key lowercaseString]] = constraint;
+    return [[self class] fromCanonicalInSpec:self.inSpec outSpec:self.outSpec effect:self.effectSpec tags:newTags error:error];
 }
 
 - (CSCapUrn *)withInSpec:(NSString *)inSpec {
-    NSMutableDictionary *newTags = [self.mutableTags mutableCopy];
-    return [[self class] mustCreateFromInSpec:inSpec
+    NSError *error = nil;
+    NSString *canonicalIn = CSCapDirectionSpec(@"in", inSpec, &error);
+    if (!canonicalIn) {
+        [NSException raise:NSInvalidArgumentException format:@"CSCapUrn.withInSpec: %@", error.localizedDescription];
+    }
+    return [[self class] mustCreateFromInSpec:canonicalIn
                                       outSpec:self.outSpec
                                        effect:self.effectSpec
-                                         tags:newTags
+                                         tags:self.mutableTags
                                       context:@"CSCapUrn.withInSpec"];
 }
 
 - (CSCapUrn *)withOutSpec:(NSString *)outSpec {
-    NSMutableDictionary *newTags = [self.mutableTags mutableCopy];
+    NSError *error = nil;
+    NSString *canonicalOut = CSCapDirectionSpec(@"out", outSpec, &error);
+    if (!canonicalOut) {
+        [NSException raise:NSInvalidArgumentException format:@"CSCapUrn.withOutSpec: %@", error.localizedDescription];
+    }
     return [[self class] mustCreateFromInSpec:self.inSpec
-                                      outSpec:outSpec
+                                      outSpec:canonicalOut
                                        effect:self.effectSpec
-                                         tags:newTags
+                                         tags:self.mutableTags
                                       context:@"CSCapUrn.withOutSpec"];
 }
 
 - (CSCapUrn *)withEffect:(CSCapEffect)effect {
-    NSMutableDictionary *newTags = [self.mutableTags mutableCopy];
     return [[self class] mustCreateFromInSpec:self.inSpec
                                       outSpec:self.outSpec
                                        effect:CSCapEffectToString(effect)
-                                         tags:newTags
+                                         tags:self.mutableTags
                                       context:@"CSCapUrn.withEffect"];
 }
 
 - (CSCapUrn *)withoutTag:(NSString *)key {
     NSString *keyLower = [key lowercaseString];
-    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"] || [keyLower isEqualToString:@"effect"]) {
+    if ([CSCapStructuralKeys() containsObject:keyLower]) {
         [NSException raise:NSInvalidArgumentException
                     format:@"Reserved structural key '%@' cannot be removed via withoutTag:", keyLower];
     }
@@ -1119,37 +930,28 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
 
 - (CSCapUrn *)withWildcardTag:(NSString *)key {
     NSString *keyLower = [key lowercaseString];
-
-    // Handle direction keys specially
+    NSString *inSpec = self.inSpec, *outSpec = self.outSpec, *effect = self.effectSpec;
+    NSMutableDictionary *tags = [self.mutableTags mutableCopy];
     if ([keyLower isEqualToString:@"in"]) {
-        return [self withInSpec:@"media:"];
+        inSpec = @"media:";
+    } else if ([keyLower isEqualToString:@"out"]) {
+        outSpec = @"media:";
+    } else if ([keyLower isEqualToString:@"effect"]) {
+        effect = @"?";
+    } else if (tags[keyLower]) {
+        tags[keyLower] = [CSTagConstraint present];
     }
-    if ([keyLower isEqualToString:@"out"]) {
-        return [self withOutSpec:@"media:"];
-    }
-    if ([keyLower isEqualToString:@"effect"]) {
-        return [self withEffect:CSCapEffectAny];
-    }
-
-    // For regular tags, only set wildcard if tag already exists
-    if (self.mutableTags[keyLower]) {
-        return [self withTag:key value:@"*"];
-    }
-    return self;
+    return [[self class] mustCreateFromInSpec:inSpec outSpec:outSpec effect:effect tags:tags context:@"CSCapUrn.withWildcardTag"];
 }
 
 - (CSCapUrn *)subset:(NSArray<NSString *> *)keys {
-    // Always preserve direction specs, subset only applies to other tags
+    // Direction and effect are always kept; the subset is of the cap-tags.
     NSMutableDictionary *newTags = [NSMutableDictionary dictionary];
     for (NSString *key in keys) {
         NSString *normalizedKey = [key lowercaseString];
-        // Skip in/out keys - direction is always preserved
-        if ([normalizedKey isEqualToString:@"in"] || [normalizedKey isEqualToString:@"out"]) {
-            continue;
-        }
-        NSString *value = self.mutableTags[normalizedKey];
-        if (value) {
-            newTags[normalizedKey] = value;
+        CSTagConstraint *constraint = self.mutableTags[normalizedKey];
+        if (constraint) {
+            newTags[normalizedKey] = constraint;
         }
     }
     return [[self class] mustCreateFromInSpec:self.inSpec
@@ -1162,9 +964,7 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
 - (CSCapUrn *)merge:(CSCapUrn *)other {
     // Direction comes from other (other takes precedence)
     NSMutableDictionary *newTags = [self.mutableTags mutableCopy];
-    for (NSString *key in other.mutableTags) {
-        newTags[key] = other.mutableTags[key];
-    }
+    [newTags addEntriesFromDictionary:other.mutableTags];
     return [[self class] mustCreateFromInSpec:other.inSpec
                                       outSpec:other.outSpec
                                        effect:other.effectSpec
@@ -1173,19 +973,20 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
 }
 
 - (NSString *)toString {
-    // `in` and `out` segments are emitted only when they refine beyond
-    // the trivial wildcard `media:`. `effect=declared` is the default and
-    // omitted. `effect=none` is preserved, so the categorical identity
-    // canonicalizes to `cap:effect=none`, never bare `cap:`.
-    NSMutableDictionary *allTags = [self.mutableTags mutableCopy];
+    // `in` and `out` are written only when they refine beyond the top media `media:`.
+    // `effect=declared` is the default and omitted; the unconstrained effect is `?effect`.
+    // `effect=none` is kept, so the categorical identity is `cap:effect=none`, never bare `cap:`.
+    NSMutableDictionary<NSString *, CSTagConstraint *> *allTags = [self.mutableTags mutableCopy];
     if (![self.inSpec isEqualToString:@"media:"]) {
-        allTags[@"in"] = self.inSpec;
+        allTags[@"in"] = [CSTagConstraint exact:self.inSpec];
     }
     if (![self.outSpec isEqualToString:@"media:"]) {
-        allTags[@"out"] = self.outSpec;
+        allTags[@"out"] = [CSTagConstraint exact:self.outSpec];
     }
-    if (![self.effectSpec isEqualToString:@"declared"]) {
-        allTags[@"effect"] = self.effectSpec;
+    if ([self.effectSpec isEqualToString:@"?"]) {
+        allTags[@"effect"] = [CSTagConstraint unconstrained];
+    } else if (![self.effectSpec isEqualToString:@"declared"]) {
+        allTags[@"effect"] = [CSTagConstraint exact:self.effectSpec];
     }
 
     NSError *error = nil;
@@ -1229,7 +1030,7 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     return [[self class] mustCreateFromInSpec:self.inSpec
                                       outSpec:self.outSpec
                                        effect:self.effectSpec
-                                         tags:self.tags
+                                         tags:self.mutableTags
                                       context:@"CSCapUrn.copy"];
 }
 
@@ -1250,9 +1051,11 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     NSString *inSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"inSpec"];
     NSString *outSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"outSpec"];
     NSString *effectSpec = [coder decodeObjectOfClass:[NSString class] forKey:@"effectSpec"] ?: @"declared";
-    NSDictionary<NSString *, NSString *> *tags = [coder decodeObjectOfClass:[NSMutableDictionary class] forKey:@"tags"] ?: @{};
+    NSDictionary<NSString *, CSTagConstraint *> *tags =
+        [coder decodeObjectOfClasses:[NSSet setWithObjects:[NSDictionary class], [NSString class], [CSTagConstraint class], nil]
+                              forKey:@"tags"] ?: @{};
     // Decoded as it is made: through the constructor that validates and assembles it.
-    CSCapUrn *decoded = [[self class] fromInSpec:inSpec outSpec:outSpec effect:effectSpec tags:tags error:nil];
+    CSCapUrn *decoded = [[self class] fromCanonicalInSpec:inSpec outSpec:outSpec effect:effectSpec tags:tags error:nil];
     if (!decoded) {
         return nil;
     }
@@ -1268,7 +1071,7 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
 @property (nonatomic, strong) NSString *builderInSpec;
 @property (nonatomic, strong) NSString *builderOutSpec;
 @property (nonatomic, assign) CSCapEffect builderEffect;
-@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *tags;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, CSTagConstraint *> *tags;
 @end
 
 @implementation CSCapUrnBuilder
@@ -1302,47 +1105,33 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     return self;
 }
 
-- (CSCapUrnBuilder *)tag:(NSString *)key value:(NSString *)value {
+- (CSCapUrnBuilder *)tag:(NSString *)key constraint:(CSTagConstraint *)constraint {
     NSString *keyLower = [key lowercaseString];
-    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"] || [keyLower isEqualToString:@"effect"]) {
+    if ([CSCapStructuralKeys() containsObject:keyLower]) {
         [NSException raise:NSInvalidArgumentException
-                    format:@"Reserved structural key '%@' must be set via inSpec:, outSpec:, or effect:", keyLower];
+                    format:@"CSCapUrnBuilder cannot set reserved structural key '%@'; use inSpec:/outSpec:/effect:", keyLower];
     }
-    self.tags[keyLower] = value;
+    self.tags[keyLower] = constraint;
     return self;
+}
+
+- (CSCapUrnBuilder *)tag:(NSString *)key value:(NSString *)value {
+    return [self tag:key constraint:[CSTagConstraint exact:value]];
 }
 
 - (CSCapUrnBuilder *)marker:(NSString *)key {
-    NSString *keyLower = [key lowercaseString];
-    if ([keyLower isEqualToString:@"in"] || [keyLower isEqualToString:@"out"] || [keyLower isEqualToString:@"effect"]) {
-        [NSException raise:NSInvalidArgumentException
-                    format:@"Reserved structural key '%@' cannot be used as a marker", keyLower];
-    }
-    self.tags[keyLower] = @"*";
-    return self;
+    return [self tag:key constraint:[CSTagConstraint present]];
 }
 
 - (nullable CSCapUrn *)build:(NSError **)error {
-    // Require inSpec
     if (!self.builderInSpec) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorMissingInSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Cap URN requires 'in' spec - use inSpec: method"}];
-        }
+        if (error) *error = CSCapError(CSCapUrnErrorMissingInSpec, @"Cap URN requires 'in' tag");
         return nil;
     }
-
-    // Require outSpec
     if (!self.builderOutSpec) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorMissingOutSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: @"Cap URN requires 'out' spec - use outSpec: method"}];
-        }
+        if (error) *error = CSCapError(CSCapUrnErrorMissingOutSpec, @"Cap URN requires 'out' tag");
         return nil;
     }
-
     return [CSCapUrn fromInSpec:self.builderInSpec
                         outSpec:self.builderOutSpec
                          effect:CSCapEffectToString(self.builderEffect)

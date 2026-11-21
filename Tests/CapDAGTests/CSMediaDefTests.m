@@ -412,4 +412,29 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
     XCTAssertTrue([error.localizedDescription containsString:@"title"], @"%@", error);
 }
 
+
+// TEST7242: A resolved media definition's kind predicates read the marker: !x and ?x are not x
+- (void)test7242_mediaDefKindPredicatesReadTheMarker {
+    NSDictionary<NSString *, BOOL (^)(NSString *)> *predicates = @{
+        @"image": ^BOOL(NSString *u) { return CSMediaUrnIsImage(u); },
+        @"audio": ^BOOL(NSString *u) { return CSMediaUrnIsAudio(u); },
+        @"video": ^BOOL(NSString *u) { return CSMediaUrnIsVideo(u); },
+        @"numeric": ^BOOL(NSString *u) { return CSMediaUrnIsNumeric(u); },
+        @"bool": ^BOOL(NSString *u) { return CSMediaUrnIsBool(u); },
+        @"record": ^BOOL(NSString *u) { return CSMediaUrnIsRecord(u); },
+        @"list": ^BOOL(NSString *u) { return CSMediaUrnIsList(u); },
+    };
+    [predicates enumerateKeysAndObjectsUsingBlock:^(NSString *marker, BOOL (^predicate)(NSString *), BOOL *stop) {
+        XCTAssertTrue(predicate([@"media:" stringByAppendingString:marker]), @"media:%@", marker);
+        XCTAssertFalse(predicate([@"media:!" stringByAppendingString:marker]), @"media:!%@", marker);
+        XCTAssertFalse(predicate([@"media:?" stringByAppendingString:marker]), @"media:?%@", marker);
+    }];
+
+    // An encoding counts only where the URN guarantees one.
+    XCTAssertTrue(CSMediaUrnHasEncoding(@"media:enc=utf8"));
+    XCTAssertTrue(CSMediaUrnHasEncoding(@"media:enc"));
+    XCTAssertFalse(CSMediaUrnHasEncoding(@"media:?enc"));
+    XCTAssertFalse(CSMediaUrnHasEncoding(@"media:!enc"));
+}
+
 @end

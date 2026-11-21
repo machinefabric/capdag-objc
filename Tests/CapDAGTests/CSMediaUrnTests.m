@@ -6,6 +6,7 @@
 
 #import <XCTest/XCTest.h>
 #import "CapDAG.h"
+@import TaggedUrn;
 
 @interface CSMediaUrnTests : XCTestCase
 @end
@@ -207,7 +208,7 @@
     NSError *e;
     // Has enc= → characters
     XCTAssertNotNil([[CSMediaUrn fromString:CSMediaString error:&e] getTag:@"enc"]);   // media:enc=utf8
-    XCTAssertEqualObjects([[CSMediaUrn fromString:CSMediaJson error:&e] getTag:@"enc"], @"utf8", @"a JSON record is UTF-8");
+    XCTAssertEqualObjects([[CSMediaUrn fromString:CSMediaJson error:&e] exactValue:@"enc"], @"utf8", @"a JSON record is UTF-8");
     // No enc= → not characters
     XCTAssertNil([[CSMediaUrn fromString:CSMediaBoolean error:&e] getTag:@"enc"]);     // media:bool — its own kind
     XCTAssertNil([[CSMediaUrn fromString:CSMediaInteger error:&e] getTag:@"enc"]);     // media:integer;numeric
@@ -336,8 +337,8 @@
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:@"media:string" error:&e];
     XCTAssertNotNil(urn);
-    CSMediaUrn *withExt = [urn withTag:@"ext" value:@"pdf"];
-    XCTAssertEqualObjects([withExt getTag:@"ext"], @"pdf");
+    CSMediaUrn *withExt = [urn withTag:@"ext" constraint:[CSTagConstraint exact:@"pdf"] error:nil];
+    XCTAssertEqualObjects([withExt exactValue:@"ext"], @"pdf");
     // Original unchanged
     XCTAssertNil([urn getTag:@"ext"]);
 
@@ -368,7 +369,7 @@
 
     CSMediaUrn *jsonUrn = [CSMediaUrn fromString:CSMediaJson error:&e];
     XCTAssertTrue([jsonUrn isJson]);
-    XCTAssertEqualObjects([jsonUrn getTag:@"enc"], @"utf8", @"JSON is characters: MEDIA_JSON carries enc=utf8");
+    XCTAssertEqualObjects([jsonUrn exactValue:@"enc"], @"utf8", @"JSON is characters: MEDIA_JSON carries enc=utf8");
     XCTAssertTrue([jsonUrn isRecord]);
     XCTAssertTrue([jsonUrn isScalar], @"MEDIA_JSON is a scalar record (single object)");
     XCTAssertFalse([jsonUrn isList]);
@@ -484,8 +485,8 @@
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaAvailabilityOutput error:&e];
     XCTAssertNotNil(urn);
-    XCTAssertEqualObjects([urn getTag:@"fmt"], @"json", @"model-availability is a JSON record");
-    XCTAssertEqualObjects([urn getTag:@"enc"], @"utf8", @"a JSON record is UTF-8");
+    XCTAssertEqualObjects([urn exactValue:@"fmt"], @"json", @"model-availability is a JSON record");
+    XCTAssertEqualObjects([urn exactValue:@"enc"], @"utf8", @"a JSON record is UTF-8");
     XCTAssertNil([urn getTag:@"plain-text"], @"a JSON record is not plain text");
     XCTAssertTrue([urn isRecord], @"model-availability must have record marker");
     CSMediaUrn *reparsed = [CSMediaUrn fromString:[urn toString] error:&e];
@@ -497,8 +498,8 @@
     NSError *e;
     CSMediaUrn *urn = [CSMediaUrn fromString:CSMediaPathOutput error:&e];
     XCTAssertNotNil(urn);
-    XCTAssertEqualObjects([urn getTag:@"fmt"], @"json", @"model-path is a JSON record");
-    XCTAssertEqualObjects([urn getTag:@"enc"], @"utf8", @"a JSON record is UTF-8");
+    XCTAssertEqualObjects([urn exactValue:@"fmt"], @"json", @"model-path is a JSON record");
+    XCTAssertEqualObjects([urn exactValue:@"enc"], @"utf8", @"a JSON record is UTF-8");
     XCTAssertNil([urn getTag:@"plain-text"], @"a JSON record is not plain text");
     XCTAssertTrue([urn isRecord], @"model-path must have record marker");
     CSMediaUrn *reparsed = [CSMediaUrn fromString:[urn toString] error:&e];
@@ -563,7 +564,7 @@
         CSMediaUrn *urn = [CSMediaUrn fromString:input error:&e];
         XCTAssertNotNil(urn, @"%@ must parse: it does not say void (%@)", input, e);
         XCTAssertFalse([urn isVoid], @"%@ is not void", input);
-        XCTAssertEqualObjects([urn getTag:@"enc"], @"utf8", @"%@ keeps its other tags", input);
+        XCTAssertEqualObjects([urn exactValue:@"enc"], @"utf8", @"%@ keeps its other tags", input);
     }
 }
 

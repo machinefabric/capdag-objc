@@ -42,7 +42,7 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     // media:void;reason=warmup are conceptually wrong. Reasons or
     // labels belong on cap-tags or args. Only the void marker is atomic:
     // media:!void;… and media:?void;… do not say void.
-    if ([urn.tags[@"void"] isEqualToString:@"*"] && urn.tags.count > 1) {
+    if ([urn hasMarkerTag:@"void"] && urn.tags.count > 1) {
         NSMutableArray<NSString *> *extras = [NSMutableArray array];
         for (NSString *key in urn.tags) {
             if (![key isEqualToString:@"void"]) {
@@ -75,7 +75,8 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
         if (error) {
             *error = [NSError errorWithDomain:CSMediaUrnErrorDomain
                                          code:CSMediaUrnErrorParse
-                                     userInfo:@{NSLocalizedDescriptionKey: parseError.localizedDescription ?: @"Failed to parse as TaggedUrn"}];
+                                     userInfo:@{NSLocalizedDescriptionKey: parseError.localizedDescription,
+                                                NSUnderlyingErrorKey: parseError}];
         }
         return nil;
     }
@@ -84,11 +85,16 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return [self fromTaggedUrn:urn error:error];
 }
 
-- (nullable NSString *)getTag:(NSString *)key {
+- (nullable CSTagConstraint *)getTag:(NSString *)key {
     return [self.inner getTag:key];
 }
 
-- (NSDictionary<NSString *, NSString *> *)tags {
+- (nullable NSString *)exactValue:(NSString *)key {
+    CSTagConstraint *constraint = [self.inner getTag:key];
+    return constraint.kind == CSTagConstraintKindExact ? constraint.value : nil;
+}
+
+- (NSDictionary<NSString *, CSTagConstraint *> *)tags {
     return self.inner.tags;
 }
 
@@ -155,12 +161,12 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 
 // MARK: - Builders
 
-- (CSMediaUrn *)withTag:(NSString *)key value:(NSString *)value {
-    CSTaggedUrn *modified = [self.inner withTag:key value:value];
-    NSError *error;
-    CSMediaUrn *result = [CSMediaUrn fromTaggedUrn:modified error:&error];
-    NSAssert(result != nil, @"CSMediaUrn withTag:value: failed — inner withTag produced invalid MediaUrn: %@", error);
-    return result;
+- (nullable CSMediaUrn *)withTag:(NSString *)key constraint:(CSTagConstraint *)constraint error:(NSError **)error {
+    CSTaggedUrn *modified = [self.inner withTag:key constraint:constraint error:error];
+    if (!modified) {
+        return nil;
+    }
+    return [CSMediaUrn fromTaggedUrn:modified error:error];
 }
 
 - (CSMediaUrn *)withoutTag:(NSString *)key {
@@ -173,11 +179,9 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 
 // MARK: - Helper: Check for marker tag presence
 
-/// Check if a marker tag (tag with wildcard/no value) is present.
-/// A marker tag is stored as key="*" in the tagged URN.
+/// Whether a marker tag (present, written as just the key) is present.
 - (BOOL)hasMarkerTag:(NSString *)tagName {
-    NSString *value = [self getTag:tagName];
-    return value != nil && [value isEqualToString:@"*"];
+    return [self.inner hasMarkerTag:tagName];
 }
 
 // MARK: - Predicates
@@ -203,15 +207,15 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 }
 
 - (BOOL)isJson {
-    return [[self getTag:@"fmt"] isEqualToString:@"json"];
+    return [[self exactValue:@"fmt"] isEqualToString:@"json"];
 }
 
 - (BOOL)isYaml {
-    return [[self getTag:@"fmt"] isEqualToString:@"yaml"];
+    return [[self exactValue:@"fmt"] isEqualToString:@"yaml"];
 }
 
 - (BOOL)isCsv {
-    return [[self getTag:@"fmt"] isEqualToString:@"csv"];
+    return [[self exactValue:@"fmt"] isEqualToString:@"csv"];
 }
 
 - (BOOL)isVoid {

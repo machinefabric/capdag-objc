@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 
 @class CSTaggedUrn;
+@class CSTagConstraint;
 @class CSTaggedUrnCoordinateDelta;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -45,12 +46,20 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Mirrors Rust: impl FromStr for MediaUrn
 + (nullable instancetype)fromString:(NSString *)string error:(NSError **)error;
 
-/// Get a tag value
-/// Mirrors Rust: pub fn get_tag(&self, key: &str) -> Option<&str>
-- (nullable NSString *)getTag:(NSString *)key;
+/// The constraint this media URN writes for `key`, or nil when it does not mention it.
+/// Mirrors Rust: pub fn get_tag(&self, key: &str) -> Option<&Constraint>
+- (nullable CSTagConstraint *)getTag:(NSString *)key;
 
-/// Get all tags as a dictionary
-- (NSDictionary<NSString *, NSString *> *)tags;
+/// The exact value this media URN writes for `key` (`key=value`); nil when it does not
+/// mention the key or constrains it in another form.
+/// Mirrors Rust: pub fn exact_value(&self, key: &str) -> Option<&str>
+- (nullable NSString *)exactValue:(NSString *)key;
+
+/// Whether `tagName` is present as a marker (written as just the key).
+- (BOOL)hasMarkerTag:(NSString *)tagName;
+
+/// Every tag, each as the constraint it writes
+- (NSDictionary<NSString *, CSTagConstraint *> *)tags;
 
 /// Convert to canonical string representation
 /// Mirrors Rust: impl Display for MediaUrn
@@ -112,10 +121,12 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 
 // MARK: - Builders (mirror Rust MediaUrn builders)
 
-/// Create a new MediaUrn with an added or replaced tag.
-/// Delegates to inner CSTaggedUrn withTag:value: and wraps result.
-/// Mirrors Rust: pub fn with_tag(&self, key: &str, value: &str) -> Result<MediaUrn>
-- (CSMediaUrn * _Nonnull)withTag:(NSString * _Nonnull)key value:(NSString * _Nonnull)value;
+/// A new MediaUrn with an added or replaced tag. The key must be an identifier; the
+/// constraint one a URN can write.
+/// Mirrors Rust: pub fn with_tag(&self, key: &str, constraint: Constraint) -> Result<MediaUrn>
+- (nullable CSMediaUrn *)withTag:(NSString * _Nonnull)key
+                      constraint:(CSTagConstraint * _Nonnull)constraint
+                           error:(NSError * _Nullable * _Nullable)error;
 
 /// Create a new MediaUrn without a specific tag.
 /// Delegates to inner CSTaggedUrn withoutTag: and wraps result.
