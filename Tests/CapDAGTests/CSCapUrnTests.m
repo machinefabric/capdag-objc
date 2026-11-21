@@ -68,6 +68,9 @@ static NSString* testUrn(NSString *tags) {
     CSCapUrn *capUrn = [CSCapUrn fromString:@"in=media:void;generate;out=\"media:enc=utf8;record\"" error:&error];
     XCTAssertNil(capUrn);
     XCTAssertNotNil(error);
+    // A URN of another prefix is no cap
+    error = nil;
+    XCTAssertNil([CSCapUrn fromString:@"media:generate" error:&error]);
     XCTAssertEqual(error.code, CSCapUrnErrorMissingCapPrefix);
 
     // Valid cap: prefix with in/out should work
