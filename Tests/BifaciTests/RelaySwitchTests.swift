@@ -74,16 +74,18 @@ final class CborRelaySwitchTests: XCTestCase {
 
     // Helper to handle the identity verification protocol that RelaySwitch init performs.
     // RelaySwitch sends: REQ + STREAM_START + CHUNK(nonce) + STREAM_END + END
-    // This helper reads those frames and echoes back: STREAM_START + CHUNK(nonce) + STREAM_END + END
+    // This helper reads those frames and echoes back: STREAM_START + CHUNK(nonce) + STREAM_END + END,
+    // on the probe's flow and numbered as a host's outbound stage numbers them.
     private func handleIdentityVerification(reader: FrameReader, writer: FrameWriter) throws {
         var nonce = Data()
         var reqId: MessageId? = nil
-        let streamId = "identity-verify"
+        var xid: MessageId? = nil
         while true {
             guard let frame = try reader.read() else { return }
             switch frame.frameType {
             case .req:
                 reqId = frame.id
+                xid = frame.routingId
             case .streamStart:
                 break
             case .chunk:
@@ -92,12 +94,9 @@ final class CborRelaySwitchTests: XCTestCase {
                 break
             case .end:
                 guard let id = reqId else { return }
-                // Echo nonce back: STREAM_START + CHUNK(nonce) + STREAM_END + END
-                try writer.write(Frame.streamStart(reqId: id, streamId: streamId, mediaUrn: "media:"))
-                let checksum = Frame.computeChecksum(nonce)
-                try writer.write(Frame.chunk(reqId: id, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum))
-                try writer.write(Frame.streamEnd(reqId: id, streamId: streamId, chunkCount: 1))
-                try writer.write(Frame.end(id: id))
+                for frame in identityEchoFrames(rid: id, xid: xid, payload: nonce) {
+                    try writer.write(frame)
+                }
                 return
             case .policy where reqId == nil:
                 // The switch's policy comes first (12.2 §Policy).
@@ -105,6 +104,56 @@ final class CborRelaySwitchTests: XCTestCase {
             default:
                 return
             }
+        }
+    }
+
+    /// The echo that answers an identity probe — STREAM_START,
+    /// CHUNK(payload), STREAM_END, END — on the probe's flow, numbered as a
+    /// host's outbound stage numbers them (the switch reorders a master's
+    /// frames by them).
+    private func identityEchoFrames(rid: MessageId, xid: MessageId?, payload: Data) -> [Frame] {
+        let streamId = "identity-echo"
+        let seq = SeqAssigner()
+        var frames = [
+            Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:"),
+            Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)),
+            Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1),
+            Frame.end(id: rid),
+        ]
+        for i in frames.indices {
+            frames[i].routingId = xid
+            seq.assign(&frames[i])
+        }
+        return frames
+    }
+
+    /// Read an identity probe a fake master was sent — its REQ and body —
+    /// and return what answering it takes: (rid, xid, payload).
+    private func readIdentityProbe(_ reader: FrameReader) -> (rid: MessageId, xid: MessageId?, payload: Data)? {
+        guard let req = try? reader.read(), req.frameType == .req else { return nil }
+        var payload = Data()
+        while true {
+            guard let frame = try? reader.read() else { return nil }
+            switch frame.frameType {
+            case .chunk:
+                if let p = frame.payload { payload.append(p) }
+            case .end:
+                return (req.id, req.routingId, payload)
+            default:
+                break
+            }
+        }
+    }
+
+    /// Poll until `done` holds, or fail naming what was awaited.
+    private func waitUntil(_ limit: TimeInterval, _ what: String, _ done: () -> Bool) {
+        let deadline = Date().addingTimeInterval(limit)
+        while !done() {
+            if Date() > deadline {
+                XCTFail("timed out waiting until \(what)")
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.02)
         }
     }
 
@@ -1520,6 +1569,124 @@ final class CborRelaySwitchTests: XCTestCase {
             "the failed master's installed cartridges must remain visible in the inventory aggregate"
         )
 
+        switch_.shutdown()
+    }
+
+    private let lateCap = "cap:in=\"media:void\";late;out=\"media:void\""
+
+    // TEST7190: a host whose identity answer outlasts addMaster's probe
+    // window — a cartridge cold start longer than the window — joins
+    // unverified and reported overdue, and its answer, arriving after the
+    // window, verifies it. Half the answer arrives inside the window and the
+    // rest after it: the part addMaster read carries over to the wait.
+    // Mirrors Rust TEST7190.
+    func test7190_addMasterProbeAnsweredAfterItsWindowVerifiesTheMaster() throws {
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
+        switch_.setIdentityProbeWindowForTest(0.3)
+
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let release = DispatchSemaphore(value: 0)
+        let lateCap = self.lateCap
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try? self.sendNotify(writer: writer, capabilities: [CSCapIdentity, lateCap], limits: Limits())
+            guard let policy = try? reader.read(), policy.frameType == .policy,
+                  let probe = self.readIdentityProbe(reader) else { return }
+            let echo = self.identityEchoFrames(rid: probe.rid, xid: probe.xid, payload: probe.payload)
+            for frame in echo[..<2] { try? writer.write(frame) }
+            release.wait()
+            for frame in echo[2...] { try? writer.write(frame) }
+            while let _ = try? reader.read() {}
+        }
+
+        let idx = try switch_.addMaster(SocketPair(id: "slow-host", read: pair1.read, write: pair2.write))
+        let joined = switch_.getMasterHealth()[idx]
+        XCTAssertFalse(joined.healthy, "a master whose probe is unanswered is not verified")
+        XCTAssertTrue(joined.lastError?.contains("identity probe unanswered after") == true, "the master is reported overdue: \(joined.lastError ?? "nil")")
+        XCTAssertNil(switch_.routableMaster(forCap: lateCap))
+
+        release.signal()
+        waitUntil(5, "the late answer verifies the master") { switch_.routableMaster(forCap: lateCap) == idx }
+        let verified = switch_.getMasterHealth()[idx]
+        XCTAssertTrue(verified.healthy)
+        XCTAssertNil(verified.lastError)
+        switch_.shutdown()
+    }
+
+    // TEST7191: the runtime identity probe (a master whose advertised caps
+    // went from empty to non-empty) left unanswered past its window reports
+    // the master overdue and stays open; the answer, when it comes, makes
+    // the master's caps routable. Mirrors Rust TEST7191.
+    func test7191_runtimeProbeAnsweredAfterItsWindowVerifiesTheMaster() throws {
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let release = DispatchSemaphore(value: 0)
+        let lateCap = self.lateCap
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try? self.sendNotifyEmpty(writer: writer, limits: Limits())
+            guard let policy = try? reader.read(), policy.frameType == .policy else { return }
+            try? self.sendNotify(writer: writer, capabilities: [CSCapIdentity, lateCap], limits: Limits())
+            guard let probe = self.readIdentityProbe(reader) else { return }
+            release.wait()
+            for frame in self.identityEchoFrames(rid: probe.rid, xid: probe.xid, payload: probe.payload) {
+                try? writer.write(frame)
+            }
+            while let _ = try? reader.read() {}
+        }
+
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "slow-master-0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
+        switch_.setIdentityProbeWindowForTest(0.3)
+
+        waitUntil(5, "the unanswered probe is reported overdue") {
+            switch_.getMasterHealth()[0].lastError?.contains("identity probe unanswered after") == true
+        }
+        XCTAssertFalse(switch_.getMasterHealth()[0].healthy)
+        XCTAssertNil(switch_.routableMaster(forCap: lateCap))
+
+        release.signal()
+        waitUntil(5, "the late answer verifies the master") { switch_.routableMaster(forCap: lateCap) == 0 }
+        let verified = switch_.getMasterHealth()[0]
+        XCTAssertTrue(verified.healthy)
+        XCTAssertNil(verified.lastError)
+        switch_.shutdown()
+    }
+
+    // TEST7192: a master whose identity probe is open is unhealthy; when its
+    // connection dies, the probe ends with MASTER_DIED and the master says
+    // so, and its request leaves the table. Mirrors Rust TEST7192.
+    func test7192_openIdentityProbeEndsWhenItsMasterDies() throws {
+        let switch_ = try RelaySwitch(sockets: [], policy: HostPolicy(network: .full))
+        switch_.setIdentityProbeWindowForTest(0.2)
+
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let hangup = DispatchSemaphore(value: 0)
+        let hungUp = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let reader = FrameReader(handle: pair2.read)
+            let writer = FrameWriter(handle: pair1.write)
+            try? self.sendNotify(writer: writer, capabilities: [CSCapIdentity, "cap:in=\"media:void\";mute;out=\"media:void\""], limits: Limits())
+            guard let policy = try? reader.read(), policy.frameType == .policy,
+                  self.readIdentityProbe(reader) != nil else { return }
+            hangup.wait()
+            writer.close()
+            hungUp.signal()
+        }
+
+        let idx = try switch_.addMaster(SocketPair(id: "mute-host", read: pair1.read, write: pair2.write))
+        XCTAssertEqual(switch_.protocolStats().requests.active.count, 1, "the open probe is a live request")
+
+        hangup.signal()
+        XCTAssertEqual(hungUp.wait(timeout: .now() + 5), .success)
+        waitUntil(5, "the dead master's probe ends") {
+            switch_.protocolStats().requests.active.isEmpty
+                && switch_.getMasterHealth()[idx].lastError?.contains("MASTER_DIED") == true
+        }
+        XCTAssertFalse(switch_.getMasterHealth()[idx].healthy)
         switch_.shutdown()
     }
 
