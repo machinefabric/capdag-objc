@@ -539,8 +539,7 @@ final class ManifestTests: XCTestCase {
             ],
             "metadata_json": {"ui": {"group": "embeddings", "rank": 2}},
             "registered_by": {"username": "fabric", "registered_at": "2026-11-01T00:00:00Z"},
-            "supported_model_types": ["bert", "xlm-roberta"],
-            "default_model_spec": "hf:mlx-community/all-MiniLM-L6-v2-4bit"
+            "supported_model_types": ["bert", "xlm-roberta"]
           }
         ]
         """#

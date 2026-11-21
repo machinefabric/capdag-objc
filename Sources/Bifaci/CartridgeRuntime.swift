@@ -4109,8 +4109,6 @@ public struct CapDefinition: Codable, Sendable, Equatable {
     /// Architectures (HuggingFace `model_type` values) the cap can run; empty
     /// means any.
     public let supportedModelTypes: [String]
-    /// The model spec used when the cap is invoked without one.
-    public let defaultModelSpec: String?
 
     enum CodingKeys: String, CodingKey {
         case urn
@@ -4127,7 +4125,60 @@ public struct CapDefinition: Codable, Sendable, Equatable {
         case metadataJSON = "metadata_json"
         case registeredBy = "registered_by"
         case supportedModelTypes = "supported_model_types"
-        case defaultModelSpec = "default_model_spec"
+    }
+
+    /// Why a cap's model-spec argument cannot be told. Mirrors Rust
+    /// `ModelSpecArgError`.
+    public enum ModelSpecArgError: Error, CustomStringConvertible {
+        case twoModelSpecArgs(cap: String, first: String, second: String)
+        case unparseableArg(cap: String, arg: String)
+        case defaultNotAString(cap: String, arg: String)
+
+        public var description: String {
+            switch self {
+            case let .twoModelSpecArgs(cap, first, second):
+                return "cap '\(cap)' declares two model-spec arguments, '\(first)' and '\(second)'"
+            case let .unparseableArg(cap, arg):
+                return "cap '\(cap)' argument '\(arg)' has a media URN that does not parse"
+            case let .defaultNotAString(cap, arg):
+                return "cap '\(cap)' model-spec argument '\(arg)' declares a default that is not a string"
+            }
+        }
+    }
+
+    /// The cap's model-spec argument: the one whose media URN conforms to
+    /// `CSMediaModelSpec`, or nil when the cap takes no model spec. Mirrors
+    /// Rust `Cap::model_spec_arg`.
+    public func modelSpecArg() throws -> CapArg? {
+        let modelSpec = try CSMediaUrn.fromString(CSMediaModelSpec)
+        var found: CapArg?
+        for arg in args {
+            guard let urn = try? CSMediaUrn.fromString(arg.mediaUrn) else {
+                throw ModelSpecArgError.unparseableArg(cap: self.urn, arg: arg.mediaUrn)
+            }
+            guard urn.conforms(to: modelSpec) else { continue }
+            if let first = found {
+                throw ModelSpecArgError.twoModelSpecArgs(cap: self.urn, first: first.mediaUrn, second: arg.mediaUrn)
+            }
+            found = arg
+        }
+        return found
+    }
+
+    /// The model a run of this cap uses when none is named: its model-spec
+    /// argument's default, the value a run applies; nil when the cap takes no
+    /// model spec or the argument declares no default. Mirrors Rust
+    /// `Cap::default_model_spec`.
+    public func defaultModelSpec() throws -> String? {
+        guard let arg = try modelSpecArg(), let value = arg.defaultValue else { return nil }
+        switch value {
+        case .null:
+            return nil
+        case let .string(spec):
+            return spec
+        default:
+            throw ModelSpecArgError.defaultNotAString(cap: urn, arg: arg.mediaUrn)
+        }
     }
 
     /// The primary (first) alias — single-name display. A cap always has one.
@@ -4146,7 +4197,7 @@ public struct CapDefinition: Codable, Sendable, Equatable {
         self = try JSONDecoder().decode(CapDefinition.self, from: data)
     }
 
-    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], outputs: [CapOutput] = [], version: UInt32 = 0, documentation: String? = nil, dims: [DimRef] = [], metadata: [String: String] = [:], metadataJSON: JSONValue? = nil, registeredBy: RegisteredBy? = nil, supportedModelTypes: [String] = [], defaultModelSpec: String? = nil) {
+    public init(urn: String, title: String, aliases: [String], isAbstract: Bool = false, capDescription: String? = nil, args: [CapArg] = [], outputs: [CapOutput] = [], version: UInt32 = 0, documentation: String? = nil, dims: [DimRef] = [], metadata: [String: String] = [:], metadataJSON: JSONValue? = nil, registeredBy: RegisteredBy? = nil, supportedModelTypes: [String] = []) {
         self.urn = urn
         self.version = version
         self.title = title
@@ -4161,7 +4212,6 @@ public struct CapDefinition: Codable, Sendable, Equatable {
         self.metadataJSON = metadataJSON
         self.registeredBy = registeredBy
         self.supportedModelTypes = supportedModelTypes
-        self.defaultModelSpec = defaultModelSpec
     }
 
     public init(from decoder: Decoder) throws {
@@ -4195,7 +4245,6 @@ public struct CapDefinition: Codable, Sendable, Equatable {
         metadataJSON = try container.decodeIfPresent(JSONValue.self, forKey: .metadataJSON)
         registeredBy = try container.decodeIfPresent(RegisteredBy.self, forKey: .registeredBy)
         supportedModelTypes = try container.decodeIfPresent([String].self, forKey: .supportedModelTypes) ?? []
-        defaultModelSpec = try container.decodeIfPresent(String.self, forKey: .defaultModelSpec)
     }
 
     /// Writes each key exactly when the reference does: defaulted and empty
@@ -4234,7 +4283,6 @@ public struct CapDefinition: Codable, Sendable, Equatable {
         if !supportedModelTypes.isEmpty {
             try container.encode(supportedModelTypes, forKey: .supportedModelTypes)
         }
-        try container.encodeIfPresent(defaultModelSpec, forKey: .defaultModelSpec)
     }
 
     /// The main output: the one whose media URN is the cap URN's `out=`, by
