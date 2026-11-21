@@ -171,6 +171,19 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return result;
 }
 
+- (CSMediaUrn *)referenceBase {
+    CSTaggedUrn *base = self.inner;
+    for (NSString *key in self.inner.tags) {
+        if ([self.inner admitsAbsence:key]) {
+            base = [base withoutTag:key];
+        }
+    }
+    NSError *error;
+    CSMediaUrn *result = [CSMediaUrn fromTaggedUrn:base error:&error];
+    NSAssert(result != nil, @"CSMediaUrn referenceBase failed — dropping tags produced an invalid MediaUrn: %@", error);
+    return result;
+}
+
 // MARK: - Helper: Check for marker tag presence
 
 /// Check if a marker tag (tag with wildcard/no value) is present.
