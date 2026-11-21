@@ -49,12 +49,12 @@ final class StandardCapsTests: XCTestCase {
     // TEST1271: MEDIA_ADAPTER_SELECTION constant parses and has expected tags
     func test1271_mediaAdapterSelectionConstant() throws {
         let urn = try CSMediaUrn.fromString(CSMediaAdapterSelection)
-        XCTAssertNotNil(
-            urn.getTag("adapter-selection"),
+        XCTAssertTrue(
+            urn.hasMarkerTag("adapter-selection"),
             "Must have adapter-selection tag, got: \(urn.toString())"
         )
         XCTAssertEqual(
-            urn.getTag("fmt"), "json",
+            urn.exactValue("fmt"), "json",
             "Must have fmt=json tag, got: \(urn.toString())"
         )
         XCTAssertTrue(urn.isRecord(), "Must have record tag, got: \(urn.toString())")
