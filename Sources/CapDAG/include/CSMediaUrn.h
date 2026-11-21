@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 
 @class CSTaggedUrn;
+@class CSTagConstraint;
 @class CSTaggedUrnCoordinateDelta;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -28,12 +29,6 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Two strings in Unicode code point order, as Rust orders `String`s (not
 /// `-compare:`, which orders UTF-16 code units).
 FOUNDATION_EXPORT NSComparisonResult CSCompareCodePoints(NSString *a, NSString *b);
-
-/// Two tag maps as Rust orders a `BTreeMap<String, String>`: their (key, value)
-/// pairs in key order, compared pair by pair by code point, the map whose
-/// pairs run out first coming first.
-FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, NSString *> *a,
-                                                      NSDictionary<NSString *, NSString *> *b);
 
 /// Media URN - a TaggedUrn with required "media:" prefix
 /// Mirrors Rust: pub struct MediaUrn(TaggedUrn)
@@ -55,12 +50,20 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, N
 /// Mirrors Rust: impl FromStr for MediaUrn
 + (nullable instancetype)fromString:(NSString *)string error:(NSError **)error;
 
-/// Get a tag value
-/// Mirrors Rust: pub fn get_tag(&self, key: &str) -> Option<&str>
-- (nullable NSString *)getTag:(NSString *)key;
+/// The constraint this media URN writes for `key`, or nil when it does not mention it.
+/// Mirrors Rust: pub fn get_tag(&self, key: &str) -> Option<&Constraint>
+- (nullable CSTagConstraint *)getTag:(NSString *)key;
 
-/// Get all tags as a dictionary
-- (NSDictionary<NSString *, NSString *> *)tags;
+/// The exact value this media URN writes for `key` (`key=value`); nil when it does not
+/// mention the key or constrains it in another form.
+/// Mirrors Rust: pub fn exact_value(&self, key: &str) -> Option<&str>
+- (nullable NSString *)exactValue:(NSString *)key;
+
+/// Whether `tagName` is present as a marker (written as just the key).
+- (BOOL)hasMarkerTag:(NSString *)tagName;
+
+/// Every tag, each as the constraint it writes
+- (NSDictionary<NSString *, CSTagConstraint *> *)tags;
 
 /// Convert to canonical string representation
 /// Mirrors Rust: impl Display for MediaUrn
@@ -106,11 +109,11 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, N
 /// Mirrors Rust: pub fn is_comparable(&self, other: &MediaUrn) -> bool
 - (BOOL)isComparableTo:(CSMediaUrn *)other;
 
-/// Structural total order of two media URNs: the prefix, then the tags as
-/// (key, stored value) pairs in key order, a URN whose pairs run out first
-/// coming first. Keys, values and prefixes compare by Unicode code point.
-/// This is the reference's order, not the order of the canonical text, which
-/// differs wherever one key is the beginning of another (`a` and `a-x`).
+/// Structural total order of two media URNs: the tagged URN's order by parts
+/// (CSTaggedUrn -compare:): the prefix, then each tag in key order by its key,
+/// its constraint's form and its value, a URN whose tags run out first coming
+/// first. This is the reference's order, not the order of the canonical text,
+/// which differs wherever one key is the beginning of another (`a` and `a-x`).
 /// Mirrors Rust: impl Ord for MediaUrn
 - (NSComparisonResult)compareStructurally:(CSMediaUrn *)other;
 
@@ -122,10 +125,12 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, N
 
 // MARK: - Builders (mirror Rust MediaUrn builders)
 
-/// Create a new MediaUrn with an added or replaced tag.
-/// Delegates to inner CSTaggedUrn withTag:value: and wraps result.
-/// Mirrors Rust: pub fn with_tag(&self, key: &str, value: &str) -> Result<MediaUrn>
-- (CSMediaUrn * _Nonnull)withTag:(NSString * _Nonnull)key value:(NSString * _Nonnull)value;
+/// A new MediaUrn with an added or replaced tag. The key must be an identifier; the
+/// constraint one a URN can write.
+/// Mirrors Rust: pub fn with_tag(&self, key: &str, constraint: Constraint) -> Result<MediaUrn>
+- (nullable CSMediaUrn *)withTag:(NSString * _Nonnull)key
+                      constraint:(CSTagConstraint * _Nonnull)constraint
+                           error:(NSError * _Nullable * _Nullable)error;
 
 /// Create a new MediaUrn without a specific tag.
 /// Delegates to inner CSTaggedUrn withoutTag: and wraps result.

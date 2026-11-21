@@ -279,9 +279,6 @@ struct HandlerEntry {
     let handler: FrameHandler
 }
 
-/// Cap table entry: (cap_urn_string, handler_index).
-typealias CapTable = [(String, Int)]
-
 /// Identity values an `InProcessCartridgeHost` advertises in its
 /// RelayNotify payload. The host has no on-disk cartridge directory,
 /// so the embedding application must supply the same four-tuple
@@ -431,60 +428,28 @@ public final class InProcessCartridgeHost {
         return states
     }
 
-    /// Build the cap table for routing: flat list of (cap_urn, handler_idx).
-    private static func buildCapTable(handlers: [HandlerEntry]) -> CapTable {
-        var table: CapTable = []
+    /// Every handler's caps as parsed values, in handler order and then each
+    /// handler's cap order, with the owning handler's index at the same
+    /// position.
+    static func registeredCaps(handlers: [HandlerEntry]) -> (caps: [CSCapUrn], owners: [Int]) {
+        var caps: [CSCapUrn] = []
+        var owners: [Int] = []
         for (idx, entry) in handlers.enumerated() {
             for cap in entry.caps {
-                table.append((cap.capUrn.toString(), idx))
+                caps.append(cap.capUrn)
+                owners.append(idx)
             }
         }
-        return table
+        return (caps, owners)
     }
 
-    /// Find the best handler for a cap URN.
+    /// The index of the handler that serves `request`, or nil.
     ///
-    /// Uses `isDispatchable(candidate, request)` to find handlers that can
-    /// legally handle the request, then ranks by specificity.
-    ///
-    /// Ranking prefers:
-    /// 1. Equivalent matches (distance 0)
-    /// 2. More specific candidates (positive distance) - refinements
-    /// 3. More generic candidates (negative distance) - fallbacks
-    private static func findHandlerForCap(capTable: CapTable, capUrn: String) -> Int? {
-        guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
-            return nil
-        }
-
-        let requestSpecificity = Int(requestUrn.specificity())
-        var matches: [(handlerIdx: Int, signedDistance: Int)] = []
-
-        for (registeredCap, handlerIdx) in capTable {
-            if let registeredUrn = try? CSCapUrn.fromString(registeredCap) {
-                if registeredUrn.isDispatchable(requestUrn) {
-                    let specificity = Int(registeredUrn.specificity())
-                    let signedDistance = specificity - requestSpecificity
-                    matches.append((handlerIdx, signedDistance))
-                }
-            }
-        }
-
-        guard !matches.isEmpty else {
-            return nil
-        }
-
-        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
-        matches.sort { a, b in
-            let (_, distA) = a
-            let (_, distB) = b
-            // Non-negative distances before negative
-            if distA >= 0 && distB < 0 { return true }
-            if distA < 0 && distB >= 0 { return false }
-            // Same sign: prefer smaller absolute distance
-            return abs(distA) < abs(distB)
-        }
-
-        return matches.first?.handlerIdx
+    /// The proved selection (`CSCapUrn.selectFromCandidates(_:forRequest:)`):
+    /// least ranking key; of equal keys, the first registered.
+    static func findHandlerForCap(caps: [CSCapUrn], owners: [Int], request: CSCapUrn) -> Int? {
+        let i = CSCapUrn.selectFromCandidates(caps, forRequest: request)
+        return i == NSNotFound ? nil : owners[i]
     }
 
     /// Run the host. Blocks until the local connection closes.
@@ -534,8 +499,7 @@ public final class InProcessCartridgeHost {
         let notify = Frame.relayNotify(manifest: manifest, limits: Limits())
         writeContinuation.yield(notify)
 
-        // Build cap table
-        let capTable = Self.buildCapTable(handlers: handlers)
+        let (registeredCaps, owners) = Self.registeredCaps(handlers: handlers)
 
         // Advertised caps (canonical URNs) — the singleton pool roster —
         // and the operator `configured` overlay delivered via heartbeat
@@ -609,21 +573,18 @@ public final class InProcessCartridgeHost {
                     continue
                 }
 
-                let handler: FrameHandler = isIdentity ? identityHandler : {
-                    if let idx = Self.findHandlerForCap(capTable: capTable, capUrn: capUrn) {
-                        return handlers[idx].handler
-                    } else {
-                        // No registered handler for a dispatched cap is a
-                        // deployment mismatch — Environment.
-                        var err = Frame.err(id: rid, code: "NO_HANDLER", attributionClass: .environment, message: "no handler for cap: \(capUrn)")
-                        err.routingId = xid
-                        writeContinuation.yield(err)
-                        return identityHandler // dummy, never used
-                    }
-                }()
-
-                // If NO_HANDLER was sent, skip spawning handler
-                if !isIdentity && Self.findHandlerForCap(capTable: capTable, capUrn: capUrn) == nil {
+                let handler: FrameHandler
+                if isIdentity {
+                    handler = identityHandler
+                } else if let request = try? CSCapUrn.fromString(capUrn),
+                          let idx = Self.findHandlerForCap(caps: registeredCaps, owners: owners, request: request) {
+                    handler = handlers[idx].handler
+                } else {
+                    // No registered handler for a dispatched cap is a
+                    // deployment mismatch — Environment.
+                    var err = Frame.err(id: rid, code: "NO_HANDLER", attributionClass: .environment, message: "no handler for cap: \(capUrn)")
+                    err.routingId = xid
+                    writeContinuation.yield(err)
                     continue
                 }
 

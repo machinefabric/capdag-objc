@@ -91,7 +91,10 @@ NSString *CSInputStructureApplyToUrn(CSInputStructure structure, NSString *baseU
             if (hasRecord) {
                 return baseUrn;
             } else {
-                return [[mediaUrn withTag:@"record" value:@"*"] toString];
+                NSError *error = nil;
+                CSMediaUrn *record = [mediaUrn withTag:@"record" constraint:[CSTagConstraint present] error:&error];
+                NSAssert(record != nil, @"record is a key every media URN can take: %@", error);
+                return [record toString];
             }
     }
 }

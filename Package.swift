@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.715.539
+// version: 1.716.596
 import PackageDescription
 
 let package = Package(
@@ -101,7 +101,10 @@ let package = Package(
         ),
         .testTarget(
             name: "CapDAGTests",
-            dependencies: ["CapDAG"]),
+            dependencies: [
+                "CapDAG",
+                .product(name: "TaggedUrn", package: "tagged-urn-objc"),
+            ]),
         // Swift tests for the ObjC CapDAG target, in their own target because
         // SwiftPM will not mix languages in one: CapDAGTests is `.m` files.
         .testTarget(
