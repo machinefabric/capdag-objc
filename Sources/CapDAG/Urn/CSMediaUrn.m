@@ -100,45 +100,55 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     return [self toString];
 }
 
-- (BOOL)conformsTo:(CSMediaUrn *)pattern error:(NSError **)error {
-    return [self.inner conformsTo:pattern.inner error:error];
+/// A comparison's answer. The tagged-URN comparisons fail only on a prefix
+/// mismatch, which two media URNs never have, so a failure is a programming
+/// error and raises, naming the comparison.
+static BOOL CSMediaUrnDecided(BOOL result, NSError *error, NSString *comparison) {
+    if (error) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"MediaUrn %@: every MediaUrn has the media prefix: %@", comparison, error.localizedDescription];
+    }
+    return result;
 }
 
-- (BOOL)accepts:(CSMediaUrn *)instance error:(NSError **)error {
-    return [self.inner accepts:instance.inner error:error];
+- (BOOL)conformsTo:(CSMediaUrn *)pattern {
+    NSError *error = nil;
+    BOOL result = [self.inner conformsTo:pattern.inner error:&error];
+    return CSMediaUrnDecided(result, error, @"conformsTo");
 }
 
-- (BOOL)meets:(CSMediaUrn *)other error:(NSError **)error {
-    return [self.inner meets:other.inner error:error];
+- (BOOL)accepts:(CSMediaUrn *)instance {
+    NSError *error = nil;
+    BOOL result = [self.inner accepts:instance.inner error:&error];
+    return CSMediaUrnDecided(result, error, @"accepts");
 }
 
-- (BOOL)satisfies:(CSMediaUrn *)pattern error:(NSError **)error {
-    return [self.inner satisfies:pattern.inner error:error];
+- (BOOL)meets:(CSMediaUrn *)other {
+    NSError *error = nil;
+    BOOL result = [self.inner meets:other.inner error:&error];
+    return CSMediaUrnDecided(result, error, @"meets");
 }
 
-- (BOOL)maySatisfy:(CSMediaUrn *)pattern error:(NSError **)error {
-    return [self.inner maySatisfy:pattern.inner error:error];
+- (BOOL)satisfies:(CSMediaUrn *)pattern {
+    NSError *error = nil;
+    BOOL result = [self.inner satisfies:pattern.inner error:&error];
+    return CSMediaUrnDecided(result, error, @"satisfies");
+}
+
+- (BOOL)maySatisfy:(CSMediaUrn *)pattern {
+    NSError *error = nil;
+    BOOL result = [self.inner maySatisfy:pattern.inner error:&error];
+    return CSMediaUrnDecided(result, error, @"maySatisfy");
 }
 
 - (BOOL)isEquivalentTo:(CSMediaUrn *)other {
-    NSError *err = nil;
-    BOOL forward = [self accepts:other error:&err];
-    if (err || !forward) return NO;
-    BOOL reverse = [other accepts:self error:&err];
-    if (err) return NO;
-    return reverse;
+    return [self accepts:other] && [other accepts:self];
 }
 
 - (BOOL)isComparableTo:(CSMediaUrn *)other {
     // Comparable: either side accepts the other (same specialization chain).
     // Mirrors Rust MediaUrn::is_comparable.
-    NSError *err = nil;
-    BOOL forward = [self accepts:other error:&err];
-    if (!err && forward) return YES;
-    err = nil;
-    BOOL reverse = [other accepts:self error:&err];
-    if (!err && reverse) return YES;
-    return NO;
+    return [self accepts:other] || [other accepts:self];
 }
 
 - (nullable CSTaggedUrnCoordinateDelta *)deltaFrom:(CSMediaUrn *)base error:(NSError **)error {
@@ -270,48 +280,6 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     NSAssert(bound != nil, @"Every CSMediaUrn has the media prefix: %@", err);
     CSMediaUrn *result = [CSMediaUrn fromTaggedUrn:bound error:&err];
     NSAssert(result != nil, @"The bound of media URNs is a media URN: %@", err);
-    return result;
-}
-
-// MARK: - Convenience conformsTo without error
-
-- (BOOL)conformsTo:(CSMediaUrn *)pattern {
-    NSError *error = nil;
-    BOOL result = [self conformsTo:pattern error:&error];
-    if (error) {
-        [NSException raise:NSInternalInconsistencyException
-                    format:@"MediaUrn conformsTo failed: %@", error.localizedDescription];
-    }
-    return result;
-}
-
-- (BOOL)meets:(CSMediaUrn *)other {
-    NSError *error = nil;
-    BOOL result = [self meets:other error:&error];
-    if (error) {
-        [NSException raise:NSInternalInconsistencyException
-                    format:@"MediaUrn meets failed: %@", error.localizedDescription];
-    }
-    return result;
-}
-
-- (BOOL)satisfies:(CSMediaUrn *)pattern {
-    NSError *error = nil;
-    BOOL result = [self satisfies:pattern error:&error];
-    if (error) {
-        [NSException raise:NSInternalInconsistencyException
-                    format:@"MediaUrn satisfies failed: %@", error.localizedDescription];
-    }
-    return result;
-}
-
-- (BOOL)maySatisfy:(CSMediaUrn *)pattern {
-    NSError *error = nil;
-    BOOL result = [self maySatisfy:pattern error:&error];
-    if (error) {
-        [NSException raise:NSInternalInconsistencyException
-                    format:@"MediaUrn maySatisfy failed: %@", error.localizedDescription];
-    }
     return result;
 }
 
