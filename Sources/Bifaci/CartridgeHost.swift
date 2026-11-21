@@ -3213,17 +3213,32 @@ public final class CartridgeHost: @unchecked Sendable {
         writeToRelayLocked(w, frame)
     }
 
-    /// Write one frame to the relay. A frame the relay cannot take ends the
-    /// session (`relayWriteFailed`): it is said, never swallowed. Caller
-    /// holds `outboundLock`.
+    /// Write one frame to the relay. A write that finds the engine hung up
+    /// is the relay closing (`relayClosed`), as when its read side ends; any
+    /// other frame the relay cannot take ends the session
+    /// (`relayWriteFailed`). Either is said, never swallowed. Caller holds
+    /// `outboundLock`.
     private func writeToRelayLocked(_ writer: FrameWriter, _ frame: Frame) {
         do {
             try writer.write(frame)
         } catch {
-            let detail = "\(frame.frameType) for \(frame.id) could not be written: \(error)"
+            if Self.relayHungUp(error) {
+                os_log(.info, log: Self.log, "[sendToRelay] the engine hung up — the relay is closed: %{public}@ for %{public}@ could not be written: %{public}@", String(describing: frame.frameType), String(describing: frame.id), error.localizedDescription)
+                pushEvent(.relayClosed)
+                return
+            }
+            let detail = "\(frame.frameType) for \(frame.id) could not be written: \(error.localizedDescription)"
             os_log(.error, log: Self.log, "[sendToRelay] relay write failed — ending the session: %{public}@", detail)
             pushEvent(.relayWriteFailed(detail))
         }
+    }
+
+    /// Whether a failed relay write says the engine hung up: the
+    /// connection's far end is closed (EPIPE, ECONNRESET) or gone
+    /// (ENOTCONN). Mirrors the Rust host's `relay_hung_up`.
+    private static func relayHungUp(_ error: Error) -> Bool {
+        guard case FrameError.writeFailed(let code) = error else { return false }
+        return code == EPIPE || code == ECONNRESET || code == ENOTCONN
     }
 
     // MARK: - Internal Helpers

@@ -4,6 +4,8 @@ import Foundation
 /// Errors that can occur during CBOR I/O
 public enum FrameError: Error, @unchecked Sendable {
     case ioError(String)
+    /// A POSIX write to the descriptor failed with this errno.
+    case writeFailed(errno: Int32)
     case encodeError(String)
     case decodeError(String)
     case frameTooLarge(size: Int, max: Int)
@@ -17,6 +19,7 @@ extension FrameError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .ioError(let msg): return "I/O error: \(msg)"
+        case .writeFailed(let code): return "I/O error: write failed: \(String(cString: strerror(code)))"
         case .encodeError(let msg): return "CBOR encode error: \(msg)"
         case .decodeError(let msg): return "CBOR decode error: \(msg)"
         case .frameTooLarge(let size, let max): return "Frame too large: \(size) bytes (max \(max))"
@@ -413,7 +416,7 @@ public func writeFrame(_ frame: Frame, toFD fd: Int32, limits: Limits, buffer: i
         while totalWritten < buffer.count {
             let result = Darwin.write(fd, baseAddress.advanced(by: totalWritten), buffer.count - totalWritten)
             if result < 0 {
-                throw FrameError.ioError("write failed: \(String(cString: strerror(errno)))")
+                throw FrameError.writeFailed(errno: errno)
             }
             totalWritten += result
         }
@@ -542,8 +545,8 @@ public class FrameWriter: @unchecked Sendable {
         // returns EPIPE — but by default the kernel also raises
         // SIGPIPE on the writer process, which would terminate the
         // host. With F_SETNOSIGPIPE the write just returns -1/EPIPE
-        // and we surface a clean `FrameError.ioError("write failed:
-        // ...")` to the caller, who can fail the in-flight request
+        // and we surface a clean `FrameError.writeFailed(errno:
+        // EPIPE)` to the caller, who can fail the in-flight request
         // and move on. This must be set per-fd at construction
         // because Foundation's FileHandle does not set it for
         // arbitrary descriptors and the global signal handler is
@@ -609,8 +612,8 @@ public class FrameWriter: @unchecked Sendable {
 
     /// Flush buffered data.
     /// Throws `FrameError.ioError("writer closed")` if the writer
-    /// has been closed; throws `FrameError.ioError("write failed: ...")`
-    /// on POSIX write failure.
+    /// has been closed; throws `FrameError.writeFailed(errno:)` on POSIX
+    /// write failure.
     public func flush() throws {
         lock.lock()
         defer { lock.unlock() }
@@ -632,7 +635,7 @@ public class FrameWriter: @unchecked Sendable {
             while totalWritten < buffer.count {
                 let result = Darwin.write(fd, baseAddress.advanced(by: totalWritten), buffer.count - totalWritten)
                 if result < 0 {
-                    throw FrameError.ioError("write failed: \(String(cString: strerror(errno)))")
+                    throw FrameError.writeFailed(errno: errno)
                 }
                 totalWritten += result
             }

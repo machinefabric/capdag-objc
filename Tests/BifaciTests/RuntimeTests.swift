@@ -320,41 +320,76 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         return tmp.path
     }
 
-    // TEST7193: a frame the host cannot write to its relay ends its session
-    // with the failure named. The write used to be discarded while the host
-    // went on reading the relay, so the engine waited for answers the host
-    // could no longer give. Here the relay's read side stays open and sends
-    // nothing; the host's first frame — its initial RelayNotify — cannot be
-    // written. Mirrors Rust TEST7193.
-    func test7193_failedRelayWriteEndsTheHostSession() {
-        let engineToHost = Pipe()
-        let hostToEngine = Pipe()
-        // The engine never reads what the host writes.
-        hostToEngine.fileHandleForReading.closeFile()
+    /// How a host's relay session ended: whether it ended within five
+    /// seconds, and the error it ended with (nil for a clean end).
+    private struct RelaySessionEnd {
+        let ended: Bool
+        let error: Error?
+    }
 
+    /// Run a host on the relay and report how its session ended.
+    private func runHostUntilItEnds(relayRead: FileHandle, relayWrite: FileHandle) -> RelaySessionEnd {
         final class Outcome: @unchecked Sendable { var error: Error? }
         let outcome = Outcome()
         let ended = DispatchSemaphore(value: 0)
         let host = CartridgeHost.withFullPolicy()
         DispatchQueue.global().async {
             do {
-                try host.run(
-                    relayRead: engineToHost.fileHandleForReading,
-                    relayWrite: hostToEngine.fileHandleForWriting
-                ) { Data() }
+                try host.run(relayRead: relayRead, relayWrite: relayWrite) { Data() }
             } catch {
                 outcome.error = error
             }
             ended.signal()
         }
+        let didEnd = ended.wait(timeout: .now() + 5) == .success
+        return RelaySessionEnd(ended: didEnd, error: outcome.error)
+    }
 
-        XCTAssertEqual(ended.wait(timeout: .now() + 5), .success, "a host whose relay cannot take its frames ends its session")
-        guard case .sendFailed(let detail)? = outcome.error as? CartridgeHostError else {
-            XCTFail("the session ends with the failed write, got \(String(describing: outcome.error))")
+    // TEST7193: a frame the host cannot write to its relay ends its session
+    // with the failure named. The write used to be discarded while the host
+    // went on reading the relay, so the engine waited for answers the host
+    // could no longer give. Here the relay's read side stays open and sends
+    // nothing, and its write side faults — a descriptor open only for
+    // reading, so every write fails with EBADF, not a hang-up: the host's
+    // first frame — its initial RelayNotify — cannot be written. Mirrors
+    // Rust TEST7193.
+    func test7193_failedRelayWriteEndsTheHostSession() throws {
+        let engineToHost = Pipe()
+        let faultingRelayWrite = try XCTUnwrap(FileHandle(forReadingAtPath: "/dev/null"))
+
+        let end = runHostUntilItEnds(relayRead: engineToHost.fileHandleForReading, relayWrite: faultingRelayWrite)
+        engineToHost.fileHandleForWriting.closeFile()
+
+        XCTAssertTrue(end.ended, "a host whose relay cannot take its frames ends its session")
+        guard case .sendFailed(let detail)? = end.error as? CartridgeHostError else {
+            XCTFail("the session ends with the failed write, got \(String(describing: end.error))")
             return
         }
-        XCTAssertTrue(detail.contains("relay write failed"), "the session's end names the failed write: \(detail)")
+        XCTAssertTrue(
+            detail.contains("relay write failed") && detail.contains(String(cString: strerror(EBADF))),
+            "the session's end names the failed write and why it failed: \(detail)"
+        )
+    }
+
+    // TEST7194: a write that fails because the engine hung up is the relay
+    // closing, as when its read side ends: the session ends cleanly, not with
+    // a failed write. An engine that closes the relay makes the host's next
+    // write fail with a broken pipe, often before the host has read the
+    // relay's end; that used to end the session with "relay write failed".
+    // Here the engine has closed its reading end and the relay's read side
+    // stays open, so only the write can say the engine is gone. Mirrors Rust
+    // TEST7194.
+    func test7194_relayWriteToAHungUpEngineEndsTheSessionCleanly() {
+        let engineToHost = Pipe()
+        let hostToEngine = Pipe()
+        // The engine hung up: nothing reads what the host writes.
+        hostToEngine.fileHandleForReading.closeFile()
+
+        let end = runHostUntilItEnds(relayRead: engineToHost.fileHandleForReading, relayWrite: hostToEngine.fileHandleForWriting)
         engineToHost.fileHandleForWriting.closeFile()
+
+        XCTAssertTrue(end.ended, "a host whose engine hung up ends its session")
+        XCTAssertNil(end.error, "an engine that hung up closed the relay; the session ends cleanly, got \(String(describing: end.error))")
     }
 
     // TEST413: Register cartridge adds entries to cap_table
