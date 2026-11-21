@@ -563,18 +563,25 @@ final class ProtocolRuntimeTests: XCTestCase {
         XCTAssertEqual(consumerReleased.wait(timeout: .now() + 2), .success)
     }
 
-    // TEST7053: A chunk received beyond the granted window is a fatal CREDIT_VIOLATION surfaced to the consumer (L12).
+    // TEST7053: A chunk received beyond the granted window is a CREDIT_VIOLATION error on that stream; the request goes on: another stream of the same request is still delivered whole (L12).
     func test7053_overWindowChunkIsCreditViolation() throws {
         let grantSink = RecordingFrameSender()
         let rid = MessageId.newUUID()
         let frames = BlockingQueue<Frame>()
 
-        frames.push(Frame.streamStart(reqId: rid, streamId: "s1", mediaUrn: "media:enc=utf8", isSequence: false))
-        // Window is 2; a misbehaving sender pushes 3 chunks with no grants
-        // possible (nothing consumed yet).
+        for streamId in ["s1", "s2"] {
+            frames.push(Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:enc=utf8", isSequence: false))
+        }
+        // Window is 2; a misbehaving sender pushes 3 chunks on s1 with no
+        // grants possible (nothing consumed yet), and keeps to the window on s2.
         for i in 0..<3 {
             frames.push(makeChunk(rid: rid, streamId: "s1", index: UInt64(i), byte: UInt8(i)))
         }
+        for i in 0..<2 {
+            frames.push(makeChunk(rid: rid, streamId: "s2", index: UInt64(i), byte: UInt8(i)))
+        }
+        frames.push(Frame.streamEnd(reqId: rid, streamId: "s1", chunkCount: 3))
+        frames.push(Frame.streamEnd(reqId: rid, streamId: "s2", chunkCount: 2))
         frames.push(Frame.end(id: rid))
         frames.finish()
 
@@ -582,24 +589,30 @@ final class ProtocolRuntimeTests: XCTestCase {
             frameIterator: AnyIterator { frames.dequeue() },
             credit: InputCreditContext(sender: grantSink, rid: rid, xid: nil, initialCredit: 2)
         )
-        let inputStream = try XCTUnwrap(package.nextStream()).get()
-        // The demux has seen all three chunks once the request has ended, and
-        // only then is anything consumed — so no grant can extend the window
-        // and the third chunk is a violation by construction, not by a sleep
-        // that a loaded machine outlasts.
-        XCTAssertNil(package.nextStream(), "the request has one stream and then ends")
-        var iterator = inputStream.makeIterator()
+        let s1 = try XCTUnwrap(package.nextStream()).get()
+        let s2 = try XCTUnwrap(package.nextStream()).get()
+        // The demux has seen every chunk once the request has ended, and only
+        // then is anything consumed — so no grant can extend the window and
+        // the third chunk is a violation by construction, not by a sleep that
+        // a loaded machine outlasts.
+        XCTAssertNil(package.nextStream(), "the request has two streams and then ends: the violation breaks only s1")
+        var first = s1.makeIterator()
         // First two chunks are within the window.
-        XCTAssertNoThrow(try XCTUnwrap(iterator.next()).get())
-        XCTAssertNoThrow(try XCTUnwrap(iterator.next()).get())
+        XCTAssertNoThrow(try XCTUnwrap(first.next()).get())
+        XCTAssertNoThrow(try XCTUnwrap(first.next()).get())
         // The third is the violation.
-        let third = try XCTUnwrap(iterator.next(), "violation must be surfaced, not silently dropped")
+        let third = try XCTUnwrap(first.next(), "violation must be surfaced, not silently dropped")
         XCTAssertThrowsError(try third.get()) { error in
             XCTAssertTrue(
                 "\(error)".contains("CREDIT_VIOLATION"),
                 "error must carry the CREDIT_VIOLATION code: \(error)"
             )
         }
+        // The request goes on: s2 is delivered whole.
+        var second = s2.makeIterator()
+        XCTAssertNoThrow(try XCTUnwrap(second.next()).get())
+        XCTAssertNoThrow(try XCTUnwrap(second.next()).get())
+        XCTAssertNil(second.next(), "s2 ends after its two chunks")
     }
 
     // MARK: - Unbounded streams (L16)

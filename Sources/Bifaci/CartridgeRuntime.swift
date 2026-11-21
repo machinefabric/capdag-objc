@@ -1978,7 +1978,8 @@ internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGran
 /// observes items incrementally while the producer is still emitting; input
 /// is never buffered to completion. When `credit` is supplied, the demux
 /// keeps per-stream credit windows (initialCredit + grants) and surfaces an
-/// over-window chunk as a fatal CREDIT_VIOLATION stream error (L12); handler
+/// over-window chunk as a CREDIT_VIOLATION error of that stream alone, the
+/// request going on (L12); handler
 /// consumption emits batched grants (window/2) via each stream's
 /// `InputGrantEmitter` (L10).
 ///
@@ -2004,9 +2005,10 @@ internal func demuxMultiStream(
         var lfAccumulators: [String: (referenceUrn: String, chunks: [Data])] = [:]
         // Per-stream remaining credit windows (L10/L12). The window starts at
         // the negotiated initialCredit; handler consumption (grants) extends
-        // it; a chunk arriving with the window at zero is a fatal
-        // CREDIT_VIOLATION. The demux itself never blocks — accounting keeps
-        // control frames flowing regardless of data pressure.
+        // it; a chunk arriving with the window at zero is a CREDIT_VIOLATION
+        // that breaks that stream, and the request goes on. The demux itself
+        // never blocks — accounting keeps control frames flowing regardless
+        // of data pressure.
         var streamWindows: [String: CreditWindow] = [:]
         // Sequence-mode streams: streamId → item reassembly state (see
         // `SeqReassembly` — frame payloads are RFC 8742 fragments, decoded
@@ -2110,8 +2112,10 @@ internal func demuxMultiStream(
                     continue
                 }
 
-                // Credit-violation check (L12): a chunk beyond the granted
-                // window is a fatal protocol error for this request.
+                // Credit-violation check (L12): a chunk arriving with nothing
+                // left of its window is a CREDIT_VIOLATION: that stream is
+                // broken and delivers the error to whoever reads it; the
+                // request goes on.
                 if let window = streamWindows[streamId], !window.arrive() {
                     queue.push(.failure(.protocolError(
                         "CREDIT_VIOLATION: chunk received beyond the granted window on stream \(streamId) (L12)"

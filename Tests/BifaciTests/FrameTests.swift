@@ -1426,6 +1426,43 @@ final class CborFrameTests: XCTestCase {
         XCTAssertThrowsError(try zeroCredit.relayNotifyLimits(), "v4 RelayNotify initial_credit must be positive")
     }
 
+    // TEST7194: the identity probe sends the nonce as one CBOR byte string, and
+    // its echo is judged by value — the judge the handshake and every relay
+    // switch probe share: the nonce echoed as two CBOR byte strings (3 and 4
+    // bytes) passes, and a CBOR text "bifaci" fails, naming "Expected bytes
+    // chunk".
+    func test7194_identityEchoJudgedByValue() throws {
+        let probe = identityProbeFrames(rid: .newUUID(), xid: .uint(7))
+        XCTAssertEqual(probe.map(\.frameType), [.req, .streamStart, .chunk, .streamEnd, .end])
+        let sent = try XCTUnwrap(try CBOR.decode([UInt8](probe[2].payload ?? Data())))
+        guard case .byteString(let nonce) = sent else {
+            return XCTFail("the probe carries its nonce as a byte string, got \(sent)")
+        }
+        let rid = MessageId.newUUID()
+        func echo(_ values: [CBOR]) -> [Frame] {
+            var frames = [Frame.streamStart(reqId: rid, streamId: "echo", mediaUrn: "media:", isSequence: false)]
+            for (i, value) in values.enumerated() {
+                let payload = Data(value.encode())
+                frames.append(Frame.chunk(reqId: rid, streamId: "echo", seq: 0, payload: payload, chunkIndex: UInt64(i), checksum: Frame.computeChecksum(payload)))
+            }
+            frames.append(Frame.streamEnd(reqId: rid, streamId: "echo", chunkCount: UInt64(values.count)))
+            frames.append(Frame.end(id: rid))
+            return frames
+        }
+
+        var split = IdentityEcho()
+        var done = false
+        for frame in echo([.byteString(Array(nonce[..<3])), .byteString(Array(nonce[3...]))]) {
+            done = try split.accept(frame)
+        }
+        XCTAssertTrue(done, "the split byte-string echo is the nonce")
+
+        var text = IdentityEcho()
+        XCTAssertThrowsError(try echo([.utf8String("bifaci")]).forEach { _ = try text.accept($0) }) { error in
+            XCTAssertTrue("\(error)".contains("Expected bytes chunk"), "\(error)")
+        }
+    }
+
     // TEST7198: relayNotifyLimits refuses a RelayNotify whose limits are not
     // all present and positive integers, naming the key: initial_credit
     // missing, max_chunk zero, max_frame text. relayNotifyManifest refuses a
