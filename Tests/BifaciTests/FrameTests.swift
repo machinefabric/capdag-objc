@@ -1349,7 +1349,7 @@ final class CborFrameTests: XCTestCase {
     }
 
     // TEST401: Verify relay_notify factory stores manifest and limits, and accessors extract them
-    func test401_relayNotifyFactoryAndAccessors() {
+    func test401_relayNotifyFactoryAndAccessors() throws {
         let manifest = "{\"caps\":[\"cap:test\"]}".data(using: .utf8)!
         let limits = Limits(maxFrame: 2_000_000, maxChunk: 128_000, maxReorderBuffer: 64)
 
@@ -1358,20 +1358,18 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.frameType, .relayNotify)
 
         // Test manifest accessor
-        let extractedManifest = frame.relayNotifyManifest
-        XCTAssertNotNil(extractedManifest, "relayNotifyManifest must not be nil")
+        let extractedManifest = try frame.relayNotifyManifest()
         XCTAssertEqual(extractedManifest, manifest)
 
         // Test limits accessor
-        let extractedLimits = frame.relayNotifyLimits
-        XCTAssertNotNil(extractedLimits, "relayNotifyLimits must not be nil")
-        XCTAssertEqual(extractedLimits?.maxFrame, limits.maxFrame)
-        XCTAssertEqual(extractedLimits?.maxChunk, limits.maxChunk)
+        let extractedLimits = try frame.relayNotifyLimits()
+        XCTAssertEqual(extractedLimits.maxFrame, limits.maxFrame)
+        XCTAssertEqual(extractedLimits.maxChunk, limits.maxChunk)
 
         // Test accessors on wrong frame type return nil
         let req = Frame.req(id: .newUUID(), capUrn: "cap:test", payload: Data(), contentType: "text/plain")
-        XCTAssertNil(req.relayNotifyManifest, "relayNotifyManifest on REQ must be nil")
-        XCTAssertNil(req.relayNotifyLimits, "relayNotifyLimits on REQ must be nil")
+        XCTAssertThrowsError(try req.relayNotifyManifest(), "a RelayNotify field read from a REQ is an error")
+        XCTAssertThrowsError(try req.relayNotifyLimits(), "a RelayNotify field read from a REQ is an error")
     }
 
     // TEST402: Verify relay_state factory stores resource payload in frame payload field
@@ -1406,28 +1404,55 @@ final class CborFrameTests: XCTestCase {
 
         XCTAssertEqual(decoded.frameType, FrameType.relayNotify)
 
-        let extractedManifest = decoded.relayNotifyManifest
-        XCTAssertNotNil(extractedManifest, "manifest must survive roundtrip")
+        let extractedManifest = try decoded.relayNotifyManifest()
         XCTAssertEqual(extractedManifest, manifest)
 
-        let extractedLimits = decoded.relayNotifyLimits
-        XCTAssertNotNil(extractedLimits, "limits must survive roundtrip")
-        XCTAssertEqual(extractedLimits?.maxFrame, limits.maxFrame)
-        XCTAssertEqual(extractedLimits?.maxChunk, limits.maxChunk)
-        XCTAssertEqual(extractedLimits?.maxReorderBuffer, limits.maxReorderBuffer)
-        XCTAssertEqual(extractedLimits?.initialCredit, limits.initialCredit)
+        let extractedLimits = try decoded.relayNotifyLimits()
+        XCTAssertEqual(extractedLimits.maxFrame, limits.maxFrame)
+        XCTAssertEqual(extractedLimits.maxChunk, limits.maxChunk)
+        XCTAssertEqual(extractedLimits.maxReorderBuffer, limits.maxReorderBuffer)
+        XCTAssertEqual(extractedLimits.initialCredit, limits.initialCredit)
 
         var missingCredit = decoded
         var missingCreditMeta = try XCTUnwrap(missingCredit.meta)
         missingCreditMeta.removeValue(forKey: "initial_credit")
         missingCredit.meta = missingCreditMeta
-        XCTAssertNil(missingCredit.relayNotifyLimits, "v4 RelayNotify must declare initial_credit")
+        XCTAssertThrowsError(try missingCredit.relayNotifyLimits(), "v4 RelayNotify must declare initial_credit")
 
         var zeroCredit = decoded
         var zeroCreditMeta = try XCTUnwrap(zeroCredit.meta)
         zeroCreditMeta["initial_credit"] = .unsignedInt(0)
         zeroCredit.meta = zeroCreditMeta
-        XCTAssertNil(zeroCredit.relayNotifyLimits, "v4 RelayNotify initial_credit must be positive")
+        XCTAssertThrowsError(try zeroCredit.relayNotifyLimits(), "v4 RelayNotify initial_credit must be positive")
+    }
+
+    // TEST7198: relayNotifyLimits refuses a RelayNotify whose limits are not
+    // all present and positive integers, naming the key: initial_credit
+    // missing, max_chunk zero, max_frame text. relayNotifyManifest refuses a
+    // RelayNotify with no manifest.
+    func test7198_relayNotifyLimitsAreReadStrictly() throws {
+        func withMeta(_ change: (inout [String: CBOR]) -> Void) -> Frame {
+            var frame = Frame.relayNotify(manifest: Data("{}".utf8), limits: Limits())
+            var meta = frame.meta!
+            change(&meta)
+            frame.meta = meta
+            return frame
+        }
+        let cases: [(String, (inout [String: CBOR]) -> Void)] = [
+            ("initial_credit", { $0.removeValue(forKey: "initial_credit") }),
+            ("max_chunk", { $0["max_chunk"] = .unsignedInt(0) }),
+            ("max_frame", { $0["max_frame"] = .utf8String("big") }),
+        ]
+        for (key, change) in cases {
+            XCTAssertThrowsError(try withMeta(change).relayNotifyLimits()) { error in
+                XCTAssertTrue("\(error)".contains(key), "\(key): \(error)")
+            }
+        }
+        XCTAssertThrowsError(try withMeta { $0.removeValue(forKey: "manifest") }.relayNotifyManifest()) { error in
+            XCTAssertTrue("\(error)".contains("manifest"), "\(error)")
+        }
+        let whole = try withMeta { _ in }.relayNotifyLimits()
+        XCTAssertEqual(whole.initialCredit, Limits().initialCredit)
     }
 
     // TEST522: RelayState CBOR roundtrip preserves payload
@@ -1839,7 +1864,7 @@ final class CborFrameTests: XCTestCase {
         let decoded = try decodeFrame(encoded)
 
         XCTAssertEqual(decoded.frameType, .relayNotify)
-        XCTAssertEqual(decoded.relayNotifyManifest, Data())
+        XCTAssertEqual(try decoded.relayNotifyManifest(), Data())
     }
 
     // TEST526: RelayState with empty payload is valid
@@ -1862,7 +1887,7 @@ final class CborFrameTests: XCTestCase {
         let decoded = try decodeFrame(encoded)
 
         XCTAssertEqual(decoded.frameType, .relayNotify)
-        XCTAssertEqual(decoded.relayNotifyManifest, largeManifest)
+        XCTAssertEqual(try decoded.relayNotifyManifest(), largeManifest)
     }
 
     // TEST528: RelayNotify and RelayState use MessageId::Uint(0)

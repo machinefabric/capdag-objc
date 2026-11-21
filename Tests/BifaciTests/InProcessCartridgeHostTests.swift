@@ -130,7 +130,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         // First frame should be RelayNotify with manifest
         let notify = try! reader.read()!
         XCTAssertEqual(notify.frameType, .relayNotify)
-        let manifest = notify.relayNotifyManifest!
+        let manifest = try notify.relayNotifyManifest()
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         let caps = payload.capUrns()
         XCTAssertTrue(caps.count >= 2) // identity + echo cap

@@ -819,26 +819,50 @@ public struct Frame: @unchecked Sendable {
         }
     }
 
-    /// Extract manifest from RELAY_NOTIFY metadata
-    public var relayNotifyManifest: Data? {
-        guard frameType == .relayNotify, let meta = meta, case .byteString(let bytes) = meta["manifest"] else {
-            return nil
+    /// The manifest a RelayNotify carries. Every RelayNotify carries one: a
+    /// frame of another type, a RelayNotify with no meta, no manifest, or a
+    /// manifest that is not a byte string, throws a protocol error naming it.
+    public func relayNotifyManifest() throws -> Data {
+        let meta = try relayNotifyMeta()
+        guard let value = meta["manifest"] else {
+            throw FrameError.protocolError("RelayNotify carries no manifest")
+        }
+        guard case .byteString(let bytes) = value else {
+            throw FrameError.protocolError("RelayNotify manifest is not a byte string")
         }
         return Data(bytes)
     }
 
-    /// Extract limits from RELAY_NOTIFY metadata
-    /// Returns nil if any required field is missing (a protocol violation)
-    public var relayNotifyLimits: Limits? {
-        guard frameType == .relayNotify, let meta = meta,
-              case .unsignedInt(let maxFrame) = meta["max_frame"],
-              case .unsignedInt(let maxChunk) = meta["max_chunk"],
-              case .unsignedInt(let maxReorderBuffer) = meta["max_reorder_buffer"],
-              case .unsignedInt(let initialCredit) = meta["initial_credit"],
-              initialCredit > 0 else {
-            return nil
+    /// The four limits a RelayNotify carries. Every RelayNotify carries all
+    /// four, each a positive integer: one missing, or one that is not a
+    /// positive integer, throws a protocol error naming the key.
+    public func relayNotifyLimits() throws -> Limits {
+        let meta = try relayNotifyMeta()
+        func positive(_ key: String) throws -> UInt64 {
+            guard let value = meta[key] else {
+                throw FrameError.protocolError("RelayNotify limits: '\(key)' is missing")
+            }
+            guard case .unsignedInt(let n) = value, n > 0, n <= UInt64(Int.max) else {
+                throw FrameError.protocolError("RelayNotify limits: '\(key)' is \(value), not a positive integer")
+            }
+            return n
         }
-        return Limits(maxFrame: Int(maxFrame), maxChunk: Int(maxChunk), maxReorderBuffer: Int(maxReorderBuffer), initialCredit: initialCredit)
+        return Limits(
+            maxFrame: Int(try positive("max_frame")),
+            maxChunk: Int(try positive("max_chunk")),
+            maxReorderBuffer: Int(try positive("max_reorder_buffer")),
+            initialCredit: try positive("initial_credit")
+        )
+    }
+
+    private func relayNotifyMeta() throws -> [String: CBOR] {
+        guard frameType == .relayNotify else {
+            throw FrameError.protocolError("a RelayNotify field read from a \(frameType) frame")
+        }
+        guard let meta = meta else {
+            throw FrameError.protocolError("RelayNotify carries no meta")
+        }
+        return meta
     }
 
     /// Extract max_frame from HELLO metadata

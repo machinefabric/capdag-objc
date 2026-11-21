@@ -19,11 +19,11 @@ final class CborSyncRosterTests: XCTestCase {
     /// Read the next RelayNotify frame from the engine side and return the
     /// installed-cartridge ids it advertises. Returns an empty array if the
     /// relay closes first.
-    private func readNotifyIDs(_ reader: FrameReader) -> [String] {
+    private func readNotifyIDs(_ reader: FrameReader) throws -> [String] {
         while true {
             guard let frame = (try? reader.read()) ?? nil else { return [] }
             if frame.frameType == .relayNotify {
-                let bytes = frame.relayNotifyManifest ?? Data()
+                let bytes = try frame.relayNotifyManifest()
                 guard let payload = try? JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: bytes) else {
                     return []
                 }
@@ -72,7 +72,7 @@ final class CborSyncRosterTests: XCTestCase {
         let engineReader = FrameReader(handle: hostToEngine.fileHandleForReading)
 
         // Initial RelayNotify (empty roster).
-        let initial = readNotifyIDs(engineReader)
+        let initial = try readNotifyIDs(engineReader)
 
         // Add the cartridge live — the registered-dir analog of SyncRoster's
         // added spec. capGroups carries a CAP_IDENTITY so the record is a fully
@@ -90,11 +90,11 @@ final class CborSyncRosterTests: XCTestCase {
         host.syncDiscoveryOutcomes([
             .discovered(path: entry.path, cartridgeDir: versionDir.path, capGroups: capGroups, bundleSHA256: nil)
         ])
-        let afterAdd = readNotifyIDs(engineReader)
+        let afterAdd = try readNotifyIDs(engineReader)
 
         // Remove it again (empty roster).
         host.syncDiscoveryOutcomes([])
-        let afterRemove = readNotifyIDs(engineReader)
+        let afterRemove = try readNotifyIDs(engineReader)
 
         // Let run() exit by closing the relay.
         engineToHost.fileHandleForWriting.closeFile()

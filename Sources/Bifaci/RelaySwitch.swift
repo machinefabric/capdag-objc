@@ -624,9 +624,13 @@ public final class RelaySwitch: @unchecked Sendable {
                 throw RelaySwitchError.protocolError("master \(masterIdx): expected RelayNotify, got \(notifyFrame.frameType)")
             }
 
-            guard var capsPayload = notifyFrame.relayNotifyManifest,
-                  var masterLimits = notifyFrame.relayNotifyLimits else {
-                throw RelaySwitchError.protocolError("master \(masterIdx): RelayNotify missing manifest or limits")
+            var capsPayload: Data
+            var masterLimits: Limits
+            do {
+                capsPayload = try notifyFrame.relayNotifyManifest()
+                masterLimits = try notifyFrame.relayNotifyLimits()
+            } catch {
+                throw RelaySwitchError.protocolError("master \(masterIdx): \(error)")
             }
 
             var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
@@ -694,14 +698,10 @@ public final class RelaySwitch: @unchecked Sendable {
                     case .relayNotify:
                         // CartridgeHostRuntime sends the full RelayNotify (with all caps)
                         // through RelaySlave during identity verification. Update caps.
-                        if let manifest = frame.relayNotifyManifest {
-                            capsPayload = manifest
-                            notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                            caps = notifyPayload.capUrns()
-                        }
-                        if let newLimits = frame.relayNotifyLimits {
-                            masterLimits = newLimits
-                        }
+                        capsPayload = try frame.relayNotifyManifest()
+                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                        caps = notifyPayload.capUrns()
+                        masterLimits = try frame.relayNotifyLimits()
                     case .streamStart:
                         break // Expected, no action needed
                     case .chunk:
@@ -829,24 +829,33 @@ public final class RelaySwitch: @unchecked Sendable {
 
                 // Intercept RelayNotify before sending to queue
                 if frame.frameType == .relayNotify {
+                    // The manifest and the limits are both read before
+                    // anything is changed: a RelayNotify missing either, or
+                    // with a limit that is not a positive integer, throws to
+                    // the catch below, which ends the master and leaves what
+                    // it last said.
+                    let manifest = try frame.relayNotifyManifest()
+                    let limits = try frame.relayNotifyLimits()
+                    // Detect an empty→non-empty cap transition and, if so,
+                    // hold the master unhealthy and queue a deferred runtime
+                    // identity probe before its new caps become routable. See
+                    // applyRelayNotifyUpdate. Its failure is carried out of
+                    // the lock and thrown — never thrown with the lock held
+                    // (that would deadlock this thread's own catch handler
+                    // below).
+                    var updateFailure: Error?
                     lock.lock()
-                    if !isShutdown,
-                       let manifest = frame.relayNotifyManifest,
-                       let limits = frame.relayNotifyLimits {
-                        // Detect an empty→non-empty cap transition and, if so,
-                        // hold the master unhealthy and queue a deferred
-                        // runtime identity probe before its new caps become
-                        // routable. See applyRelayNotifyUpdate. A malformed
-                        // payload is logged and skipped — never thrown with
-                        // the lock held (that would deadlock this thread's
-                        // own catch handler below).
+                    if !isShutdown {
                         do {
                             try applyRelayNotifyUpdate(sourceIdx: masterIdx, manifest: manifest, newLimits: limits)
                         } catch {
-                            fputs("[RelaySwitch] master \(masterIdx): RelayNotify update failed: \(error)\n", stderr)
+                            updateFailure = error
                         }
                     }
                     lock.unlock()
+                    if let updateFailure {
+                        throw RelaySwitchError.protocolError("master \(masterIdx): RelayNotify update failed: \(updateFailure)")
+                    }
                     continue
                 }
 
@@ -1027,9 +1036,13 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError("new master \(masterIdx): expected RelayNotify, got \(notifyFrame.frameType)")
         }
 
-        guard var capsPayload = notifyFrame.relayNotifyManifest,
-              var masterLimits = notifyFrame.relayNotifyLimits else {
-            throw RelaySwitchError.protocolError("new master \(masterIdx): RelayNotify missing manifest or limits")
+        var capsPayload: Data
+        var masterLimits: Limits
+        do {
+            capsPayload = try notifyFrame.relayNotifyManifest()
+            masterLimits = try notifyFrame.relayNotifyLimits()
+        } catch {
+            throw RelaySwitchError.protocolError("new master \(masterIdx): \(error)")
         }
 
         var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
@@ -1104,14 +1117,10 @@ public final class RelaySwitch: @unchecked Sendable {
 
                     switch frame.frameType {
                     case .relayNotify:
-                        if let manifest = frame.relayNotifyManifest {
-                            capsPayload = manifest
-                            notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                            caps = notifyPayload.capUrns()
-                        }
-                        if let newLimits = frame.relayNotifyLimits {
-                            masterLimits = newLimits
-                        }
+                        capsPayload = try frame.relayNotifyManifest()
+                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                        caps = notifyPayload.capUrns()
+                        masterLimits = try frame.relayNotifyLimits()
                     case .streamStart, .streamEnd:
                         break
                     case .chunk:
@@ -1766,7 +1775,7 @@ public final class RelaySwitch: @unchecked Sendable {
             return .none
         case .master(let masterIdx, _, .some(let error)):
             fputs("[RelaySwitch] Error reading from master \(masterIdx): \(error)\n", stderr)
-            try handleMasterDeath(masterIdx)
+            try handleMasterDeath(masterIdx, error: error)
             return .none
         case .master(let masterIdx, .none, .none):
             try handleMasterDeath(masterIdx)
@@ -2280,10 +2289,9 @@ public final class RelaySwitch: @unchecked Sendable {
             // intercepted in the reader loop; both sites share the helper
             // so the behaviour is identical. Mirrors Rust's
             // handle_master_frame RelayNotify branch.
-            if let manifest = frame.relayNotifyManifest,
-               let newLimits = frame.relayNotifyLimits {
-                try applyRelayNotifyUpdate(sourceIdx: sourceIdx, manifest: manifest, newLimits: newLimits)
-            }
+            let manifest = try frame.relayNotifyManifest()
+            let newLimits = try frame.relayNotifyLimits()
+            try applyRelayNotifyUpdate(sourceIdx: sourceIdx, manifest: manifest, newLimits: newLimits)
             // Pass through to engine (for visibility)
             return frame
 
@@ -2320,7 +2328,10 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    func handleMasterDeath(_ masterIdx: Int) throws {
+    /// A death caused by an error reading the master (a RelayNotify that
+    /// breaks the protocol, among others) records that error as the
+    /// master's `lastError`, naming what was wrong.
+    func handleMasterDeath(_ masterIdx: Int, error: Error? = nil) throws {
         // Every slot behind this master goes unavailable. Queued work is NOT
         // failed here: it rides the admission grace window in case the master
         // reconnects.
@@ -2335,6 +2346,9 @@ public final class RelaySwitch: @unchecked Sendable {
         // slot (probe pending) whose socket then closes must detach too,
         // or the host could never reconnect to it.
         masters[masterIdx].detached = true
+        if let error {
+            masters[masterIdx].lastError = "\(error)"
+        }
 
         // The requests held for its cartridges have nobody left to answer.
         if let providing = peerProviding {

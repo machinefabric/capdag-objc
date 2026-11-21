@@ -316,6 +316,33 @@ final class StreamingAPITests: XCTestCase {
         XCTAssertEqual(first.isSequence, false, "STREAM_START must carry isSequence=false")
     }
 
+    // TEST7189: An array emitted after bytes still in the coalescing buffer
+    // does not overtake them: the bytes ship first, then the array's
+    // elements, each its own chunk, and STREAM_END counts all three.
+    func test7189_arrayEmissionIsAnOrderingBarrier() async throws {
+        let captured = CaptureFrameSender()
+        let output = Bifaci.OutputStream(
+            sender: captured,
+            streamId: "stream-1",
+            mediaUrn: "media:test",
+            requestId: .uint(1),
+            routingId: nil,
+            maxChunk: 256_000
+        )
+        try output.start(isSequence: false)
+        try await output.write(Data("abc".utf8))
+        try await output.emitCbor(.array([.unsignedInt(1), .unsignedInt(2)]))
+        try await output.close()
+
+        let payloads = try captured.frames
+            .filter { $0.frameType == .chunk }
+            .map { try CBOR.decode([UInt8]($0.payload ?? Data())) }
+        XCTAssertEqual(payloads, [.byteString(Array("abc".utf8)), .unsignedInt(1), .unsignedInt(2)],
+                       "the buffered bytes ship before the array's elements")
+        let streamEnd = captured.frames.first { $0.frameType == .streamEnd }
+        XCTAssertEqual(streamEnd?.chunkCount, 3)
+    }
+
     // TEST540: OutputStream::close sends STREAM_END with correct chunk_count
     func test540_outputStreamCloseSendsStreamEnd() throws {
         var sentFrames: [Frame] = []
