@@ -89,9 +89,6 @@ static NSError *_Nullable CSFetchOutcome(NSString *what, NSString *urlString, ui
 // The anchor of MachineFabric's production fabric, used when nothing names
 // another. Only the anchor: where its objects are is read from its charter.
 static NSString * const DEFAULT_FABRIC_ANCHOR = @"https://fabric.capdag.com";
-// How long a defver-0 entry is kept, in whole hours: cache entries carry it,
-// and `cached_at`, as integers, as every capdag library writes them.
-static const uint64_t CACHE_DURATION_HOURS = 24;
 static const NSTimeInterval HTTP_TIMEOUT_SECONDS = 10.0;
 
 // MARK: - CSFabricRegistryConfig
@@ -136,11 +133,31 @@ NSString *_Nullable CSNormalizeAliasName(NSString *name, NSError *_Nullable *_Nu
             @"alias name '%@' contains ':' — aliases must never look like a tagged URN", name]);
         return nil;
     }
-    if ([name rangeOfCharacterFromSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]].location != NSNotFound) {
+    // Unicode White_Space (Rust's char::is_whitespace), which no Foundation
+    // character set is exactly.
+    static NSCharacterSet *whiteSpace = nil;
+    static dispatch_once_t whiteSpaceOnce;
+    dispatch_once(&whiteSpaceOnce, ^{
+        NSMutableCharacterSet *set = [NSMutableCharacterSet new];
+        [set addCharactersInRange:NSMakeRange(0x09, 5)];
+        for (NSNumber *cp in @[@0x20, @0x85, @0xA0, @0x1680, @0x2028, @0x2029, @0x202F, @0x205F, @0x3000]) {
+            [set addCharactersInRange:NSMakeRange(cp.unsignedIntegerValue, 1)];
+        }
+        [set addCharactersInRange:NSMakeRange(0x2000, 11)];
+        whiteSpace = [set copy];
+    });
+    if ([name rangeOfCharacterFromSet:whiteSpace].location != NSNotFound) {
         if (error) *error = mk([NSString stringWithFormat:@"alias name '%@' contains whitespace", name]);
         return nil;
     }
-    NSString *lowered = [name lowercaseString];
+    // Only A-Z is lowercased: Unicode case mapping would turn a non-ASCII
+    // letter such as KELVIN SIGN into an ASCII one.
+    NSMutableString *lowered = [NSMutableString stringWithCapacity:name.length];
+    for (NSUInteger i = 0; i < name.length; i++) {
+        unichar ch = [name characterAtIndex:i];
+        if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';
+        [lowered appendFormat:@"%C", ch];
+    }
     static NSCharacterSet *allowed = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -381,15 +398,10 @@ static BOOL CSReadCacheFile(NSString *path, NSString *what,
     return YES;
 }
 
-/// The body of the cache entry `entry` (`{"<bodyKey>": {...}, "cached_at": <s>,
-/// "ttl_hours": <h>}`), or nil with `*detail` saying what is wrong with it.
+/// The body of the cache entry `entry` (`{"<bodyKey>": {...}}`), or nil with
+/// `*detail` saying what is wrong with it. A published version never changes,
+/// so an entry never expires.
 static NSDictionary *_Nullable CSCacheEntryBody(NSDictionary *entry, NSString *bodyKey, NSString *_Nullable *_Nonnull detail) {
-    for (NSString *field in @[@"cached_at", @"ttl_hours"]) {
-        if (![entry[field] isKindOfClass:[NSNumber class]]) {
-            *detail = [NSString stringWithFormat:@"its '%@' is %@", field, entry[field] ? @"not a number" : @"missing"];
-            return nil;
-        }
-    }
     id body = entry[bodyKey];
     if (![body isKindOfClass:[NSDictionary class]]) {
         *detail = [NSString stringWithFormat:@"its '%@' is %@", bodyKey, body ? @"not an object" : @"missing"];
@@ -398,12 +410,44 @@ static NSDictionary *_Nullable CSCacheEntryBody(NSDictionary *entry, NSString *b
     return body;
 }
 
-/// Whether a cache entry is older than its time to live. Only a defver-0
-/// definition (the flat, mutable regime) is held to it.
-static BOOL CSCacheEntryIsExpired(NSDictionary *entry) {
-    double cachedAt = [entry[@"cached_at"] doubleValue];
-    double ttlHours = [entry[@"ttl_hours"] doubleValue];
-    return [[NSDate date] timeIntervalSince1970] > cachedAt + ttlHours * 3600.0;
+/// Why the cap a registry served for `normalizedUrn` at `defver` is not that
+/// cap at that version, or nil when it is. Mirrors Rust checked_cap_definition.
+static NSError *_Nullable CSServedCapError(CSCap *cap, NSString *normalizedUrn, uint32_t defver) {
+    NSError *urnError = nil;
+    NSString *served = [[CSCapUrn fromString:[cap.capUrn toString] error:&urnError] toString];
+    if (!served) return CSRegistryError(1001, urnError.localizedDescription ?: @"the served cap's URN does not parse", nil);
+    if (![served isEqualToString:normalizedUrn]) {
+        return CSRegistryError(1001, [NSString stringWithFormat:@"cap object URN '%@' does not match requested URN '%@'", [cap.capUrn toString], normalizedUrn], nil);
+    }
+    if (cap.version != defver) {
+        return CSRegistryError(1001, [NSString stringWithFormat:@"cap '%@' object reports version %u but manifest pins defver %u", normalizedUrn, cap.version, defver], nil);
+    }
+    return nil;
+}
+
+/// Why the media definition a registry served for `normalizedUrn` at `defver`
+/// is not that definition at that version, or nil when it is. Mirrors Rust
+/// checked_media_def.
+static NSError *_Nullable CSServedMediaDefError(NSDictionary *spec, NSString *normalizedUrn, uint32_t defver) {
+    id rawUrn = spec[@"urn"];
+    id rawVersion = spec[@"version"];
+    if (![rawUrn isKindOfClass:[NSString class]]) {
+        return CSRegistryError(1001, [NSString stringWithFormat:@"media def '%@' object has no 'urn' string", normalizedUrn], nil);
+    }
+    if (rawVersion != nil && ![rawVersion isKindOfClass:[NSNumber class]]) {
+        return CSRegistryError(1001, [NSString stringWithFormat:@"media def '%@' object's 'version' is not a number", normalizedUrn], nil);
+    }
+    NSError *urnError = nil;
+    NSString *served = [[CSMediaUrn fromString:rawUrn error:&urnError] toString];
+    if (!served) return CSRegistryError(1001, urnError.localizedDescription ?: @"the served media def's URN does not parse", nil);
+    if (![served isEqualToString:normalizedUrn]) {
+        return CSRegistryError(1001, [NSString stringWithFormat:@"media def object URN '%@' does not match requested URN '%@'", rawUrn, normalizedUrn], nil);
+    }
+    uint32_t version = [rawVersion unsignedIntValue];
+    if (version != defver) {
+        return CSRegistryError(1001, [NSString stringWithFormat:@"media def '%@' object reports version %u but manifest pins defver %u", normalizedUrn, version, defver], nil);
+    }
+    return nil;
 }
 
 /// Remove one file or folder of the shared cache, which a peer may be removing
@@ -444,7 +488,9 @@ static BOOL CSRemoveContents(NSString *folder, NSError *_Nullable *_Nullable err
 
 /// What makes `manifest` not one this library reads, or nil when it is: the
 /// `dims` map (dim name -> defver) is required, and `caps`, `media` and
-/// `aliases`, when present, map names to defvers.
+/// `aliases`, when present, map names to defvers, each 1 or later (every
+/// definition a registry serves is at version 1 or later, so a 0 names nothing
+/// a reader could fetch).
 static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
     id dims = manifest[@"dims"];
     if (![dims isKindOfClass:[NSDictionary class]]) {
@@ -465,6 +511,10 @@ static NSError *_Nullable CSManifestRefusal(NSDictionary *manifest) {
                 return CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
                     @"manifest v%@ '%@' entry '%@' is not %@ mapped to a defver", manifest[@"version"], field, name,
                     [field isEqualToString:@"dims"] ? @"a dim name" : @"a name"], nil);
+            }
+            if ([defver unsignedIntValue] == 0) {
+                return CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+                    @"manifest v%@ pins '%@' at 0, which is no definition version", manifest[@"version"], name], nil);
             }
         }
     }
@@ -766,6 +816,10 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
                         format:@"CSBakedFabricManifestVersion is %u; it must be >= 1. v0 is the implicit pre-versioning state and is never a valid target (see capdag/build.rs and scripts/lib/config.sh).",
                                CSBakedFabricManifestVersion];
         }
+        if (manifestVersion < 1) {
+            [NSException raise:@"CSFabricRegistryManifestVersionInvalid"
+                        format:@"fabric manifest version 0 names no manifest; a registry is pinned at manifest 1 or later"];
+        }
         _manifestVersion = manifestVersion;
         _manifestCaps = [[NSMutableDictionary alloc] init];
         _manifestMedia = [[NSMutableDictionary alloc] init];
@@ -808,6 +862,19 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
         [self filterCachesToManifest];
     }
     return self;
+}
+
+/// Why the cap a registry served for `normalizedUrn` at `defver` is not that cap
+/// at that version, or nil when it is (CSServedCapError).
++ (nullable NSError *)servedCapError:(CSCap *)cap normalizedUrn:(NSString *)normalizedUrn defver:(uint32_t)defver {
+    return CSServedCapError(cap, normalizedUrn, defver);
+}
+
+/// Why the media definition a registry served for `normalizedUrn` at `defver`
+/// is not that definition at that version, or nil when it is
+/// (CSServedMediaDefError).
++ (nullable NSError *)servedMediaDefError:(NSDictionary *)spec normalizedUrn:(NSString *)normalizedUrn defver:(uint32_t)defver {
+    return CSServedMediaDefError(spec, normalizedUrn, defver);
 }
 
 /// Test constructor: an empty registry pinned at manifest v1, so test helpers
@@ -990,52 +1057,38 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 }
 
 // After hydrating the on-disk caches, drop any entry whose version does NOT
-// match the defver the manifest pins its URN at — a stale-snapshot or v0-flat
-// blob must never satisfy a v >= 1 lookup. At v0 the manifest is empty and the
-// alias and dim caches are cleared (aliases and dims are versioned-regime
-// concepts). Then keep a cap or media def only when every dim it names
+// match the defver the manifest pins its URN at — a stale-snapshot blob must
+// never satisfy a lookup. Then keep a cap or media def only when every dim it names
 // survived with the value it names: one whose dims did not is dropped here and
 // fetched again, with its dims, when it is next asked for — so a cached
 // definition always has its dims cached. Mirrors Rust retain_pinned.
 - (void)filterCachesToManifest {
     [self.cacheLock lock];
-    if (self.manifestVersion >= 1) {
-        NSArray<NSString *> *capKeys = [self.cachedCaps allKeys];
-        for (NSString *urn in capKeys) {
-            CSCap *cap = self.cachedCaps[urn];
-            uint32_t pinned = (uint32_t)[self.manifestCaps[urn] unsignedIntValue];
-            if (pinned != cap.version) {
-                [self.cachedCaps removeObjectForKey:urn];
-            }
+    for (NSString *urn in [self.cachedCaps allKeys]) {
+        uint32_t pinned = (uint32_t)[self.manifestCaps[urn] unsignedIntValue];
+        if (pinned != self.cachedCaps[urn].version) {
+            [self.cachedCaps removeObjectForKey:urn];
         }
-        NSArray<NSString *> *specKeys = [self.cachedSpecs allKeys];
-        for (NSString *urn in specKeys) {
-            NSDictionary *spec = self.cachedSpecs[urn];
-            uint32_t specVersion = (uint32_t)[spec[@"version"] unsignedIntValue];
-            uint32_t pinned = (uint32_t)[self.manifestMedia[urn] unsignedIntValue];
-            if (pinned != specVersion) {
-                [self.cachedSpecs removeObjectForKey:urn];
-            }
+    }
+    for (NSString *urn in [self.cachedSpecs allKeys]) {
+        uint32_t specVersion = (uint32_t)[self.cachedSpecs[urn][@"version"] unsignedIntValue];
+        uint32_t pinned = (uint32_t)[self.manifestMedia[urn] unsignedIntValue];
+        if (pinned != specVersion) {
+            [self.cachedSpecs removeObjectForKey:urn];
         }
-        NSArray<NSString *> *aliasKeys = [self.cachedAliases allKeys];
-        for (NSString *name in aliasKeys) {
-            NSDictionary *alias = self.cachedAliases[name];
-            uint32_t aliasVersion = (uint32_t)[alias[@"version"] unsignedIntValue];
-            uint32_t pinned = (uint32_t)[self.manifestAliases[name] unsignedIntValue];
-            if (pinned != aliasVersion) {
-                [self.cachedAliases removeObjectForKey:name];
-            }
+    }
+    for (NSString *name in [self.cachedAliases allKeys]) {
+        uint32_t aliasVersion = (uint32_t)[self.cachedAliases[name][@"version"] unsignedIntValue];
+        uint32_t pinned = (uint32_t)[self.manifestAliases[name] unsignedIntValue];
+        if (pinned != aliasVersion) {
+            [self.cachedAliases removeObjectForKey:name];
         }
-        for (NSString *name in [self.cachedDims allKeys]) {
-            uint32_t pinned = (uint32_t)[self.manifestDims[name] unsignedIntValue];
-            if (pinned != self.cachedDims[name].version) {
-                [self.cachedDims removeObjectForKey:name];
-            }
+    }
+    for (NSString *name in [self.cachedDims allKeys]) {
+        uint32_t pinned = (uint32_t)[self.manifestDims[name] unsignedIntValue];
+        if (pinned != self.cachedDims[name].version) {
+            [self.cachedDims removeObjectForKey:name];
         }
-    } else {
-        // v0: aliases and dims never exist on the flat path.
-        [self.cachedAliases removeAllObjects];
-        [self.cachedDims removeAllObjects];
     }
     for (NSString *urn in [self.cachedCaps allKeys]) {
         if (![self dimRefs:self.cachedCaps[urn].dims resolveIn:self.cachedDims]) {
@@ -1065,17 +1118,12 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 
 // MARK: - Defver resolution (manifest pin)
 
-// Resolve a normalized cap URN to its defver under the pinned manifest. At v0 →
-// 0 (flat path). At v >= 1 the URN MUST be in the manifest's caps map; absence
-// is a hard NotFound (no fallback to flat paths, which would 404 against a
-// versioned registry and mix snapshot versions). Mirrors Rust cap_defver.
+// Resolve a normalized cap URN to its defver under the pinned manifest. The URN
+// MUST be in the manifest's caps map; absence is a hard NotFound (no fallback,
+// which would mix snapshot versions). Mirrors Rust cap_defver.
 - (BOOL)capDefver:(uint32_t *)outDefver
     forNormalized:(NSString *)normalizedUrn
             error:(NSError *_Nullable *_Nullable)error {
-    if (self.manifestVersion == 0) {
-        *outDefver = 0;
-        return YES;
-    }
     [self.cacheLock lock];
     NSNumber *defver = self.manifestCaps[normalizedUrn];
     uint32_t mv = self.manifestVersion;
@@ -1096,10 +1144,6 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 - (BOOL)mediaDefver:(uint32_t *)outDefver
       forNormalized:(NSString *)normalizedUrn
               error:(NSError *_Nullable *_Nullable)error {
-    if (self.manifestVersion == 0) {
-        *outDefver = 0;
-        return YES;
-    }
     [self.cacheLock lock];
     NSNumber *defver = self.manifestMedia[normalizedUrn];
     uint32_t mv = self.manifestVersion;
@@ -1358,7 +1402,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     if ([v isKindOfClass:[NSNumber class]]) {
         specVersion = (uint32_t)[v unsignedIntValue];
     }
-    if (specVersion == 0 && self.manifestVersion >= 1) {
+    if (specVersion == 0) {
         specVersion = self.manifestVersion;
         NSMutableDictionary *stamped = [spec mutableCopy];
         stamped[@"version"] = @(specVersion);
@@ -1366,9 +1410,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     }
     [self insertMediaDefInMemory:spec];
     [self.cacheLock lock];
-    if (self.manifestVersion >= 1) {
-        self.manifestMedia[normalized] = @(specVersion);
-    }
+    self.manifestMedia[normalized] = @(specVersion);
     // The manifest is no longer the file it was read from.
     self.manifestFile = nil;
     [self.cacheLock unlock];
@@ -1947,10 +1989,6 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
             if (error) *error = CSCacheCorrupt(path, @"cap", holds(cachedUrn, cap.version, urn, defver));
             return nil;
         }
-        if (defver == 0 && CSCacheEntryIsExpired(entry)) {
-            NSLog(@"[CSFabricRegistry] the cached cap %@ is past its time to live", path);
-            continue;
-        }
         NSError *ruleError = nil;
         if (![CSCapValidator validateCapDefinition:cap error:&ruleError]) {
             NSLog(@"[CSFabricRegistry] dropping the cached cap %@: %@", path, ruleError.localizedDescription);
@@ -1993,10 +2031,6 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
         if (![cachedUrn isEqualToString:urn] || cachedVersion != defver) {
             if (error) *error = CSCacheCorrupt(path, @"media def", holds(cachedUrn, cachedVersion, urn, defver));
             return nil;
-        }
-        if (defver == 0 && CSCacheEntryIsExpired(entry)) {
-            NSLog(@"[CSFabricRegistry] the cached media def %@ is past its time to live", path);
-            continue;
         }
         media[cachedUrn] = spec;
     }
@@ -2144,11 +2178,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 - (BOOL)saveCapToCache:(CSCap *)cap error:(NSError *_Nullable *_Nullable)error {
     NSString *cacheFile = [self capCacheFilePathForUrn:[cap.capUrn toString] error:error];
     if (!cacheFile) return NO;
-    NSDictionary *entry = @{
-        @"definition": [cap toDictionary],
-        @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
-        @"ttl_hours": @(CACHE_DURATION_HOURS),
-    };
+    NSDictionary *entry = @{@"definition": [cap toDictionary]};
     return [[self class] storeCacheEntry:entry atPath:cacheFile what:@"cap" error:error];
 }
 
@@ -2161,11 +2191,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     }
     NSString *cacheFile = [self mediaCacheFilePathForUrn:rawUrn error:error];
     if (!cacheFile) return NO;
-    NSDictionary *entry = @{
-        @"spec": spec,
-        @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
-        @"ttl_hours": @(CACHE_DURATION_HOURS),
-    };
+    NSDictionary *entry = @{@"spec": spec};
     return [[self class] storeCacheEntry:entry atPath:cacheFile what:@"media def" error:error];
 }
 
@@ -2215,6 +2241,8 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
                                                            [NSString stringWithFormat:@"Failed to parse registry response for cap '%@': %@", urn, parseError.localizedDescription]}]);
             return;
         }
+        NSError *servedError = CSServedCapError(cap, normalized, defver);
+        if (servedError) { completion(nil, servedError); return; }
         // A definition is held to the definition rules by the side that
         // receives it as well as the side that sends it, before anything
         // caches it.
@@ -2265,6 +2293,8 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
                                                            [NSString stringWithFormat:@"Failed to parse registry response for media def '%@'", urn]}]);
             return;
         }
+        NSError *servedError = CSServedMediaDefError(json, normalized, defver);
+        if (servedError) { completion(nil, servedError); return; }
         completion(json, nil);
     }];
     [task resume];
@@ -2283,12 +2313,6 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     uint32_t mv = self.manifestVersion;
     NSNumber *defver = self.manifestAliases[normalized];
     [self.cacheLock unlock];
-    if (mv == 0) {
-        if (error) *error = [NSError errorWithDomain:@"CSFabricRegistryError" code:1021
-            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
-                @"alias '%@' cannot resolve: registry is pinned at v0 (aliases are a versioned-regime concept)", normalized]}];
-        return 0;
-    }
     if (!defver) {
         if (error) *error = [NSError errorWithDomain:@"CSFabricRegistryError" code:1022
             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:
@@ -2369,7 +2393,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     if (![name isKindOfClass:[NSString class]]) return;
     [self.cacheLock lock];
     self.cachedAliases[name] = alias;
-    if (self.manifestVersion >= 1 && [version isKindOfClass:[NSNumber class]]) {
+    if ([version isKindOfClass:[NSNumber class]]) {
         self.manifestAliases[name] = version;
     }
     [self.cacheLock unlock];
@@ -2377,19 +2401,13 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 
 // MARK: - Dim surface
 
-// Resolve a dim name to its defver under the pinned manifest. Dims exist only in
-// the versioned regime: at v0 any dim lookup is a hard NotFound. At v >= 1 the
-// name must be in the manifest's `dims` map. Mirrors Rust dim_defver.
+// Resolve a dim name to its defver under the pinned manifest. The name must be
+// in the manifest's `dims` map. Mirrors Rust dim_defver.
 - (uint32_t)dimDefverFor:(NSString *)name error:(NSError *_Nullable *_Nullable)error {
     [self.cacheLock lock];
     uint32_t mv = self.manifestVersion;
     NSNumber *defver = self.manifestDims[name];
     [self.cacheLock unlock];
-    if (mv == 0) {
-        if (error) *error = CSRegistryError(CSFabricRegistryErrorDimAtV0, [NSString stringWithFormat:
-            @"dim '%@' cannot resolve: registry is pinned at v0 (dims are a versioned-regime concept)", name], nil);
-        return 0;
-    }
     if (!defver) {
         if (error) *error = CSRegistryError(CSFabricRegistryErrorDimNotInManifest, [NSString stringWithFormat:
             @"dim '%@' is not part of manifest v%u", name, mv], nil);
@@ -2429,9 +2447,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 - (void)insertCachedDimForTest:(CSStoredDim *)dim {
     [self.cacheLock lock];
     self.cachedDims[dim.name] = dim;
-    if (self.manifestVersion >= 1) {
-        self.manifestDims[dim.name] = @(dim.version);
-    }
+    self.manifestDims[dim.name] = @(dim.version);
     [self.cacheLock unlock];
 }
 
@@ -2505,11 +2521,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
             completion(nil, checkError);
             return;
         }
-        NSDictionary *entry = @{
-            @"dim": [dim toDictionary],
-            @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]),
-            @"ttl_hours": @(CACHE_DURATION_HOURS),
-        };
+        NSDictionary *entry = @{@"dim": [dim toDictionary]};
         NSError *writeError = nil;
         if (![[self class] storeCacheEntry:entry
                                     atPath:[self dimCacheFileForName:name defver:defver]
@@ -2570,11 +2582,6 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
         holdValue(cached);
         return;
     }
-    if (mv == 0) {
-        completion(CSRegistryError(CSFabricRegistryErrorDimAtV0, [NSString stringWithFormat:
-            @"%@ names dim '%@', but the registry is pinned at v0 (dims are a versioned-regime concept)", owner, ref.dim], nil));
-        return;
-    }
     if (!defver) {
         completion(CSRegistryError(CSFabricRegistryErrorDimNotInManifest, [NSString stringWithFormat:
             @"%@ names dim '%@', which is not in manifest v%u", owner, ref.dim, mv], nil));
@@ -2593,7 +2600,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 }
 
 - (void)insertCachedCapForTest:(CSCap *)cap {
-    if (cap.version == 0 && self.manifestVersion >= 1) {
+    if (cap.version == 0) {
         cap.version = self.manifestVersion;
     }
     NSError *normError = nil;
@@ -2604,9 +2611,7 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     }
     [self.cacheLock lock];
     self.cachedCaps[normalized] = cap;
-    if (self.manifestVersion >= 1) {
-        self.manifestCaps[normalized] = @(cap.version);
-    }
+    self.manifestCaps[normalized] = @(cap.version);
     [self.cacheLock unlock];
 }
 
