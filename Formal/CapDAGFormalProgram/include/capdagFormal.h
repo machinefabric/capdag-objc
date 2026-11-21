@@ -445,6 +445,16 @@ const lungo_value *capdagFormal_wf_cap_other(const lungo_value *v);
 /* Field effect of CapDAG.Exec.WfCap.mk (borrowed). */
 const lungo_value *capdagFormal_wf_cap_effect(const lungo_value *v);
 
+/* CapDAG.Illegal */
+#define CAPDAGFORMAL_ILLEGAL_FINGERPRINT "a8ff18eaaff4ebd30f6722ab9492b959e2e1db00d14532ca7790977b3eb7a528"
+lungo_type *capdagFormal_illegal_type(void);
+#define CAPDAGFORMAL_ILLEGAL_BARE_TOP 0
+/* CapDAG.Illegal.bareTop; takes ownership of the fields. */
+lungo_value *capdagFormal_illegal_bare_top(void);
+#define CAPDAGFORMAL_ILLEGAL_NONE_NOT_INSIDE 1
+/* CapDAG.Illegal.noneNotInside; takes ownership of the fields. */
+lungo_value *capdagFormal_illegal_none_not_inside(void);
+
 /* CapDAG.Effect */
 #define CAPDAGFORMAL_EFFECT_FINGERPRINT "38c7bd3c0527cda156713cd441c9b6b92bd5df8a39108fa101449a789abcb477"
 lungo_type *capdagFormal_effect_type(void);
@@ -891,6 +901,10 @@ int32_t capdagFormal_stands(const lungo_value *cs, const lungo_value *owners, co
 /* CapDAG.Exec.accepts : CapDAG.Exec.WfCap → CapDAG.Exec.WfCap → Bool */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_accepts(const lungo_value *pattern, const lungo_value *cap, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Exec.capIllegal : CapDAG.Exec.WfCap → Option CapDAG.Illegal */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_cap_illegal(const lungo_value *c, lungo_value **result, lungo_error **error);
 
 /* CapDAG.Exec.comparable : CapDAG.Exec.WfCap → CapDAG.Exec.WfCap → Bool */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
