@@ -424,16 +424,6 @@ internal func installedCartridgeRecordFromManifest(_ manifest: Data) -> Installe
     )
 }
 
-// MARK: - Activity Timeout Constants
-
-/// Default timeout (seconds) for inactivity during cap execution.
-/// If a cartridge sends no frames for this duration, the cap is aborted.
-public let DEFAULT_ACTIVITY_TIMEOUT_SECS: UInt64 = 120
-
-/// Cap metadata key for per-cap activity timeout override.
-/// If present, its value (seconds) replaces the default timeout.
-public let ACTIVITY_TIMEOUT_METADATA_KEY: String = "activity_timeout_secs"
-
 // MARK: - Error Types
 
 /// Errors that can occur in the cartridge host

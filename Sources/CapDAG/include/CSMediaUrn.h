@@ -25,6 +25,16 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
     CSMediaUrnErrorVoidNotAtomic = 3
 };
 
+/// Two strings in Unicode code point order, as Rust orders `String`s (not
+/// `-compare:`, which orders UTF-16 code units).
+FOUNDATION_EXPORT NSComparisonResult CSCompareCodePoints(NSString *a, NSString *b);
+
+/// Two tag maps as Rust orders a `BTreeMap<String, String>`: their (key, value)
+/// pairs in key order, compared pair by pair by code point, the map whose
+/// pairs run out first coming first.
+FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, NSString *> *a,
+                                                      NSDictionary<NSString *, NSString *> *b);
+
 /// Media URN - a TaggedUrn with required "media:" prefix
 /// Mirrors Rust: pub struct MediaUrn(TaggedUrn)
 @interface CSMediaUrn : NSObject
@@ -103,6 +113,14 @@ typedef NS_ERROR_ENUM(CSMediaUrnErrorDomain, CSMediaUrnError) {
 /// Returns NO if both directions fail.
 /// Mirrors Rust: pub fn is_comparable(&self, other: &MediaUrn) -> Result<bool, MediaUrnError>
 - (BOOL)isComparableTo:(CSMediaUrn *)other;
+
+/// Structural total order of two media URNs: the prefix, then the tags as
+/// (key, stored value) pairs in key order, a URN whose pairs run out first
+/// coming first. Keys, values and prefixes compare by Unicode code point.
+/// This is the reference's order, not the order of the canonical text, which
+/// differs wherever one key is the beginning of another (`a` and `a-x`).
+/// Mirrors Rust: impl Ord for MediaUrn
+- (NSComparisonResult)compareStructurally:(CSMediaUrn *)other;
 
 /// Compute the directional coordinate delta from `base` to `self`.
 - (nullable CSTaggedUrnCoordinateDelta *)deltaFrom:(CSMediaUrn *)base error:(NSError **)error;

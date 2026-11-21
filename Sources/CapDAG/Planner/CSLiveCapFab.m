@@ -543,7 +543,10 @@
 
 // MARK: - Path Comparison (Deterministic Ordering)
 
-/// Sort by: cap_step_count asc, total specificity desc, step keys lex
+/// Sort by: cap_step_count asc, total specificity desc, then the steps compared
+/// structurally in turn, the shorter path first when one is a prefix of the
+/// other. No URN is compared as text.
+/// Mirrors Rust: LiveCapFab::compare_paths
 + (NSComparisonResult)comparePaths:(CSStrand *)a with:(CSStrand *)b {
     // 1. Fewer cap steps first
     if (a.capStepCount != b.capStepCount) {
@@ -562,16 +565,14 @@
         return specA > specB ? NSOrderedAscending : NSOrderedDescending;
     }
 
-    // 3. Lexicographic by step keys
+    // 3. Step by step, structurally
     NSUInteger minCount = MIN(a.steps.count, b.steps.count);
     for (NSUInteger i = 0; i < minCount; i++) {
-        NSString *keyA = [self stepKey:a.steps[i]];
-        NSString *keyB = [self stepKey:b.steps[i]];
-        NSComparisonResult cmp = [keyA compare:keyB];
+        NSComparisonResult cmp = [self compareStep:a.steps[i] with:b.steps[i]];
         if (cmp != NSOrderedSame) return cmp;
     }
 
-    // Shorter path first if all keys match so far
+    // Shorter path first if all steps match so far
     if (a.steps.count != b.steps.count) {
         return a.steps.count < b.steps.count ? NSOrderedAscending : NSOrderedDescending;
     }
@@ -579,15 +580,79 @@
     return NSOrderedSame;
 }
 
-+ (NSString *)stepKey:(CSStrandStep *)step {
-    switch (step.stepType) {
+/// A step's place in the structural step order: a cap, then a ForEach, then a Collect.
++ (NSInteger)stepRank:(CSStrandStepType)stepType {
+    switch (stepType) {
         case CSStrandStepTypeCap:
-            return step.capUrn ?: @"";
+            return 0;
         case CSStrandStepTypeForEach:
-            return @"foreach";
+            return 1;
         case CSStrandStepTypeCollect:
-            return @"collect";
+            return 2;
     }
+    [NSException raise:NSInternalInconsistencyException
+                format:@"strand step invariant: no step type %ld", (long)stepType];
+    return -1;
+}
+
+/// A media URN a planned step carries. The planner wrote it from a parsed URN,
+/// so one that does not parse is a broken invariant.
++ (CSMediaUrn *)stepMedia:(nullable NSString *)text {
+    NSError *error = nil;
+    CSMediaUrn *media = text != nil ? [CSMediaUrn fromString:text error:&error] : nil;
+    if (media == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"strand step invariant: '%@' parses as a media URN: %@",
+                           text, error.localizedDescription];
+    }
+    return media;
+}
+
+/// A cap URN a planned cap step carries; one that does not parse is a broken invariant.
++ (CSCapUrn *)stepCap:(nullable NSString *)text {
+    NSError *error = nil;
+    CSCapUrn *cap = text != nil ? [CSCapUrn fromString:text error:&error] : nil;
+    if (cap == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"strand step invariant: '%@' parses as a cap URN: %@",
+                           text, error.localizedDescription];
+    }
+    return cap;
+}
+
+/// Structural comparison of two strand steps: by rank; caps by their cap URNs'
+/// structural order and then the output they take (the main output, nil,
+/// before a named one); ForEach and Collect by their media URN; then each
+/// step's fromSpec and toSpec as media URNs.
+/// Mirrors Rust: LiveCapFab::compare_steps
++ (NSComparisonResult)compareStep:(CSStrandStep *)a with:(CSStrandStep *)b {
+    NSInteger rankA = [self stepRank:a.stepType];
+    NSInteger rankB = [self stepRank:b.stepType];
+    if (rankA != rankB) {
+        return rankA < rankB ? NSOrderedAscending : NSOrderedDescending;
+    }
+
+    if (a.stepType == CSStrandStepTypeCap) {
+        NSComparisonResult byCap = [[self stepCap:a.capUrn] compareStructurally:[self stepCap:b.capUrn]];
+        if (byCap != NSOrderedSame) return byCap;
+        if (a.outputUrn == nil || b.outputUrn == nil) {
+            if (a.outputUrn != nil || b.outputUrn != nil) {
+                return a.outputUrn == nil ? NSOrderedAscending : NSOrderedDescending;
+            }
+        } else {
+            NSComparisonResult byOutput =
+                [[self stepMedia:a.outputUrn] compareStructurally:[self stepMedia:b.outputUrn]];
+            if (byOutput != NSOrderedSame) return byOutput;
+        }
+    } else {
+        NSComparisonResult byMedia =
+            [[self stepMedia:a.mediaUrn] compareStructurally:[self stepMedia:b.mediaUrn]];
+        if (byMedia != NSOrderedSame) return byMedia;
+    }
+
+    NSComparisonResult byFrom = [[self stepMedia:a.fromSpec] compareStructurally:[self stepMedia:b.fromSpec]];
+    if (byFrom != NSOrderedSame) return byFrom;
+    return [[self stepMedia:a.toSpec] compareStructurally:[self stepMedia:b.toSpec]];
 }
 
 @end

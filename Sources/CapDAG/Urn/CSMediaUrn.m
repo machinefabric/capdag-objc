@@ -11,6 +11,45 @@
 
 NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
 
+NSComparisonResult CSCompareCodePoints(NSString *a, NSString *b) {
+    // UTF-8 byte order is Unicode code point order.
+    NSData *bytesA = [a dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *bytesB = [b dataUsingEncoding:NSUTF8StringEncoding];
+    if (bytesA == nil || bytesB == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"a URN component is not valid Unicode: '%@' or '%@'", a, b];
+    }
+    NSUInteger common = MIN(bytesA.length, bytesB.length);
+    int cmp = common > 0 ? memcmp(bytesA.bytes, bytesB.bytes, common) : 0;
+    if (cmp != 0) {
+        return cmp < 0 ? NSOrderedAscending : NSOrderedDescending;
+    }
+    if (bytesA.length != bytesB.length) {
+        return bytesA.length < bytesB.length ? NSOrderedAscending : NSOrderedDescending;
+    }
+    return NSOrderedSame;
+}
+
+NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, NSString *> *a,
+                                    NSDictionary<NSString *, NSString *> *b) {
+    NSComparator byCodePoint = ^NSComparisonResult(NSString *x, NSString *y) {
+        return CSCompareCodePoints(x, y);
+    };
+    NSArray<NSString *> *keysA = [a.allKeys sortedArrayUsingComparator:byCodePoint];
+    NSArray<NSString *> *keysB = [b.allKeys sortedArrayUsingComparator:byCodePoint];
+    NSUInteger common = MIN(keysA.count, keysB.count);
+    for (NSUInteger i = 0; i < common; i++) {
+        NSComparisonResult byKey = CSCompareCodePoints(keysA[i], keysB[i]);
+        if (byKey != NSOrderedSame) return byKey;
+        NSComparisonResult byValue = CSCompareCodePoints(a[keysA[i]], b[keysB[i]]);
+        if (byValue != NSOrderedSame) return byValue;
+    }
+    if (keysA.count != keysB.count) {
+        return keysA.count < keysB.count ? NSOrderedAscending : NSOrderedDescending;
+    }
+    return NSOrderedSame;
+}
+
 @implementation CSMediaUrn
 
 + (NSString *)PREFIX {
@@ -139,6 +178,12 @@ NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
     BOOL reverse = [other accepts:self error:&err];
     if (!err && reverse) return YES;
     return NO;
+}
+
+- (NSComparisonResult)compareStructurally:(CSMediaUrn *)other {
+    NSComparisonResult byPrefix = CSCompareCodePoints(self.inner.prefix, other.inner.prefix);
+    if (byPrefix != NSOrderedSame) return byPrefix;
+    return CSCompareTagMaps(self.tags, other.tags);
 }
 
 - (nullable CSTaggedUrnCoordinateDelta *)deltaFrom:(CSMediaUrn *)base error:(NSError **)error {

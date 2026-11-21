@@ -7,6 +7,7 @@
 
 #import <XCTest/XCTest.h>
 #import "CapDAG.h"
+#import "CSMediaUrn.h"
 
 @interface CSCapUrnTests : XCTestCase
 @end
@@ -2120,6 +2121,42 @@ static NSString* testUrn(NSString *tags) {
     // out=4 markers (8), in=2 markers (4), y=1 marker (2)
     // 10000*8 + 100*4 + 2 = 80402
     XCTAssertEqual([cap specificity], (NSUInteger)(10000*8 + 100*4 + 2));
+}
+
+// TEST8070: Cap and media URNs order by their structure, never by their text: a tag key that begins another (`a`, `a-x`) comes first, though as text `a-x=` sorts first
+- (void)test8070_capAndMediaUrnsOrderStructurallyNotByText {
+    NSError *error = nil;
+    CSCapUrn *plain = [CSCapUrn fromString:@"cap:a=b;in=\"media:format-a\";out=\"media:format-c\"" error:&error];
+    XCTAssertNotNil(plain, @"%@", error);
+    CSCapUrn *dashed = [CSCapUrn fromString:@"cap:a-x=c;in=\"media:format-a\";out=\"media:format-c\"" error:&error];
+    XCTAssertNotNil(dashed, @"%@", error);
+
+    XCTAssertEqual([[dashed toString] compare:[plain toString] options:NSLiteralSearch], NSOrderedAscending,
+                   @"as text the dashed cap sorts first");
+    XCTAssertEqual([plain compareStructurally:dashed], NSOrderedAscending);
+    XCTAssertEqual([dashed compareStructurally:plain], NSOrderedDescending);
+    XCTAssertEqual([plain compareStructurally:plain], NSOrderedSame);
+
+    CSMediaUrn *mediaPlain = [CSMediaUrn fromString:@"media:a=b" error:&error];
+    CSMediaUrn *mediaDashed = [CSMediaUrn fromString:@"media:a-x=c" error:&error];
+    XCTAssertEqual([mediaPlain compareStructurally:mediaDashed], NSOrderedAscending);
+    XCTAssertEqual([mediaDashed compareStructurally:mediaPlain], NSOrderedDescending);
+
+    // A URN whose tags are a prefix of another's comes first.
+    CSMediaUrn *shorter = [CSMediaUrn fromString:@"media:a=b" error:&error];
+    CSMediaUrn *longer = [CSMediaUrn fromString:@"media:a=b;z=y" error:&error];
+    XCTAssertEqual([shorter compareStructurally:longer], NSOrderedAscending);
+
+    // The in side decides before the out side and the other tags.
+    CSCapUrn *inFirst = [CSCapUrn fromString:@"cap:z=z;in=\"media:format-a\";out=\"media:format-z\"" error:&error];
+    CSCapUrn *inLater = [CSCapUrn fromString:@"cap:a=a;in=\"media:format-b\";out=\"media:format-a\"" error:&error];
+    XCTAssertEqual([inFirst compareStructurally:inLater], NSOrderedAscending);
+
+    // Code point order, not UTF-16 order: U+FF5E is below U+1F600, whose
+    // UTF-16 form begins with the surrogate 0xD83D, below 0xFF5E.
+    XCTAssertEqual(CSCompareCodePoints(@"～", @"\U0001F600"), NSOrderedAscending);
+    XCTAssertEqual(CSCompareCodePoints(@"\U0001F600", @"～"), NSOrderedDescending);
+    XCTAssertEqual(CSCompareCodePoints(@"a", @"a-x"), NSOrderedAscending);
 }
 
 @end

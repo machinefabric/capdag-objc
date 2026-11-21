@@ -129,6 +129,70 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     }
 }
 
+// Helper: a test cap from format-a to format-c whose cap URN carries the tags
+// written in tagsText (such as "convert;fast").
+static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
+    NSError *error = nil;
+    NSString *text = [NSString stringWithFormat:@"cap:%@;in=\"media:format-a\";out=\"media:format-c\"", tagsText];
+    CSCapUrn *built = [CSCapUrn fromString:text error:&error];
+    NSCAssert(built != nil, @"Failed to parse test cap URN '%@': %@", text, error);
+
+    CSCap *cap = [CSCap capWithUrn:built title:title aliases:@[@"test"]];
+    [cap addArg:[CSCapArg argWithMediaUrn:@"media:format-a"
+                                     name:@"arg1"
+                                 required:YES
+                                  sources:@[[CSArgSource stdinSourceWithMediaUrn:@"media:format-a"]]]];
+    return cap;
+}
+
+// TEST7271: Among paths with as many cap steps, the one whose steps' specificities sum higher comes first, whatever order the caps were added in
+- (void)test7271_PathsOfAsManyStepsAreOrderedBySpecificity {
+    CSCap *general = makeTaggedTestCap(@"convert", @"Convert");
+    CSCap *specific = makeTaggedTestCap(@"convert;fast", @"Convert fast");
+    XCTAssertGreaterThan([specific.capUrn specificity], [general.capUrn specificity]);
+
+    NSError *error = nil;
+    CSMediaUrn *source = [CSMediaUrn fromString:@"media:format-a" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:format-c" error:&error];
+    NSArray<NSArray<CSCap *> *> *orders = @[@[general, specific], @[specific, general]];
+    for (NSArray<CSCap *> *caps in orders) {
+        CSLiveCapFab *graph = [CSLiveCapFab graph];
+        for (CSCap *cap in caps) {
+            [graph addCap:cap];
+        }
+        NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
+        XCTAssertEqual(paths.count, 2u, @"one path through each cap");
+        CSCapUrn *first = [CSCapUrn fromString:paths[0].steps[0].capUrn error:&error];
+        XCTAssertTrue([first isEquivalent:specific.capUrn],
+                      @"the convert;fast path comes first, got %@", paths[0].steps[0].capUrn);
+    }
+}
+
+// TEST7272: Paths equal in cap steps and specificity are ordered by their cap URNs' structure, not by their text or titles
+- (void)test7272_EqualPathsAreOrderedStructurallyNotByText {
+    // Structurally the tag key `a` comes before `a-x`. As text,
+    // `cap:a-x=c;…` sorts before `cap:a=b;…` ('-' < '='), and by title
+    // "Alpha" sorts before "Zed": either would put the other path first.
+    CSCap *zed = makeTaggedTestCap(@"a=b", @"Zed");
+    CSCap *alpha = makeTaggedTestCap(@"a-x=c", @"Alpha");
+    XCTAssertEqual([zed.capUrn specificity], [alpha.capUrn specificity]);
+
+    NSError *error = nil;
+    CSMediaUrn *source = [CSMediaUrn fromString:@"media:format-a" error:&error];
+    CSMediaUrn *target = [CSMediaUrn fromString:@"media:format-c" error:&error];
+    NSArray<NSArray<CSCap *> *> *orders = @[@[zed, alpha], @[alpha, zed]];
+    for (NSArray<CSCap *> *caps in orders) {
+        CSLiveCapFab *graph = [CSLiveCapFab graph];
+        for (CSCap *cap in caps) {
+            [graph addCap:cap];
+        }
+        NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
+        XCTAssertEqual(paths.count, 2u, @"one path through each cap");
+        XCTAssertEqualObjects([paths[0].steps[0] title], @"Zed");
+        XCTAssertEqualObjects([paths[1].steps[0] title], @"Alpha");
+    }
+}
+
 // TEST1154: Sync from caps
 - (void)test1154_SyncFromCaps {
     CSLiveCapFab *graph = [CSLiveCapFab graph];

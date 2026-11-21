@@ -1070,6 +1070,32 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     return CSCapModelRelation(capdagFormal_equivalent, _formal, other->_formal, @"decide equivalence");
 }
 
+/// A cap's stored `in=` or `out=` as a media URN. The cap was parsed, so its
+/// sides are media URNs; one that is not is a broken invariant.
+static CSMediaUrn *CSCapSideMedia(NSString *spec) {
+    NSError *error = nil;
+    CSMediaUrn *media = [CSMediaUrn fromString:spec error:&error];
+    if (media == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"CSCapUrn invariant: '%@' parses as a media URN: %@",
+                           spec, error.localizedDescription];
+    }
+    return media;
+}
+
+- (NSComparisonResult)compareStructurally:(CSCapUrn *)other {
+    NSComparisonResult byIn = [CSCapSideMedia(self.inSpec) compareStructurally:CSCapSideMedia(other.inSpec)];
+    if (byIn != NSOrderedSame) return byIn;
+    NSComparisonResult byOut = [CSCapSideMedia(self.outSpec) compareStructurally:CSCapSideMedia(other.outSpec)];
+    if (byOut != NSOrderedSame) return byOut;
+    CSCapEffect effectA = [self effect];
+    CSCapEffect effectB = [other effect];
+    if (effectA != effectB) {
+        return effectA < effectB ? NSOrderedAscending : NSOrderedDescending;
+    }
+    return CSCompareTagMaps(self.tags, other.tags);
+}
+
 - (NSUInteger)specificity {
     // Weighted sum of the per-tag truth-table score across the structural
     // axes: out, in, and the cap-local y-axis tags. Effect dispatch is exact

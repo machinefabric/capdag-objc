@@ -390,6 +390,16 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)isEquivalent:(CSCapUrn * _Nonnull)other;
 
 /**
+ * Structural total order of two cap URNs: `in=` and then `out=` as media URNs
+ * (CSMediaUrn -compareStructurally:), then the effect in CSCapEffect's order
+ * (declared, none, patch, unspecified), then the remaining tags as
+ * (key, value) pairs in key order by code point. Never the order of the
+ * canonical text.
+ * Mirrors Rust: impl Ord for CapUrn
+ */
+- (NSComparisonResult)compareStructurally:(CSCapUrn * _Nonnull)other;
+
+/**
  * Get the specificity score for cap matching using graded scoring:
  *   K=v (exact value): 3 points (most specific)
  *   K=* (must-have-any): 2 points
