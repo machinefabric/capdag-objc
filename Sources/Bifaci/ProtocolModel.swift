@@ -31,8 +31,8 @@ private func count(_ n: LungoNat) -> UInt64 {
 }
 
 extension FrameType {
-    /// The model's frame type for this one. The mapping is by hand; that each
-    /// type is the one the model means by its wire number is TEST12375.
+    /// The model's frame type for this one; `init(model:)` is its exact
+    /// inverse.
     fileprivate var model: CapDAGFormal.FrameType {
         switch self {
         case .hello: return .hello
@@ -63,6 +63,36 @@ extension FrameType {
     /// Whether a frame of this type ends its flow: END or ERR. The model's
     /// decision.
     public var isTerminal: Bool { ProtocolModel.facts[self]!.terminal }
+
+    /// The frame type the model names.
+    fileprivate init(model: CapDAGFormal.FrameType) {
+        switch model {
+        case .hello: self = .hello
+        case .req: self = .req
+        case .chunk: self = .chunk
+        case .fin: self = .end
+        case .log: self = .log
+        case .err: self = .err
+        case .heartbeat: self = .heartbeat
+        case .streamStart: self = .streamStart
+        case .streamEnd: self = .streamEnd
+        case .relayNotify: self = .relayNotify
+        case .relayState: self = .relayState
+        case .cancel: self = .cancel
+        case .credit: self = .credit
+        case .closeStream: self = .closeStream
+        case .policy: self = .policy
+        }
+    }
+
+    /// The frame type a wire number names, by the model's `FrameType.ofCode`;
+    /// nil for a number that names none.
+    public static func fromCode(_ code: UInt64) -> FrameType? {
+        decided { try CapDAGFormal.ofCode(LungoNat(code)) }.map(FrameType.init(model:))
+    }
+
+    /// This frame type's wire number, by the model's `FrameType.code`.
+    public var code: UInt64 { ProtocolModel.facts[self]!.code }
 }
 
 /// The proved model's decisions, in this package's own types.
@@ -78,21 +108,17 @@ enum ProtocolModel {
 
     /// What the model says of each frame type, asked once: it is asked of
     /// every frame that moves.
-    fileprivate static let facts: [FrameType: (flow: Bool, terminal: Bool)] = {
-        var facts: [FrameType: (flow: Bool, terminal: Bool)] = [:]
+    fileprivate static let facts: [FrameType: (flow: Bool, terminal: Bool, code: UInt64)] = {
+        var facts: [FrameType: (flow: Bool, terminal: Bool, code: UInt64)] = [:]
         for frameType in FrameType.all {
             facts[frameType] = (
                 flow: decided { try CapDAGFormal.isFlow(frameType.model) },
-                terminal: decided { try CapDAGFormal.isTerminal(frameType.model) }
+                terminal: decided { try CapDAGFormal.isTerminal(frameType.model) },
+                code: count(decided { try CapDAGFormal.code(frameType.model) })
             )
         }
         return facts
     }()
-
-    /// The wire number the model gives the type this one is mapped to.
-    static func code(of frameType: FrameType) -> UInt64 {
-        count(decided { try CapDAGFormal.code(frameType.model) })
-    }
 
     // MARK: Credit
 

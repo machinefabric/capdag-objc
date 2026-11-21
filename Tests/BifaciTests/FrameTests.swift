@@ -18,41 +18,34 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - Frame Type Tests (TEST171-173)
 
-    // TEST171: Test all FrameType discriminants roundtrip through u8 conversion preserving identity
+    // TEST171: Every frame type's wire number, by the model, names it again
     func test171_frameTypeRoundtrip() {
-        let allTypes: [FrameType] = [.hello, .req, .chunk, .end, .log, .err, .heartbeat, .streamStart, .streamEnd]
-        for ft in allTypes {
-            let raw = ft.rawValue
-            let restored = FrameType(rawValue: raw)
-            XCTAssertEqual(restored, ft, "FrameType \(ft) must roundtrip through rawValue")
+        for ft in FrameType.all {
+            XCTAssertEqual(FrameType.fromCode(ft.code), ft, "FrameType \(ft) must roundtrip through its wire number")
         }
     }
 
-    // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
+    // TEST172: A wire number that names no frame type is no frame type
     func test172_invalidFrameType() {
-        XCTAssertEqual(FrameType(rawValue: 14), .closeStream, "rawValue 14 is CloseStream (the tap-off)")
-        XCTAssertEqual(FrameType(rawValue: 15), .policy, "rawValue 15 is Policy")
-        XCTAssertNil(FrameType(rawValue: 16), "rawValue 16 is one past Policy")
-        XCTAssertNil(FrameType(rawValue: 100), "rawValue 100 must be invalid")
-        XCTAssertNil(FrameType(rawValue: 255), "rawValue 255 must be invalid")
+        XCTAssertEqual(FrameType.fromCode(14), .closeStream, "14 is CloseStream (the tap-off)")
+        XCTAssertEqual(FrameType.fromCode(15), .policy, "15 is Policy")
+        XCTAssertNil(FrameType.fromCode(2), "2 names no frame type")
+        XCTAssertNil(FrameType.fromCode(16), "16 is one past Policy")
+        XCTAssertNil(FrameType.fromCode(255), "255 names no frame type")
+        XCTAssertNil(FrameType.fromCode(UInt64.max), "the largest number names no frame type")
     }
 
-    // TEST173: Test FrameType discriminant values match the wire protocol specification exactly
+    // TEST173: Each frame type's wire number is the one the wire protocol specifies
     func test173_frameTypeDiscriminantValues() {
-        XCTAssertEqual(FrameType.hello.rawValue, 0)
-        XCTAssertEqual(FrameType.req.rawValue, 1)
-        // res = 2 REMOVED - old single-response protocol no longer supported
-        XCTAssertEqual(FrameType.chunk.rawValue, 3)
-        XCTAssertEqual(FrameType.end.rawValue, 4)
-        XCTAssertEqual(FrameType.log.rawValue, 5)
-        XCTAssertEqual(FrameType.err.rawValue, 6)
-        XCTAssertEqual(FrameType.heartbeat.rawValue, 7)
-        XCTAssertEqual(FrameType.streamStart.rawValue, 8)
-        XCTAssertEqual(FrameType.streamEnd.rawValue, 9)
-        XCTAssertEqual(FrameType.relayNotify.rawValue, 10)
-        XCTAssertEqual(FrameType.relayState.rawValue, 11)
-        XCTAssertEqual(FrameType.cancel.rawValue, 12)
-        XCTAssertEqual(FrameType.credit.rawValue, 13)
+        let expected: [FrameType: UInt64] = [
+            .hello: 0, .req: 1, .chunk: 3, .end: 4, .log: 5, .err: 6, .heartbeat: 7,
+            .streamStart: 8, .streamEnd: 9, .relayNotify: 10, .relayState: 11,
+            .cancel: 12, .credit: 13, .closeStream: 14, .policy: 15,
+        ]
+        XCTAssertEqual(expected.count, FrameType.all.count)
+        for (frameType, code) in expected {
+            XCTAssertEqual(frameType.code, code, "\(frameType)")
+        }
     }
 
     // MARK: - Strict id decode (TEST7003-7005)
@@ -62,8 +55,8 @@ final class CborFrameTests: XCTestCase {
     // corruption and misroute the frame.
     func test7003_decodeRejectsMalformedIdWrongLength() {
         let map: CBOR = .map([
-            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(3),
-            .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(UInt64(FrameType.req.rawValue)),
+            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
+            .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(FrameType.req.code),
             // 5 bytes: present but not a valid 16-byte UUID.
             .unsignedInt(FrameKey.id.rawValue): .byteString([1, 2, 3, 4, 5]),
         ])
@@ -73,8 +66,8 @@ final class CborFrameTests: XCTestCase {
     // TEST7004: decodeFrame rejects an id of the wrong CBOR type as a hard error.
     func test7004_decodeRejectsMalformedIdWrongType() {
         let map: CBOR = .map([
-            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(3),
-            .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(UInt64(FrameType.req.rawValue)),
+            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
+            .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(FrameType.req.code),
             .unsignedInt(FrameKey.id.rawValue): .utf8String("not-an-id"),
         ])
         XCTAssertThrowsError(try decodeFrame(Data(map.encode())))
@@ -87,8 +80,8 @@ final class CborFrameTests: XCTestCase {
     func test7005_decodeRejectsMalformedRoutingId() {
         func base() -> [CBOR: CBOR] {
             [
-                .unsignedInt(FrameKey.version.rawValue): .unsignedInt(3),
-                .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(UInt64(FrameType.req.rawValue)),
+                .unsignedInt(FrameKey.version.rawValue): .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
+                .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(FrameType.req.code),
                 .unsignedInt(FrameKey.id.rawValue): .unsignedInt(1),
             ]
         }
@@ -986,7 +979,7 @@ final class CborFrameTests: XCTestCase {
     // TEST227: Test decode_frame rejects CBOR map with invalid frame_type value
     func test227_decodeInvalidFrameTypeValue() throws {
         let map = CBOR.map([
-            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(1),
+            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
             .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(99),
             .unsignedInt(FrameKey.id.rawValue): .unsignedInt(0)
         ])
@@ -1001,10 +994,58 @@ final class CborFrameTests: XCTestCase {
         }
     }
 
+    /// A frame of the given version and frame type with an id and nothing
+    /// else, as bytes.
+    private func handBuiltFrame(version: CBOR, frameType: CBOR) -> Data {
+        Data(CBOR.map([
+            .unsignedInt(FrameKey.version.rawValue): version,
+            .unsignedInt(FrameKey.frameType.rawValue): frameType,
+            .unsignedInt(FrameKey.id.rawValue): .unsignedInt(0),
+        ]).encode())
+    }
+
+    /// The message of the invalidFrame error decoding these bytes throws.
+    private func invalidFrameMessage(_ bytes: Data, file: StaticString = #filePath, line: UInt = #line) -> String {
+        do {
+            _ = try decodeFrame(bytes)
+            XCTFail("the frame must be refused", file: file, line: line)
+        } catch FrameError.invalidFrame(let msg) {
+            return msg
+        } catch {
+            XCTFail("Expected invalidFrame error, got \(error)", file: file, line: line)
+        }
+        return ""
+    }
+
+    // TEST7188: Every frame is of this protocol version: decodeFrame refuses a
+    // frame of another version, naming both, and a version beyond a byte is
+    // refused rather than read as the byte it wraps to (262 is not 6).
+    func test7188_decodeRefusesAnotherProtocolVersion() throws {
+        let heartbeat = CBOR.unsignedInt(FrameType.heartbeat.code)
+        let older = invalidFrameMessage(handBuiltFrame(version: .unsignedInt(5), frameType: heartbeat))
+        XCTAssertTrue(older.contains("ours 6") && older.contains("theirs 5"), older)
+        let wide = invalidFrameMessage(handBuiltFrame(version: .unsignedInt(262), frameType: heartbeat))
+        XCTAssertTrue(wide.contains("262"), wide)
+        let ours = try decodeFrame(handBuiltFrame(version: .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)), frameType: heartbeat))
+        XCTAssertEqual(ours.version, CBOR_PROTOCOL_VERSION)
+    }
+
+    // TEST7200: A frame type is read whole: decodeFrame refuses 257, 259 and
+    // -255, each naming the value, rather than reading them as the byte they
+    // wrap to — and refuses them by throwing, not by trapping.
+    func test7200_decodeRefusesFrameTypeBeyondAByte() {
+        let version = CBOR.unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
+        let cases: [(CBOR, String)] = [(.unsignedInt(257), "257"), (.unsignedInt(259), "259"), (.negativeInt(254), "-255")]
+        for (frameType, text) in cases {
+            let msg = invalidFrameMessage(handBuiltFrame(version: version, frameType: frameType))
+            XCTAssertTrue(msg.contains(text), "frame type \(text): \(msg)")
+        }
+    }
+
     // TEST228: Test decode_frame rejects CBOR map missing required id field
     func test228_decodeMissingId() throws {
         let map = CBOR.map([
-            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(1),
+            .unsignedInt(FrameKey.version.rawValue): .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION)),
             .unsignedInt(FrameKey.frameType.rawValue): .unsignedInt(1)
             // No ID field
         ])
@@ -1295,20 +1336,16 @@ final class CborFrameTests: XCTestCase {
 
     // MARK: - Relay Frame Tests (TEST399-403)
 
-    // TEST399: Verify RelayNotify frame type discriminant roundtrips through u8 (value 10)
+    // TEST399: Verify RelayNotify's wire number roundtrips (value 10)
     func test399_relayNotifyDiscriminantRoundtrip() {
-        let ft = FrameType.relayNotify
-        XCTAssertEqual(ft.rawValue, 10, "RELAY_NOTIFY must be 10")
-        let restored = FrameType(rawValue: 10)
-        XCTAssertEqual(restored, .relayNotify, "rawValue 10 must restore to relayNotify")
+        XCTAssertEqual(FrameType.relayNotify.code, 10, "RELAY_NOTIFY must be 10")
+        XCTAssertEqual(FrameType.fromCode(10), .relayNotify, "10 must name relayNotify")
     }
 
-    // TEST400: Verify RelayState frame type discriminant roundtrips through u8 (value 11)
+    // TEST400: Verify RelayState's wire number roundtrips (value 11)
     func test400_relayStateDiscriminantRoundtrip() {
-        let ft = FrameType.relayState
-        XCTAssertEqual(ft.rawValue, 11, "RELAY_STATE must be 11")
-        let restored = FrameType(rawValue: 11)
-        XCTAssertEqual(restored, .relayState, "rawValue 11 must restore to relayState")
+        XCTAssertEqual(FrameType.relayState.code, 11, "RELAY_STATE must be 11")
+        XCTAssertEqual(FrameType.fromCode(11), .relayState, "11 must name relayState")
     }
 
     // TEST401: Verify relay_notify factory stores manifest and limits, and accessors extract them
@@ -1347,14 +1384,14 @@ final class CborFrameTests: XCTestCase {
         XCTAssertEqual(frame.payload, resources)
     }
 
-    // TEST403: Verify from_u8 returns None for values past the last valid frame type
+    // TEST403: Verify fromCode returns nil for values past the last valid frame type
     func test403_invalidFrameTypePastCancel() {
-        XCTAssertEqual(FrameType(rawValue: 12), .cancel, "12 is Cancel")
-        XCTAssertEqual(FrameType(rawValue: 13), .credit, "13 is Credit")
-        XCTAssertEqual(FrameType(rawValue: 14), .closeStream, "14 is CloseStream")
-        XCTAssertEqual(FrameType(rawValue: 15), .policy, "15 is Policy")
-        XCTAssertNil(FrameType(rawValue: 16), "16 is past the last valid frame type")
-        XCTAssertNil(FrameType(rawValue: 2), "2 (old Res) is still invalid")
+        XCTAssertEqual(FrameType.fromCode(12), .cancel, "12 is Cancel")
+        XCTAssertEqual(FrameType.fromCode(13), .credit, "13 is Credit")
+        XCTAssertEqual(FrameType.fromCode(14), .closeStream, "14 is CloseStream")
+        XCTAssertEqual(FrameType.fromCode(15), .policy, "15 is Policy")
+        XCTAssertNil(FrameType.fromCode(16), "16 is past the last valid frame type")
+        XCTAssertNil(FrameType.fromCode(2), "2 (old Res) is still invalid")
     }
 
     // TEST521: RelayNotify CBOR roundtrip preserves every required v4 limit,
@@ -1607,7 +1644,7 @@ final class CborFrameTests: XCTestCase {
         // Manually construct a CHUNK frame without chunk_index
         var map: [CBOR: CBOR] = [:]
         map[.unsignedInt(FrameKey.version.rawValue)] = .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
-        map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(UInt64(FrameType.chunk.rawValue))
+        map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(FrameType.chunk.code)
         map[.unsignedInt(FrameKey.id.rawValue)] = .unsignedInt(1)
         map[.unsignedInt(FrameKey.seq.rawValue)] = .unsignedInt(0)
         map[.unsignedInt(FrameKey.payload.rawValue)] = .byteString([1, 2, 3])
@@ -1631,7 +1668,7 @@ final class CborFrameTests: XCTestCase {
         // Manually construct a CHUNK frame without checksum
         var map: [CBOR: CBOR] = [:]
         map[.unsignedInt(FrameKey.version.rawValue)] = .unsignedInt(UInt64(CBOR_PROTOCOL_VERSION))
-        map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(UInt64(FrameType.chunk.rawValue))
+        map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(FrameType.chunk.code)
         map[.unsignedInt(FrameKey.id.rawValue)] = .unsignedInt(1)
         map[.unsignedInt(FrameKey.seq.rawValue)] = .unsignedInt(0)
         map[.unsignedInt(FrameKey.payload.rawValue)] = .byteString([1, 2, 3])

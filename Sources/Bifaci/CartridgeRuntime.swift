@@ -782,6 +782,12 @@ final class CoalesceBuf {
     }
 }
 
+/// How often `runWithKeepalive` emits its progress frame, in seconds: short
+/// enough to survive thread suspension under memory pressure while resetting
+/// the engine's 120-second activity timer with a wide margin (Rust's
+/// `KEEPALIVE_INTERVAL`).
+public let KEEPALIVE_INTERVAL_SECONDS: Int = 5
+
 public final class OutputStream: @unchecked Sendable {
     private let sender: any FrameSender
     private let streamId: String
@@ -1264,17 +1270,18 @@ public final class OutputStream: @unchecked Sendable {
         try? sender.send(frame)
     }
 
-    /// Run an async operation while emitting keepalive progress frames every 30 seconds.
+    /// Run an async operation while emitting keepalive progress frames every 5 seconds
+    /// (`KEEPALIVE_INTERVAL_SECONDS`).
     ///
     /// Model loading (MLX LLM, VLM, embeddings) can take minutes for large models.
     /// The engine's 120s activity timeout kills the task if no frames arrive.
     /// This method spawns a background Task that re-emits the given progress value
-    /// every 30s, keeping the timeout reset. The keepalive Task is cancelled when
+    /// every 5 seconds, keeping the timeout reset. The keepalive Task is cancelled when
     /// the operation completes.
     public func runWithKeepalive<T>(progress progressValue: Float, message: String, operation: () async throws -> T) async throws -> T {
         let keepalive = Task { [self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
+                try? await Task.sleep(for: .seconds(KEEPALIVE_INTERVAL_SECONDS))
                 if !Task.isCancelled {
                     self.progress(progressValue, message: message)
                 }

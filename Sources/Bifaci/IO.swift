@@ -30,13 +30,19 @@ extension FrameError: LocalizedError {
 
 // MARK: - Frame Encoding
 
+/// The text of the negative integer CBOR writes as `n` (its value is -1 - n),
+/// for every n, the largest included.
+fileprivate func negativeIntegerText(_ n: UInt64) -> String {
+    n == UInt64.max ? "-18446744073709551616" : "-\(n + 1)"
+}
+
 /// Encode a frame to CBOR bytes
 public func encodeFrame(_ frame: Frame) throws -> Data {
     var map: [CBOR: CBOR] = [:]
 
     // Required fields
     map[.unsignedInt(FrameKey.version.rawValue)] = .unsignedInt(UInt64(frame.version))
-    map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(UInt64(frame.frameType.rawValue))
+    map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(frame.frameType.code)
 
     // Message ID
     switch frame.id {
@@ -183,15 +189,36 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         return nil
     }
 
-    // Extract required fields
-    guard let versionRaw = getUInt(.version) else {
+    // Extract required fields. Every frame is of this protocol version: a
+    // frame of any other is refused here, not read as one.
+    let version: UInt8
+    switch map[.unsignedInt(FrameKey.version.rawValue)] {
+    case .unsignedInt(let versionRaw)?:
+        guard let narrowed = UInt8(exactly: versionRaw) else {
+            throw FrameError.invalidFrame("version: \(versionRaw) is not a protocol version")
+        }
+        guard narrowed == CBOR_PROTOCOL_VERSION else {
+            throw FrameError.invalidFrame("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(versionRaw)")
+        }
+        version = narrowed
+    case .negativeInt(let n)?:
+        throw FrameError.invalidFrame("version: \(negativeIntegerText(n)) is not a protocol version")
+    default:
         throw FrameError.invalidFrame("Missing version")
     }
-    let version = UInt8(versionRaw)
 
-    guard let frameTypeRaw = getUInt(.frameType),
-          let frameType = FrameType(rawValue: UInt8(frameTypeRaw)) else {
-        throw FrameError.invalidFrame("Missing or invalid frame_type")
+    // The frame type is read whole and named by the model's numbering.
+    let frameType: FrameType
+    switch map[.unsignedInt(FrameKey.frameType.rawValue)] {
+    case .unsignedInt(let frameTypeRaw)?:
+        guard let named = FrameType.fromCode(frameTypeRaw) else {
+            throw FrameError.invalidFrame("invalid frame_type: \(frameTypeRaw)")
+        }
+        frameType = named
+    case .negativeInt(let n)?:
+        throw FrameError.invalidFrame("invalid frame_type: \(negativeIntegerText(n))")
+    default:
+        throw FrameError.invalidFrame("Missing frame_type")
     }
 
     // Extract ID
@@ -734,7 +761,7 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     guard let theirVersion = theirFrame.helloVersion else {
         throw FrameError.handshakeFailed("HELLO missing required version")
     }
-    guard theirVersion == CBOR_PROTOCOL_VERSION else {
+    guard theirVersion == UInt64(CBOR_PROTOCOL_VERSION) else {
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
 
@@ -810,7 +837,7 @@ public func acceptHandshakeWithManifest(
     guard let theirVersion = theirFrame.helloVersion else {
         throw FrameError.handshakeFailed("HELLO missing required version")
     }
-    guard theirVersion == CBOR_PROTOCOL_VERSION else {
+    guard theirVersion == UInt64(CBOR_PROTOCOL_VERSION) else {
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
 

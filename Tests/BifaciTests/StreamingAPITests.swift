@@ -926,7 +926,7 @@ final class StreamingAPITests: XCTestCase {
             maxChunk: DEFAULT_MAX_CHUNK
         )
 
-        // Run a fast operation — no keepalive frame expected (interval is 30s)
+        // Run a fast operation — no keepalive frame expected (interval is 5s)
         let result: Int = try await stream.runWithKeepalive(progress: 0.25, message: "Loading model") {
             42
         }
@@ -935,6 +935,33 @@ final class StreamingAPITests: XCTestCase {
         // No keepalive frame should have been emitted (operation was instant)
         let progressFrames = captured.frames.filter { $0.frameType == .log }
         XCTAssertEqual(progressFrames.count, 0, "No keepalive frame for instant operation")
+    }
+
+    // TEST7190: runWithKeepalive emits a keepalive progress frame every
+    // KEEPALIVE_INTERVAL_SECONDS while the work runs: an operation of 5.5 s
+    // produces at least one progress LOG carrying the given progress and
+    // message.
+    func test7190_runWithKeepaliveEmitsProgressEveryInterval() async throws {
+        let captured = CaptureFrameSender()
+        let stream = Bifaci.OutputStream(
+            sender: captured,
+            streamId: "stream-1",
+            mediaUrn: "media:test",
+            requestId: MessageId.newUUID(),
+            routingId: nil,
+            maxChunk: DEFAULT_MAX_CHUNK
+        )
+        XCTAssertEqual(KEEPALIVE_INTERVAL_SECONDS, 5)
+        try await stream.runWithKeepalive(progress: 0.25, message: "Loading model") {
+            try await Task.sleep(for: .milliseconds(5500))
+        }
+
+        let ticks = captured.frames.filter { $0.frameType == .log && $0.logLevel == "progress" }
+        XCTAssertFalse(ticks.isEmpty, "a 5.5 s operation must emit a keepalive progress frame")
+        for tick in ticks {
+            XCTAssertEqual(tick.logProgress, 0.25)
+            XCTAssertEqual(tick.logMessage, "Loading model")
+        }
     }
 
     // TEST843: run_with_keepalive returns Ok/Err from closure
