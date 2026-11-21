@@ -79,7 +79,7 @@ static NSString *entryPath(NSString *folder) {
 /// `folder`, whole. Answers the error, or nil when it is written.
 static NSError *_Nullable store(NSString *folder, NSDictionary *definition) {
     NSError *error = nil;
-    NSDictionary *entry = @{@"definition": definition, @"cached_at": @0, @"ttl_hours": @0};
+    NSDictionary *entry = @{@"definition": definition};
     if (![CSFabricRegistry storeCacheEntry:entry atPath:entryPath(folder) what:@"cap" error:&error]) return error;
     return nil;
 }

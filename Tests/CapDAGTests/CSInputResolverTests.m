@@ -529,6 +529,29 @@ static CSFabricRegistry *testFabricRegistry(void) {
     XCTAssertTrue([set isHomogeneous]);
 }
 
+// TEST1318: A cartridge with two incomparable adapters covering candidates of
+// one extension is returned once per adapter, so detection hands the model
+// every adapter that owns a candidate.
+- (void)test1318_adapters_for_candidates_returns_every_owning_adapter {
+    CSMediaAdapterRegistry *adapters =
+        [[CSMediaAdapterRegistry alloc] initWithFabricRegistry:self.registry];
+    NSString *record = @"media:enc=utf8;ext=json;fmt=json;record";
+    NSString *list = @"media:enc=utf8;ext=json;fmt=json;list";
+    NSArray<NSString *> *urns = @[record, list];
+    NSError *error = nil;
+    XCTAssertTrue([adapters registerCapGroup:@"g" adapterUrns:urns cartridgeId:@"datacartridge" error:&error],
+                  @"two incomparable adapters register: %@", error);
+
+    NSArray<CSMediaUrn *> *candidates = @[[CSMediaUrn fromString:record error:&error],
+                                          [CSMediaUrn fromString:list error:&error]];
+    NSArray<CSCartridgeAdapter *> *found = [adapters adaptersForCandidates:candidates];
+    XCTAssertEqual(found.count, (NSUInteger)2, @"both adapters of the cartridge must be returned");
+    XCTAssertEqualObjects(found[0].cartridgeId, @"datacartridge");
+    XCTAssertTrue([found[0].adapterUrn isEquivalentTo:candidates[0]], @"registration order: the record adapter first");
+    XCTAssertEqualObjects(found[1].cartridgeId, @"datacartridge");
+    XCTAssertTrue([found[1].adapterUrn isEquivalentTo:candidates[1]], @"then the list adapter");
+}
+
 // TEST1478: exact re-registration is idempotent — the SAME cartridge
 // re-registering the SAME group with the SAME adapter URNs (a cartridge
 // attached through two hosting routes, e.g. app-bundled AND

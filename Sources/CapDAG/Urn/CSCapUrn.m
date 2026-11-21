@@ -180,13 +180,9 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
     }
 
     if (parsedEffect == CSCapEffectNone) {
-        parseError = nil;
-        BOOL sound = [inMedia conformsTo:outMedia error:&parseError];
-        if (!sound) {
+        if (![inMedia conformsTo:outMedia]) {
             if (error) {
-                NSString *message = parseError
-                    ? [NSString stringWithFormat:@"failed to verify effect=none admissibility for in='%@' out='%@': %@", inSpec, outSpec, parseError.localizedDescription]
-                    : [NSString stringWithFormat:@"effect=none requires declared input '%@' to conform to declared output '%@'", inSpec, outSpec];
+                NSString *message = [NSString stringWithFormat:@"effect=none requires declared input '%@' to conform to declared output '%@'", inSpec, outSpec];
                 *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                              code:CSCapUrnErrorIllegalDeclaration
                                          userInfo:@{NSLocalizedDescriptionKey: message}];
@@ -219,13 +215,9 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
             return NO;
         }
 
-        parseError = nil;
-        BOOL sound = [witness conformsTo:outMedia error:&parseError];
-        if (!sound) {
+        if (![witness conformsTo:outMedia]) {
             if (error) {
-                NSString *message = parseError
-                    ? [NSString stringWithFormat:@"failed to verify effect=patch admissibility for witness '%@' against declared output '%@': %@", [witness toString], outSpec, parseError.localizedDescription]
-                    : [NSString stringWithFormat:@"effect=patch witness '%@' does not conform to declared output '%@'", [witness toString], outSpec];
+                NSString *message = [NSString stringWithFormat:@"effect=patch witness '%@' does not conform to declared output '%@'", [witness toString], outSpec];
                 *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                              code:CSCapUrnErrorIllegalDeclaration
                                          userInfo:@{NSLocalizedDescriptionKey: message}];
@@ -924,15 +916,11 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
         return nil;
     }
 
-    parseError = nil;
     // A runtime media URN is the media of a value that exists, so it is read complete: it
     // SATISFIES the declared type, or does not.
-    BOOL inputConforms = [runtimeInput satisfies:declaredIn error:&parseError];
-    if (!inputConforms) {
+    if (![runtimeInput satisfies:declaredIn]) {
         if (error) {
-            NSString *message = parseError
-                ? [NSString stringWithFormat:@"Failed to compare runtime input '%@' against declared input '%@': %@", [runtimeInput toString], [declaredIn toString], parseError.localizedDescription]
-                : [NSString stringWithFormat:@"Runtime input '%@' does not conform to declared input '%@'", [runtimeInput toString], [declaredIn toString]];
+            NSString *message = [NSString stringWithFormat:@"Runtime input '%@' does not conform to declared input '%@'", [runtimeInput toString], [declaredIn toString]];
             *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                          code:CSCapUrnErrorInvalidEffectApplication
                                      userInfo:@{NSLocalizedDescriptionKey: message}];
@@ -951,13 +939,9 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     }
 
     if (effect == CSCapEffectNone) {
-        parseError = nil;
-        BOOL outputConforms = [runtimeInput satisfies:declaredOut error:&parseError];
-        if (!outputConforms) {
+        if (![runtimeInput satisfies:declaredOut]) {
             if (error) {
-                NSString *message = parseError
-                    ? [NSString stringWithFormat:@"Failed to validate runtime output '%@' against declared output '%@': %@", [runtimeInput toString], [declaredOut toString], parseError.localizedDescription]
-                    : [NSString stringWithFormat:@"Inferred runtime output '%@' does not conform to declared output '%@'", [runtimeInput toString], [declaredOut toString]];
+                NSString *message = [NSString stringWithFormat:@"Inferred runtime output '%@' does not conform to declared output '%@'", [runtimeInput toString], [declaredOut toString]];
                 *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                              code:CSCapUrnErrorInvalidEffectApplication
                                          userInfo:@{NSLocalizedDescriptionKey: message}];
@@ -990,13 +974,9 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
         return nil;
     }
 
-    parseError = nil;
-    BOOL outputConforms = [result satisfies:declaredOut error:&parseError];
-    if (!outputConforms) {
+    if (![result satisfies:declaredOut]) {
         if (error) {
-            NSString *message = parseError
-                ? [NSString stringWithFormat:@"Failed to validate runtime output '%@' against declared output '%@': %@", [result toString], [declaredOut toString], parseError.localizedDescription]
-                : [NSString stringWithFormat:@"Inferred runtime output '%@' does not conform to declared output '%@'", [result toString], [declaredOut toString]];
+            NSString *message = [NSString stringWithFormat:@"Inferred runtime output '%@' does not conform to declared output '%@'", [result toString], [declaredOut toString]];
             *error = [NSError errorWithDomain:CSCapUrnErrorDomain
                                          code:CSCapUrnErrorInvalidEffectApplication
                                      userInfo:@{NSLocalizedDescriptionKey: message}];
@@ -1041,15 +1021,7 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
         return [runtimeOutput isEquivalentTo:inferred];
     }
     if (effect == CSCapEffectDeclared) {
-        NSError *compareError = nil;
-        BOOL conforms = [runtimeOutput satisfies:inferred error:&compareError];
-        if (!conforms && compareError) {
-            if (error) {
-                *error = compareError;
-            }
-            return NO;
-        }
-        return conforms;
+        return [runtimeOutput satisfies:inferred];
     }
     // CSCapEffectAny is unreachable — inferRuntimeOutputMedia already
     // rejected it above — but the audit must never silently pass an

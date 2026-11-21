@@ -66,25 +66,23 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, N
 /// Mirrors Rust: impl Display for MediaUrn
 - (NSString *)toString;
 
+// Every comparison below answers YES or NO. The comparisons of tagged URNs
+// fail only on a prefix mismatch, which two media URNs never have, so such a
+// failure is a programming error and raises NSInternalInconsistencyException.
+
 /// Check if this instance conforms to (can be handled by) the given pattern.
 /// Equivalent to `pattern.accepts(self)`.
-/// Mirrors Rust: pub fn conforms_to(&self, pattern: &MediaUrn) -> Result<bool, MediaUrnError>
-- (BOOL)conformsTo:(CSMediaUrn *)pattern error:(NSError **)error;
-
-/// Check if this instance conforms to (can be handled by) the given pattern - convenience without error.
-/// Throws assertion if comparison fails.
+/// Mirrors Rust: pub fn conforms_to(&self, pattern: &MediaUrn) -> bool
 - (BOOL)conformsTo:(CSMediaUrn *)pattern;
 
 /// Check if this pattern accepts the given instance.
 /// Equivalent to `instance.conformsTo(self)`.
-/// Mirrors Rust: pub fn accepts(&self, instance: &MediaUrn) -> Result<bool, MediaUrnError>
-- (BOOL)accepts:(CSMediaUrn *)instance error:(NSError **)error;
+/// Mirrors Rust: pub fn accepts(&self, instance: &MediaUrn) -> bool
+- (BOOL)accepts:(CSMediaUrn *)instance;
 
 /// Whether this media type and `other` COULD describe the same value: not a guarantee
 /// (conformsTo), and not excluded. `media:ext` meets `media:document;ext=pdf`; `media:document;ext=pdf` does
 /// not meet `media:ext=png`.
-- (BOOL)meets:(CSMediaUrn *)other error:(NSError **)error;
-/// The same, without an error out-parameter; a comparison that cannot be made raises.
 - (BOOL)meets:(CSMediaUrn *)other;
 
 /// Whether a VALUE whose media this is satisfies the type `pattern`.
@@ -93,25 +91,19 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, N
 /// it. A value that exists is complete: the tags it does not have, it does not have. Use this
 /// where the receiver is the media of actual data — a stream that arrived, an output that was
 /// produced.
-- (BOOL)satisfies:(CSMediaUrn *)pattern error:(NSError **)error;
-/// The same, without an error out-parameter; a comparison that cannot be made raises.
 - (BOOL)satisfies:(CSMediaUrn *)pattern;
 
 /// Whether a value whose media this is COULD satisfy `pattern`.
-- (BOOL)maySatisfy:(CSMediaUrn *)pattern error:(NSError **)error;
-/// The same, without an error out-parameter; a comparison that cannot be made raises.
 - (BOOL)maySatisfy:(CSMediaUrn *)pattern;
 
 /// Check if two media URNs have the exact same tag set (order-independent).
 /// Equivalent to `self.accepts(other) && other.accepts(self)`.
-/// Returns NO if either direction fails (including on parse errors).
-/// Mirrors Rust: pub fn is_equivalent(&self, other: &MediaUrn) -> Result<bool, MediaUrnError>
+/// Mirrors Rust: pub fn is_equivalent(&self, other: &MediaUrn) -> bool
 - (BOOL)isEquivalentTo:(CSMediaUrn *)other;
 
 /// Check if two media URNs are comparable (on the same specialization chain).
 /// Equivalent to `self.accepts(other) || other.accepts(self)`.
-/// Returns NO if both directions fail.
-/// Mirrors Rust: pub fn is_comparable(&self, other: &MediaUrn) -> Result<bool, MediaUrnError>
+/// Mirrors Rust: pub fn is_comparable(&self, other: &MediaUrn) -> bool
 - (BOOL)isComparableTo:(CSMediaUrn *)other;
 
 /// Structural total order of two media URNs: the prefix, then the tags as

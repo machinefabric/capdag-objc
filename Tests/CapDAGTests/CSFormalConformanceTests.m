@@ -38,14 +38,14 @@
         CSMediaUrn *b = [CSMediaUrn fromString:r[@"pattern"] error:&error];
         XCTAssertNotNil(a);
         XCTAssertNotNil(b);
-        BOOL got = [a conformsTo:b error:&error];
+        BOOL got = [a conformsTo:b];
         if (got != [r[@"refines"] boolValue]) {
             [wrong addObject:[NSString stringWithFormat:@"%@ ⪯ %@: model %@, got %d", r[@"instance"], r[@"pattern"], r[@"refines"], got]];
         }
         NSDictionary<NSString *, NSNumber *> *media = @{
-            @"meets": @([a meets:b error:&error]),
-            @"satisfies": @([a satisfies:b error:&error]),
-            @"may_satisfy": @([a maySatisfy:b error:&error]),
+            @"meets": @([a meets:b]),
+            @"satisfies": @([a satisfies:b]),
+            @"may_satisfy": @([a maySatisfy:b]),
         };
         for (NSString *name in media) {
             if (media[name].boolValue != [r[name] boolValue]) {
