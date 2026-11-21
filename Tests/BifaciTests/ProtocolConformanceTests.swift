@@ -809,6 +809,117 @@ final class ProtocolConformanceTests: XCTestCase {
             XCTAssertTrue("\(error)".contains("initial_credit"), "\(error)")
         }
     }
+
+    /// A frame of a held request's script: its type by wire number, and a
+    /// payload of `size` bytes. The REQ names its cap and has been given its
+    /// routing id, as a switch hands it to its holds.
+    private func heldFrame(_ code: UInt64, _ size: UInt64) -> Frame {
+        guard let frameType = FrameType(rawValue: UInt8(code)) else {
+            fatalError("wire number \(code) names no frame type")
+        }
+        var frame = Frame(frameType: frameType, id: .uint(1))
+        if size > 0 { frame.payload = Data(count: Int(size)) }
+        if frameType == .req {
+            frame.cap = "cap:op=a"
+            frame.routingId = .uint(9)
+        }
+        return frame
+    }
+
+    private func keptSize(_ frames: [Frame]) -> [UInt64] {
+        [UInt64(frames.count), frames.reduce(0) { $0 + UInt64($1.payload?.count ?? 0) }]
+    }
+
+    // TEST7125: a relay switch's holds do what the model says to a peer request
+    // no master serves: hold it exactly when the switch can bring a provider
+    // and the request is not itself a replay; keep each frame the caller sends
+    // while the bound allows, ending the request at the first frame that would
+    // exceed it or at a cancel; and, when bringing the provider ends, replay
+    // exactly the frames kept, REQ first, or fail the request with an ERR.
+    func test7125_peerHoldsFollowTheModel() {
+        let table = rows("hold")
+        let rid = MessageId.uint(1)
+        let refusal = PeerRefusal(code: "NO_PROVIDER", attributionClass: .resource,
+                                  message: "no cartridge provides cap:op=a")
+        var wrong: [String] = []
+        scripts: for row in table {
+            switch text(row["kind"]) {
+            case "unrouted":
+                let held = ProtocolModel.holds(canProvide: flag(row["can_provide"]), replayed: flag(row["replayed"]))
+                if held != (text(row["unrouted"]) == "hold") { wrong.append("\(row): held \(held)") }
+            case "fate":
+                let holds = PeerHoldTable(bound: PeerHoldBound(frames: 4, bytes: 64, deadline: 1))
+                XCTAssertNil(holds.hold(sourceIdx: 0, req: heldFrame(UInt64(FrameType.req.rawValue), 0)), "a bare REQ fits")
+                let settlement: PeerSettlement
+                switch text(row["bringing"]) {
+                case "provided": settlement = .provided
+                case "refused": settlement = .refused(refusal)
+                case "expired": settlement = .expired(refusal)
+                default: fatalError("the model's table names no bringing \(String(describing: row["bringing"]))")
+                }
+                var fate = "neither"
+                if let settled = holds.settle(rid: rid, settlement) {
+                    if settled.err == nil && settled.request.frames.count == 1 { fate = "replay" }
+                    if let err = settled.err, err.frameType == .err { fate = "fail" }
+                }
+                if fate != text(row["fate"]) || holds.isHeld(sourceIdx: 0, rid: rid) {
+                    wrong.append("\(row): \(fate)")
+                }
+            case "script":
+                guard let bound = row["bound"] as? [String: Any],
+                      let arrivals = row["arrivals"] as? [[String: Any]],
+                      let steps = row["steps"] as? [Any] else {
+                    fatalError("a hold script without its bound, arrivals or steps: \(row)")
+                }
+                let holds = PeerHoldTable(bound: PeerHoldBound(frames: number(bound["frames"]),
+                                                               bytes: number(bound["bytes"]), deadline: 1))
+                var kept: [UInt64] = [0, 0]
+                var ended = false
+                for (i, (arrival, step)) in zip(arrivals, steps).enumerated() {
+                    let frame = heldFrame(number(arrival["frame"]), number(arrival["size"]))
+                    let err = i == 0 ? holds.hold(sourceIdx: 0, req: frame) : holds.arrive(frame)
+                    var got = "kept"
+                    if let err {
+                        if err.frameType != .err {
+                            got = "an answer that is not an ERR"
+                        } else if err.errorCode == PEER_HOLD_OVERFLOW {
+                            got = "overflow"
+                        } else if frame.frameType == .cancel {
+                            got = "cancel"
+                        } else {
+                            got = "ERR \(err.errorCode ?? "")"
+                        }
+                    }
+                    let expected: String
+                    if let end = step as? String {
+                        ended = true
+                        expected = end
+                    } else if let step = step as? [String: Any], let size = step["kept"] as? [String: Any] {
+                        kept = [number(size["frames"]), number(size["bytes"])]
+                        expected = "kept"
+                    } else {
+                        fatalError("a hold step that is neither kept nor an end: \(step)")
+                    }
+                    if got != expected {
+                        wrong.append("\(row): step \(i) \(got)")
+                        continue scripts
+                    }
+                }
+                if ended {
+                    if holds.isHeld(sourceIdx: 0, rid: rid) { wrong.append("\(row): still held after it ended") }
+                    continue
+                }
+                guard let settled = holds.settle(rid: rid, .provided), settled.err == nil,
+                      keptSize(settled.request.frames) == kept, settled.request.frames.first?.frameType == .req else {
+                    wrong.append("\(row): not replayed as kept")
+                    continue
+                }
+            default:
+                fatalError("the model's table names no hold row \(String(describing: row["kind"]))")
+            }
+        }
+        conclude("hold", table.count, wrong)
+    }
 }
 
 /// Thread-safe counter.

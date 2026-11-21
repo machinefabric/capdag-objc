@@ -95,4 +95,116 @@
                    [wrong subarrayWithRange:NSMakeRange(0, MIN(8u, wrong.count))]);
 }
 
+- (NSDictionary *)modelTable {
+    NSString *path = [NSString stringWithUTF8String:__FILE__];
+    for (int i = 0; i < 4; i++) path = [path stringByDeletingLastPathComponent];
+    path = [[path stringByAppendingPathComponent:@"formal"] stringByAppendingPathComponent:@"conformance.json"];
+    NSData *raw = [NSData dataWithContentsOfFile:path];
+    XCTAssertNotNil(raw, @"the model's table at %@", path);
+    return [NSJSONSerialization JSONObjectWithData:raw options:0 error:nil];
+}
+
+// TEST7123: the cap URN parser refuses a cap exactly when the model says it
+// cannot be declared, and for the reason the model gives: the bare top form,
+// or an effect=none cap whose input is not inside its output. Every other cap
+// over every effect, patch included, parses.
+- (void)test7123_admissibilityIsTheModels {
+    NSArray *rows = [self modelTable][@"admissible"];
+    XCTAssertEqual(rows.count, 500u, @"every cap over the directions, cap-tags and effects");
+    NSMutableArray *wrong = [NSMutableArray array];
+    for (NSDictionary *r in rows) {
+        NSError *error = nil;
+        CSCapUrn *cap = [CSCapUrn fromString:r[@"cap"] error:&error];
+        NSString *got = nil;
+        if (!cap) {
+            NSString *message = error.localizedDescription;
+            if (![error.domain isEqualToString:CSCapUrnErrorDomain] || error.code != CSCapUrnErrorIllegalDeclaration) {
+                got = [NSString stringWithFormat:@"refused, not as illegal: %@", message];
+            } else if ([message hasPrefix:@"illegal bare top cap"]) {
+                got = @"bare_top";
+            } else if ([message hasPrefix:@"effect=none requires declared input"]) {
+                got = @"none_not_inside";
+            } else {
+                got = [NSString stringWithFormat:@"refused: %@", message];
+            }
+        }
+        id model = r[@"illegal"];
+        NSString *expected = model == [NSNull null] ? nil : model;
+        if (!(got == expected || [got isEqualToString:expected])) {
+            [wrong addObject:[NSString stringWithFormat:@"%@: model %@, got %@", r[@"cap"], expected, got]];
+        }
+    }
+    XCTAssertEqual(wrong.count, 0u, @"%lu of %lu row(s) differ from the model, e.g. %@",
+                   (unsigned long)wrong.count, (unsigned long)rows.count,
+                   [wrong subarrayWithRange:NSMakeRange(0, MIN(8u, wrong.count))]);
+}
+
+- (NSArray<CSMediaUrn *> *)mediaOf:(NSArray<NSString *> *)texts {
+    NSMutableArray<CSMediaUrn *> *urns = [NSMutableArray arrayWithCapacity:texts.count];
+    for (NSString *text in texts) {
+        NSError *error = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:text error:&error];
+        XCTAssertNotNil(urn, @"%@: %@", text, error);
+        [urns addObject:urn];
+    }
+    return urns;
+}
+
+// TEST7124: what a file is, decided through the detection module as a host
+// runs it: which candidates stand, given what their rules say of the content,
+// the consulted adapters and what their cartridges claimed; which of those
+// each line of refinement keeps; and which of the kept a host that cannot ask
+// takes. The content is one byte, so a rule of at least one byte is met and a
+// rule of at least two is not.
+- (void)test7124_detectionIsTheModels {
+    NSArray *rows = [self modelTable][@"detect"];
+    XCTAssertEqual(rows.count, (NSUInteger)((9 + 81) * 2 * 4), @"every rule, owner and claim set over both lists");
+    NSData *content = [@"x" dataUsingEncoding:NSUTF8StringEncoding];
+    NSDictionary *rules = @{@"met": @{@"min_length": @1}, @"unmet": @{@"min_length": @2}};
+    NSMutableArray *wrong = [NSMutableArray array];
+    for (NSDictionary *r in rows) {
+        NSMutableArray<CSFileMediaCandidate *> *candidates = [NSMutableArray array];
+        for (NSDictionary *c in r[@"candidates"]) {
+            CSFileMediaCandidate *candidate = [CSFileMediaCandidate new];
+            candidate.urn = [self mediaOf:@[c[@"urn"]]].firstObject;
+            candidate.validation = rules[c[@"rules"]];
+            XCTAssertTrue([c[@"rules"] isEqualToString:@"unruled"] || candidate.validation != nil,
+                          @"the model's table names no rules '%@'", c[@"rules"]);
+            [candidates addObject:candidate];
+        }
+        NSString *failure = nil;
+        NSArray<CSMediaUrn *> *survivors = CSSurvivingCandidates(content, candidates, [self mediaOf:r[@"owners"]],
+                                                                 [self mediaOf:r[@"claims"]], &failure);
+        XCTAssertNotNil(survivors, @"%@", failure);
+        NSMutableArray<NSNumber *> *stands = [NSMutableArray array];
+        for (CSFileMediaCandidate *c in candidates) {
+            [stands addObject:@([survivors indexOfObjectIdenticalTo:c.urn] != NSNotFound)];
+        }
+        if (![stands isEqualToArray:r[@"stands"]]) {
+            [wrong addObject:[NSString stringWithFormat:@"%@: stands %@", r, stands]];
+            continue;
+        }
+        NSArray<NSString *> *kept = CSSettle(survivors);
+        NSMutableArray<NSNumber *> *mostSpecific = [NSMutableArray array];
+        NSUInteger keptCount = 0;
+        for (CSMediaUrn *s in survivors) [mostSpecific addObject:@([kept containsObject:[s toString]])];
+        for (NSNumber *k in r[@"most_specific"]) keptCount += k.boolValue ? 1 : 0;
+        if (![mostSpecific isEqualToArray:r[@"most_specific"]] || kept.count != keptCount) {
+            [wrong addObject:[NSString stringWithFormat:@"%@: kept %@", r, kept]];
+            continue;
+        }
+        NSError *error = nil;
+        NSString *primary = CSPrimaryMedia(kept, &error);
+        XCTAssertNil(error);
+        id position = r[@"primary"];
+        NSString *expected = position == [NSNull null] ? nil : kept[[position unsignedIntegerValue]];
+        if (!(primary == expected || [primary isEqualToString:expected])) {
+            [wrong addObject:[NSString stringWithFormat:@"%@: primary %@", r, primary]];
+        }
+    }
+    XCTAssertEqual(wrong.count, 0u, @"%lu of %lu row(s) differ from the model, e.g. %@",
+                   (unsigned long)wrong.count, (unsigned long)rows.count,
+                   [wrong subarrayWithRange:NSMakeRange(0, MIN(8u, wrong.count))]);
+}
+
 @end

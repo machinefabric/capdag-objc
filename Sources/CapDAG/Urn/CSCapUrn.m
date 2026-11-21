@@ -142,99 +142,40 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
     return result;
 }
 
-+ (BOOL)validateAdmissibleInSpec:(NSString *)inSpec
-                         outSpec:(NSString *)outSpec
-                          effect:(NSString *)effect
-                            tags:(NSDictionary<NSString *, NSString *> *)tags
-                           error:(NSError **)error {
-    NSError *parseError = nil;
-    CSMediaUrn *inMedia = [CSMediaUrn fromString:inSpec error:&parseError];
-    if (!inMedia) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidInSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Stored in spec '%@' failed admissibility validation: %@", inSpec, parseError.localizedDescription ?: @"unknown error"]}];
-        }
-        return NO;
+/// Refuse a cap that cannot be declared, as the model decides (`Cap.illegal`): the bare top
+/// form, and an `effect=none` cap whose input is not inside its output.
+- (BOOL)validateAdmissible:(NSError **)error {
+    lungo_value *result = NULL;
+    lungo_error *modelError = NULL;
+    if (capdagFormal_cap_illegal(_formal, &result, &modelError) != LUNGO_OK) {
+        CSCapModelFailed(@"decide whether a cap can be declared", modelError);
     }
-
-    parseError = nil;
-    CSMediaUrn *outMedia = [CSMediaUrn fromString:outSpec error:&parseError];
-    if (!outMedia) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorInvalidOutSpec
-                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Stored out spec '%@' failed admissibility validation: %@", outSpec, parseError.localizedDescription ?: @"unknown error"]}];
-        }
-        return NO;
-    }
-
-    CSCapEffect parsedEffect = CSCapEffectFromString(effect);
-    if (inMedia.isTop && outMedia.isTop && tags.count == 0 && parsedEffect == CSCapEffectDeclared) {
-        if (error) {
-            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                         code:CSCapUrnErrorIllegalDeclaration
-                                     userInfo:@{NSLocalizedDescriptionKey: @"illegal bare top cap; use cap:effect=none for identity, or declare a non-vacuous input/output/effect/tag"}];
-        }
-        return NO;
-    }
-
-    if (parsedEffect == CSCapEffectNone) {
-        parseError = nil;
-        BOOL sound = [inMedia conformsTo:outMedia error:&parseError];
-        if (!sound) {
-            if (error) {
-                NSString *message = parseError
-                    ? [NSString stringWithFormat:@"failed to verify effect=none admissibility for in='%@' out='%@': %@", inSpec, outSpec, parseError.localizedDescription]
-                    : [NSString stringWithFormat:@"effect=none requires declared input '%@' to conform to declared output '%@'", inSpec, outSpec];
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorIllegalDeclaration
-                                         userInfo:@{NSLocalizedDescriptionKey: message}];
-            }
-            return NO;
-        }
+    const lungo_value *illegal = lungo_value_get_option(result);
+    if (!illegal) {
+        lungo_value_free(result);
         return YES;
     }
-
-    if (parsedEffect == CSCapEffectPatch) {
-        parseError = nil;
-        CSTaggedUrnCoordinateDelta *delta = [outMedia deltaFrom:inMedia error:&parseError];
-        if (!delta) {
-            if (error) {
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorIllegalDeclaration
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"effect=patch requires a computable declared media delta from '%@' to '%@': %@", inSpec, outSpec, parseError.localizedDescription ?: @"unknown error"]}];
-            }
-            return NO;
-        }
-
-        parseError = nil;
-        CSMediaUrn *witness = [inMedia applyDelta:delta error:&parseError];
-        if (!witness) {
-            if (error) {
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorIllegalDeclaration
-                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"effect=patch failed to apply declared media delta to input '%@': %@", inSpec, parseError.localizedDescription ?: @"unknown error"]}];
-            }
-            return NO;
-        }
-
-        parseError = nil;
-        BOOL sound = [witness conformsTo:outMedia error:&parseError];
-        if (!sound) {
-            if (error) {
-                NSString *message = parseError
-                    ? [NSString stringWithFormat:@"failed to verify effect=patch admissibility for witness '%@' against declared output '%@': %@", [witness toString], outSpec, parseError.localizedDescription]
-                    : [NSString stringWithFormat:@"effect=patch witness '%@' does not conform to declared output '%@'", [witness toString], outSpec];
-                *error = [NSError errorWithDomain:CSCapUrnErrorDomain
-                                             code:CSCapUrnErrorIllegalDeclaration
-                                         userInfo:@{NSLocalizedDescriptionKey: message}];
-            }
-            return NO;
-        }
+    uint32_t which = lungo_value_ctor_index(illegal);
+    lungo_value_free(result);
+    NSString *message;
+    switch (which) {
+        case CAPDAGFORMAL_ILLEGAL_BARE_TOP:
+            message = @"illegal bare top cap; use cap:effect=none for identity, or declare a non-vacuous input/output/effect/tag";
+            break;
+        case CAPDAGFORMAL_ILLEGAL_NONE_NOT_INSIDE:
+            message = [NSString stringWithFormat:@"effect=none requires declared input '%@' to conform to declared output '%@'", self.inSpec, self.outSpec];
+            break;
+        default:
+            @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                           reason:[NSString stringWithFormat:@"capdag: the model named a reason a cap is illegal that this mirror does not know: %u", which]
+                                         userInfo:nil];
     }
-
-    return YES;
+    if (error) {
+        *error = [NSError errorWithDomain:CSCapUrnErrorDomain
+                                     code:CSCapUrnErrorIllegalDeclaration
+                                 userInfo:@{NSLocalizedDescriptionKey: message}];
+    }
+    return NO;
 }
 
 - (NSDictionary<NSString *, NSString *> *)tags {
@@ -582,10 +523,11 @@ static BOOL CSCapModelRelation(int32_t (*relation)(const lungo_value *, const lu
         return nil;
     }
 
-    if (![self validateAdmissibleInSpec:processedInSpec outSpec:processedOutSpec effect:normalizedEffect tags:validatedTags.tags error:error]) {
+    CSCapUrn *cap = [[CSCapUrn alloc] initWithInSpec:processedInSpec outSpec:processedOutSpec effectSpec:normalizedEffect tagUrn:validatedTags];
+    if (![cap validateAdmissible:error]) {
         return nil;
     }
-    return [[CSCapUrn alloc] initWithInSpec:processedInSpec outSpec:processedOutSpec effectSpec:normalizedEffect tagUrn:validatedTags];
+    return cap;
 }
 
 /// The one way a cap is made: the fields, and the model's value built from exactly them. Every
