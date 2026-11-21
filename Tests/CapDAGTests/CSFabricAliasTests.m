@@ -45,6 +45,26 @@ static CSCap *buildExtractCap(void) {
     XCTAssertNil(CSNormalizeAliasName(@"a/b", &err));
 }
 
+// TEST1980: an alias name lowercases A-Z and no other character, and refuses
+// every Unicode White_Space character as whitespace: under Unicode case
+// mapping KELVIN SIGN lowercases to `k`, and one implementation would publish
+// a name another refuses.
+- (void)test1980_AliasNamesLowercaseOnlyASCIILetters {
+    NSError *err = nil;
+    XCTAssertEqualObjects(CSNormalizeAliasName(@"JSONDoc", &err), @"jsondoc");
+    NSString *(^refusal)(NSString *) = ^NSString *(NSString *name) {
+        NSError *error = nil;
+        XCTAssertNil(CSNormalizeAliasName(name, &error), @"%@ must be refused", name);
+        return error.localizedDescription;
+    };
+    NSString *(^with)(unichar) = ^NSString *(unichar ch) { return [NSString stringWithFormat:@"a%Cb", ch]; };
+    XCTAssertTrue([refusal([NSString stringWithFormat:@"%Cind", (unichar)0x212A]) containsString:@"invalid characters"], @"KELVIN SIGN is no ASCII letter");
+    XCTAssertTrue([refusal(with(0xA0)) containsString:@"whitespace"], @"NO-BREAK SPACE is white space");
+    XCTAssertTrue([refusal(with(0x85)) containsString:@"whitespace"], @"NEXT LINE is white space");
+    XCTAssertTrue([refusal(with(0xFEFF)) containsString:@"invalid characters"], @"ZERO WIDTH NO-BREAK SPACE is not white space");
+    XCTAssertTrue([refusal(with(0x1C)) containsString:@"invalid characters"], @"FILE SEPARATOR is not white space");
+}
+
 // TEST1881: URN-vs-alias detection keys purely on the presence of ':'. The whole design rests on this discriminator being exact.
 - (void)test1881_TokenURNvsAliasDetection {
     XCTAssertTrue(CSTokenIsURN(@"cap:in=\"media:document;ext=pdf\";extract;out=\"media:enc=utf8\""));

@@ -434,7 +434,7 @@
     // CSMediaMd is now "media:enc=utf8;ext=md;plain-text" — request with just ext=md tag.
     CSMediaUrn *mdListing = [CSMediaUrn fromString:CSMediaMd error:&e];
     CSMediaUrn *mdReq = [CSMediaUrn fromString:@"media:ext=md;plain-text" error:&e];
-    XCTAssertTrue([mdListing conformsTo:mdReq error:&e]);
+    XCTAssertTrue([mdListing conformsTo:mdReq]);
 
     CSMediaUrn *strUrn = [CSMediaUrn fromString:CSMediaString error:&e];
     CSMediaUrn *strReq = [CSMediaUrn fromString:CSMediaString error:&e];
@@ -446,10 +446,10 @@
     NSError *e;
     CSMediaUrn *handler = [CSMediaUrn fromString:@"media:string" error:&e];
     CSMediaUrn *request = [CSMediaUrn fromString:@"media:string" error:&e];
-    XCTAssertTrue([handler accepts:request error:&e]);
+    XCTAssertTrue([handler accepts:request]);
 
     CSMediaUrn *same = [CSMediaUrn fromString:@"media:string" error:&e];
-    XCTAssertTrue([handler accepts:same error:&e]);
+    XCTAssertTrue([handler accepts:same]);
 }
 
 // TEST076: Test specificity increases with more tags for ranking conformance

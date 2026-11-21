@@ -40,6 +40,8 @@
 - (void)ensureDimsCached:(NSArray<CSDimRef *> *)refs
                    owner:(NSString *)owner
               completion:(void (^)(NSError *_Nullable error))completion;
++ (nullable NSError *)servedCapError:(CSCap *)cap normalizedUrn:(NSString *)normalizedUrn defver:(uint32_t)defver;
++ (nullable NSError *)servedMediaDefError:(NSDictionary *)spec normalizedUrn:(NSString *)normalizedUrn defver:(uint32_t)defver;
 @end
 
 @interface CSFabricDimTests : XCTestCase
@@ -244,7 +246,7 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
 // TEST1971: what is loaded from the disk cache is kept only as the pinned
 // manifest names it — a dim at another version is never read — and a
 // definition is kept only when every dim it names survives with the value it
-// names. At v0 there are no dims.
+// names.
 - (void)test1971_TheDiskCacheKeepsDefinitionsOnlyWithTheirPinnedDims {
     CSCharter *charter = [self unreachableCharter:@"1971"];
     // The cache folder of manifest 11, where the registry pinned at it reads.
@@ -263,19 +265,18 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
         NSMutableDictionary *def = [@{@"urn": capUrns[i], @"version": @1, @"title": @"t", @"aliases": @[@"t"]} mutableCopy];
         if ([capDims[i] count] > 0) def[@"dims"] = capDims[i];
         writeJSON([NSString stringWithFormat:@"%@/caps/%@/1.json", root, sha256Hex(normalized)],
-                  @{@"definition": def, @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]), @"ttl_hours": @24});
+                  @{@"definition": def});
     }
     NSDictionary *specs = @{@"media:x": dimsJSON(@[@[@"medium", @"text"]]), @"media:y": dimsJSON(@[@[@"medium", @"audio"]])};
     for (NSString *urn in specs) {
         writeJSON([NSString stringWithFormat:@"%@/media/%@/1.json", root, sha256Hex(urn)],
-                  @{@"spec": @{@"urn": urn, @"version": @1, @"media_type": @"text/plain", @"title": @"t", @"dims": specs[urn]},
-                    @"cached_at": @((uint64_t)[[NSDate date] timeIntervalSince1970]), @"ttl_hours": @24});
+                  @{@"spec": @{@"urn": urn, @"version": @1, @"media_type": @"text/plain", @"title": @"t", @"dims": specs[urn]}});
     }
     // The manifest pins language at 2; only version 1 is cached.
     writeJSON([NSString stringWithFormat:@"%@/dims/%@/1.json", root, sha256Hex(@"language")],
-              @{@"dim": [dim(@"language", 1, @[@"en"]) toDictionary], @"cached_at": @0, @"ttl_hours": @24});
+              @{@"dim": [dim(@"language", 1, @[@"en"]) toDictionary]});
     writeJSON([NSString stringWithFormat:@"%@/dims/%@/1.json", root, sha256Hex(@"medium")],
-              @{@"dim": [dim(@"medium", 1, @[@"text"]) toDictionary], @"cached_at": @0, @"ttl_hours": @24});
+              @{@"dim": [dim(@"medium", 1, @[@"text"]) toDictionary]});
     writeJSON([NSString stringWithFormat:@"%@/manifest.json", root],
               @{@"version": @11, @"previous": @10, @"caps": manifestCaps, @"media": @{@"media:x": @1, @"media:y": @1},
                 @"aliases": @{}, @"dims": @{@"language": @2, @"medium": @1}});
@@ -291,10 +292,69 @@ static NSArray *dimsJSON(NSArray<NSArray<NSString *> *> *pairs) {
     NSError *droppedError = nil;
     XCTAssertNil([reg getCachedMediaDef:@"media:y" error:&droppedError], @"a value the dim lacks drops the definition");
     XCTAssertEqual(droppedError.code, CSFabricRegistryErrorPending, @"the manifest names it: not fetched, not absent");
+}
 
-    CSFabricRegistry *v0 = [self registryOver:charter version:0 bootstrap:NO];
-    XCTAssertNil([v0 getCachedDim:@"medium"], @"v0 has no dims");
-    XCTAssertFalse([v0 capExists:capUrns[0]], @"so a cap naming one is not held at v0");
+// TEST1976: a cap a registry serves is the cap that was asked for, at the
+// version the manifest pins: another cap's body, or this cap at another
+// version, is refused before it is cached.
+- (void)test1976_AServedCapIsTheOneAskedForAtItsPinnedVersion {
+    NSString *urn = @"cap:in=\"media:document;ext=pdf\";disbind;out=\"media:enc=utf8;page\"";
+    NSString *key = normalizedCapUrn(urn);
+    CSCap *(^served)(NSString *, uint32_t) = ^CSCap *(NSString *servedUrn, uint32_t version) {
+        NSError *error = nil;
+        CSCap *cap = [CSCap capWithDictionary:@{@"urn": servedUrn, @"version": @(version), @"title": @"Disbind PDF", @"aliases": @[@"disbind"]}
+                                        error:&error];
+        XCTAssertNotNil(cap, @"%@", error);
+        return cap;
+    };
+
+    XCTAssertNil([CSFabricRegistry servedCapError:served(urn, 3) normalizedUrn:key defver:3]);
+
+    NSError *other = [CSFabricRegistry servedCapError:served(@"cap:in=\"media:document;ext=pdf\";bind;out=\"media:enc=utf8;page\"", 3)
+                                        normalizedUrn:key defver:3];
+    XCTAssertTrue([other.localizedDescription containsString:@"does not match requested URN"], @"%@", other);
+
+    NSError *version = [CSFabricRegistry servedCapError:served(urn, 2) normalizedUrn:key defver:3];
+    XCTAssertTrue([version.localizedDescription containsString:@"reports version 2 but manifest pins defver 3"], @"%@", version);
+}
+
+// TEST1977: a media definition a registry serves is the one that was asked
+// for, at the version the manifest pins.
+- (void)test1977_AServedMediaDefIsTheOneAskedForAtItsPinnedVersion {
+    NSError *error = nil;
+    NSString *key = [[CSMediaUrn fromString:@"media:document;ext=pdf" error:&error] toString];
+    XCTAssertNotNil(key, @"%@", error);
+    NSDictionary *(^body)(NSString *, uint32_t) = ^NSDictionary *(NSString *servedUrn, uint32_t version) {
+        return @{@"urn": servedUrn, @"version": @(version), @"media_type": @"application/pdf", @"title": @"PDF"};
+    };
+
+    XCTAssertNil([CSFabricRegistry servedMediaDefError:body(@"media:ext=pdf;document", 3) normalizedUrn:key defver:3],
+                 @"the matching body, its tags in another order");
+
+    NSError *other = [CSFabricRegistry servedMediaDefError:body(@"media:ext=png;image", 3) normalizedUrn:key defver:3];
+    XCTAssertTrue([other.localizedDescription containsString:@"does not match requested URN"], @"%@", other);
+
+    NSError *version = [CSFabricRegistry servedMediaDefError:body(@"media:document;ext=pdf", 2) normalizedUrn:key defver:3];
+    XCTAssertTrue([version.localizedDescription containsString:@"reports version 2 but manifest pins defver 3"], @"%@", version);
+}
+
+// TEST1978: every definition a manifest pins is at version 1 or later; a
+// manifest pinning one at 0 is refused, and no registry is pinned at
+// manifest 0.
+- (void)test1978_AManifestPinningADefinitionAtZeroIsRefused {
+    CSFabricRegistry *reg = [self unreachableRegistry:@"1978" version:14];
+    NSError *error = nil;
+    XCTAssertTrue([reg ingestManifestDictionary:@{@"version": @14, @"previous": @13, @"caps": @{@"cap:effect=none": @13},
+                                                  @"media": @{}, @"aliases": @{}, @"dims": @{}}
+                                          error:&error], @"%@", error);
+
+    error = nil;
+    XCTAssertFalse([reg ingestManifestDictionary:@{@"version": @14, @"previous": @13, @"caps": @{@"cap:effect=none": @13},
+                                                   @"media": @{@"media:": @0}, @"aliases": @{}, @"dims": @{}}
+                                           error:&error]);
+    XCTAssertTrue([error.localizedDescription containsString:@"manifest v14 pins 'media:' at 0, which is no definition version"], @"%@", error);
+
+    XCTAssertThrows([self unreachableRegistry:@"1978-zero" version:0], @"a registry is pinned at manifest 1 or later");
 }
 
 // TEST1972: a definition is cached only once every dim it names is held, with

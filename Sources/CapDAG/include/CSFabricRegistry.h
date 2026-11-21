@@ -28,8 +28,6 @@ extern NSErrorDomain const CSFabricRegistryErrorDomain;
 typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryDimErrorCode) {
     /// ValidationError: a string that is no dim name was asked for.
     CSFabricRegistryErrorInvalidDimName = 1050,
-    /// NotFound: the registry is pinned at v0, where there are no dims.
-    CSFabricRegistryErrorDimAtV0 = 1051,
     /// NotFound: the pinned manifest does not list the dim. Decided before
     /// any fetch.
     CSFabricRegistryErrorDimNotInManifest = 1052,
