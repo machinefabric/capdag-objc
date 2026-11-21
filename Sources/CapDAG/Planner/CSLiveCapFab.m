@@ -288,10 +288,12 @@
     return self.edges.count;
 }
 
-// MARK: - Outgoing Edges (conformsTo matching)
+// MARK: - Outgoing Edges (satisfies matching)
 
 /// Get all outgoing edges from source, with cardinality transitions synthesized dynamically.
-/// Cap edges are matched purely on conformsTo. ForEach/Collect are synthesized based on isSequence.
+/// A source is what a step gave or a file's detected type, a complete thing: what it does
+/// not mention it does not have, so cap edges are matched on satisfies. ForEach/Collect are
+/// synthesized based on isSequence.
 /// Returns array of dictionaries with @"edge" (CSLiveMachinePlanEdge) and @"isSequence" (NSNumber BOOL).
 - (NSArray<NSDictionary *> *)getOutgoingEdges:(CSMediaUrn *)source isSequence:(BOOL)isSequence {
     NSMutableArray<NSDictionary *> *result = [NSMutableArray array];
@@ -299,7 +301,7 @@
     for (CSLiveMachinePlanEdge *edge in self.edges) {
         NSAssert(edge.edgeType == CSLiveMachinePlanEdgeTypeCap,
                  @"Non-cap edge found in graph storage: %@", edge);
-        if (![source conformsTo:edge.fromSpec]) continue;
+        if (![source satisfies:edge.fromSpec]) continue;
 
         // Cardinality compatibility:
         // sequence data → scalar cap: needs ForEach first, skip direct match
@@ -315,7 +317,7 @@
         // Check if any scalar cap could consume items after ForEach
         BOOL hasScalarConsumers = NO;
         for (CSLiveMachinePlanEdge *edge in self.edges) {
-            if (!edge.inputIsSequence && [source conformsTo:edge.fromSpec]) {
+            if (!edge.inputIsSequence && [source satisfies:edge.fromSpec]) {
                 hasScalarConsumers = YES;
                 break;
             }
@@ -409,6 +411,83 @@
 
 // MARK: - Path Finding (DFS with exact target matching)
 
+/// The key of a state of the path search: the media reached, whether it is a sequence, and
+/// whether the step that reached it was a ForEach (whose scalar cap must come next).
+static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendingForEach) {
+    return [NSString stringWithFormat:@"%@|%d|%d", [media toString], isSequence, pendingForEach];
+}
+
+/// How few steps each search state reachable from the source is from the target, by state key,
+/// for the states the target is reachable from within maxDepth of the source; nil when no step
+/// reaches the target at all. The states are found forward from the source over the edges
+/// getOutgoingEdges:isSequence: gives, and the distances backward over those same steps from the
+/// states that are the target. A state missing from the result cannot reach the target; one at
+/// distance d cannot reach it in fewer than d steps.
+- (nullable NSDictionary<NSString *, NSNumber *> *)distancesToExactTarget:(CSMediaUrn *)target
+                                                               fromSource:(CSMediaUrn *)source
+                                                                 maxDepth:(NSUInteger)maxDepth
+                                                               isSequence:(BOOL)isSequence {
+    NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *stepsInto = [NSMutableDictionary dictionary];
+    NSMutableSet<NSString *> *targetStates = [NSMutableSet set];
+    NSString *startKey = CSSearchStateKey(source, isSequence, NO);
+    NSMutableSet<NSString *> *seen = [NSMutableSet setWithObject:startKey];
+    // Queue entries: [CSMediaUrn, depth, isSequence, pendingForEach]
+    NSMutableArray<NSArray *> *queue = [NSMutableArray arrayWithObject:@[source, @0, @(isSequence), @NO]];
+
+    while (queue.count > 0) {
+        NSArray *item = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        CSMediaUrn *current = item[0];
+        NSUInteger depth = [item[1] unsignedIntegerValue];
+        BOOL currentIsSequence = [item[2] boolValue];
+        BOOL pendingForEach = [item[3] boolValue];
+        if (depth >= maxDepth) continue;
+
+        NSString *fromKey = CSSearchStateKey(current, currentIsSequence, pendingForEach);
+        for (NSDictionary *edgeDict in [self getOutgoingEdges:current isSequence:currentIsSequence]) {
+            CSLiveMachinePlanEdge *edge = edgeDict[@"edge"];
+            if (pendingForEach && ![self canFollowForEach:edge]) continue;
+            BOOL nextIsSequence = [edgeDict[@"isSequence"] boolValue];
+            BOOL nextPendingForEach = edge.edgeType == CSLiveMachinePlanEdgeTypeForEach;
+            NSString *nextKey = CSSearchStateKey(edge.toSpec, nextIsSequence, nextPendingForEach);
+            NSMutableArray<NSString *> *into = stepsInto[nextKey];
+            if (!into) {
+                into = [NSMutableArray array];
+                stepsInto[nextKey] = into;
+            }
+            [into addObject:fromKey];
+            // The target: its media, reached by a step, not waiting on a ForEach's cap.
+            if (!nextPendingForEach && [edge.toSpec isEquivalentTo:target]) {
+                [targetStates addObject:nextKey];
+            }
+            if (![seen containsObject:nextKey]) {
+                [seen addObject:nextKey];
+                [queue addObject:@[edge.toSpec, @(depth + 1), @(nextIsSequence), @(nextPendingForEach)]];
+            }
+        }
+    }
+
+    if (targetStates.count == 0) return nil;
+    NSMutableDictionary<NSString *, NSNumber *> *distances = [NSMutableDictionary dictionary];
+    NSMutableArray<NSString *> *backward = [NSMutableArray array];
+    for (NSString *key in targetStates) {
+        distances[key] = @0;
+        [backward addObject:key];
+    }
+    while (backward.count > 0) {
+        NSString *key = backward.firstObject;
+        [backward removeObjectAtIndex:0];
+        NSNumber *distance = @([distances[key] unsignedIntegerValue] + 1);
+        for (NSString *before in stepsInto[key]) {
+            if (distances[before] == nil) {
+                distances[before] = distance;
+                [backward addObject:before];
+            }
+        }
+    }
+    return distances;
+}
+
 - (NSArray<CSStrand *> *)findPathsToExactTarget:(CSMediaUrn *)source
                                                    target:(CSMediaUrn *)target
                                                  maxDepth:(NSUInteger)maxDepth
@@ -419,6 +498,15 @@
         return @[];
     }
 
+    // The search steps only into states the target is within reach of.
+    NSDictionary<NSString *, NSNumber *> *distances = [self distancesToExactTarget:target
+                                                                         fromSource:source
+                                                                           maxDepth:maxDepth
+                                                                         isSequence:isSequence];
+    if (distances == nil) {
+        return @[];
+    }
+
     NSMutableArray<CSStrand *> *allPaths = [NSMutableArray array];
     NSMutableArray<CSStrandStep *> *currentPath = [NSMutableArray array];
     NSMutableSet<NSString *> *visited = [NSMutableSet set];
@@ -426,6 +514,7 @@
     [self dfsFindPaths:source
                 target:target
                current:source
+             distances:distances
            currentPath:currentPath
                visited:visited
               allPaths:allPaths
@@ -444,6 +533,7 @@
 - (void)dfsFindPaths:(CSMediaUrn *)source
               target:(CSMediaUrn *)target
              current:(CSMediaUrn *)current
+           distances:(NSDictionary<NSString *, NSNumber *> *)distances
          currentPath:(NSMutableArray<CSStrandStep *> *)currentPath
              visited:(NSMutableSet<NSString *> *)visited
             allPaths:(NSMutableArray<CSStrand *> *)allPaths
@@ -482,6 +572,9 @@
     NSString *currentKey = [NSString stringWithFormat:@"%@|%d", [current toString], isSequence];
     [visited addObject:currentKey];
 
+    // The steps a route through the next state has left to reach the target.
+    NSUInteger stepsLeft = maxDepth - currentPath.count - 1;
+
     // Explore outgoing edges
     NSArray<NSDictionary *> *outEdges = [self getOutgoingEdges:current isSequence:isSequence];
     for (NSDictionary *edgeDict in outEdges) {
@@ -490,6 +583,12 @@
             continue;
         }
         BOOL nextIsSequence = [edgeDict[@"isSequence"] boolValue];
+        // A state the target is not within the steps left of ends nowhere: it is not entered.
+        NSNumber *distance = distances[CSSearchStateKey(edge.toSpec, nextIsSequence,
+                                                        edge.edgeType == CSLiveMachinePlanEdgeTypeForEach)];
+        if (distance == nil || distance.unsignedIntegerValue > stepsLeft) {
+            continue;
+        }
         NSString *nextKey = [NSString stringWithFormat:@"%@|%d", [edge.toSpec toString], nextIsSequence];
 
         if (![visited containsObject:nextKey]) {
@@ -522,6 +621,7 @@
             [self dfsFindPaths:source
                         target:target
                        current:edge.toSpec
+                     distances:distances
                    currentPath:currentPath
                        visited:visited
                       allPaths:allPaths
