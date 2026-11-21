@@ -188,8 +188,12 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
         }
         NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:target maxDepth:5 maxPaths:10 isSequence:NO];
         XCTAssertEqual(paths.count, 2u, @"one path through each cap");
-        XCTAssertEqualObjects([paths[0].steps[0] title], @"Zed");
-        XCTAssertEqualObjects([paths[1].steps[0] title], @"Alpha");
+        CSCapUrn *first = [CSCapUrn fromString:paths[0].steps[0].capUrn error:&error];
+        CSCapUrn *second = [CSCapUrn fromString:paths[1].steps[0].capUrn error:&error];
+        XCTAssertTrue([first isEquivalent:zed.capUrn],
+                      @"the a=b path (Zed) comes first, got %@", paths[0].steps[0].capUrn);
+        XCTAssertTrue([second isEquivalent:alpha.capUrn],
+                      @"the a-x=c path (Alpha) comes second, got %@", paths[1].steps[0].capUrn);
     }
 }
 
