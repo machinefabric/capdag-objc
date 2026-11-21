@@ -514,9 +514,17 @@ FOUNDATION_EXPORT NSString * const CSOutputCarriesInput;
 /// Omitted from serialization when empty.
 @property (nonatomic, readonly) NSArray<NSString *> *supportedModelTypes;
 
-/// Default model spec string (JSON: `default_model_spec`).
-/// Omitted from serialization when nil.
-@property (nonatomic, readonly, nullable) NSString *defaultModelSpec;
+/// The cap's model-spec argument into `*outArg`: the one whose media URN
+/// conforms to `CSMediaModelSpec`, or nil when the cap takes no model spec.
+/// NO, with `*error` naming the cap, when it declares two. Mirrors Rust
+/// `Cap::model_spec_arg`.
+- (BOOL)modelSpecArg:(CSCapArg *_Nullable *_Nonnull)outArg error:(NSError *_Nullable *_Nullable)error;
+
+/// The model a run of this cap uses when none is named into `*outSpec`: its
+/// model-spec argument's `defaultValue`, the value a run applies; nil when the
+/// cap takes no model spec or the argument declares no default. Mirrors Rust
+/// `Cap::default_model_spec`.
+- (BOOL)defaultModelSpec:(NSString *_Nullable *_Nonnull)outSpec error:(NSError *_Nullable *_Nullable)error;
 
 
 /**
