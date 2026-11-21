@@ -274,6 +274,52 @@ final class InProcessCartridgeHostTests: XCTestCase {
         XCTAssertEqual(try run(Frame.closeStream(targetRid: .uint(0))).frameType, .end)
     }
 
+    // TEST7201: every response stream the in-process host opens states its
+    // cardinality: a handler's response stream and the identity echo each
+    // open with is_sequence false, so the engine's output audit can hold them
+    // to the declared shape.
+    func test7201_responseStreamsStateIsSequence() throws {
+        let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
+        let handlers: [(name: String, caps: [CSCap], handler: FrameHandler)] = [
+            ("echo", [makeTestCap(capUrn)], EchoHandler())
+        ]
+        let host = InProcessCartridgeHost(identity: InProcessHostIdentity.forTest(id: "in-process-test"), handlers: handlers)
+        let (hostRead, testWrite) = Pipe.socketPair()
+        let (testRead, hostWrite) = Pipe.socketPair()
+        let hostThread = Thread {
+            try? host.run(localRead: hostRead, localWrite: hostWrite)
+        }
+        hostThread.start()
+        let reader = FrameReader(handle: testRead)
+        let writer = FrameWriter(handle: testWrite)
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
+        _ = try XCTUnwrap(try reader.read())
+
+        let cases: [(UInt64, String, String, String, Data)] = [
+            (1, capUrn, "arg0", "media:text", cborBytesPayload(Data("hello".utf8))),
+            (2, CSCapIdentity, "identity-verify", "media:", identityNonce()),
+        ]
+        for (xid, cap, stream, media, payload) in cases {
+            let rid = MessageId.newUUID()
+            var req = Frame.req(id: rid, capUrn: cap, payload: Data(), contentType: "application/cbor")
+            req.routingId = MessageId.uint(xid)
+            try writer.write(req)
+            try writer.write(Frame.streamStart(reqId: rid, streamId: stream, mediaUrn: media))
+            try writer.write(Frame.chunk(reqId: rid, streamId: stream, seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)))
+            try writer.write(Frame.streamEnd(reqId: rid, streamId: stream, chunkCount: 1))
+            try writer.write(Frame.end(id: rid))
+
+            let start = try XCTUnwrap(try reader.read())
+            XCTAssertEqual(start.frameType, .streamStart, cap)
+            XCTAssertEqual(start.isSequence, false, "\(cap): the response stream states it is scalar")
+            while try XCTUnwrap(try reader.read()).frameType != .end {}
+        }
+
+        testWrite.closeFile()
+        testRead.closeFile()
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
     // TEST6749: InProcessCartridgeHost handles identity verification (echo nonce)
     func test6749_identityVerification() throws {
         let host = InProcessCartridgeHost(
