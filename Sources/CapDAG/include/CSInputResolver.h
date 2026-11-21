@@ -172,12 +172,14 @@ typedef NS_ENUM(NSInteger, CSContentStructure) {
 /// The number of registered adapter rows (tests/diagnostics).
 @property (nonatomic, readonly) NSUInteger registeredAdapterCount;
 
-/// The registered adapters some of these candidates conform to, one per
-/// cartridge, in registration order.
+/// Every registered adapter some of these candidates conform to, in
+/// registration order. A cartridge appears once per adapter; detection asks
+/// it once.
 - (NSArray<CSCartridgeAdapter *> *)adaptersForCandidates:(NSArray<CSMediaUrn *> *)candidates;
 
 /// The adapters of the file media types the fabric declares for an extension
-/// (-[CSFabricRegistry fileMediaForExtension:completion:]), one per cartridge.
+/// (-[CSFabricRegistry fileMediaForExtension:completion:]), one per matching
+/// adapter: a cartridge appears once per adapter it registered.
 /// The completion gets the registry's error when the file types cannot be
 /// loaded, or a definition has no valid URN.
 - (void)findAdaptersForExtension:(NSString *)extension

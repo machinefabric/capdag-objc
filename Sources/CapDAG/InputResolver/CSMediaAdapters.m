@@ -149,7 +149,6 @@
 
 - (NSArray<CSCartridgeAdapter *> *)adaptersForCandidates:(NSArray<CSMediaUrn *> *)candidates {
     NSMutableArray<CSCartridgeAdapter *> *results = [NSMutableArray array];
-    NSMutableSet<NSString *> *seenCartridges = [NSMutableSet set];
     for (CSRegisteredAdapter *registered in self.registeredAdapters) {
         BOOL matches = NO;
         for (CSMediaUrn *candidate in candidates) {
@@ -158,8 +157,7 @@
                 break;
             }
         }
-        if (matches && ![seenCartridges containsObject:registered.cartridgeId]) {
-            [seenCartridges addObject:registered.cartridgeId];
+        if (matches) {
             [results addObject:[CSCartridgeAdapter adapterWithCartridgeId:registered.cartridgeId
                                                                adapterUrn:registered.mediaUrn]];
         }
