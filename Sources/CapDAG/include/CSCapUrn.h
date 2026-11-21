@@ -10,12 +10,14 @@
 //  - outSpec: output media URN (defaults to "media:")
 //  - effect: runtime media relation ("declared" by default)
 //
-//  Special pattern values (from tagged-urn):
-//    K=v  - Must have key K with exact value v
-//    K=*  - Must have key K with any value (presence required)
-//    K=!  - Must NOT have key K (absence required)
-//    K=?  - No constraint on key K
-//    (missing) - Same as K=? - no constraint
+//  Every other tag is a cap-tag, stored as the constraint it writes
+//  (tagged-urn's CSTagConstraint):
+//    K=v  - exact: must have key K with exact value v
+//    K    - present (also K=*): must have key K with any value
+//    !K   - absent (also K=!): must NOT have key K
+//    ?K   - unconstrained (also K=?): no constraint on key K
+//    K?=v - optionalNot: absent, or present and not v
+//    K!=v - presentNot: present and not v
 //
 //  Uses CSTaggedUrn for parsing to ensure consistency across implementations.
 //
@@ -25,6 +27,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class CSTaggedUrn;
+@class CSTagConstraint;
 @class CSMediaUrn;
 
 /// Functional category of a cap, derived from all four structural axes
@@ -76,12 +79,10 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  * A cap URN with direction (in→out), effect, and optional tags
  *
  * Direction and effect are integral to a cap's identity.
- * Omitted `in` and `out` default to `media:`.
+ * An omitted `in` or `out`, or one written as a marker (`in`, `in=*`), is the
+ * top media `media:`; an exact value is a media URN, kept in canonical form;
+ * any other form is refused, and so is a quoted `in="*"`, the literal value `*`.
  * Omitted `effect` defaults to `declared`.
- *
- * The 'in' and 'out' values must be either:
- * - A valid media URN starting with "media:" (e.g., "media:string")
- * - A wildcard "*" for pattern matching
  *
  * Examples:
  * - cap:in="media:void";generate;out="media:binary";target=thumbnail
@@ -94,17 +95,17 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 
-/// The input media URN (required) - e.g., "media:void", "media:string", or "*"
+/// The input media URN, in canonical form - e.g., "media:void", "media:string", or "media:"
 @property (nonatomic, readonly) NSString *inSpec;
 
-/// The output media URN (required) - e.g., "media:object", "media:binary", or "*"
+/// The output media URN, in canonical form - e.g., "media:record", "media:", or "media:void"
 @property (nonatomic, readonly) NSString *outSpec;
 
 /// The effect coordinate. Omitted `effect` defaults to `declared`.
 @property (nonatomic, readonly) NSString *effectSpec;
 
-/// Other tags that define this cap (excludes in/out)
-@property (nonatomic, readonly) NSDictionary<NSString *, NSString *> *tags;
+/// The cap-tags, each as the constraint it writes (excludes in, out and effect)
+@property (nonatomic, readonly) NSDictionary<NSString *, CSTagConstraint *> *tags;
 
 /**
  * Create a cap URN from a string
@@ -121,15 +122,29 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 + (nullable instancetype)fromString:(NSString * _Nonnull)string error:(NSError * _Nullable * _Nullable)error;
 
 /**
- * Create a cap URN from tags
- * Extracts `in`, `out`, and `effect` from tags, defaulting omitted
- * structural coordinates to `media:`, `media:`, and `declared`.
+ * Create a cap URN from a tag map, as string parsing reads one: `in`, `out`
+ * and `effect` are taken out of it and read exactly as fromString reads them,
+ * and the rest are the cap-tags.
  *
- * @param tags Dictionary containing all tags including 'in' and 'out'
- * @param error Error if tags are invalid or in/out missing
+ * @param tags Every tag, each as a constraint
+ * @param error Error if a direction, the effect or a cap-tag is refused
  * @return A new CSCapUrn instance or nil if invalid
  */
-+ (nullable instancetype)fromTags:(NSDictionary<NSString *, NSString *> * _Nonnull)tags error:(NSError * _Nullable * _Nullable)error;
++ (nullable instancetype)fromTags:(NSDictionary<NSString *, CSTagConstraint *> * _Nonnull)tags error:(NSError * _Nullable * _Nullable)error;
+
+/**
+ * Create a cap URN from its direction specs, effect and cap-tags.
+ * `inSpec` and `outSpec` are media URNs, kept in canonical form; `*` and
+ * `media:` are both the top media `media:`, as in parsing, and an empty spec
+ * is refused. `effect` is declared, none, patch or `?`. The cap-tags may not
+ * name `in`, `out` or `effect`.
+ * Mirrors Rust: CapUrn::new
+ */
++ (nullable instancetype)fromInSpec:(NSString * _Nonnull)inSpec
+                            outSpec:(NSString * _Nonnull)outSpec
+                             effect:(NSString * _Nonnull)effect
+                               tags:(NSDictionary<NSString *, CSTagConstraint *> * _Nonnull)tags
+                              error:(NSError * _Nullable * _Nullable)error;
 
 /**
  * Get the input spec ID
@@ -168,36 +183,29 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (CSCapKind)kind;
 
 /**
- * Get the value of a specific tag
- * Key is normalized to lowercase for lookup
- * Returns inSpec for "in" key, outSpec for "out" key, effectSpec for "effect" key
- *
- * @param key The tag key
- * @return The tag value or nil if not found
+ * The constraint this cap writes for the cap-tag `key`, or nil when it does
+ * not mention it. Key is normalized to lowercase. The direction and the
+ * effect are not cap-tags: they are read with getInSpec, getOutSpec and
+ * effect.
  */
-- (nullable NSString *)getTag:(NSString * _Nonnull)key;
+- (nullable CSTagConstraint *)getTag:(NSString * _Nonnull)key;
 
 /**
- * Check if this cap has a specific tag with a specific value
- * Key is normalized to lowercase; value comparison is case-sensitive
- * Checks inSpec for "in" key, outSpec for "out" key
- *
- * @param key The tag key
- * @param value The tag value to check
- * @return YES if the tag exists with the specified value
+ * The exact value this cap writes for the cap-tag `key` (`key=value`); nil
+ * when it does not mention the key or constrains it in another form.
+ */
+- (nullable NSString *)exactValue:(NSString * _Nonnull)key;
+
+/**
+ * Whether this cap writes the exact value `value` for the cap-tag `key`
+ * (`key=value`). Key is normalized to lowercase; value comparison is
+ * case-sensitive.
  */
 - (BOOL)hasTag:(NSString * _Nonnull)key withValue:(NSString * _Nonnull)value;
 
 /**
- * Check whether a marker tag (a tag whose value is "*") is present at the
- * given key. Equivalent to `[self hasTag:tagName withValue:@"*"]` but
- * expresses authorial intent: this tag is present as a marker (a
- * wildcard-valued tag that serializes as just the key), not as a
- * key=value pair. Example: `cap:constrained;...` has marker tag
- * "constrained".
- *
- * @param tagName The marker key
- * @return YES if the tag exists with value "*"
+ * Whether the cap-tag `tagName` is present as a marker (written as just the
+ * key). Example: `cap:constrained;...` has marker tag "constrained".
  */
 - (BOOL)hasMarkerTag:(NSString * _Nonnull)tagName;
 
@@ -241,16 +249,15 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
                             error:(NSError * _Nullable * _Nullable)error;
 
 /**
- * Create a new cap URN with an added or updated non-structural tag.
- * Reserved structural keys (`in`, `out`, `effect`) are illegal here and raise
- * `NSInvalidArgumentException`. Use withInSpec:, withOutSpec:, or withEffect:
- * to change structural coordinates.
+ * Add or replace a cap-tag. The key must be an identifier; the constraint one
+ * a URN can write; a structural key (`in`, `out`, `effect`) is refused —
+ * those change with withInSpec:, withOutSpec: and withEffect:.
  *
- * @param key The tag key
- * @param value The tag value
- * @return A new CSCapUrn instance with the tag added/updated
+ * @return The new cap, or nil with an error naming what was refused
  */
-- (CSCapUrn * _Nonnull)withTag:(NSString * _Nonnull)key value:(NSString * _Nonnull)value;
+- (nullable CSCapUrn *)withTag:(NSString * _Nonnull)key
+                    constraint:(CSTagConstraint * _Nonnull)constraint
+                         error:(NSError * _Nullable * _Nullable)error;
 
 /**
  * Create a new cap URN with a changed input spec
@@ -337,7 +344,8 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  * @return The chosen candidate's position, or NSNotFound when none serves it
  */
 + (NSUInteger)selectFromCandidates:(NSArray<CSCapUrn *> * _Nonnull)candidates
-                        forRequest:(CSCapUrn * _Nonnull)request;
+                        forRequest:(CSCapUrn * _Nonnull)request
+    NS_SWIFT_NAME(selectFromCandidates(_:forRequest:));
 
 /**
  * How this candidate ranks against `other` for `request` in the proved ranking
@@ -392,8 +400,8 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 /**
  * Structural total order of two cap URNs: `in=` and then `out=` as media URNs
  * (CSMediaUrn -compareStructurally:), then the effect in CSCapEffect's order
- * (declared, none, patch, unspecified), then the remaining tags as
- * (key, value) pairs in key order by code point. Never the order of the
+ * (declared, none, patch, unspecified), then the cap-tags in the tagged
+ * URN's order by parts (CSTaggedUrn -compare:). Never the order of the
  * canonical text.
  * Mirrors Rust: impl Ord for CapUrn
  */
@@ -420,10 +428,9 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)isMoreSpecificThan:(CSCapUrn * _Nonnull)other;
 
 /**
- * Create a new cap with a specific tag set to wildcard
- * For "in" key, uses withInSpec:@"*"
- * For "out" key, uses withOutSpec:@"*"
- * For "effect" key, uses withEffect:CSCapEffectAny
+ * The same cap with `key` made unconstrained where it constrains it: `in` or
+ * `out` becomes `media:`, `effect` the unconstrained `?`, and a cap-tag it
+ * has a marker (present).
  *
  * @param key The tag key to set to wildcard
  * @return A new CSCapUrn instance with the tag set to wildcard
@@ -471,7 +478,6 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
     CSCapUrnErrorInvalidTagFormat = 4,
     CSCapUrnErrorMissingCapPrefix = 5,
     CSCapUrnErrorDuplicateKey = 6,
-    CSCapUrnErrorNumericKey = 7,
     CSCapUrnErrorUnterminatedQuote = 8,
     CSCapUrnErrorInvalidEscapeSequence = 9,
     CSCapUrnErrorMissingInSpec = 10,
@@ -518,24 +524,20 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
 - (CSCapUrnBuilder * _Nonnull)effect:(CSCapEffect)effect;
 
 /**
- * Add or update a non-structural tag.
- * Reserved structural keys (`in`, `out`, `effect`) are illegal here and raise
- * `NSInvalidArgumentException`. Use inSpec:, outSpec:, or effect: instead.
- *
- * @param key The tag key
- * @param value The tag value
- * @return This builder instance for chaining
+ * Add a cap-tag of any form, its key normalized to lowercase. The key is
+ * checked, with the constraint, when the cap is built. Reserved structural
+ * keys (`in`, `out`, `effect`) raise `NSInvalidArgumentException`: use
+ * inSpec:, outSpec:, or effect: instead.
+ */
+- (CSCapUrnBuilder * _Nonnull)tag:(NSString * _Nonnull)key constraint:(CSTagConstraint * _Nonnull)constraint;
+
+/**
+ * Add a cap-tag with the exact value `value`, taken literally.
  */
 - (CSCapUrnBuilder * _Nonnull)tag:(NSString * _Nonnull)key value:(NSString * _Nonnull)value;
 
 /**
- * Add a marker tag (a wildcard-valued tag that serializes as just the key).
- * Equivalent to `[self tag:key value:@"*"]` but expresses authorial intent:
- * this tag is present as a marker, not a key=value pair. Structural
- * coordinates (`in`, `out`, `effect`) are illegal as marker keys and raise
- * `NSInvalidArgumentException`.
- * @param key The marker key
- * @return This builder instance for chaining
+ * Add a cap-tag as a marker (written as just the key).
  */
 - (CSCapUrnBuilder * _Nonnull)marker:(NSString * _Nonnull)key;
 

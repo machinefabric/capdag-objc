@@ -176,20 +176,7 @@ NSString *CSGetProfileURL(NSString *profileName) {
 @property (nonatomic, readwrite) NSArray<NSString *> *extensions;
 @end
 
-/// Helper to check if a media URN has a marker tag using CSTaggedUrn.
-/// Requires a valid, non-empty media URN - fails hard otherwise.
-/// Nil/empty/whitespace validation is handled by CSTaggedUrn.
-static BOOL CSMediaUrnHasTag(NSString *mediaUrn, NSString *tagName) {
-    NSError *error = nil;
-    CSTaggedUrn *parsed = [CSTaggedUrn fromString:mediaUrn error:&error];
-    if (parsed == nil || error != nil) {
-        [NSException raise:NSInvalidArgumentException
-                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
-    }
-    return [parsed getTag:tagName] != nil;
-}
-
-/// Helper to check if a media URN has a marker tag (tag value is "*").
+/// Helper to check if a media URN has a marker tag (present, written as just the key).
 /// Requires a valid, non-empty media URN - fails hard otherwise.
 /// Nil/empty/whitespace validation is handled by CSTaggedUrn.
 static BOOL CSMediaUrnHasMarkerTag(NSString *mediaUrn, NSString *tagName) {
@@ -199,11 +186,11 @@ static BOOL CSMediaUrnHasMarkerTag(NSString *mediaUrn, NSString *tagName) {
         [NSException raise:NSInvalidArgumentException
                     format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
     }
-    NSString *value = [parsed getTag:tagName];
-    return value != nil && [value isEqualToString:@"*"];
+    return [parsed hasMarkerTag:tagName];
 }
 
-/// Helper to read a tag's value (nil if absent) from a media URN string.
+/// Helper to read the exact value a media URN string writes for a tag (nil if it does not
+/// mention the tag or constrains it in another form).
 /// Requires a valid, non-empty media URN - fails hard otherwise.
 static NSString * _Nullable CSMediaUrnTagValue(NSString *mediaUrn, NSString *tagName) {
     NSError *error = nil;
@@ -212,16 +199,28 @@ static NSString * _Nullable CSMediaUrnTagValue(NSString *mediaUrn, NSString *tag
         [NSException raise:NSInvalidArgumentException
                     format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
     }
-    return [parsed getTag:tagName];
+    CSTagConstraint *constraint = [parsed getTag:tagName];
+    return constraint.kind == CSTagConstraintKindExact ? constraint.value : nil;
 }
 
 /// Public function to check if a media URN is text-representable, i.e. it
-/// declares a character encoding via the `enc=` tag. Replaces the old
-/// textable-based text/binary distinction (everything is bytes at the wire
-/// level; text is the orthogonal `enc=` axis).
+/// guarantees a character encoding: it conforms to `media:enc` (`enc=utf8`,
+/// `enc`, `enc!=ascii` do; `?enc`, `!enc` and `enc?=utf8` do not). Replaces
+/// the old textable-based text/binary distinction (everything is bytes at the
+/// wire level; text is the orthogonal `enc=` axis).
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnHasEncoding(NSString *mediaUrn) {
-    return CSMediaUrnTagValue(mediaUrn, @"enc") != nil;
+    NSError *error = nil;
+    CSTaggedUrn *parsed = [CSTaggedUrn fromString:mediaUrn error:&error];
+    if (parsed == nil) {
+        [NSException raise:NSInvalidArgumentException
+                    format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
+    }
+    CSTaggedUrn *anyEncoding = [CSTaggedUrn fromString:@"media:enc" error:&error];
+    NSCAssert(anyEncoding != nil, @"media:enc parses: %@", error);
+    BOOL encoded = [parsed conformsTo:anyEncoding error:&error];
+    NSCAssert(error == nil, @"two media URNs compare: %@", error);
+    return encoded;
 }
 
 /// Public function to check if a media URN represents JSON content
@@ -258,31 +257,31 @@ BOOL CSMediaUrnIsScalar(NSString *mediaUrn) {
 /// Public function to check if a media URN represents image data.
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnIsImage(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"image");
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"image");
 }
 
 /// Public function to check if a media URN represents audio data.
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnIsAudio(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"audio");
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"audio");
 }
 
 /// Public function to check if a media URN represents video data.
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnIsVideo(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"video");
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"video");
 }
 
 /// Public function to check if a media URN represents numeric data.
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnIsNumeric(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"numeric");
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"numeric");
 }
 
 /// Public function to check if a media URN represents boolean data.
 /// Validation is handled by CSTaggedUrn.
 BOOL CSMediaUrnIsBool(NSString *mediaUrn) {
-    return CSMediaUrnHasTag(mediaUrn, @"bool");
+    return CSMediaUrnHasMarkerTag(mediaUrn, @"bool");
 }
 
 /// Public function to check if a media URN represents a file path.
