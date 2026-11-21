@@ -3394,12 +3394,22 @@ public final class CartridgeHost: @unchecked Sendable {
             fatalError("BUG: CAP_IDENTITY constant '\(CSCapIdentity)' is invalid")
         }
 
-        let hasIdentity = decoded.capGroups
-            .flatMap { $0.caps }
-            .contains { capDef in
-                guard let capUrn = try? CSCapUrn.fromString(capDef.urn) else { return false }
-                return identityUrn.conforms(to: capUrn)
+        // The identity cap, by equivalence; a declared cap that is no cap
+        // URN is an incompatible manifest, named.
+        var hasIdentity = false
+        for capDef in decoded.capGroups.flatMap({ $0.caps }) {
+            let capUrn: CSCapUrn
+            do {
+                capUrn = try CSCapUrn.fromString(capDef.urn)
+            } catch {
+                throw ManifestExtractError.incompatible(
+                    "Cartridge manifest cap '\(capDef.urn)' is no cap URN: \(error.localizedDescription)"
+                )
             }
+            if capUrn.isEquivalent(identityUrn) {
+                hasIdentity = true
+            }
+        }
 
         guard hasIdentity else {
             throw ManifestExtractError.incompatible(

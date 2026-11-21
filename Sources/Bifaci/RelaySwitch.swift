@@ -3002,17 +3002,27 @@ public final class RelaySwitch: @unchecked Sendable {
         // that is the contract that makes end-to-end identity verification
         // meaningful. The cap-urn list is computed from cap_groups inside
         // every installed cartridge; a non-empty list must include identity.
+        // The identity is a definition, recognised by equivalence: a wider
+        // pattern the identity refines (`cap:?effect`) is not the identity.
+        // A cap that is no cap URN is a broken host, named.
         let capUrns = payload.capUrns()
         if !capUrns.isEmpty {
-            let identityUrn = try? CSCapUrn.fromString(CSCapIdentity)
-            let hasIdentity = capUrns.contains { capStr in
-                guard let capUrn = try? CSCapUrn.fromString(capStr),
-                      let identity = identityUrn else { return false }
-                return identity.conforms(to: capUrn)
+            let identity = try CSCapUrn.fromString(CSCapIdentity)
+            var hasIdentity = false
+            for capStr in capUrns {
+                let capUrn: CSCapUrn
+                do {
+                    capUrn = try CSCapUrn.fromString(capStr)
+                } catch {
+                    throw RelaySwitchError.protocolError("RelayNotify advertises '\(capStr)', which is no cap URN: \(error.localizedDescription)")
+                }
+                if capUrn.isEquivalent(identity) {
+                    hasIdentity = true
+                }
             }
 
             guard hasIdentity else {
-                throw RelaySwitchError.protocolError("RelayNotify advertised caps but is missing required CAP_IDENTITY (\(CSCapIdentity))")
+                throw RelaySwitchError.protocolError("RelayNotify advertised caps but none is the identity cap (cap:effect=none)")
             }
         }
 

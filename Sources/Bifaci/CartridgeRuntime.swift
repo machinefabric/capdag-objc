@@ -4925,10 +4925,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
             var hasIdentity = false
             if let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) {
                 hasIdentity = parsed.allCaps().contains { cap in
+                    // The identity cap, by equivalence.
                     if let capUrn = try? CSCapUrn.fromString(cap.urn) {
-                        // Check if the cap URN conforms to CAP_IDENTITY (is identity or more specific)
-                        return (try? capUrn.conforms(to: identityUrn)) == true ||
-                               (try? identityUrn.conforms(to: capUrn)) == true
+                        return capUrn.isEquivalent(identityUrn)
                     }
                     return false
                 }

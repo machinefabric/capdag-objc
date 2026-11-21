@@ -337,6 +337,61 @@ final class InProcessCartridgeHostTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.1)
     }
 
+    // TEST7197: The identity cap is recognised by equivalence, not by its text:
+    // a REQ for the identity spelled with its directions written out, sent
+    // before any policy, is served as the identity (the only request served
+    // before a policy), and a REQ whose cap is no cap URN is refused as an
+    // invalid request naming it.
+    func test7197_identityRequestRecognisedByEquivalence() throws {
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: []
+        )
+
+        let (hostRead, testWrite) = Pipe.socketPair()
+        let (testRead, hostWrite) = Pipe.socketPair()
+
+        let hostThread = Thread {
+            try? host.run(localRead: hostRead, localWrite: hostWrite)
+        }
+        hostThread.start()
+
+        let reader = FrameReader(handle: testRead)
+        let writer = FrameWriter(handle: testWrite)
+        _ = try XCTUnwrap(try reader.read())
+
+        let rid = MessageId.newUUID()
+        var req = Frame.req(id: rid, capUrn: "cap:effect=none;in=media:;out=media:", payload: Data(), contentType: "application/cbor")
+        req.routingId = MessageId.uint(0)
+        try writer.write(req)
+        let nonce = identityNonce()
+        try writer.write(Frame.streamStart(reqId: rid, streamId: "identity-verify", mediaUrn: "media:"))
+        try writer.write(Frame.chunk(reqId: rid, streamId: "identity-verify", seq: 0, payload: nonce, chunkIndex: 0, checksum: Frame.computeChecksum(nonce)))
+        try writer.write(Frame.streamEnd(reqId: rid, streamId: "identity-verify", chunkCount: 1))
+        try writer.write(Frame.end(id: rid))
+
+        let first = try XCTUnwrap(try reader.read())
+        XCTAssertEqual(first.frameType, .streamStart,
+                       "the identity spelled out is served before any policy, got \(String(describing: first.errorCode)) \(String(describing: first.errorMessage))")
+        XCTAssertEqual(try XCTUnwrap(try reader.read()).payload, nonce)
+        XCTAssertEqual(try XCTUnwrap(try reader.read()).frameType, .streamEnd)
+        XCTAssertEqual(try XCTUnwrap(try reader.read()).frameType, .end)
+
+        let bad = MessageId.newUUID()
+        var badReq = Frame.req(id: bad, capUrn: "cap:in=", payload: Data(), contentType: "application/cbor")
+        badReq.routingId = MessageId.uint(1)
+        try writer.write(badReq)
+        let err = try XCTUnwrap(try reader.read())
+        XCTAssertEqual(err.frameType, .err)
+        XCTAssertEqual(err.id, bad)
+        XCTAssertEqual(err.errorCode, "INVALID_REQUEST")
+        XCTAssertTrue((err.errorMessage ?? "").contains("cap:in="), "\(String(describing: err.errorMessage))")
+
+        testWrite.closeFile()
+        testRead.closeFile()
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
     // TEST6750: InProcessCartridgeHost returns NO_HANDLER for unregistered cap
     func test6750_noHandlerReturnsErr() throws {
         let host = InProcessCartridgeHost(

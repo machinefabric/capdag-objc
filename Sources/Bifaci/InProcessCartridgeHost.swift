@@ -339,6 +339,15 @@ public final class InProcessCartridgeHost {
     private let identity: InProcessHostIdentity
     private let handlers: [HandlerEntry]
 
+    /// The identity cap, recognised by equivalence wherever a request or a
+    /// manifest names it.
+    private static let identityUrn: CSCapUrn = {
+        guard let urn = try? CSCapUrn.fromString(CSCapIdentity) else {
+            fatalError("BUG: CAP_IDENTITY constant '\(CSCapIdentity)' is invalid")
+        }
+        return urn
+    }()
+
     /// Create a new in-process cartridge host with the given handlers.
     ///
     /// `identity` declares the host's on-the-wire identity. The
@@ -369,8 +378,7 @@ public final class InProcessCartridgeHost {
         ]
         for entry in handlers {
             for cap in entry.caps {
-                let urn = cap.capUrn.toString()
-                if urn != CSCapIdentity {
+                if !cap.capUrn.isEquivalent(Self.identityUrn) {
                     caps.append(try CapDefinition(declaredBy: cap))
                 }
             }
@@ -572,9 +580,21 @@ public final class InProcessCartridgeHost {
                     continue
                 }
 
-                // Identity cap is the explicit CSCapIdentity constant (`cap:effect=none`)
-                // and is matched by exact string equality, not conforms_to.
-                let isIdentity = capUrn == CSCapIdentity
+                let parsedCap: CSCapUrn
+                do {
+                    parsedCap = try CSCapUrn.fromString(capUrn)
+                } catch {
+                    var err = Frame.err(
+                        id: rid, code: "INVALID_REQUEST", attributionClass: .internal,
+                        message: "REQ cap '\(capUrn)' is no cap URN: \(error.localizedDescription)"
+                    )
+                    err.routingId = xid
+                    writeContinuation.yield(err)
+                    continue
+                }
+
+                // The identity cap, by equivalence.
+                let isIdentity = parsedCap.isEquivalent(Self.identityUrn)
 
                 // Nothing but the identity check is served before the switch's
                 // policy (12.2 §Policy): the switch sends one before anything

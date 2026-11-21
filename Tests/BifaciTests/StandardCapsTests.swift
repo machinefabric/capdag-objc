@@ -127,6 +127,33 @@ final class StandardCapsTests: XCTestCase {
         }
     }
 
+    // TEST7195: validate() recognises the identity cap by equivalence: a wider
+    // pattern the identity refines (`cap:?effect`) is not the identity, and the
+    // identity spelled with its directions written out is.
+    func test7195_validateRecognisesIdentityByEquivalence() throws {
+        let manifest = { (caps: [CSCap]) in
+            CSCapManifest(name: "TestCartridge",
+                          version: "1.0.0",
+                          channel: .release,
+                          registryURL: nil,
+                          manifestDescription: "Test",
+                          capGroups: [CSCapGroup(name: "default", caps: caps, adapterUrns: [])])
+        }
+        let wide = CSCap(urn: try CSCapUrn.fromString("cap:?effect"), title: "Any effect", aliases: ["any-effect"])
+        XCTAssertThrowsError(try manifest([wide, try completeTestCap()]).validate(),
+                             "a wider pattern is not the identity") { error in
+            XCTAssertTrue((error as NSError).localizedDescription.contains("CAP_IDENTITY"), "\(error)")
+        }
+
+        let spelled = CSCap(urn: try CSCapUrn.fromString("cap:effect=none;in=media:;out=media:"),
+                            title: "Identity", aliases: ["identity"])
+        spelled.addArg(CSCapArg(mediaUrn: "media:", name: "input", required: true,
+                                sources: [CSArgSource.stdinSource(withMediaUrn: "media:")]))
+        spelled.addOutput(CSCapOutput(mediaUrn: "media:", name: "output", outputDescription: "The input data, unchanged"))
+        XCTAssertNoThrow(try manifest([spelled, try completeTestCap()]).validate(),
+                         "the identity spelled out is the identity")
+    }
+
     // Mirror-specific coverage: Manifest.ensureIdentity() adds if missing, idempotent if present
     func test6244_manifestEnsureIdentityIdempotent() throws {
         // Test 1: Adding identity when missing
