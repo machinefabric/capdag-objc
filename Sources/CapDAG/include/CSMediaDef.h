@@ -359,12 +359,13 @@ CSMediaDef * _Nullable CSResolveMediaUrn(NSString *mediaUrn,
                                           NSError * _Nullable * _Nullable error);
 
 /**
- * Check if a media URN is text-representable by checking for the `enc=`
- * encoding tag. Replaces the old textable-based text/binary distinction:
- * everything is bytes at the wire level, and text is the orthogonal `enc=`
- * axis. This is a pure syntax check - no resolution required.
+ * Check if a media URN is text-representable: it guarantees an `enc=`
+ * encoding tag, conforming to `media:enc` (`enc=utf8` and `enc` do; `?enc`
+ * and `!enc` do not). Replaces the old textable-based text/binary
+ * distinction: everything is bytes at the wire level, and text is the
+ * orthogonal `enc=` axis. No resolution required.
  * @param mediaUrn The media URN to check (must be non-empty)
- * @return YES if the media URN carries an enc= tag
+ * @return YES if the media URN guarantees an encoding
  */
 BOOL CSMediaUrnHasEncoding(NSString *mediaUrn);
 

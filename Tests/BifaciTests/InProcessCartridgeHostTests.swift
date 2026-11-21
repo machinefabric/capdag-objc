@@ -3,7 +3,7 @@
 //  Tests for InProcessCartridgeHost
 //
 //  Mirrors Rust tests from capdag/src/bifaci/in_process_host.rs exactly
-//  Tests numbered TEST654-TEST660
+//  Tests numbered TEST654-TEST660 and TEST7240
 
 import XCTest
 import Foundation
@@ -682,6 +682,28 @@ final class InProcessCartridgeHostTests: XCTestCase {
         testWrite.closeFile()
         testRead.closeFile()
         Thread.sleep(forTimeInterval: 0.1)
+    }
+
+    // TEST7240: The in-process host chooses among tied handlers by the proved selection: the first registered, every time
+    func test7240_inProcessHostTiesGoToTheFirstRegistered() throws {
+        let first = "cap:in=media:;op;out=media:;x=a"
+        let second = "cap:in=media:;op;out=media:;y=b"
+        let request = try CSCapUrn.fromString("cap:in=media:;op;out=media:")
+        func chosen(_ order: [(String, String)]) -> String {
+            let handlers = order.map { name, urn in
+                HandlerEntry(name: name, caps: [makeTestCap(urn)], handler: TaggedHandler(tag: name))
+            }
+            let (caps, owners) = InProcessCartridgeHost.registeredCaps(handlers: handlers)
+            guard let idx = InProcessCartridgeHost.findHandlerForCap(caps: caps, owners: owners, request: request) else {
+                XCTFail("both handlers serve the request")
+                return ""
+            }
+            return handlers[idx].name
+        }
+        for _ in 0..<32 {
+            XCTAssertEqual(chosen([("first", first), ("second", second)]), "first")
+            XCTAssertEqual(chosen([("second", second), ("first", first)]), "second")
+        }
     }
 
     // MARK: - One terminal per request
