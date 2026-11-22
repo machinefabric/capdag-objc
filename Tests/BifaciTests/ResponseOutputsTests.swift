@@ -486,7 +486,7 @@ final class ResponseOutputsTests: XCTestCase {
         guard case .data(.failure(.protocolError(let twiceMessage)), _)? = twice.recv() else {
             return XCTFail("expected a protocol error")
         }
-        XCTAssertTrue(twiceMessage.contains("a second STREAM_START for stream 'head'"), twiceMessage)
+        XCTAssertTrue(twiceMessage.contains("stream head started twice"), twiceMessage)
         XCTAssertNil(twice.recv())
 
         // What goes wrong on another output's stream is an error of the
@@ -527,13 +527,14 @@ final class ResponseOutputsTests: XCTestCase {
                                             requestId: .newUUID(), routingId: nil, maxChunk: DEFAULT_MAX_CHUNK)
         mismatch { _ = try demuxPeerResponse(responseRx: iterate(broken())).collectBytesForwarding(output: forwardTo, progressBase: 0, progressWeight: 1) }
 
-        // A sequence stream of another output that the request's END cuts
-        // inside an item ends with that error, under its output.
+        // A sequence stream of another output that its STREAM_END cuts inside
+        // an item ends with that error, under its output.
         let whole = Data(CBOR.utf8String("a long enough item").encode())
         let half = whole.prefix(whole.count / 2)
         let cut = demuxPeerResponse(responseRx: iterate([
             start("rows", true).forOutput(rest),
             Frame.chunk(reqId: rid, streamId: "rows", seq: 0, payload: Data(half), chunkIndex: 0, checksum: Frame.computeChecksum(Data(half))),
+            Frame.streamEnd(reqId: rid, streamId: "rows", chunkCount: 1),
             Frame.endOk(id: rid),
         ]))
         guard case .output(let output, .failure(.decode(let message)), _)? = cut.recv() else {
@@ -542,5 +543,17 @@ final class ResponseOutputsTests: XCTestCase {
         XCTAssertEqual(output, rest)
         XCTAssertTrue(message.contains("ended mid-item"), message)
         XCTAssertNil(cut.recv())
+        // The request's END with that stream still open is a protocol error
+        // naming it.
+        let open = demuxPeerResponse(responseRx: iterate([
+            start("rows", true).forOutput(rest),
+            Frame.chunk(reqId: rid, streamId: "rows", seq: 0, payload: Data(half), chunkIndex: 0, checksum: Frame.computeChecksum(Data(half))),
+            Frame.endOk(id: rid),
+        ]))
+        guard case .data(.failure(.protocolError(let openMessage)), _)? = open.recv() else {
+            return XCTFail("expected END with an open stream to be a protocol error")
+        }
+        XCTAssertTrue(openMessage.contains("END with stream rows still open"), openMessage)
+        XCTAssertNil(open.recv())
     }
 }

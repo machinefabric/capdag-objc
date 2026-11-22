@@ -777,38 +777,37 @@ extension Patience {
     }
 }
 
-/// Lean's CapDAG.Bifaci.Request.Phase.
-public enum Phase {
-    /// Lean's CapDAG.Bifaci.Request.Phase.created.
-    case created
-    /// Lean's CapDAG.Bifaci.Request.Phase.streaming.
-    case streaming
+/// Lean's CapDAG.Bifaci.Request.Emission.
+public struct Emission {
+    public let streams: [(String, LungoNat)]
+    public let ended: [String]
+    public let over: Bool
+
+    public init(streams: [(String, LungoNat)], ended: [String], over: Bool) {
+        self.streams = streams
+        self.ended = ended
+        self.over = over
+    }
 }
 
-extension Phase: Equatable {}
+extension Emission {
+    /// The layout fingerprint of Lean's CapDAG.Bifaci.Request.Emission.
+    public static var lungoFingerprint: String { "ed86e54f20b38d926597dacf88c3de65ae68867ee18db71faed8192cf879afca" }
 
-extension Phase {
-    /// The layout fingerprint of Lean's CapDAG.Bifaci.Request.Phase.
-    public static var lungoFingerprint: String { "7407437b58ce033618bf82341b13aaa9661d29a5a9b0f1bf1547ea0bfcfd8374" }
-
-    /// Describes CapDAG.Bifaci.Request.Phase for polymorphic functions.
-    public static var lungoType: LungoType<Phase> {
-        LungoType<Phase>(
+    /// Describes CapDAG.Bifaci.Request.Emission for polymorphic functions.
+    public static var lungoType: LungoType<Emission> {
+        LungoType<Emission>(
             expr: Lungo.inductiveExpr(18),
             encode: { w, v in
-                switch v {
-                case .created:
-                    w.u32(0)
-                case .streaming:
-                    w.u32(1)
-                }
+                w.u32(0)
+                try Lungo.list(Lungo.pair(Lungo.string, Lungo.nat)).encode(&w, v.streams)
+                try Lungo.list(Lungo.string).encode(&w, v.ended)
+                try Lungo.bool.encode(&w, v.over)
             },
             decode: { r in
-                switch try r.u32() {
-                case 0: return .created
-                case 1: return .streaming
-                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Bifaci.Request.Phase")
-                }
+                let c = try r.u32()
+                guard c == 0 else { throw LungoMalformed("constructor index \(c) of CapDAG.Bifaci.Request.Emission") }
+                return Emission(streams: try Lungo.list(Lungo.pair(Lungo.string, Lungo.nat)).decode(&r), ended: try Lungo.list(Lungo.string).decode(&r), over: try Lungo.bool.decode(&r))
             })
     }
 }
@@ -939,6 +938,42 @@ extension Violation {
     }
 }
 
+/// Lean's CapDAG.Bifaci.Request.Phase.
+public enum Phase {
+    /// Lean's CapDAG.Bifaci.Request.Phase.created.
+    case created
+    /// Lean's CapDAG.Bifaci.Request.Phase.streaming.
+    case streaming
+}
+
+extension Phase: Equatable {}
+
+extension Phase {
+    /// The layout fingerprint of Lean's CapDAG.Bifaci.Request.Phase.
+    public static var lungoFingerprint: String { "7407437b58ce033618bf82341b13aaa9661d29a5a9b0f1bf1547ea0bfcfd8374" }
+
+    /// Describes CapDAG.Bifaci.Request.Phase for polymorphic functions.
+    public static var lungoType: LungoType<Phase> {
+        LungoType<Phase>(
+            expr: Lungo.inductiveExpr(21),
+            encode: { w, v in
+                switch v {
+                case .created:
+                    w.u32(0)
+                case .streaming:
+                    w.u32(1)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .created
+                case 1: return .streaming
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Bifaci.Request.Phase")
+                }
+            })
+    }
+}
+
 /// Lean's CapDAG.Bifaci.Request.Disposition.
 public enum Disposition {
     /// Lean's CapDAG.Bifaci.Request.Disposition.route.
@@ -958,7 +993,7 @@ extension Disposition {
     /// Describes CapDAG.Bifaci.Request.Disposition for polymorphic functions.
     public static var lungoType: LungoType<Disposition> {
         LungoType<Disposition>(
-            expr: Lungo.inductiveExpr(21),
+            expr: Lungo.inductiveExpr(22),
             encode: { w, v in
                 switch v {
                 case .route:
@@ -1001,7 +1036,7 @@ extension Terminal {
     /// Describes CapDAG.Bifaci.Request.Terminal for polymorphic functions.
     public static var lungoType: LungoType<Terminal> {
         LungoType<Terminal>(
-            expr: Lungo.inductiveExpr(22),
+            expr: Lungo.inductiveExpr(23),
             encode: { w, v in
                 switch v {
                 case .finished:
@@ -1043,7 +1078,7 @@ extension Write {
     /// Describes CapDAG.Bifaci.Request.Write for polymorphic functions.
     public static var lungoType: LungoType<Write> {
         LungoType<Write>(
-            expr: Lungo.inductiveExpr(23),
+            expr: Lungo.inductiveExpr(24),
             encode: { w, v in
                 switch v {
                 case .send(let ends):
@@ -1068,7 +1103,7 @@ fileprivate enum LungoExternWf {
     static var lungoType: LungoType<TaggedUrnFormal.Wf> {
         let provided = TaggedUrnFormal.Wf.lungoType
         return LungoType<TaggedUrnFormal.Wf>(
-            expr: Lungo.inductiveExpr(24),
+            expr: Lungo.inductiveExpr(25),
             encode: { w, v in try provided.encode(&w, v) },
             decode: { r in try provided.decode(&r) })
     }
@@ -1092,7 +1127,7 @@ extension Candidate {
     /// Describes CapDAG.Detect.Candidate for polymorphic functions.
     public static var lungoType: LungoType<Candidate> {
         LungoType<Candidate>(
-            expr: Lungo.inductiveExpr(25),
+            expr: Lungo.inductiveExpr(26),
             encode: { w, v in
                 w.u32(0)
                 try LungoExternWf.lungoType.encode(&w, v.urn)
@@ -1128,7 +1163,7 @@ extension WfCap {
     /// Describes CapDAG.Exec.WfCap for polymorphic functions.
     public static var lungoType: LungoType<WfCap> {
         LungoType<WfCap>(
-            expr: Lungo.inductiveExpr(26),
+            expr: Lungo.inductiveExpr(27),
             encode: { w, v in
                 w.u32(0)
                 try LungoExternWf.lungoType.encode(&w, v.input)
@@ -1161,7 +1196,7 @@ extension Illegal {
     /// Describes CapDAG.Illegal for polymorphic functions.
     public static var lungoType: LungoType<Illegal> {
         LungoType<Illegal>(
-            expr: Lungo.inductiveExpr(27),
+            expr: Lungo.inductiveExpr(28),
             encode: { w, v in
                 switch v {
                 case .bareTop:
@@ -1201,7 +1236,7 @@ extension Effect {
     /// Describes CapDAG.Effect for polymorphic functions.
     public static var lungoType: LungoType<Effect> {
         LungoType<Effect>(
-            expr: Lungo.inductiveExpr(28),
+            expr: Lungo.inductiveExpr(29),
             encode: { w, v in
                 switch v {
                 case .unspecified:
@@ -1248,7 +1283,7 @@ extension WfQuery {
     /// Describes CapDAG.Exec.WfQuery for polymorphic functions.
     public static var lungoType: LungoType<WfQuery> {
         LungoType<WfQuery>(
-            expr: Lungo.inductiveExpr(29),
+            expr: Lungo.inductiveExpr(30),
             encode: { w, v in
                 w.u32(0)
                 try WfAsk.lungoType.encode(&w, v.input)
@@ -1285,7 +1320,7 @@ extension Grade {
     /// Describes CapDAG.Grade for polymorphic functions.
     public static var lungoType: LungoType<Grade> {
         LungoType<Grade>(
-            expr: Lungo.inductiveExpr(30),
+            expr: Lungo.inductiveExpr(31),
             encode: { w, v in
                 switch v {
                 case .exact:
@@ -1331,7 +1366,7 @@ extension RunPhase {
     /// Describes CapDAG.Run.Control.RunPhase for polymorphic functions.
     public static var lungoType: LungoType<RunPhase> {
         LungoType<RunPhase>(
-            expr: Lungo.inductiveExpr(31),
+            expr: Lungo.inductiveExpr(32),
             encode: { w, v in
                 switch v {
                 case .running:
@@ -1379,7 +1414,7 @@ extension RunOutcome {
     /// Describes CapDAG.Run.Control.RunOutcome for polymorphic functions.
     public static var lungoType: LungoType<RunOutcome> {
         LungoType<RunOutcome>(
-            expr: Lungo.inductiveExpr(32),
+            expr: Lungo.inductiveExpr(33),
             encode: { w, v in
                 switch v {
                 case .completed:
@@ -1430,7 +1465,7 @@ extension RunAsk {
     /// Describes CapDAG.Run.Control.RunAsk for polymorphic functions.
     public static var lungoType: LungoType<RunAsk> {
         LungoType<RunAsk>(
-            expr: Lungo.inductiveExpr(33),
+            expr: Lungo.inductiveExpr(34),
             encode: { w, v in
                 switch v {
                 case .interrupt:
@@ -1478,7 +1513,7 @@ extension RunNext {
     /// Describes CapDAG.Run.Control.RunNext for polymorphic functions.
     public static var lungoType: LungoType<RunNext> {
         LungoType<RunNext>(
-            expr: Lungo.inductiveExpr(34),
+            expr: Lungo.inductiveExpr(35),
             encode: { w, v in
                 w.u32(0)
                 try RunPhase.lungoType.encode(&w, v.phase)
@@ -1521,7 +1556,7 @@ extension StepState {
     /// Describes CapDAG.Run.Step.StepState for polymorphic functions.
     public static var lungoType: LungoType<StepState> {
         LungoType<StepState>(
-            expr: Lungo.inductiveExpr(35),
+            expr: Lungo.inductiveExpr(36),
             encode: { w, v in
                 switch v {
                 case .waiting:
@@ -1581,7 +1616,7 @@ extension StepReport {
     /// Describes CapDAG.Run.Step.StepReport for polymorphic functions.
     public static var lungoType: LungoType<StepReport> {
         LungoType<StepReport>(
-            expr: Lungo.inductiveExpr(36),
+            expr: Lungo.inductiveExpr(37),
             encode: { w, v in
                 switch v {
                 case .progress(let complete):
@@ -1639,7 +1674,7 @@ extension Constraint {
     /// Describes TaggedUrn.Constraint for polymorphic functions.
     public static var lungoType: LungoType<Constraint> {
         LungoType<Constraint>(
-            expr: Lungo.inductiveExpr(37),
+            expr: Lungo.inductiveExpr(38),
             encode: { w, v in
                 switch v {
                 case .missing:
@@ -1698,7 +1733,7 @@ extension Pool {
     /// Describes CapDAG.Bifaci.Pools.Pool for polymorphic functions.
     public static var lungoType: LungoType<Pool> {
         LungoType<Pool>(
-            expr: Lungo.inductiveExpr(38),
+            expr: Lungo.inductiveExpr(39),
             encode: { w, v in
                 w.u32(0)
                 try Lungo.string.encode(&w, v.name)
@@ -1732,7 +1767,7 @@ extension Rules {
     /// Describes CapDAG.Detect.Rules for polymorphic functions.
     public static var lungoType: LungoType<Rules> {
         LungoType<Rules>(
-            expr: Lungo.inductiveExpr(39),
+            expr: Lungo.inductiveExpr(40),
             encode: { w, v in
                 switch v {
                 case .unruled:
@@ -1773,7 +1808,7 @@ extension WfAsk {
     /// Describes CapDAG.Exec.WfAsk for polymorphic functions.
     public static var lungoType: LungoType<WfAsk> {
         LungoType<WfAsk>(
-            expr: Lungo.inductiveExpr(40),
+            expr: Lungo.inductiveExpr(41),
             encode: { w, v in
                 switch v {
                 case .unknown:
@@ -1824,7 +1859,7 @@ extension RunAct {
     /// Describes CapDAG.Run.Control.RunAct for polymorphic functions.
     public static var lungoType: LungoType<RunAct> {
         LungoType<RunAct>(
-            expr: Lungo.inductiveExpr(41),
+            expr: Lungo.inductiveExpr(42),
             encode: { w, v in
                 switch v {
                 case .none:
@@ -2020,7 +2055,7 @@ public func accept(_ r_: Reorder, _ seq: LungoNat, _ limit: LungoNat) throws -> 
 }
 
 /// Lean's CapDAG.Bifaci.Flow.Reorder.start : CapDAG.Bifaci.Flow.Reorder
-public func start() throws -> Reorder {
+public func reorderStart() throws -> Reorder {
     return try program.invoke(
         entry(capdagFormal__call_l_CapDAG_dBifaci_dFlow_dReorder_dstart), typeArgs: [],
         args: { _ in },
@@ -2231,6 +2266,25 @@ public func patience(_ unavailableFor: LungoNat?, _ grace: LungoNat) throws -> P
             try Lungo.nat.encode(&w, grace)
         },
         returns: .value(Patience.lungoType))
+}
+
+/// Lean's CapDAG.Bifaci.Request.Emission.start : CapDAG.Bifaci.Request.Emission
+public func emissionStart() throws -> Emission {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dBifaci_dRequest_dEmission_dstart), typeArgs: [],
+        args: { _ in },
+        returns: .value(Emission.lungoType))
+}
+
+/// Lean's CapDAG.Bifaci.Request.Emission.step : CapDAG.Bifaci.Request.Emission →   CapDAG.Bifaci.Request.Emitted → Except CapDAG.Bifaci.Request.Violation CapDAG.Bifaci.Request.Emission
+public func step(_ e: Emission, _ frame: Emitted) throws -> LungoExcept<Violation, Emission> {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dBifaci_dRequest_dEmission_dstep), typeArgs: [],
+        args: { w in
+            try Emission.lungoType.encode(&w, e)
+            try Emitted.lungoType.encode(&w, frame)
+        },
+        returns: .value(Lungo.except(Violation.lungoType, Emission.lungoType)))
 }
 
 /// Lean's CapDAG.Bifaci.Request.Phase.after : CapDAG.Bifaci.Request.Phase → CapDAG.Bifaci.Flow.FrameType → CapDAG.Bifaci.Request.Phase
@@ -5578,6 +5632,68 @@ public let assuranceJSON = #"""
         "end": {
           "line": 30,
           "column": 66
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Bifaci.Request.start_opens_anything",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Bifaci.Request.Emission.start"
+      ],
+      "specifications": [],
+      "statement": "∀ (stream : String),\n  CapDAG.Bifaci.Request.Emission.start.step (CapDAG.Bifaci.Request.Emitted.streamStart stream) =\n      Except.ok { streams := [(stream, 0)], ended := [], over := false } ∧\n    CapDAG.Bifaci.Request.Emission.start.step CapDAG.Bifaci.Request.Emitted.fin =\n      Except.ok { streams := [], ended := [], over := true }",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "e11d31da483daea31ca8e411bc92a114989c2c96c4cc7d161da8aee2d76cd422",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Bifaci/Laws/Request.lean",
+        "start": {
+          "line": 282,
+          "column": 1
+        },
+        "end": {
+          "line": 288,
+          "column": 55
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Bifaci.Request.step_is_check",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Bifaci.Request.Emission.step"
+      ],
+      "specifications": [],
+      "statement": "∀ (frames : List CapDAG.Bifaci.Request.Emitted),\n  CapDAG.Bifaci.Request.check frames =\n    match List.foldlM (fun e f => e.step f) CapDAG.Bifaci.Request.Emission.start frames with\n    | Except.ok a => none\n    | Except.error v => some v",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "0cb18aa4a6471eadcd3759028432b19b87ffec6640b09fda64e113b5ff8d62c4",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Bifaci/Laws/Request.lean",
+        "start": {
+          "line": 290,
+          "column": 1
+        },
+        "end": {
+          "line": 307,
+          "column": 33
         }
       }
     },
@@ -9435,6 +9551,70 @@ public let assuranceJSON = #"""
         "end": {
           "line": 214,
           "column": 86
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Bifaci.Request.Emission.start",
+      "module": "CapDAG.Bifaci.Request",
+      "async": false,
+      "trust": {
+        "axioms": [],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Bifaci.Request.start_opens_anything"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Bifaci/Request.lean",
+        "start": {
+          "line": 170,
+          "column": 1
+        },
+        "end": {
+          "line": 170,
+          "column": 49
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Bifaci.Request.Emission.step",
+      "module": "CapDAG.Bifaci.Request",
+      "async": false,
+      "trust": {
+        "axioms": [],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": [
+          "lean_nat_add",
+          "lean_nat_dec_eq",
+          "lean_string_dec_eq"
+        ]
+      },
+      "claims": [
+        "CapDAG.Bifaci.Request.step_is_check"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Bifaci/Request.lean",
+        "start": {
+          "line": 172,
+          "column": 1
+        },
+        "end": {
+          "line": 207,
+          "column": 94
         }
       }
     },

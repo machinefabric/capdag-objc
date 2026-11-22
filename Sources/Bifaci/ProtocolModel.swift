@@ -95,6 +95,74 @@ extension FrameType {
     public var code: UInt64 { ProtocolModel.facts[self]!.code }
 }
 
+/// The order of one call's frames as a receiver takes them in, checked frame
+/// by frame with the proved model (`formal/CapDAG/Bifaci/Request.lean`,
+/// `Emission.step`; stepping is `check`, `step_is_check`): a stream started
+/// twice, a chunk or an end for a stream that is not open, a `chunk_index`
+/// other than the number of chunks received on its stream, a `chunk_count`
+/// that differs from it, END with a stream open, and any frame after END or
+/// ERR are each refused, naming what is wrong. Frames that are not of the
+/// flow (`FrameType.isFlow`) are not passed to the model. Mirrors the Rust
+/// reference's `ReceivedFlow`.
+struct ReceivedFlow {
+    private var state = ProtocolModel.emissionStart()
+
+    /// Take in the next frame of the call: nil when it is in order, otherwise
+    /// what is wrong. On a violation the flow is broken, and the state is
+    /// left where the last frame in order put it.
+    mutating func receive(_ frame: Frame) -> String? {
+        guard frame.frameType.isFlow else { return nil }
+        let emitted: ProtocolModel.Emitted
+        switch frame.frameType {
+        case .streamStart, .chunk, .streamEnd:
+            guard let stream = frame.streamId else {
+                return "\(frame.frameType) frame names no stream"
+            }
+            switch frame.frameType {
+            case .streamStart:
+                emitted = .streamStart(stream: stream)
+            case .chunk:
+                guard let index = frame.chunkIndex else {
+                    return "chunk on stream \(stream) carries no chunk_index"
+                }
+                emitted = ProtocolModel.emittedChunk(stream: stream, index: index)
+            default:
+                emitted = ProtocolModel.emittedStreamEnd(stream: stream, count: frame.chunkCount)
+            }
+        case .end:
+            emitted = .fin
+        case .err:
+            emitted = .err
+        default:
+            emitted = .other
+        }
+        switch ProtocolModel.step(state, emitted) {
+        case .ok(let next):
+            state = next
+            return nil
+        case .error(let violation):
+            return Self.describe(violation)
+        }
+    }
+
+    private static func describe(_ violation: ProtocolModel.Violation) -> String {
+        switch violation {
+        case .afterEnd:
+            return "a frame after the call's END or ERR"
+        case .streamRestarted(let stream):
+            return "stream \(stream) started twice"
+        case .streamNotOpen(let stream):
+            return "a chunk or end for stream \(stream), which is not open"
+        case .chunkOutOfPlace(let stream, let expected, let got):
+            return "chunk out of place on stream \(stream): expected \(expected), got \(got)"
+        case .chunkCountWrong(let stream, let sent, let said):
+            return "chunk count wrong on stream \(stream): sent \(sent), said \(said)"
+        case .endWithOpenStream(let stream):
+            return "END with stream \(stream) still open"
+        }
+    }
+}
+
 /// The proved model's decisions, in this package's own types.
 enum ProtocolModel {
     typealias Gate = CapDAGFormal.Gate
@@ -206,7 +274,7 @@ enum ProtocolModel {
     // MARK: Flow order
 
     static func reorderStart() -> Reorder {
-        decided { try CapDAGFormal.start() }
+        decided { try CapDAGFormal.reorderStart() }
     }
 
     static func expected(_ order: Reorder) -> UInt64 {
@@ -244,6 +312,14 @@ enum ProtocolModel {
 
     static func emittedStreamEnd(stream: String, count: UInt64?) -> Emitted {
         .streamEnd(stream: stream, count: count.map { LungoNat($0) })
+    }
+
+    static func emissionStart() -> CapDAGFormal.Emission {
+        decided { try CapDAGFormal.emissionStart() }
+    }
+
+    static func step(_ emission: CapDAGFormal.Emission, _ frame: Emitted) -> LungoExcept<Violation, CapDAGFormal.Emission> {
+        decided { try CapDAGFormal.step(emission, frame) }
     }
 
     // MARK: Request lifecycle

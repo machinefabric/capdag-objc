@@ -292,15 +292,18 @@ const lungo_value *capdagFormal_patience_at_most_remaining(const lungo_value *v)
 /* CapDAG.Bifaci.Pools.Patience.exhausted; takes ownership of the fields. */
 lungo_value *capdagFormal_patience_exhausted(void);
 
-/* CapDAG.Bifaci.Request.Phase */
-#define CAPDAGFORMAL_PHASE_FINGERPRINT "7407437b58ce033618bf82341b13aaa9661d29a5a9b0f1bf1547ea0bfcfd8374"
-lungo_type *capdagFormal_phase_type(void);
-#define CAPDAGFORMAL_PHASE_CREATED 0
-/* CapDAG.Bifaci.Request.Phase.created; takes ownership of the fields. */
-lungo_value *capdagFormal_phase_created(void);
-#define CAPDAGFORMAL_PHASE_STREAMING 1
-/* CapDAG.Bifaci.Request.Phase.streaming; takes ownership of the fields. */
-lungo_value *capdagFormal_phase_streaming(void);
+/* CapDAG.Bifaci.Request.Emission */
+#define CAPDAGFORMAL_EMISSION_FINGERPRINT "ed86e54f20b38d926597dacf88c3de65ae68867ee18db71faed8192cf879afca"
+lungo_type *capdagFormal_emission_type(void);
+#define CAPDAGFORMAL_EMISSION_MK 0
+/* CapDAG.Bifaci.Request.Emission.mk; takes ownership of the fields. */
+lungo_value *capdagFormal_emission_mk(lungo_value *streams, lungo_value *ended, lungo_value *over);
+/* Field streams of CapDAG.Bifaci.Request.Emission.mk (borrowed). */
+const lungo_value *capdagFormal_emission_streams(const lungo_value *v);
+/* Field ended of CapDAG.Bifaci.Request.Emission.mk (borrowed). */
+const lungo_value *capdagFormal_emission_ended(const lungo_value *v);
+/* Field over of CapDAG.Bifaci.Request.Emission.mk (borrowed). */
+const lungo_value *capdagFormal_emission_over(const lungo_value *v);
 
 /* CapDAG.Bifaci.Request.Emitted */
 #define CAPDAGFORMAL_EMITTED_FINGERPRINT "97a274be14c5baecf9c50243d3651da838c5de4375366d4102cbcff85fb211c8"
@@ -373,6 +376,16 @@ const lungo_value *capdagFormal_violation_chunk_count_wrong_said(const lungo_val
 lungo_value *capdagFormal_violation_end_with_open_stream(lungo_value *stream);
 /* Field stream of CapDAG.Bifaci.Request.Violation.endWithOpenStream (borrowed). */
 const lungo_value *capdagFormal_violation_end_with_open_stream_stream(const lungo_value *v);
+
+/* CapDAG.Bifaci.Request.Phase */
+#define CAPDAGFORMAL_PHASE_FINGERPRINT "7407437b58ce033618bf82341b13aaa9661d29a5a9b0f1bf1547ea0bfcfd8374"
+lungo_type *capdagFormal_phase_type(void);
+#define CAPDAGFORMAL_PHASE_CREATED 0
+/* CapDAG.Bifaci.Request.Phase.created; takes ownership of the fields. */
+lungo_value *capdagFormal_phase_created(void);
+#define CAPDAGFORMAL_PHASE_STREAMING 1
+/* CapDAG.Bifaci.Request.Phase.streaming; takes ownership of the fields. */
+lungo_value *capdagFormal_phase_streaming(void);
 
 /* CapDAG.Bifaci.Request.Disposition */
 #define CAPDAGFORMAL_DISPOSITION_FINGERPRINT "540307dfb6e509ccde4b894c69566edd1f3f9c3223b9325e97ee91b20d0fb82f"
@@ -784,7 +797,7 @@ int32_t capdagFormal_accept(const lungo_value *r, const lungo_value *seq, const 
 
 /* CapDAG.Bifaci.Flow.Reorder.start : CapDAG.Bifaci.Flow.Reorder */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
-int32_t capdagFormal_start(lungo_value **result, lungo_error **error);
+int32_t capdagFormal_reorder_start(lungo_value **result, lungo_error **error);
 
 /* CapDAG.Bifaci.Hold.Held.initial : CapDAG.Bifaci.Hold.Held */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
@@ -861,6 +874,15 @@ int32_t capdagFormal_effective(const lungo_value *configured, const lungo_value 
 /* CapDAG.Bifaci.Pools.patience : Option Nat → Nat → CapDAG.Bifaci.Pools.Patience */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_patience(const lungo_value *unavailable_for, const lungo_value *grace, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Bifaci.Request.Emission.start : CapDAG.Bifaci.Request.Emission */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_emission_start(lungo_value **result, lungo_error **error);
+
+/* CapDAG.Bifaci.Request.Emission.step : CapDAG.Bifaci.Request.Emission →
+  CapDAG.Bifaci.Request.Emitted → Except CapDAG.Bifaci.Request.Violation CapDAG.Bifaci.Request.Emission */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_step(const lungo_value *e, const lungo_value *frame, lungo_value **result, lungo_error **error);
 
 /* CapDAG.Bifaci.Request.Phase.after : CapDAG.Bifaci.Request.Phase → CapDAG.Bifaci.Flow.FrameType → CapDAG.Bifaci.Request.Phase */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */

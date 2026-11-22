@@ -615,6 +615,62 @@ final class ProtocolRuntimeTests: XCTestCase {
         XCTAssertNil(second.next(), "s2 ends after its two chunks")
     }
 
+    /// A request whose stream `s` carries one chunk per index given, then a
+    /// STREAM_END saying `chunkCount`, then END, read by the demux as a
+    /// handler reads it.
+    private func demuxOf(_ indices: [UInt64], chunkCount: UInt64) -> InputPackage {
+        let rid = MessageId.newUUID()
+        let frames = BlockingQueue<Frame>()
+        frames.push(Frame.streamStart(reqId: rid, streamId: "s", mediaUrn: "media:enc=utf8", isSequence: false))
+        for i in indices {
+            frames.push(makeChunk(rid: rid, streamId: "s", index: i, byte: UInt8(i)))
+        }
+        frames.push(Frame.streamEnd(reqId: rid, streamId: "s", chunkCount: chunkCount))
+        frames.push(Frame.end(id: rid))
+        frames.finish()
+        return demuxMultiStream(frameIterator: AnyIterator { frames.dequeue() })
+    }
+
+    /// Everything the handler is given, in order: each stream's items, and any
+    /// error, as text.
+    private func handlerSees(_ package: InputPackage) -> [String] {
+        var seen: [String] = []
+        while let stream = package.nextStream() {
+            switch stream {
+            case .success(let stream):
+                var items = stream.makeIterator()
+                while let item = items.next() {
+                    switch item {
+                    case .success: seen.append("item")
+                    case .failure(let error): seen.append("stream error: \(error)")
+                    }
+                }
+            case .failure(let error):
+                seen.append("package error: \(error)")
+            }
+        }
+        return seen
+    }
+
+    // TEST7191: A request stream whose CHUNKs carry chunk_index 0 then 2 gives its handler a protocol error naming the chunk out of place, the stream, and the index expected and the one received.
+    func test7191_chunkOutOfPlaceIsAProtocolError() {
+        let seen = handlerSees(demuxOf([0, 2], chunkCount: 2))
+        XCTAssertTrue(
+            seen.contains { $0.contains("chunk out of place on stream s: expected 1, got 2") },
+            "the out-of-place chunk must be an error, saw \(seen)"
+        )
+        XCTAssertEqual(seen.filter { $0 == "item" }.count, 1, "only the chunk in place is delivered: \(seen)")
+    }
+
+    // TEST7192: A stream of two CHUNKs ended by a STREAM_END whose chunk_count is 3 gives a protocol error naming the count wrong: sent 2, said 3.
+    func test7192_chunkCountWrongIsAProtocolError() {
+        let seen = handlerSees(demuxOf([0, 1], chunkCount: 3))
+        XCTAssertTrue(
+            seen.contains { $0.contains("chunk count wrong on stream s: sent 2, said 3") },
+            "the wrong count must be an error, saw \(seen)"
+        )
+    }
+
     // MARK: - Unbounded streams (L16)
 
     // TEST7070: An unbounded input stream is consumed live — the handler observes early items while the producer is still emitting, and the stream reports itself unbounded.
