@@ -920,6 +920,68 @@ final class ProtocolConformanceTests: XCTestCase {
         }
         conclude("hold", table.count, wrong)
     }
+
+    /// A frame of an emission row, as a receiver takes it in: REQ and LOG are
+    /// what the model calls other, and a LOG stands for them.
+    private func emissionFrame(_ row: [String: Any]) -> Frame {
+        let frameType: FrameType
+        switch text(row["frame"]) {
+        case "stream_start": frameType = .streamStart
+        case "chunk": frameType = .chunk
+        case "stream_end": frameType = .streamEnd
+        case "end": frameType = .end
+        case "err": frameType = .err
+        case "other": frameType = .log
+        default: fatalError("the model's table names no emitted frame \(String(describing: row["frame"]))")
+        }
+        var frame = Frame(frameType: frameType, id: .uint(1))
+        frame.streamId = text(row["stream"])
+        if frameType == .chunk { frame.chunkIndex = number(row["index"]) }
+        if frameType == .streamEnd { frame.chunkCount = (row["count"] as? NSNumber)?.uint64Value }
+        return frame
+    }
+
+    /// The first frame out of order, as the model names it; nil for a flow in order.
+    private func violationText(_ value: Any?) -> String? {
+        guard let violation = value as? [String: Any] else { return nil }
+        let stream = text(violation["stream"]) ?? ""
+        switch text(violation["kind"]) {
+        case "after_end": return "a frame after the call's END or ERR"
+        case "stream_restarted": return "stream \(stream) started twice"
+        case "stream_not_open": return "a chunk or end for stream \(stream), which is not open"
+        case "chunk_out_of_place":
+            return "chunk out of place on stream \(stream): expected \(number(violation["expected"])), got \(number(violation["got"]))"
+        case "chunk_count_wrong":
+            return "chunk count wrong on stream \(stream): sent \(number(violation["sent"])), said \(number(violation["said"]))"
+        case "end_with_open_stream": return "END with stream \(stream) still open"
+        default: fatalError("the model's table names no violation \(String(describing: violation["kind"]))")
+        }
+    }
+
+    // TEST7126: a receiver takes a call's frames in order as the model does:
+    // it refuses the first frame of every short flow that the model finds out
+    // of order (a stream started twice, a chunk or an end for a stream not
+    // open, a chunk out of its place, a count that is not what was sent, END
+    // with a stream open, anything after END or ERR), naming what is wrong, and
+    // refuses nothing in a flow the model finds in order.
+    func test7126_aReceivedFlowIsCheckedAsTheModelDoes() {
+        let table = rows("emission")
+        var wrong: [String] = []
+        for row in table {
+            guard let frames = row["frames"] as? [[String: Any]] else {
+                fatalError("an emission row without its frames: \(row)")
+            }
+            var flow = ReceivedFlow()
+            var refused: String?
+            for frame in frames {
+                refused = flow.receive(emissionFrame(frame))
+                if refused != nil { break }
+            }
+            let expected = violationText(row["violation"])
+            if refused != expected { wrong.append("\(row): refused \(String(describing: refused))") }
+        }
+        conclude("emission", table.count, wrong)
+    }
 }
 
 /// Thread-safe counter.
