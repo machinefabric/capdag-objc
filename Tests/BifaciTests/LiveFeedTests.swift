@@ -349,7 +349,7 @@ final class LiveFeedTests: XCTestCase {
     }
 
     // TEST8138: main-input fallback content mismatch — a provider whose
-    // content does not conform to the cap's main input is a hard error at
+    // content does not fit the cap's main input is a hard error at
     // resolution, never a mislabeled stream.
     func test8138_mainInputFallbackContentMismatchRejected() throws {
         let (ctx, _, _) = try makeBlindContext(mainIn: "media:audio;audio-frames;pcm")
@@ -361,8 +361,8 @@ final class LiveFeedTests: XCTestCase {
             return XCTFail("a non-conforming provider content must be rejected")
         }
         XCTAssertTrue(
-            "\(error)".contains("does not conform"),
-            "the error names the conformance failure: \(error)"
+            "\(error)".contains("does not fit"),
+            "the error names the failure to fit: \(error)"
         )
     }
 

@@ -264,7 +264,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertNotNil(specificOut);
     XCTAssertTrue([wildcardOut accepts:specificOut], @"an open output in a pattern asks nothing of the cap's output");
     XCTAssertFalse([wildcardOut isDispatchable:specificOut], @"a media:-output candidate does not promise binary out");
-    XCTAssertTrue([specificOut accepts:wildcardOut], @"a pattern asking for binary out is covered by a cap that gives anything");
+    XCTAssertFalse([specificOut accepts:wildcardOut], @"a pattern asking for binary out does not fit a cap whose declared output names no tag: it gives a thing with none");
 }
 
 #pragma mark - Tag Matching Tests
@@ -1008,21 +1008,23 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertFalse([pdfCap accepts:epubRequest],
         @"PDF-specific cap must NOT match epub request (epub lacks pdf marker)");
 
-    // Output direction: cap producing more specific output matches less specific request
+    // Output direction: a pattern asking for an image fits a cap that gives
+    // png thumbnails, since everything it gives is an image
     CSCapUrn *specificOutCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(specificOutCap);
     CSCapUrn *genericOutRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image\"" error:&error];
     XCTAssertNotNil(genericOutRequest);
-    XCTAssertTrue([specificOutCap accepts:genericOutRequest],
-        @"Cap producing image;png;thumbnail must satisfy request for image");
+    XCTAssertTrue([genericOutRequest accepts:specificOutCap],
+        @"a pattern asking for an image fits a cap producing image;png;thumbnail");
 
-    // Reverse output: generic output cap does NOT match specific output request
+    // Reverse output: a pattern asking for png thumbnails does not fit a cap
+    // whose declared output is an image of no file type
     CSCapUrn *genericOutCap = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:image\"" error:&error];
     XCTAssertNotNil(genericOutCap);
     CSCapUrn *specificOutRequest = [CSCapUrn fromString:@"cap:in=\"media:\";generate-thumbnail;out=\"media:ext=png;image;thumbnail\"" error:&error];
     XCTAssertNotNil(specificOutRequest);
-    XCTAssertFalse([genericOutCap accepts:specificOutRequest],
-        @"Cap producing generic image must NOT satisfy request requiring image;png;thumbnail");
+    XCTAssertFalse([specificOutRequest accepts:genericOutCap],
+        @"a pattern requiring image;png;thumbnail does not fit a cap producing an image of no file type");
 }
 
 // TEST891: Semantic direction specificity - more media URN tags = higher specificity (mirror-local variant of TEST052)
@@ -1142,7 +1144,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([wildcard accepts:specificOut], @"an open pattern fits a cap that gives text");
     XCTAssertTrue([specificOut conformsTo:wildcard], @"the same, asked from the cap's side");
     XCTAssertFalse([wildcard isDispatchable:specificOut], @"a media:-output candidate does not serve a request that needs text");
-    XCTAssertTrue([specificOut accepts:wildcard], @"a pattern asking for text out is covered by a cap that gives anything");
+    XCTAssertFalse([specificOut accepts:wildcard], @"a pattern asking for text out does not fit a cap whose declared output names no tag: it gives a thing with none");
     XCTAssertTrue([wildcard accepts:specificIn], @"an open pattern fits a cap that takes text");
     XCTAssertTrue([specificIn conformsTo:wildcard]);
 }
@@ -2343,16 +2345,18 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual([CSCapUrn selectFromCandidates:caps forRequest:request], 2u);
 
     // Refinement when no exact match.
-    request = p(@"cap:convert");
-    a = p(@"cap:convert;in=media:pdf;out=media:html");
-    b = p(@"cap:convert;in=media:image;out=media:png");
-    c = p(@"cap:convert");
-    XCTAssertEqual(request.specificity, 2u);
-    XCTAssertEqual(a.specificity, 20202u);
-    XCTAssertEqual(b.specificity, 20202u);
-    XCTAssertEqual(c.specificity, 2u);
+    request = p(@"cap:convert;in=media:image;out=media:image");
+    a = p(@"cap:convert;in=media:image;out=\"media:ext=png;image\"");
+    b = p(@"cap:convert;in=media:image;out=\"media:ext=jpeg;image\"");
+    c = p(@"cap:convert;in=media:image;out=media:image");
+    XCTAssertEqual(request.specificity, 20202u);
+    XCTAssertEqual(a.specificity, 60202u);
+    XCTAssertEqual(b.specificity, 60202u);
+    XCTAssertEqual(c.specificity, 20202u);
     caps = @[a, b, c];
     for (CSCapUrn *cap in caps) XCTAssertTrue([cap isDispatchable:request], @"%@", cap);
+    XCTAssertFalse([p(@"cap:convert;in=media:pdf;out=media:image") isDispatchable:request],
+        @"a cap that takes only PDFs does not serve a request that sends any image");
     all = [CSCapMatcher findAllMatchesInCaps:caps forRequest:request];
     XCTAssertEqual(all.count, 3u);
     XCTAssertTrue(all[0] == c && all[1] == a && all[2] == b);

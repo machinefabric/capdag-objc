@@ -135,7 +135,7 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
     CSCapUrn *urn = [CSCapUrn fromString:[NSString stringWithFormat:
         @"cap:in=\"%@\";out=\"%@\";reference-probe", content, anyShape] error:&error];
     XCTAssertNotNil(urn, @"%@", error);
-    CSCap *cap = [CSCap capWithUrn:urn title:@"Reference probe" aliases:@[]];
+    CSCap *cap = [CSCap capWithUrn:urn title:@"Reference probe" aliases:@[@"reference-probe"]];
     [cap addArg:[CSCapArg argWithMediaUrn:content name:@"input" required:YES
                                   sources:@[[CSArgSource stdinSourceWithMediaUrn:content]]]];
     [cap addOutput:[CSCapOutput outputWithMediaUrn:anyShape name:@"output" outputDescription:@"out"]];
