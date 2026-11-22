@@ -1109,6 +1109,50 @@ fileprivate enum LungoExternWf {
     }
 }
 
+/// Lean's CapDAG.Detect.AdapterChoice.
+public enum AdapterChoice {
+    /// Lean's CapDAG.Detect.AdapterChoice.uncovered.
+    case uncovered
+    /// Lean's CapDAG.Detect.AdapterChoice.one.
+    case one(i: LungoNat)
+    /// Lean's CapDAG.Detect.AdapterChoice.ambiguous.
+    case ambiguous(i: LungoNat, j: LungoNat)
+}
+
+extension AdapterChoice: Equatable {}
+
+extension AdapterChoice {
+    /// The layout fingerprint of Lean's CapDAG.Detect.AdapterChoice.
+    public static var lungoFingerprint: String { "b2913e0b15cdb7e5eeb0ae7b326977674e4374898cf7ad6524c99cd7ee6198f5" }
+
+    /// Describes CapDAG.Detect.AdapterChoice for polymorphic functions.
+    public static var lungoType: LungoType<AdapterChoice> {
+        LungoType<AdapterChoice>(
+            expr: Lungo.inductiveExpr(26),
+            encode: { w, v in
+                switch v {
+                case .uncovered:
+                    w.u32(0)
+                case .one(let i):
+                    w.u32(1)
+                    try Lungo.nat.encode(&w, i)
+                case .ambiguous(let i, let j):
+                    w.u32(2)
+                    try Lungo.nat.encode(&w, i)
+                    try Lungo.nat.encode(&w, j)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .uncovered
+                case 1: return .one(i: try Lungo.nat.decode(&r))
+                case 2: return .ambiguous(i: try Lungo.nat.decode(&r), j: try Lungo.nat.decode(&r))
+                case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Detect.AdapterChoice")
+                }
+            })
+    }
+}
+
 /// Lean's CapDAG.Detect.Candidate.
 public struct Candidate {
     public let urn: TaggedUrnFormal.Wf
@@ -1127,7 +1171,7 @@ extension Candidate {
     /// Describes CapDAG.Detect.Candidate for polymorphic functions.
     public static var lungoType: LungoType<Candidate> {
         LungoType<Candidate>(
-            expr: Lungo.inductiveExpr(26),
+            expr: Lungo.inductiveExpr(27),
             encode: { w, v in
                 w.u32(0)
                 try LungoExternWf.lungoType.encode(&w, v.urn)
@@ -1163,7 +1207,7 @@ extension WfCap {
     /// Describes CapDAG.Exec.WfCap for polymorphic functions.
     public static var lungoType: LungoType<WfCap> {
         LungoType<WfCap>(
-            expr: Lungo.inductiveExpr(27),
+            expr: Lungo.inductiveExpr(28),
             encode: { w, v in
                 w.u32(0)
                 try LungoExternWf.lungoType.encode(&w, v.input)
@@ -1196,7 +1240,7 @@ extension Illegal {
     /// Describes CapDAG.Illegal for polymorphic functions.
     public static var lungoType: LungoType<Illegal> {
         LungoType<Illegal>(
-            expr: Lungo.inductiveExpr(28),
+            expr: Lungo.inductiveExpr(29),
             encode: { w, v in
                 switch v {
                 case .bareTop:
@@ -1236,7 +1280,7 @@ extension Effect {
     /// Describes CapDAG.Effect for polymorphic functions.
     public static var lungoType: LungoType<Effect> {
         LungoType<Effect>(
-            expr: Lungo.inductiveExpr(29),
+            expr: Lungo.inductiveExpr(30),
             encode: { w, v in
                 switch v {
                 case .unspecified:
@@ -1283,7 +1327,7 @@ extension WfQuery {
     /// Describes CapDAG.Exec.WfQuery for polymorphic functions.
     public static var lungoType: LungoType<WfQuery> {
         LungoType<WfQuery>(
-            expr: Lungo.inductiveExpr(30),
+            expr: Lungo.inductiveExpr(31),
             encode: { w, v in
                 w.u32(0)
                 try WfAsk.lungoType.encode(&w, v.input)
@@ -1320,7 +1364,7 @@ extension Grade {
     /// Describes CapDAG.Grade for polymorphic functions.
     public static var lungoType: LungoType<Grade> {
         LungoType<Grade>(
-            expr: Lungo.inductiveExpr(31),
+            expr: Lungo.inductiveExpr(32),
             encode: { w, v in
                 switch v {
                 case .exact:
@@ -1366,7 +1410,7 @@ extension RunPhase {
     /// Describes CapDAG.Run.Control.RunPhase for polymorphic functions.
     public static var lungoType: LungoType<RunPhase> {
         LungoType<RunPhase>(
-            expr: Lungo.inductiveExpr(32),
+            expr: Lungo.inductiveExpr(33),
             encode: { w, v in
                 switch v {
                 case .running:
@@ -1414,7 +1458,7 @@ extension RunOutcome {
     /// Describes CapDAG.Run.Control.RunOutcome for polymorphic functions.
     public static var lungoType: LungoType<RunOutcome> {
         LungoType<RunOutcome>(
-            expr: Lungo.inductiveExpr(33),
+            expr: Lungo.inductiveExpr(34),
             encode: { w, v in
                 switch v {
                 case .completed:
@@ -1465,7 +1509,7 @@ extension RunAsk {
     /// Describes CapDAG.Run.Control.RunAsk for polymorphic functions.
     public static var lungoType: LungoType<RunAsk> {
         LungoType<RunAsk>(
-            expr: Lungo.inductiveExpr(34),
+            expr: Lungo.inductiveExpr(35),
             encode: { w, v in
                 switch v {
                 case .interrupt:
@@ -1513,7 +1557,7 @@ extension RunNext {
     /// Describes CapDAG.Run.Control.RunNext for polymorphic functions.
     public static var lungoType: LungoType<RunNext> {
         LungoType<RunNext>(
-            expr: Lungo.inductiveExpr(35),
+            expr: Lungo.inductiveExpr(36),
             encode: { w, v in
                 w.u32(0)
                 try RunPhase.lungoType.encode(&w, v.phase)
@@ -1556,7 +1600,7 @@ extension StepState {
     /// Describes CapDAG.Run.Step.StepState for polymorphic functions.
     public static var lungoType: LungoType<StepState> {
         LungoType<StepState>(
-            expr: Lungo.inductiveExpr(36),
+            expr: Lungo.inductiveExpr(37),
             encode: { w, v in
                 switch v {
                 case .waiting:
@@ -1616,7 +1660,7 @@ extension StepReport {
     /// Describes CapDAG.Run.Step.StepReport for polymorphic functions.
     public static var lungoType: LungoType<StepReport> {
         LungoType<StepReport>(
-            expr: Lungo.inductiveExpr(37),
+            expr: Lungo.inductiveExpr(38),
             encode: { w, v in
                 switch v {
                 case .progress(let complete):
@@ -1674,7 +1718,7 @@ extension Constraint {
     /// Describes TaggedUrn.Constraint for polymorphic functions.
     public static var lungoType: LungoType<Constraint> {
         LungoType<Constraint>(
-            expr: Lungo.inductiveExpr(38),
+            expr: Lungo.inductiveExpr(39),
             encode: { w, v in
                 switch v {
                 case .missing:
@@ -1733,7 +1777,7 @@ extension Pool {
     /// Describes CapDAG.Bifaci.Pools.Pool for polymorphic functions.
     public static var lungoType: LungoType<Pool> {
         LungoType<Pool>(
-            expr: Lungo.inductiveExpr(39),
+            expr: Lungo.inductiveExpr(40),
             encode: { w, v in
                 w.u32(0)
                 try Lungo.string.encode(&w, v.name)
@@ -1767,7 +1811,7 @@ extension Rules {
     /// Describes CapDAG.Detect.Rules for polymorphic functions.
     public static var lungoType: LungoType<Rules> {
         LungoType<Rules>(
-            expr: Lungo.inductiveExpr(40),
+            expr: Lungo.inductiveExpr(41),
             encode: { w, v in
                 switch v {
                 case .unruled:
@@ -1808,7 +1852,7 @@ extension WfAsk {
     /// Describes CapDAG.Exec.WfAsk for polymorphic functions.
     public static var lungoType: LungoType<WfAsk> {
         LungoType<WfAsk>(
-            expr: Lungo.inductiveExpr(41),
+            expr: Lungo.inductiveExpr(42),
             encode: { w, v in
                 switch v {
                 case .unknown:
@@ -1859,7 +1903,7 @@ extension RunAct {
     /// Describes CapDAG.Run.Control.RunAct for polymorphic functions.
     public static var lungoType: LungoType<RunAct> {
         LungoType<RunAct>(
-            expr: Lungo.inductiveExpr(42),
+            expr: Lungo.inductiveExpr(43),
             encode: { w, v in
                 switch v {
                 case .none:
@@ -2352,6 +2396,17 @@ public func write(_ over: Bool, _ frame: FrameType) throws -> Write {
         returns: .value(Write.lungoType))
 }
 
+/// Lean's CapDAG.Detect.adapterFor : List TaggedUrn.Exec.Wf → TaggedUrn.Exec.Wf → CapDAG.Detect.AdapterChoice
+public func adapterFor(_ keys: [TaggedUrnFormal.Wf], _ base: TaggedUrnFormal.Wf) throws -> AdapterChoice {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dDetect_dadapterFor), typeArgs: [],
+        args: { w in
+            try Lungo.list(LungoExternWf.lungoType).encode(&w, keys)
+            try LungoExternWf.lungoType.encode(&w, base)
+        },
+        returns: .value(AdapterChoice.lungoType))
+}
+
 /// Lean's CapDAG.Detect.mostSpecific : List TaggedUrn.Exec.Wf → TaggedUrn.Exec.Wf → Bool
 public func mostSpecific(_ us: [TaggedUrnFormal.Wf], _ u: TaggedUrnFormal.Wf) throws -> Bool {
     return try program.invoke(
@@ -2737,12 +2792,32 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 72,
+          "line": 81,
           "column": 1
         },
         "end": {
-          "line": 75,
+          "line": 84,
           "column": 50
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Detect.Covers",
+      "kind": "lungo.model",
+      "statement": "List TaggedUrn.Exec.Wf → TaggedUrn.Exec.Wf → Nat → Prop",
+      "definition": "fun keys base i => ∃ k, keys[i]? = some k ∧ TaggedUrn.refines base.urn k.urn",
+      "package": "capdagFormal",
+      "fingerprint": "1ad9a5464edc019d773d00a1d863a9ab78e35d253a3bf30c0bf5b34368ff5977",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Detect.lean",
+        "start": {
+          "line": 333,
+          "column": 1
+        },
+        "end": {
+          "line": 337,
+          "column": 60
         }
       }
     },
@@ -2757,11 +2832,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 62,
+          "line": 71,
           "column": 1
         },
         "end": {
-          "line": 65,
+          "line": 74,
           "column": 43
         }
       }
@@ -2777,11 +2852,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 84,
+          "line": 93,
           "column": 1
         },
         "end": {
-          "line": 87,
+          "line": 96,
           "column": 35
         }
       }
@@ -2797,11 +2872,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 67,
+          "line": 76,
           "column": 1
         },
         "end": {
-          "line": 70,
+          "line": 79,
           "column": 50
         }
       }
@@ -2817,11 +2892,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 77,
+          "line": 86,
           "column": 1
         },
         "end": {
-          "line": 82,
+          "line": 91,
           "column": 54
         }
       }
@@ -2837,11 +2912,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 58,
+          "line": 67,
           "column": 1
         },
         "end": {
-          "line": 60,
+          "line": 69,
           "column": 83
         }
       }
@@ -5791,6 +5866,105 @@ public let assuranceJSON = #"""
       }
     },
     {
+      "name": "CapDAG.Detect.adapterFor_ambiguous",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Detect.adapterFor"
+      ],
+      "specifications": [],
+      "statement": "∀ (keys : List TaggedUrn.Exec.Wf) (base : TaggedUrn.Exec.Wf) (i j : Nat),\n  CapDAG.Detect.adapterFor keys base = CapDAG.Detect.AdapterChoice.ambiguous i j →\n    i ≠ j ∧\n      CapDAG.Detect.Covers keys base i ∧\n        CapDAG.Detect.Covers keys base j ∧\n          ∀ (ki kj : TaggedUrn.Exec.Wf),\n            keys[i]? = some ki →\n              keys[j]? = some kj → ¬CapDAG.Detect.Strictly ki.urn kj.urn ∧ ¬CapDAG.Detect.Strictly kj.urn ki.urn",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "31df2ad07974b9c2aa8a35520bd82afa515e5e3e765fa6a6728aec437a0d2210",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Detect.lean",
+        "start": {
+          "line": 553,
+          "column": 1
+        },
+        "end": {
+          "line": 587,
+          "column": 16
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Detect.adapterFor_one",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Detect.adapterFor"
+      ],
+      "specifications": [],
+      "statement": "∀ (keys : List TaggedUrn.Exec.Wf) (base : TaggedUrn.Exec.Wf) (i : Nat),\n  CapDAG.Detect.adapterFor keys base = CapDAG.Detect.AdapterChoice.one i →\n    CapDAG.Detect.Covers keys base i ∧\n      ∀ (j : Nat) (ki kj : TaggedUrn.Exec.Wf),\n        keys[i]? = some ki → keys[j]? = some kj → CapDAG.Detect.Covers keys base j → TaggedUrn.refines ki.urn kj.urn",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "35d6342822e049c9aec0337ebc3c909c5f26b486a280702aebc7684eef74093f",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Detect.lean",
+        "start": {
+          "line": 521,
+          "column": 1
+        },
+        "end": {
+          "line": 551,
+          "column": 12
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Detect.adapterFor_uncovered_iff",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Detect.adapterFor"
+      ],
+      "specifications": [],
+      "statement": "∀ (keys : List TaggedUrn.Exec.Wf) (base : TaggedUrn.Exec.Wf),\n  CapDAG.Detect.adapterFor keys base = CapDAG.Detect.AdapterChoice.uncovered ↔\n    ∀ (i : Nat), ¬CapDAG.Detect.Covers keys base i",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "cb8b51d23f491e6183919571663eab923314a0819dad46b6c690acf2803d1636",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Detect.lean",
+        "start": {
+          "line": 494,
+          "column": 1
+        },
+        "end": {
+          "line": 519,
+          "column": 14
+        }
+      }
+    },
+    {
       "name": "CapDAG.Detect.bases_stand",
       "relation": "lungo.law",
       "subjects": [
@@ -5814,11 +5988,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 297,
+          "line": 306,
           "column": 1
         },
         "end": {
-          "line": 305,
+          "line": 314,
           "column": 31
         }
       }
@@ -5847,11 +6021,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 307,
+          "line": 316,
           "column": 1
         },
         "end": {
-          "line": 311,
+          "line": 320,
           "column": 40
         }
       }
@@ -5882,11 +6056,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 158,
+          "line": 167,
           "column": 1
         },
         "end": {
-          "line": 166,
+          "line": 175,
           "column": 58
         }
       }
@@ -5915,11 +6089,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 264,
+          "line": 273,
           "column": 1
         },
         "end": {
-          "line": 278,
+          "line": 287,
           "column": 30
         }
       }
@@ -5948,11 +6122,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 248,
+          "line": 257,
           "column": 1
         },
         "end": {
-          "line": 262,
+          "line": 271,
           "column": 27
         }
       }
@@ -5981,11 +6155,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 240,
+          "line": 249,
           "column": 1
         },
         "end": {
-          "line": 246,
+          "line": 255,
           "column": 42
         }
       }
@@ -6016,11 +6190,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 132,
+          "line": 141,
           "column": 1
         },
         "end": {
-          "line": 152,
+          "line": 161,
           "column": 43
         }
       }
@@ -6049,11 +6223,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 282,
+          "line": 291,
           "column": 1
         },
         "end": {
-          "line": 295,
+          "line": 304,
           "column": 32
         }
       }
@@ -7863,7 +8037,7 @@ public let assuranceJSON = #"""
         "TaggedUrn.Exec.leastUpperBound"
       ],
       "specifications": [],
-      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × String)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    out = TaggedUrn.storedTags (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us)).tags ∧\n      TaggedUrn.Sorted (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us)).tags",
+      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × TaggedUrn.Constraint)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    out = (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us)).tags ∧\n      TaggedUrn.Sorted (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us)).tags",
       "status": "proved",
       "evidence_trust": {
         "axioms": [
@@ -7875,7 +8049,7 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "tagged_urn_formal",
-      "fingerprint": "5b9672051c7acceda18316f9b1b9767fe351580fac69f82e20dea84f1491bade",
+      "fingerprint": "115a733718825f3e1f4a36a3caee9fe8d6454f336652eabd03d7191248d203ca",
       "source": {
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
@@ -7908,7 +8082,7 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "tagged_urn_formal",
-      "fingerprint": "15beaa3918c1ab8f4af928b1e0a09606a0a4d3742f1fe2875ae5044bb8bf7b47",
+      "fingerprint": "fd4f0e45e28d285cb8361305402dc37cd11658a47f365dc0e2b75f62ea97f66c",
       "source": {
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
@@ -7929,7 +8103,7 @@ public let assuranceJSON = #"""
         "TaggedUrn.Exec.leastUpperBound"
       ],
       "specifications": [],
-      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × String)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    us ≠ [] →\n      ∀ (b : TaggedUrn.Urn),\n        (∀ (u : TaggedUrn.Exec.Wf), u ∈ us → TaggedUrn.refines u.urn b) →\n          (∀ (k r : String),\n              b.tag k = TaggedUrn.Constraint.presentNot r ∨ b.tag k = TaggedUrn.Constraint.optionalNot r →\n                ∃ u, u ∈ us ∧ (u.urn.tag k).named = some r) →\n            TaggedUrn.refines (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us)) b",
+      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × TaggedUrn.Constraint)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    us ≠ [] →\n      ∀ (b : TaggedUrn.Urn),\n        (∀ (u : TaggedUrn.Exec.Wf), u ∈ us → TaggedUrn.refines u.urn b) →\n          (∀ (k r : String),\n              b.tag k = TaggedUrn.Constraint.presentNot r ∨ b.tag k = TaggedUrn.Constraint.optionalNot r →\n                ∃ u, u ∈ us ∧ (u.urn.tag k).named = some r) →\n            TaggedUrn.refines (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us)) b",
       "status": "proved",
       "evidence_trust": {
         "axioms": [
@@ -7941,17 +8115,50 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "tagged_urn_formal",
-      "fingerprint": "587f041c9dadaae4c3b8b12add3f7b5c33dc5e9412fc64138cc1d9869b5f6f69",
+      "fingerprint": "879df22171190fda9e358ecb2d94cb8808151d59b62c1f9a15bf61fc6e63ea80",
       "source": {
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 161,
+          "line": 178,
           "column": 1
         },
         "end": {
-          "line": 180,
+          "line": 197,
           "column": 46
+        }
+      }
+    },
+    {
+      "name": "TaggedUrn.Exec.leastUpperBound_no_missing",
+      "relation": "lungo.law",
+      "subjects": [
+        "TaggedUrn.Exec.leastUpperBound"
+      ],
+      "specifications": [],
+      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × TaggedUrn.Constraint)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    ∀ (p : String × TaggedUrn.Constraint), p ∈ out → p.snd ≠ TaggedUrn.Constraint.missing",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "tagged_urn_formal",
+      "fingerprint": "e05372e3884dc9d35d8eb79e6eaa17d32af8294d827042eb1c849742d46b1d9b",
+      "source": {
+        "package": "tagged_urn_formal",
+        "file": "TaggedUrn/Exec.lean",
+        "start": {
+          "line": 152,
+          "column": 1
+        },
+        "end": {
+          "line": 167,
+          "column": 12
         }
       }
     },
@@ -7962,7 +8169,7 @@ public let assuranceJSON = #"""
         "TaggedUrn.Exec.leastUpperBound"
       ],
       "specifications": [],
-      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × String)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    ∀ (u : TaggedUrn.Exec.Wf),\n      u ∈ us → TaggedUrn.refines u.urn (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us))",
+      "statement": "∀ {scheme : String} {us : List TaggedUrn.Exec.Wf} {out : List (String × TaggedUrn.Constraint)},\n  TaggedUrn.Exec.leastUpperBound scheme us = some out →\n    ∀ (u : TaggedUrn.Exec.Wf),\n      u ∈ us → TaggedUrn.refines u.urn (TaggedUrn.boundUrn scheme (List.map (fun x => x.urn) us))",
       "status": "proved",
       "evidence_trust": {
         "axioms": [
@@ -7974,16 +8181,16 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "tagged_urn_formal",
-      "fingerprint": "c94f147fe4f61a0f6fe45e8d9ac6040a8fbb7a3b38b87498d017ae36ba79b22a",
+      "fingerprint": "b39ceb9b5509ab9297e0e400884e70e63fa6396313ab7b2d14ed17185c0b87ac",
       "source": {
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 152,
+          "line": 169,
           "column": 1
         },
         "end": {
-          "line": 159,
+          "line": 176,
           "column": 67
         }
       }
@@ -9820,6 +10027,48 @@ public let assuranceJSON = #"""
       }
     },
     {
+      "name": "CapDAG.Detect.adapterFor",
+      "module": "CapDAG.Detect",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": [
+          "lean_nat_add",
+          "lean_nat_dec_eq",
+          "lean_nat_sub",
+          "lean_string_dec_eq",
+          "lean_string_dec_lt"
+        ]
+      },
+      "claims": [
+        "CapDAG.Detect.adapterFor_ambiguous",
+        "CapDAG.Detect.adapterFor_one",
+        "CapDAG.Detect.adapterFor_uncovered_iff"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Detect.lean",
+        "start": {
+          "line": 485,
+          "column": 1
+        },
+        "end": {
+          "line": 492,
+          "column": 34
+        }
+      }
+    },
+    {
       "name": "CapDAG.Detect.mostSpecific",
       "module": "CapDAG.Detect",
       "async": false,
@@ -9848,11 +10097,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 154,
+          "line": 163,
           "column": 1
         },
         "end": {
-          "line": 156,
+          "line": 165,
           "column": 36
         }
       }
@@ -9887,11 +10136,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 176,
+          "line": 185,
           "column": 1
         },
         "end": {
-          "line": 178,
+          "line": 187,
           "column": 66
         }
       }
@@ -9927,11 +10176,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Detect.lean",
         "start": {
-          "line": 106,
+          "line": 115,
           "column": 1
         },
         "end": {
-          "line": 113,
+          "line": 122,
           "column": 68
         }
       }
