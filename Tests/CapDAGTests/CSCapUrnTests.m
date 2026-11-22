@@ -751,7 +751,7 @@ static NSString* testUrn(NSString *tags) {
 // TEST009: Test that unterminated quote produces UnterminatedQuote error
 - (void)test009_unterminatedQuoteError {
     NSError *error = nil;
-    CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:void;key=\"unterminated;out=\"media:enc=utf8;record\"" error:&error];
+    CSCapUrn *cap = [CSCapUrn fromString:@"cap:in=media:void;out=\"media:enc=utf8;record\";key=\"unterminated" error:&error];
     XCTAssertNil(cap);
     XCTAssertNotNil(error);
     XCTAssertEqual(error.code, CSCapUrnErrorUnterminatedQuote);
@@ -2161,6 +2161,7 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(CSCompareCodePoints(@"～", @"\U0001F600"), NSOrderedAscending);
     XCTAssertEqual(CSCompareCodePoints(@"\U0001F600", @"～"), NSOrderedDescending);
     XCTAssertEqual(CSCompareCodePoints(@"a", @"a-x"), NSOrderedAscending);
+}
 
 // TEST6759: fromInSpec and fromTags read direction tags as parsing does: * is media:, an empty spec is refused, and a cap-tag map naming a structural key is refused
 - (void)test6759_constructorsNormalizeDirectionsLikeParsing {
@@ -2182,9 +2183,10 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertEqual(error.code, CSCapUrnErrorInvalidInSpec);
 
     error = nil;
+    NSDictionary<NSString *, CSTagConstraint *> *namingIn = @{@"op": [CSTagConstraint present],
+                                                              @"in": [CSTagConstraint exact:@"media:pdf"]};
     XCTAssertNil([CSCapUrn fromInSpec:@"media:pdf" outSpec:@"media:record" effect:@"declared"
-                                 tags:@{@"op": [CSTagConstraint present], @"in": [CSTagConstraint exact:@"media:pdf"]}
-                                error:&error]);
+                                 tags:namingIn error:&error]);
     XCTAssertEqual(error.code, CSCapUrnErrorInvalidTagFormat);
 }
 
@@ -2297,8 +2299,10 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue(all[0] == c && all[1] == a && all[2] == b);
     XCTAssertEqual([CSCapUrn selectFromCandidates:caps forRequest:request], 2u);
     // Without C, A and B tie, and the first in the list is chosen.
-    XCTAssertEqual([CSCapUrn selectFromCandidates:@[a, b] forRequest:request], 0u);
-    XCTAssertEqual([CSCapUrn selectFromCandidates:@[b, a] forRequest:request], 0u);
+    NSArray<CSCapUrn *> *aThenB = @[a, b];
+    NSArray<CSCapUrn *> *bThenA = @[b, a];
+    XCTAssertEqual([CSCapUrn selectFromCandidates:aThenB forRequest:request], 0u);
+    XCTAssertEqual([CSCapUrn selectFromCandidates:bThenA forRequest:request], 0u);
 
     // Fallback only.
     request = p(@"cap:extract;format=json;in=\"media:pdf;v=2.0\";out=media:record");

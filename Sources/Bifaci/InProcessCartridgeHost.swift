@@ -441,7 +441,7 @@ public final class InProcessCartridgeHost {
     /// least ranking key; of equal keys, the first registered.
     static func findHandlerForCap(caps: [CSCapUrn], owners: [Int], request: CSCapUrn) -> Int? {
         let i = CSCapUrn.selectFromCandidates(caps, forRequest: request)
-        return i == NSNotFound ? nil : owners[i]
+        return i == NSNotFound ? nil : owners[Int(i)]
     }
 
     /// Run the host. Blocks until the local connection closes.
