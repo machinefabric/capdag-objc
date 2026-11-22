@@ -1223,6 +1223,70 @@ extension WfCap {
     }
 }
 
+/// Lean's TaggedUrn.Constraint.
+public enum Constraint {
+    /// Lean's TaggedUrn.Constraint.missing.
+    case missing
+    /// Lean's TaggedUrn.Constraint.unconstrained.
+    case unconstrained
+    /// Lean's TaggedUrn.Constraint.optionalNot.
+    case optionalNot(value: String)
+    /// Lean's TaggedUrn.Constraint.present.
+    case present
+    /// Lean's TaggedUrn.Constraint.presentNot.
+    case presentNot(value: String)
+    /// Lean's TaggedUrn.Constraint.exact.
+    case exact(value: String)
+    /// Lean's TaggedUrn.Constraint.absent.
+    case absent
+}
+
+extension Constraint: Equatable {}
+
+extension Constraint {
+    /// The layout fingerprint of Lean's TaggedUrn.Constraint.
+    public static var lungoFingerprint: String { "481fc09e23c6415a7c3f05887577ec940a6ecc84b005e63476c1060b59edcac7" }
+
+    /// Describes TaggedUrn.Constraint for polymorphic functions.
+    public static var lungoType: LungoType<Constraint> {
+        LungoType<Constraint>(
+            expr: Lungo.inductiveExpr(29),
+            encode: { w, v in
+                switch v {
+                case .missing:
+                    w.u32(0)
+                case .unconstrained:
+                    w.u32(1)
+                case .optionalNot(let value):
+                    w.u32(2)
+                    try Lungo.string.encode(&w, value)
+                case .present:
+                    w.u32(3)
+                case .presentNot(let value):
+                    w.u32(4)
+                    try Lungo.string.encode(&w, value)
+                case .exact(let value):
+                    w.u32(5)
+                    try Lungo.string.encode(&w, value)
+                case .absent:
+                    w.u32(6)
+                }
+            },
+            decode: { r in
+                switch try r.u32() {
+                case 0: return .missing
+                case 1: return .unconstrained
+                case 2: return .optionalNot(value: try Lungo.string.decode(&r))
+                case 3: return .present
+                case 4: return .presentNot(value: try Lungo.string.decode(&r))
+                case 5: return .exact(value: try Lungo.string.decode(&r))
+                case 6: return .absent
+                case let c: throw LungoMalformed("constructor index \(c) of TaggedUrn.Constraint")
+                }
+            })
+    }
+}
+
 /// Lean's CapDAG.Illegal.
 public enum Illegal {
     /// Lean's CapDAG.Illegal.bareTop.
@@ -1240,7 +1304,7 @@ extension Illegal {
     /// Describes CapDAG.Illegal for polymorphic functions.
     public static var lungoType: LungoType<Illegal> {
         LungoType<Illegal>(
-            expr: Lungo.inductiveExpr(29),
+            expr: Lungo.inductiveExpr(30),
             encode: { w, v in
                 switch v {
                 case .bareTop:
@@ -1280,7 +1344,7 @@ extension Effect {
     /// Describes CapDAG.Effect for polymorphic functions.
     public static var lungoType: LungoType<Effect> {
         LungoType<Effect>(
-            expr: Lungo.inductiveExpr(30),
+            expr: Lungo.inductiveExpr(31),
             encode: { w, v in
                 switch v {
                 case .unspecified:
@@ -1327,7 +1391,7 @@ extension WfQuery {
     /// Describes CapDAG.Exec.WfQuery for polymorphic functions.
     public static var lungoType: LungoType<WfQuery> {
         LungoType<WfQuery>(
-            expr: Lungo.inductiveExpr(31),
+            expr: Lungo.inductiveExpr(32),
             encode: { w, v in
                 w.u32(0)
                 try WfAsk.lungoType.encode(&w, v.input)
@@ -1364,7 +1428,7 @@ extension Grade {
     /// Describes CapDAG.Grade for polymorphic functions.
     public static var lungoType: LungoType<Grade> {
         LungoType<Grade>(
-            expr: Lungo.inductiveExpr(32),
+            expr: Lungo.inductiveExpr(33),
             encode: { w, v in
                 switch v {
                 case .exact:
@@ -1410,7 +1474,7 @@ extension RunPhase {
     /// Describes CapDAG.Run.Control.RunPhase for polymorphic functions.
     public static var lungoType: LungoType<RunPhase> {
         LungoType<RunPhase>(
-            expr: Lungo.inductiveExpr(33),
+            expr: Lungo.inductiveExpr(34),
             encode: { w, v in
                 switch v {
                 case .running:
@@ -1458,7 +1522,7 @@ extension RunOutcome {
     /// Describes CapDAG.Run.Control.RunOutcome for polymorphic functions.
     public static var lungoType: LungoType<RunOutcome> {
         LungoType<RunOutcome>(
-            expr: Lungo.inductiveExpr(34),
+            expr: Lungo.inductiveExpr(35),
             encode: { w, v in
                 switch v {
                 case .completed:
@@ -1509,7 +1573,7 @@ extension RunAsk {
     /// Describes CapDAG.Run.Control.RunAsk for polymorphic functions.
     public static var lungoType: LungoType<RunAsk> {
         LungoType<RunAsk>(
-            expr: Lungo.inductiveExpr(35),
+            expr: Lungo.inductiveExpr(36),
             encode: { w, v in
                 switch v {
                 case .interrupt:
@@ -1557,7 +1621,7 @@ extension RunNext {
     /// Describes CapDAG.Run.Control.RunNext for polymorphic functions.
     public static var lungoType: LungoType<RunNext> {
         LungoType<RunNext>(
-            expr: Lungo.inductiveExpr(36),
+            expr: Lungo.inductiveExpr(37),
             encode: { w, v in
                 w.u32(0)
                 try RunPhase.lungoType.encode(&w, v.phase)
@@ -1600,7 +1664,7 @@ extension StepState {
     /// Describes CapDAG.Run.Step.StepState for polymorphic functions.
     public static var lungoType: LungoType<StepState> {
         LungoType<StepState>(
-            expr: Lungo.inductiveExpr(37),
+            expr: Lungo.inductiveExpr(38),
             encode: { w, v in
                 switch v {
                 case .waiting:
@@ -1660,7 +1724,7 @@ extension StepReport {
     /// Describes CapDAG.Run.Step.StepReport for polymorphic functions.
     public static var lungoType: LungoType<StepReport> {
         LungoType<StepReport>(
-            expr: Lungo.inductiveExpr(38),
+            expr: Lungo.inductiveExpr(39),
             encode: { w, v in
                 switch v {
                 case .progress(let complete):
@@ -1686,70 +1750,6 @@ extension StepReport {
                 case 3: return .failed
                 case 4: return .runEnded(completed: try Lungo.bool.decode(&r), aborted: try Lungo.bool.decode(&r))
                 case let c: throw LungoMalformed("constructor index \(c) of CapDAG.Run.Step.StepReport")
-                }
-            })
-    }
-}
-
-/// Lean's TaggedUrn.Constraint.
-public enum Constraint {
-    /// Lean's TaggedUrn.Constraint.missing.
-    case missing
-    /// Lean's TaggedUrn.Constraint.unconstrained.
-    case unconstrained
-    /// Lean's TaggedUrn.Constraint.optionalNot.
-    case optionalNot(value: String)
-    /// Lean's TaggedUrn.Constraint.present.
-    case present
-    /// Lean's TaggedUrn.Constraint.presentNot.
-    case presentNot(value: String)
-    /// Lean's TaggedUrn.Constraint.exact.
-    case exact(value: String)
-    /// Lean's TaggedUrn.Constraint.absent.
-    case absent
-}
-
-extension Constraint: Equatable {}
-
-extension Constraint {
-    /// The layout fingerprint of Lean's TaggedUrn.Constraint.
-    public static var lungoFingerprint: String { "481fc09e23c6415a7c3f05887577ec940a6ecc84b005e63476c1060b59edcac7" }
-
-    /// Describes TaggedUrn.Constraint for polymorphic functions.
-    public static var lungoType: LungoType<Constraint> {
-        LungoType<Constraint>(
-            expr: Lungo.inductiveExpr(39),
-            encode: { w, v in
-                switch v {
-                case .missing:
-                    w.u32(0)
-                case .unconstrained:
-                    w.u32(1)
-                case .optionalNot(let value):
-                    w.u32(2)
-                    try Lungo.string.encode(&w, value)
-                case .present:
-                    w.u32(3)
-                case .presentNot(let value):
-                    w.u32(4)
-                    try Lungo.string.encode(&w, value)
-                case .exact(let value):
-                    w.u32(5)
-                    try Lungo.string.encode(&w, value)
-                case .absent:
-                    w.u32(6)
-                }
-            },
-            decode: { r in
-                switch try r.u32() {
-                case 0: return .missing
-                case 1: return .unconstrained
-                case 2: return .optionalNot(value: try Lungo.string.decode(&r))
-                case 3: return .present
-                case 4: return .presentNot(value: try Lungo.string.decode(&r))
-                case 5: return .exact(value: try Lungo.string.decode(&r))
-                case 6: return .absent
-                case let c: throw LungoMalformed("constructor index \(c) of TaggedUrn.Constraint")
                 }
             })
     }
@@ -2452,6 +2452,29 @@ public func accepts(_ pattern: WfCap, _ cap: WfCap) throws -> Bool {
         returns: .value(Lungo.bool))
 }
 
+/// Lean's CapDAG.Exec.audit : CapDAG.Exec.WfCap → TaggedUrn.Exec.Wf → TaggedUrn.Exec.Wf → Bool
+public func audit(_ c: WfCap, _ input: TaggedUrnFormal.Wf, _ emitted: TaggedUrnFormal.Wf) throws -> Bool {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dExec_daudit), typeArgs: [],
+        args: { w in
+            try WfCap.lungoType.encode(&w, c)
+            try LungoExternWf.lungoType.encode(&w, input)
+            try LungoExternWf.lungoType.encode(&w, emitted)
+        },
+        returns: .value(Lungo.bool))
+}
+
+/// Lean's CapDAG.Exec.capGives : CapDAG.Exec.WfCap → TaggedUrn.Exec.Wf → List (String × TaggedUrn.Constraint)
+public func capGives(_ c: WfCap, _ x: TaggedUrnFormal.Wf) throws -> [(String, Constraint)] {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dExec_dcapGives), typeArgs: [],
+        args: { w in
+            try WfCap.lungoType.encode(&w, c)
+            try LungoExternWf.lungoType.encode(&w, x)
+        },
+        returns: .value(Lungo.list(Lungo.pair(Lungo.string, Constraint.lungoType))))
+}
+
 /// Lean's CapDAG.Exec.capIllegal : CapDAG.Exec.WfCap → Option CapDAG.Illegal
 public func capIllegal(_ c: WfCap) throws -> Illegal? {
     return try program.invoke(
@@ -2595,22 +2618,22 @@ public func queryMayAdmit(_ q: WfQuery, _ c: WfCap) throws -> Bool {
         returns: .value(Lungo.bool))
 }
 
+/// Lean's CapDAG.Exec.queryOfCall : CapDAG.Exec.WfCap → CapDAG.Exec.WfQuery
+public func queryOfCall(_ r_: WfCap) throws -> WfQuery {
+    return try program.invoke(
+        entry(capdagFormal__call_l_CapDAG_dExec_dqueryOfCall), typeArgs: [],
+        args: { w in
+            try WfCap.lungoType.encode(&w, r_)
+        },
+        returns: .value(WfQuery.lungoType))
+}
+
 /// Lean's CapDAG.Exec.queryOfPattern : CapDAG.Exec.WfCap → CapDAG.Exec.WfQuery
 public func queryOfPattern(_ p: WfCap) throws -> WfQuery {
     return try program.invoke(
         entry(capdagFormal__call_l_CapDAG_dExec_dqueryOfPattern), typeArgs: [],
         args: { w in
             try WfCap.lungoType.encode(&w, p)
-        },
-        returns: .value(WfQuery.lungoType))
-}
-
-/// Lean's CapDAG.Exec.queryOfRequest : CapDAG.Exec.WfCap → CapDAG.Exec.WfQuery
-public func queryOfRequest(_ r_: WfCap) throws -> WfQuery {
-    return try program.invoke(
-        entry(capdagFormal__call_l_CapDAG_dExec_dqueryOfRequest), typeArgs: [],
-        args: { w in
-            try WfCap.lungoType.encode(&w, r_)
         },
         returns: .value(WfQuery.lungoType))
 }
@@ -2762,6 +2785,46 @@ public let assuranceJSON = #"""
   },
   "specifications": [
     {
+      "name": "CapDAG.Cap.audits",
+      "kind": "lungo.relation",
+      "statement": "CapDAG.Cap → TaggedUrn.Urn → TaggedUrn.Urn → Prop",
+      "definition": "fun c input emitted =>\n  if c.readsComplete then TaggedUrn.refinesBothClosed emitted c.output\n  else TaggedUrn.refinesBothClosed emitted (c.gives input) ∧ TaggedUrn.refinesBothClosed (c.gives input) emitted",
+      "package": "capdagFormal",
+      "fingerprint": "c2a2f874f07c19ccb1e1718fcc55308ed04afd838a3a9e0c21b0260da1aba9cf",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Query.lean",
+        "start": {
+          "line": 107,
+          "column": 1
+        },
+        "end": {
+          "line": 114,
+          "column": 93
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Cap.gives",
+      "kind": "lungo.model",
+      "statement": "CapDAG.Cap → TaggedUrn.Urn → TaggedUrn.Urn",
+      "definition": "fun c x =>\n  match c.effect with\n  | CapDAG.Effect.declared => c.output\n  | CapDAG.Effect.unspecified => c.output\n  | CapDAG.Effect.none => x\n  | CapDAG.Effect.patch => x.override (c.input.delta c.output)",
+      "package": "capdagFormal",
+      "fingerprint": "dd44e70d52ffab6bdf2fe7a1839c2a2511a55584f61b0040948ce7e58aad496d",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Cap.lean",
+        "start": {
+          "line": 126,
+          "column": 1
+        },
+        "end": {
+          "line": 132,
+          "column": 50
+        }
+      }
+    },
+    {
       "name": "CapDAG.Cap.illegal",
       "kind": "lungo.model",
       "statement": "CapDAG.Cap → Option CapDAG.Illegal",
@@ -2772,11 +2835,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Cap.lean",
         "start": {
-          "line": 146,
+          "line": 182,
           "column": 1
         },
         "end": {
-          "line": 151,
+          "line": 187,
           "column": 12
         }
       }
@@ -2925,18 +2988,18 @@ public let assuranceJSON = #"""
       "name": "CapDAG.Query.admits",
       "kind": "lungo.relation",
       "statement": "CapDAG.Query → CapDAG.Cap → Prop",
-      "definition": "fun q c =>\n  q.input.admits c.input ∧\n    q.output.admits c.output ∧ CapDAG.effectOk c.effect q.effect ∧ TaggedUrn.refinesClosed c.other q.tags",
+      "definition": "fun q c =>\n  q.input.admits c.input ∧\n    q.output.givesOk c (q.given c) ∧ CapDAG.effectOk c.effect q.effect ∧ TaggedUrn.refinesClosed c.other q.tags",
       "package": "capdagFormal",
-      "fingerprint": "cdcbe6a0f682f651f43837844599cca8b14bd9b5eca95318773660cf99fe87f1",
+      "fingerprint": "9ea3c4932166ef3709226857476201ee8988076acf4cc30642f718c41b9dfd10",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 88,
+          "line": 275,
           "column": 1
         },
         "end": {
-          "line": 93,
+          "line": 282,
           "column": 62
         }
       }
@@ -2952,11 +3015,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 164,
+          "line": 404,
           "column": 1
         },
         "end": {
-          "line": 167,
+          "line": 407,
           "column": 93
         }
       }
@@ -2967,16 +3030,16 @@ public let assuranceJSON = #"""
       "statement": "CapDAG.Query → CapDAG.Cap → CapDAG.Grade",
       "definition": "fun q c =>\n  if q.exactly.admits c then CapDAG.Grade.exact\n  else if q.admits c then CapDAG.Grade.guaranteed else if q.mayAdmit c then CapDAG.Grade.possible else CapDAG.Grade.none",
       "package": "capdagFormal",
-      "fingerprint": "3e77f04ec7c6d3249b6285702983f08e3beb36470f1df92717b0507c7400b086",
+      "fingerprint": "7f1efdf543e13a33e4d27c2027b6e017c41a102f2ebf29f636ee2e1dbef7e77e",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 304,
+          "line": 605,
           "column": 1
         },
         "end": {
-          "line": 309,
+          "line": 610,
           "column": 18
         }
       }
@@ -2985,18 +3048,18 @@ public let assuranceJSON = #"""
       "name": "CapDAG.Query.mayAdmit",
       "kind": "lungo.relation",
       "statement": "CapDAG.Query → CapDAG.Cap → Prop",
-      "definition": "fun q c =>\n  q.input.mayAdmit c.input ∧\n    q.output.mayAdmit c.output ∧ CapDAG.effectOk c.effect q.effect ∧ TaggedUrn.meetsClosed c.other q.tags",
+      "definition": "fun q c =>\n  q.input.mayAdmit c.input ∧\n    q.output.mayGive c (q.given c) ∧ CapDAG.effectOk c.effect q.effect ∧ TaggedUrn.meetsClosed c.other q.tags",
       "package": "capdagFormal",
-      "fingerprint": "f51468b5f8c37b1654bc9a04fa51beb74b5c54fc3ce504644bf7c04006a92650",
+      "fingerprint": "ad920022ad53d6c56d4414bb834f0fbe7100a33d54fc65c50b935e1272f4b76e",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 98,
+          "line": 287,
           "column": 1
         },
         "end": {
-          "line": 102,
+          "line": 291,
           "column": 60
         }
       }
@@ -3012,11 +3075,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 135,
+          "line": 382,
           "column": 1
         },
         "end": {
-          "line": 139,
+          "line": 387,
           "column": 96
         }
       }
@@ -3025,39 +3088,19 @@ public let assuranceJSON = #"""
       "name": "CapDAG.Query.ofPattern",
       "kind": "lungo.model",
       "statement": "CapDAG.Cap → CapDAG.Query",
-      "definition": "fun p =>\n  { input := CapDAG.Ask.within p.input,\n    output := if CapDAG.unconstrainedMedia p.output then CapDAG.Ask.unknown else CapDAG.Ask.covers p.output,\n    tags := p.other, effect := p.effect }",
+      "definition": "fun p =>\n  { input := CapDAG.Ask.within p.input,\n    output := if CapDAG.unconstrainedMedia p.output then CapDAG.Ask.unknown else CapDAG.Ask.within p.output,\n    tags := p.other, effect := p.effect }",
       "package": "capdagFormal",
-      "fingerprint": "f270244de089210349e3b54753fdea73acdaba083b8f2c211690b4513a0c4142",
+      "fingerprint": "780f9cc2d713ba957251b6529fd7dcd5d7971888fa05b82cb9aac4816a8a4a27",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 150,
+          "line": 389,
           "column": 1
         },
         "end": {
-          "line": 157,
+          "line": 397,
           "column": 42
-        }
-      }
-    },
-    {
-      "name": "CapDAG.Query.ofRequest",
-      "kind": "lungo.model",
-      "statement": "CapDAG.Cap → CapDAG.Query",
-      "definition": "fun r =>\n  { input := if CapDAG.unconstrainedMedia r.input then CapDAG.Ask.unknown else CapDAG.Ask.covers r.input,\n    output := CapDAG.Ask.within r.output, tags := r.other, effect := r.effect }",
-      "package": "capdagFormal",
-      "fingerprint": "29cf0512bc6b32cde8cd3738ecf1f27b0399a126a1ee79d1074e96d2dec2d53e",
-      "source": {
-        "package": "capdagFormal",
-        "file": "CapDAG/Query.lean",
-        "start": {
-          "line": 141,
-          "column": 1
-        },
-        "end": {
-          "line": 148,
-          "column": 70
         }
       }
     },
@@ -3072,11 +3115,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 159,
+          "line": 399,
           "column": 1
         },
         "end": {
-          "line": 162,
+          "line": 402,
           "column": 94
         }
       }
@@ -3147,16 +3190,16 @@ public let assuranceJSON = #"""
       "statement": "CapDAG.Cap → CapDAG.Cap → Prop",
       "definition": "fun pattern cap => (CapDAG.Query.ofPattern pattern).admits cap",
       "package": "capdagFormal",
-      "fingerprint": "a213d774eaa5744fe9bc7a8e9f92be4dc856dfe450d35798903fccf5191a879d",
+      "fingerprint": "1b17338dbed463de7fcb34ac562ca65c37835815f1e78eaaff27f14b332de955",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 181,
+          "line": 421,
           "column": 1
         },
         "end": {
-          "line": 183,
+          "line": 423,
           "column": 76
         }
       }
@@ -3205,19 +3248,19 @@ public let assuranceJSON = #"""
       "name": "CapDAG.mayServe",
       "kind": "lungo.relation",
       "statement": "CapDAG.Cap → CapDAG.Cap → Prop",
-      "definition": "fun candidate request => (CapDAG.Query.ofRequest request).mayAdmit candidate",
+      "definition": "fun candidate request => (CapDAG.Query.ofCall request).mayAdmit candidate",
       "package": "capdagFormal",
-      "fingerprint": "b13e4f6e63ec6c9ec8fd4085245205bbf91c769945144c9290cc805096f59eef",
+      "fingerprint": "4fa171d95bfc0a0817b28fedab8b890164ad520c5a10e65cdfaa00bf148d9420",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 175,
+          "line": 415,
           "column": 1
         },
         "end": {
-          "line": 177,
-          "column": 94
+          "line": 417,
+          "column": 91
         }
       }
     },
@@ -3247,7 +3290,7 @@ public let assuranceJSON = #"""
       "statement": "List CapDAG.Cap → CapDAG.Cap → Option CapDAG.Cap",
       "definition": "fun candidates request => List.foldl (CapDAG.selectStep request) none candidates",
       "package": "capdagFormal",
-      "fingerprint": "08f3428b13247e9f7e916e6518bf45f03d7667813a5dd6fa2265bf56e2009bfc",
+      "fingerprint": "c59ef8d9e50f9ded9e5b20766b0e6c9d1c9a1ccb9f76a14e64b6ad1db7dc769e",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Ranking.lean",
@@ -3265,19 +3308,19 @@ public let assuranceJSON = #"""
       "name": "CapDAG.serves",
       "kind": "lungo.relation",
       "statement": "CapDAG.Cap → CapDAG.Cap → Prop",
-      "definition": "fun candidate request => (CapDAG.Query.ofRequest request).admits candidate",
+      "definition": "fun candidate request => (CapDAG.Query.ofCall request).admits candidate",
       "package": "capdagFormal",
-      "fingerprint": "54767e0b6458c58a31cf84298b98f1c1424e98b98efb840cb016c9f58c04a3db",
+      "fingerprint": "bd478c095fae9dcc94aa352617f22ff9fa812b38055426aa22a41aa5e8ac029f",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Query.lean",
         "start": {
-          "line": 169,
+          "line": 409,
           "column": 1
         },
         "end": {
-          "line": 171,
-          "column": 90
+          "line": 411,
+          "column": 87
         }
       }
     },
@@ -3402,6 +3445,26 @@ public let assuranceJSON = #"""
       }
     },
     {
+      "name": "TaggedUrn.refinesBothClosed",
+      "kind": "lungo.relation",
+      "statement": "TaggedUrn.Urn → TaggedUrn.Urn → Prop",
+      "definition": "fun a b =>\n  a.scheme = b.scheme ∧\n    ∀ (key : String), key ∈ a.keys ++ b.keys → TaggedUrn.tagMatch (a.tag key).closed (b.tag key).closed = true",
+      "package": "tagged_urn_formal",
+      "fingerprint": "4a0fda7a3a680f164025d12206556982e0119f949ebd16273cf8a0b771ba7278",
+      "source": {
+        "package": "tagged_urn_formal",
+        "file": "TaggedUrn/Urn.lean",
+        "start": {
+          "line": 303,
+          "column": 1
+        },
+        "end": {
+          "line": 306,
+          "column": 84
+        }
+      }
+    },
+    {
       "name": "TaggedUrn.refinesClosed",
       "kind": "lungo.relation",
       "statement": "TaggedUrn.Urn → TaggedUrn.Urn → Prop",
@@ -3432,11 +3495,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Urn.lean",
         "start": {
-          "line": 308,
+          "line": 366,
           "column": 1
         },
         "end": {
-          "line": 311,
+          "line": 369,
           "column": 49
         }
       }
@@ -6253,17 +6316,85 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "83492acf32da2b5893bfea303cbbb6a8f3500c5c14dbcc98293f4c12de81ca8e",
+      "fingerprint": "0868c42074a25588b998f9095a8983f560a476bc132efd26bab7ad053d0961d3",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 264,
+          "line": 383,
           "column": 1
         },
         "end": {
-          "line": 268,
+          "line": 387,
           "column": 49
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Exec.audit_decides",
+      "relation": "lungo.decides",
+      "subjects": [
+        "CapDAG.Exec.audit"
+      ],
+      "specifications": [
+        "CapDAG.Cap.audits"
+      ],
+      "statement": "∀ (c : CapDAG.Exec.WfCap) (input emitted : TaggedUrn.Exec.Wf),\n  CapDAG.Exec.audit c input emitted = true ↔ (CapDAG.Exec.WfCap.toCap✝ c).audits input.urn emitted.urn",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "5852a040c7b528a9d1fdd365d5ecb7cc78aa591ccfda3c97ee71f44702149bf6",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Exec.lean",
+        "start": {
+          "line": 120,
+          "column": 1
+        },
+        "end": {
+          "line": 131,
+          "column": 104
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Exec.capGives_eq",
+      "relation": "lungo.law",
+      "subjects": [
+        "CapDAG.Exec.capGives"
+      ],
+      "specifications": [],
+      "statement": "∀ (c : CapDAG.Exec.WfCap) (x : TaggedUrn.Exec.Wf),\n  CapDAG.Exec.capGives c x = ((CapDAG.Exec.WfCap.toCap✝ c).gives x.urn).tags ∧\n    TaggedUrn.Sorted ((CapDAG.Exec.WfCap.toCap✝ c).gives x.urn).tags",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "a1f54e87b84ad9b0152600bce4b18e099d50fed6e07209511fac223785723d81",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Exec.lean",
+        "start": {
+          "line": 96,
+          "column": 1
+        },
+        "end": {
+          "line": 102,
+          "column": 54
         }
       }
     },
@@ -6328,11 +6459,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 315,
+          "line": 434,
           "column": 1
         },
         "end": {
-          "line": 319,
+          "line": 438,
           "column": 61
         }
       }
@@ -6358,17 +6489,17 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "62b4481ae1e8ea6e3d9b3e979a370b5a8306991e5c7c09e08adb4b9fe195f93f",
+      "fingerprint": "ad33309b0c33693d272ba1d1e8ae0010b2cab2cd87bdeedfbcf87b97cd77798c",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 244,
+          "line": 363,
           "column": 1
         },
         "end": {
-          "line": 248,
-          "column": 49
+          "line": 367,
+          "column": 46
         }
       }
     },
@@ -6427,11 +6558,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 321,
+          "line": 440,
           "column": 1
         },
         "end": {
-          "line": 339,
+          "line": 458,
           "column": 72
         }
       }
@@ -6462,11 +6593,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 309,
+          "line": 428,
           "column": 1
         },
         "end": {
-          "line": 313,
+          "line": 432,
           "column": 62
         }
       }
@@ -6497,11 +6628,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 346,
+          "line": 465,
           "column": 1
         },
         "end": {
-          "line": 348,
+          "line": 467,
           "column": 62
         }
       }
@@ -6527,17 +6658,17 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "db4640834d1fb5b847a0601df12fba301b5648e81094c289be49bd1d37942a58",
+      "fingerprint": "d3156ccc9526c721b3e26372b899524dfbb5f69a866e1b7f60b4aa48be3b939f",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 254,
+          "line": 373,
           "column": 1
         },
         "end": {
-          "line": 258,
-          "column": 51
+          "line": 377,
+          "column": 48
         }
       }
     },
@@ -6567,11 +6698,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 353,
+          "line": 472,
           "column": 1
         },
         "end": {
-          "line": 355,
+          "line": 474,
           "column": 64
         }
       }
@@ -6597,16 +6728,16 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "6a4aedb381d882219439c238557c17a7202bc71f7e01d9c070935cf854bf2071",
+      "fingerprint": "ed4b6c82bbe2f1caeea7657e23a77bd4f3edc04f5e8ad50aa22b5505eff64f19",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 186,
+          "line": 305,
           "column": 1
         },
         "end": {
-          "line": 192,
+          "line": 311,
           "column": 24
         }
       }
@@ -6637,11 +6768,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 156,
+          "line": 207,
           "column": 1
         },
         "end": {
-          "line": 161,
+          "line": 212,
           "column": 80
         }
       }
@@ -6672,11 +6803,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 152,
+          "line": 203,
           "column": 1
         },
         "end": {
-          "line": 154,
+          "line": 205,
           "column": 84
         }
       }
@@ -6702,16 +6833,16 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "f8a07e27ed5d581887a2be5cee19575876c0ea817d9664ddcb5028e8624a642f",
+      "fingerprint": "fd9b1acadbc1fe963257ed03e13626aea9f2ed913ea498109b820d6bb2bd2eb0",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 227,
+          "line": 346,
           "column": 1
         },
         "end": {
-          "line": 236,
+          "line": 355,
           "column": 46
         }
       }
@@ -6737,17 +6868,52 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "2067527186c148ba4b4fdf2aab6c0976db800657bebce6d5903c609065850389",
+      "fingerprint": "4b73c1dc31ecad4345cba6f30366d80271d637dbc22f892bd66b2ca7d27a53d6",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 199,
+          "line": 318,
           "column": 1
         },
         "end": {
-          "line": 205,
+          "line": 324,
           "column": 24
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Exec.queryOfCall_reads",
+      "relation": "lungo.equals",
+      "subjects": [
+        "CapDAG.Exec.queryOfCall"
+      ],
+      "specifications": [
+        "CapDAG.Query.ofCall"
+      ],
+      "statement": "∀ (r : CapDAG.Exec.WfCap),\n  CapDAG.Exec.WfQuery.toQuery✝ (CapDAG.Exec.queryOfCall r) = CapDAG.Query.ofCall (CapDAG.Exec.WfCap.toCap✝ r)",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "capdagFormal",
+      "fingerprint": "2c4fc82410284eebc258c66c81308773a811516484e8ebaf6668180f826c3446",
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Exec.lean",
+        "start": {
+          "line": 186,
+          "column": 1
+        },
+        "end": {
+          "line": 188,
+          "column": 58
         }
       }
     },
@@ -6772,51 +6938,16 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "f87f65c30d931ec4fcace662ed499c623de1891ba91995ce5ff91b3ca51618af",
+      "fingerprint": "39171d6de933ff1436512531706045da6421ec028127bb96237b87abe1c14e85",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 139,
+          "line": 190,
           "column": 1
         },
         "end": {
-          "line": 146,
-          "column": 30
-        }
-      }
-    },
-    {
-      "name": "CapDAG.Exec.queryOfRequest_reads",
-      "relation": "lungo.equals",
-      "subjects": [
-        "CapDAG.Exec.queryOfRequest"
-      ],
-      "specifications": [
-        "CapDAG.Query.ofRequest"
-      ],
-      "statement": "∀ (r : CapDAG.Exec.WfCap),\n  CapDAG.Exec.WfQuery.toQuery✝ (CapDAG.Exec.queryOfRequest r) = CapDAG.Query.ofRequest (CapDAG.Exec.WfCap.toCap✝ r)",
-      "status": "proved",
-      "evidence_trust": {
-        "axioms": [
-          "Classical.choice",
-          "Quot.sound",
-          "propext"
-        ],
-        "depends_on_sorry": false
-      },
-      "assumptions": [],
-      "package": "capdagFormal",
-      "fingerprint": "e301a3aef0bca0541bb1e1c82c2c366cdb58d7bc7bdf7b9e2a0396ef3fd88ab5",
-      "source": {
-        "package": "capdagFormal",
-        "file": "CapDAG/Exec.lean",
-        "start": {
-          "line": 130,
-          "column": 1
-        },
-        "end": {
-          "line": 137,
+          "line": 197,
           "column": 30
         }
       }
@@ -6847,11 +6978,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 148,
+          "line": 199,
           "column": 1
         },
         "end": {
-          "line": 150,
+          "line": 201,
           "column": 86
         }
       }
@@ -6882,11 +7013,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 366,
+          "line": 485,
           "column": 1
         },
         "end": {
-          "line": 368,
+          "line": 487,
           "column": 90
         }
       }
@@ -6912,16 +7043,16 @@ public let assuranceJSON = #"""
       },
       "assumptions": [],
       "package": "capdagFormal",
-      "fingerprint": "d614890e1d8eb1447f431e1e139d71ff18eb3621b4829c62672c536e7dd94754",
+      "fingerprint": "213cf88f0b00a0052234bda1fa773e12aa432cff41b5fc8931134f5f867b6b4e",
       "source": {
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 383,
+          "line": 502,
           "column": 1
         },
         "end": {
-          "line": 425,
+          "line": 544,
           "column": 77
         }
       }
@@ -6952,11 +7083,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 359,
+          "line": 478,
           "column": 1
         },
         "end": {
-          "line": 360,
+          "line": 479,
           "column": 77
         }
       }
@@ -8054,11 +8185,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 141,
+          "line": 151,
           "column": 1
         },
         "end": {
-          "line": 150,
+          "line": 160,
           "column": 12
         }
       }
@@ -8087,11 +8218,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 134,
+          "line": 144,
           "column": 1
         },
         "end": {
-          "line": 139,
+          "line": 149,
           "column": 21
         }
       }
@@ -8120,11 +8251,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 178,
+          "line": 188,
           "column": 1
         },
         "end": {
-          "line": 197,
+          "line": 207,
           "column": 46
         }
       }
@@ -8153,11 +8284,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 152,
+          "line": 162,
           "column": 1
         },
         "end": {
-          "line": 167,
+          "line": 177,
           "column": 12
         }
       }
@@ -8186,11 +8317,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 169,
+          "line": 179,
           "column": 1
         },
         "end": {
-          "line": 176,
+          "line": 186,
           "column": 67
         }
       }
@@ -8332,6 +8463,41 @@ public let assuranceJSON = #"""
       }
     },
     {
+      "name": "TaggedUrn.Exec.refinesBothClosed_decides",
+      "relation": "lungo.decides",
+      "subjects": [
+        "TaggedUrn.Exec.refinesBothClosed"
+      ],
+      "specifications": [
+        "TaggedUrn.refinesBothClosed"
+      ],
+      "statement": "∀ (a b : TaggedUrn.Exec.Wf), TaggedUrn.Exec.refinesBothClosed a b = true ↔ TaggedUrn.refinesBothClosed a.urn b.urn",
+      "status": "proved",
+      "evidence_trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false
+      },
+      "assumptions": [],
+      "package": "tagged_urn_formal",
+      "fingerprint": "15d236a8d5b863c8cbacddb185d6344d34df12530e083288881b1e1451992a1d",
+      "source": {
+        "package": "tagged_urn_formal",
+        "file": "TaggedUrn/Exec.lean",
+        "start": {
+          "line": 122,
+          "column": 1
+        },
+        "end": {
+          "line": 126,
+          "column": 34
+        }
+      }
+    },
+    {
       "name": "TaggedUrn.Exec.refinesClosed_decides",
       "relation": "lungo.decides",
       "subjects": [
@@ -8462,11 +8628,11 @@ public let assuranceJSON = #"""
         "package": "tagged_urn_formal",
         "file": "TaggedUrn/Exec.lean",
         "start": {
-          "line": 121,
+          "line": 131,
           "column": 1
         },
         "end": {
-          "line": 124,
+          "line": 134,
           "column": 33
         }
       }
@@ -10199,6 +10365,9 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
           "lean_nat_dec_eq",
           "lean_string_dec_eq",
           "lean_string_dec_lt"
@@ -10214,12 +10383,93 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 260,
+          "line": 379,
           "column": 1
         },
         "end": {
-          "line": 262,
+          "line": 381,
           "column": 43
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Exec.audit",
+      "module": "CapDAG.Exec",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
+          "lean_nat_dec_eq",
+          "lean_string_dec_eq",
+          "lean_string_dec_lt"
+        ]
+      },
+      "claims": [
+        "CapDAG.Exec.audit_decides"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Exec.lean",
+        "start": {
+          "line": 114,
+          "column": 1
+        },
+        "end": {
+          "line": 118,
+          "column": 63
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Exec.capGives",
+      "module": "CapDAG.Exec",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
+          "lean_string_dec_eq",
+          "lean_string_dec_lt"
+        ]
+      },
+      "claims": [
+        "CapDAG.Exec.capGives_eq"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Exec.lean",
+        "start": {
+          "line": 92,
+          "column": 1
+        },
+        "end": {
+          "line": 94,
+          "column": 89
         }
       }
     },
@@ -10290,11 +10540,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 307,
+          "line": 426,
           "column": 1
         },
         "end": {
-          "line": 307,
+          "line": 426,
           "column": 70
         }
       }
@@ -10313,6 +10563,9 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
           "lean_nat_dec_eq",
           "lean_string_dec_eq",
           "lean_string_dec_lt"
@@ -10328,12 +10581,12 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 240,
+          "line": 359,
           "column": 1
         },
         "end": {
-          "line": 242,
-          "column": 49
+          "line": 361,
+          "column": 46
         }
       }
     },
@@ -10399,11 +10652,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 306,
+          "line": 425,
           "column": 1
         },
         "end": {
-          "line": 306,
+          "line": 425,
           "column": 70
         }
       }
@@ -10436,11 +10689,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 343,
+          "line": 462,
           "column": 1
         },
         "end": {
-          "line": 344,
+          "line": 463,
           "column": 74
         }
       }
@@ -10459,9 +10712,16 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
+          "lean_nat_add",
           "lean_nat_dec_eq",
+          "lean_nat_sub",
           "lean_string_dec_eq",
-          "lean_string_dec_lt"
+          "lean_string_dec_lt",
+          "lean_string_length",
+          "lean_string_push"
         ]
       },
       "claims": [
@@ -10474,12 +10734,12 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 250,
+          "line": 369,
           "column": 1
         },
         "end": {
-          "line": 252,
-          "column": 51
+          "line": 371,
+          "column": 48
         }
       }
     },
@@ -10511,11 +10771,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 350,
+          "line": 469,
           "column": 1
         },
         "end": {
-          "line": 351,
+          "line": 470,
           "column": 74
         }
       }
@@ -10534,6 +10794,9 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
           "lean_nat_dec_eq",
           "lean_string_dec_eq",
           "lean_string_dec_lt"
@@ -10549,11 +10812,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 181,
+          "line": 300,
           "column": 1
         },
         "end": {
-          "line": 184,
+          "line": 303,
           "column": 78
         }
       }
@@ -10583,11 +10846,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 126,
+          "line": 182,
           "column": 1
         },
         "end": {
-          "line": 128,
+          "line": 184,
           "column": 99
         }
       }
@@ -10617,11 +10880,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 122,
+          "line": 178,
           "column": 1
         },
         "end": {
-          "line": 124,
+          "line": 180,
           "column": 93
         }
       }
@@ -10640,9 +10903,16 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
+          "lean_nat_add",
           "lean_nat_dec_eq",
+          "lean_nat_sub",
           "lean_string_dec_eq",
-          "lean_string_dec_lt"
+          "lean_string_dec_lt",
+          "lean_string_length",
+          "lean_string_push"
         ]
       },
       "claims": [
@@ -10655,11 +10925,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 219,
+          "line": 338,
           "column": 1
         },
         "end": {
-          "line": 225,
+          "line": 344,
           "column": 18
         }
       }
@@ -10678,9 +10948,16 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
+          "lean_nat_add",
           "lean_nat_dec_eq",
+          "lean_nat_sub",
           "lean_string_dec_eq",
-          "lean_string_dec_lt"
+          "lean_string_dec_lt",
+          "lean_string_length",
+          "lean_string_push"
         ]
       },
       "claims": [
@@ -10693,12 +10970,46 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 194,
+          "line": 313,
           "column": 1
         },
         "end": {
-          "line": 197,
+          "line": 316,
           "column": 76
+        }
+      }
+    },
+    {
+      "name": "CapDAG.Exec.queryOfCall",
+      "module": "CapDAG.Exec",
+      "async": false,
+      "trust": {
+        "axioms": [
+          "Classical.choice",
+          "Quot.sound",
+          "propext"
+        ],
+        "depends_on_sorry": false,
+        "unsafe_dependencies": [],
+        "partial_dependencies": [],
+        "extern_dependencies": []
+      },
+      "claims": [
+        "CapDAG.Exec.queryOfCall_reads"
+      ],
+      "assumptions": [],
+      "facilities": [],
+      "roles": [],
+      "source": {
+        "package": "capdagFormal",
+        "file": "CapDAG/Exec.lean",
+        "start": {
+          "line": 160,
+          "column": 1
+        },
+        "end": {
+          "line": 163,
+          "column": 96
         }
       }
     },
@@ -10730,49 +11041,12 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 110,
+          "line": 165,
           "column": 1
         },
         "end": {
-          "line": 115,
+          "line": 171,
           "column": 42
-        }
-      }
-    },
-    {
-      "name": "CapDAG.Exec.queryOfRequest",
-      "module": "CapDAG.Exec",
-      "async": false,
-      "trust": {
-        "axioms": [
-          "Classical.choice",
-          "Quot.sound",
-          "propext"
-        ],
-        "depends_on_sorry": false,
-        "unsafe_dependencies": [],
-        "partial_dependencies": [],
-        "extern_dependencies": [
-          "lean_string_dec_eq",
-          "lean_string_dec_lt"
-        ]
-      },
-      "claims": [
-        "CapDAG.Exec.queryOfRequest_reads"
-      ],
-      "assumptions": [],
-      "facilities": [],
-      "roles": [],
-      "source": {
-        "package": "capdagFormal",
-        "file": "CapDAG/Exec.lean",
-        "start": {
-          "line": 104,
-          "column": 1
-        },
-        "end": {
-          "line": 108,
-          "column": 70
         }
       }
     },
@@ -10801,11 +11075,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 117,
+          "line": 173,
           "column": 1
         },
         "end": {
-          "line": 120,
+          "line": 176,
           "column": 94
         }
       }
@@ -10840,11 +11114,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 362,
+          "line": 481,
           "column": 1
         },
         "end": {
-          "line": 364,
+          "line": 483,
           "column": 50
         }
       }
@@ -10863,6 +11137,9 @@ public let assuranceJSON = #"""
         "unsafe_dependencies": [],
         "partial_dependencies": [],
         "extern_dependencies": [
+          "lean_array_push",
+          "lean_array_to_list",
+          "lean_mk_empty_array_with_capacity",
           "lean_nat_add",
           "lean_nat_dec_eq",
           "lean_nat_dec_le",
@@ -10883,11 +11160,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 370,
+          "line": 489,
           "column": 1
         },
         "end": {
-          "line": 381,
+          "line": 500,
           "column": 9
         }
       }
@@ -10920,11 +11197,11 @@ public let assuranceJSON = #"""
         "package": "capdagFormal",
         "file": "CapDAG/Exec.lean",
         "start": {
-          "line": 357,
+          "line": 476,
           "column": 1
         },
         "end": {
-          "line": 357,
+          "line": 476,
           "column": 54
         }
       }
