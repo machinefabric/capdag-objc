@@ -20,6 +20,7 @@
 
 @class CSCapUrn;
 @class CSMediaUrn;
+@class CSTagConstraint;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -53,17 +54,17 @@ FOUNDATION_EXPORT NSString *CSMatchGradeName(CSMatchGrade grade);
 + (instancetype)fromPattern:(CSCapUrn *)pattern;
 
 /// Caps that GIVE `output`, whatever they take, with the cap-tags `tags` asks
-/// for (nil or empty asks for none).
-+ (instancetype)producing:(CSMediaUrn *)output tags:(nullable NSDictionary<NSString *, NSString *> *)tags;
+/// for, as constraints (nil or empty asks for none).
++ (instancetype)producing:(CSMediaUrn *)output tags:(nullable NSDictionary<NSString *, CSTagConstraint *> *)tags;
 
 /// Caps that TAKE `input`, whatever they give: what this input can become in
 /// one step.
-+ (instancetype)consuming:(CSMediaUrn *)input tags:(nullable NSDictionary<NSString *, NSString *> *)tags;
++ (instancetype)consuming:(CSMediaUrn *)input tags:(nullable NSDictionary<NSString *, CSTagConstraint *> *)tags;
 
 /// Caps that take `input` and give `output`: nothing unknown.
 + (instancetype)betweenInput:(CSMediaUrn *)input
                       output:(CSMediaUrn *)output
-                        tags:(nullable NSDictionary<NSString *, NSString *> *)tags;
+                        tags:(nullable NSDictionary<NSString *, CSTagConstraint *> *)tags;
 
 /// Whether `cap` is guaranteed to be what is asked.
 - (BOOL)admits:(CSCapUrn *)cap;

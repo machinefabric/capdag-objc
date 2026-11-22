@@ -30,7 +30,7 @@ static void CSCapQueryFailed(NSString *what, lungo_error *error) {
 }
 
 /// The cap-tag pattern a query asks for — `cap:` with these tags — as the model's value; owned.
-static lungo_value *CSCapQueryTagPattern(NSDictionary<NSString *, NSString *> *tags) {
+static lungo_value *CSCapQueryTagPattern(NSDictionary<NSString *, CSTagConstraint *> *tags) {
     NSError *error = nil;
     CSTaggedUrn *pattern = [CSTaggedUrn fromPrefix:@"cap" tags:(tags ?: @{}) error:&error];
     if (!pattern) {
@@ -81,7 +81,7 @@ static lungo_value *CSCapQueryTagPattern(NSDictionary<NSString *, NSString *> *t
     return [[self alloc] initWithFormal:query asked:[NSString stringWithFormat:@"pattern %@", [pattern toString]]];
 }
 
-+ (instancetype)producing:(CSMediaUrn *)output tags:(NSDictionary<NSString *, NSString *> *)tags {
++ (instancetype)producing:(CSMediaUrn *)output tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags {
     lungo_value *pattern = CSCapQueryTagPattern(tags);
     lungo_value *query = NULL;
     lungo_error *error = NULL;
@@ -91,7 +91,7 @@ static lungo_value *CSCapQueryTagPattern(NSDictionary<NSString *, NSString *> *t
     return [[self alloc] initWithFormal:query asked:[NSString stringWithFormat:@"anything giving %@", [output toString]]];
 }
 
-+ (instancetype)consuming:(CSMediaUrn *)input tags:(NSDictionary<NSString *, NSString *> *)tags {
++ (instancetype)consuming:(CSMediaUrn *)input tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags {
     lungo_value *pattern = CSCapQueryTagPattern(tags);
     lungo_value *query = NULL;
     lungo_error *error = NULL;
@@ -103,7 +103,7 @@ static lungo_value *CSCapQueryTagPattern(NSDictionary<NSString *, NSString *> *t
 
 + (instancetype)betweenInput:(CSMediaUrn *)input
                       output:(CSMediaUrn *)output
-                        tags:(NSDictionary<NSString *, NSString *> *)tags {
+                        tags:(NSDictionary<NSString *, CSTagConstraint *> *)tags {
     lungo_value *pattern = CSCapQueryTagPattern(tags);
     lungo_value *query = NULL;
     lungo_error *error = NULL;
