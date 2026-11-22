@@ -217,9 +217,14 @@ BOOL CSMediaUrnHasEncoding(NSString *mediaUrn) {
                     format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
     }
     CSTaggedUrn *anyEncoding = [CSTaggedUrn fromString:@"media:enc" error:&error];
-    NSCAssert(anyEncoding != nil, @"media:enc parses: %@", error);
+    if (anyEncoding == nil) {
+        [NSException raise:NSInternalInconsistencyException format:@"media:enc does not parse: %@", error.localizedDescription];
+    }
     BOOL encoded = [parsed conformsTo:anyEncoding error:&error];
-    NSCAssert(error == nil, @"two media URNs compare: %@", error);
+    if (error != nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"media URN '%@' does not compare with media:enc: %@", mediaUrn, error.localizedDescription];
+    }
     return encoded;
 }
 
