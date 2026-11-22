@@ -4886,7 +4886,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
     // MARK: - Properties
 
-    private var handlers: [String: OpFactory] = [:]
+    /// Registered Op factories, in registration order: of handlers that rank
+    /// alike for a request, the first registered serves.
+    private(set) var handlers: [(cap: CSCapUrn, factory: OpFactory)] = []
     private let handlersLock = NSLock()
 
     private var limits = Limits()
@@ -5027,16 +5029,24 @@ public final class CartridgeRuntime: @unchecked Sendable {
     /// Called during initialization to provide mandatory and optional standard caps.
     private func autoRegisterStandardCaps() {
         // CAP_IDENTITY: "cap:effect=none" (mandatory)
-        if findHandler(capUrn: CSCapIdentity) == nil {
+        if !hasStandardHandler(CSCapIdentity) {
             register_op_type(capUrn: CSCapIdentity, make: IdentityOp.init)
         }
         // CAP_DISCARD: "cap:out=media:void" (standard, optional)
-        if findHandler(capUrn: CSCapDiscard) == nil {
+        if !hasStandardHandler(CSCapDiscard) {
             register_op_type(capUrn: CSCapDiscard, make: DiscardOp.init)
         }
         // CAP_ADAPTER_SELECTION: content inspection adapter (standard, optional)
-        if findHandler(capUrn: CSCapAdapterSelection) == nil {
+        if !hasStandardHandler(CSCapAdapterSelection) {
             register_op_type(capUrn: CSCapAdapterSelection, make: AdapterSelectionOp.init)
+        }
+    }
+
+    private func hasStandardHandler(_ capUrn: String) -> Bool {
+        do {
+            return try findHandler(capUrn: capUrn) != nil
+        } catch {
+            fatalError("standard cap URN '\(capUrn)' does not parse: \(error)")
         }
     }
 
@@ -5055,10 +5065,29 @@ public final class CartridgeRuntime: @unchecked Sendable {
 
     /// Register an Op factory for a cap URN.
     /// The factory creates a fresh AnyOp<Void> per invocation.
+    ///
+    /// Fails hard (fatalError) if `capUrn` does not parse. Registering a cap
+    /// equivalent to one already registered replaces its handler.
     public func register_op(capUrn: String, factory: @escaping OpFactory) {
+        do {
+            try registerFactory(capUrn: capUrn, factory: factory)
+        } catch {
+            fatalError("cannot register a handler for '\(capUrn)': \(error)")
+        }
+    }
+
+    /// Add `factory` under `capUrn`, or replace the factory of a registered
+    /// cap equivalent to it, keeping that cap's place in registration order.
+    /// Throws when `capUrn` does not parse.
+    func registerFactory(capUrn: String, factory: @escaping OpFactory) throws {
+        let cap = try CSCapUrn.fromString(capUrn)
         handlersLock.lock()
-        handlers[capUrn] = factory
-        handlersLock.unlock()
+        defer { handlersLock.unlock() }
+        if let i = handlers.firstIndex(where: { $0.cap.isEquivalent(cap) }) {
+            handlers[i].factory = factory
+        } else {
+            handlers.append((cap, factory))
+        }
     }
 
     /// Convenience: register an Op type for a cap URN using a no-arg factory closure.
@@ -5068,66 +5097,28 @@ public final class CartridgeRuntime: @unchecked Sendable {
         register_op(capUrn: capUrn, factory: { AnyOp(make()) })
     }
 
-    /// Find an Op factory for a cap URN.
-    ///
-    /// Uses `isDispatchable(candidate, request)` to find handlers that can
-    /// legally handle the request, then ranks by specificity.
-    ///
-    /// Ranking prefers:
-    /// 1. Equivalent matches (distance 0)
-    /// 2. More specific candidates (positive distance) - refinements
-    /// 3. More generic candidates (negative distance) - fallbacks
-    func findHandler(capUrn: String) -> OpFactory? {
-        findHandlerWithPattern(capUrn: capUrn)?.factory
+    /// Find an Op factory for a cap URN: nil when no registered cap serves
+    /// it; throws when `capUrn` does not parse. See `findHandlerWithPattern`.
+    /// (matches Rust find_handler)
+    func findHandler(capUrn: String) throws -> OpFactory? {
+        try findHandlerWithPattern(capUrn: capUrn)?.factory
     }
 
     /// Find the best handler for a cap URN and return it together with the
     /// CANONICAL registered pattern that won — the request's singleton pool
-    /// and pool-chain key. (matches Rust find_handler_with_pattern)
-    func findHandlerWithPattern(capUrn: String) -> (factory: OpFactory, pattern: String)? {
+    /// and pool-chain key.
+    ///
+    /// The proved ranking chooses (`CSCapUrn.selectFromCandidates`) among the
+    /// registered caps that serve the request; of handlers that rank alike,
+    /// the first registered serves. Throws when `capUrn` does not parse.
+    /// (matches Rust find_handler_with_pattern)
+    func findHandlerWithPattern(capUrn: String) throws -> (factory: OpFactory, pattern: String)? {
+        let request = try CSCapUrn.fromString(capUrn)
         handlersLock.lock()
         defer { handlersLock.unlock() }
-
-        guard let requestUrn = try? CSCapUrn.fromString(capUrn) else {
-            return nil
-        }
-
-        let requestSpecificity = Int(requestUrn.specificity())
-        var best: (factory: OpFactory, pattern: String, signedDistance: Int)? = nil
-
-        for (registeredCapStr, factory) in handlers {
-            guard let registeredUrn = try? CSCapUrn.fromString(registeredCapStr) else {
-                continue
-            }
-
-            if registeredUrn.isDispatchable(requestUrn) {
-                let specificity = Int(registeredUrn.specificity())
-                let signedDistance = specificity - requestSpecificity
-
-                let dominated: Bool
-                if let currentBest = best {
-                    // Current best dominates if:
-                    // - best is non-negative and candidate is negative
-                    // - OR both same sign and best has smaller abs distance
-                    if currentBest.signedDistance >= 0 && signedDistance < 0 {
-                        dominated = true
-                    } else if currentBest.signedDistance < 0 && signedDistance >= 0 {
-                        dominated = false
-                    } else {
-                        dominated = abs(currentBest.signedDistance) <= abs(signedDistance)
-                    }
-                } else {
-                    dominated = false
-                }
-
-                if !dominated {
-                    best = (factory, registeredUrn.toString(), signedDistance)
-                }
-            }
-        }
-
-        guard let best else { return nil }
-        return (best.factory, best.pattern)
+        let i = CSCapUrn.selectFromCandidates(handlers.map { $0.cap }, forRequest: request)
+        guard i != NSNotFound else { return nil }
+        return (handlers[Int(i)].factory, handlers[Int(i)].cap.toString())
     }
 
     // MARK: - Main Run Loop
@@ -5245,7 +5236,13 @@ public final class CartridgeRuntime: @unchecked Sendable {
         }
 
         // Find Op factory
-        guard let factory = findHandler(capUrn: cap.urn) else {
+        let found: OpFactory?
+        do {
+            found = try findHandler(capUrn: cap.urn)
+        } catch {
+            throw CartridgeRuntimeError.capUrnError("'\(cap.urn)': \(error)")
+        }
+        guard let factory = found else {
             throw CartridgeRuntimeError.noHandler("No handler registered for cap '\(cap.urn)'")
         }
 
@@ -6051,7 +6048,16 @@ public final class CartridgeRuntime: @unchecked Sendable {
                 // Find Op factory (using pattern matching to support
                 // wildcards) and the registered pattern that won — the
                 // request's singleton pool and pool-chain key.
-                guard let (factory, pattern) = findHandlerWithPattern(capUrn: capUrn) else {
+                let found: (factory: OpFactory, pattern: String)?
+                do {
+                    found = try findHandlerWithPattern(capUrn: capUrn)
+                } catch {
+                    var err = Frame.err(id: frame.id, code: "INVALID_REQUEST", attributionClass: .internal, message: "Request cap URN '\(capUrn)' does not parse: \(error)")
+                    err.routingId = routingIdForErrors
+                    try? outputSender.send(err)
+                    continue
+                }
+                guard let (factory, pattern) = found else {
                     // A dispatched cap this binary doesn't handle is a
                     // deployment/manifest mismatch — Environment.
                     var err = Frame.err(id: frame.id, code: "NO_HANDLER", attributionClass: .environment, message: "No handler registered for cap: \(capUrn)")
@@ -6428,7 +6434,7 @@ public final class CartridgeRuntime: @unchecked Sendable {
         // declaration that does not resolve against the registered handlers
         // is a cartridge-author bug surfaced right here, at startup.
         handlersLock.lock()
-        let patterns = handlers.keys.sorted()
+        let patterns = handlers.map { $0.cap.toString() }
         handlersLock.unlock()
         let declarations = parsedManifest?.poolDeclarations ?? PoolDeclarations()
         let materialized: RuntimePools

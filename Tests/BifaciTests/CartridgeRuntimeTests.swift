@@ -262,7 +262,7 @@ final class CartridgeRuntimeTests: XCTestCase {
             AnyOp(EmitCborBytesOp(bytes: Array("result".utf8)))
         }
 
-        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:in=*;test;out=*"),
+        XCTAssertNotNil(try runtime.findHandler(capUrn: "cap:in=*;test;out=*"),
             "handler must be found by exact URN")
     }
 
@@ -272,7 +272,7 @@ final class CartridgeRuntimeTests: XCTestCase {
 
         runtime.register_op(capUrn: "cap:raw") { AnyOp(EchoAllBytesOp()) }
 
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: "cap:raw"))
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: "cap:raw"))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
 
@@ -291,7 +291,7 @@ final class CartridgeRuntimeTests: XCTestCase {
     // TEST252: Test find_handler returns None for unregistered cap URNs
     func test252_findHandlerUnknownCap() {
         let runtime = CartridgeRuntime(manifest: Self.testManifestData)
-        XCTAssertNil(runtime.findHandler(capUrn: "cap:nonexistent"),
+        XCTAssertNil(try runtime.findHandler(capUrn: "cap:nonexistent"),
             "unregistered cap must return nil")
     }
 
@@ -305,20 +305,20 @@ final class CartridgeRuntimeTests: XCTestCase {
 
         let emptyStream = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
 
-        let fAlpha = try XCTUnwrap(runtime.findHandler(capUrn: "cap:alpha"))
+        let fAlpha = try XCTUnwrap(try runtime.findHandler(capUrn: "cap:alpha"))
         let collectorA = OutputCollector()
         let outputA = createCollectingOutputStream(collector: collectorA)
         try invokeOp(fAlpha, input: streamToInputPackage(emptyStream), output: outputA)
         XCTAssertEqual(collectorA.getData(), "a".data(using: .utf8)!)
 
-        let fBeta = try XCTUnwrap(runtime.findHandler(capUrn: "cap:beta"))
+        let fBeta = try XCTUnwrap(try runtime.findHandler(capUrn: "cap:beta"))
         let collectorB = OutputCollector()
         let outputB = createCollectingOutputStream(collector: collectorB)
         let emptyStream2 = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
         try invokeOp(fBeta, input: streamToInputPackage(emptyStream2), output: outputB)
         XCTAssertEqual(collectorB.getData(), "b".data(using: .utf8)!)
 
-        let fGamma = try XCTUnwrap(runtime.findHandler(capUrn: "cap:gamma"))
+        let fGamma = try XCTUnwrap(try runtime.findHandler(capUrn: "cap:gamma"))
         let collectorG = OutputCollector()
         let outputG = createCollectingOutputStream(collector: collectorG)
         let emptyStream3 = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
@@ -333,13 +333,47 @@ final class CartridgeRuntimeTests: XCTestCase {
         runtime.register_op(capUrn: "cap:test") { AnyOp(WriteFixedOp(data: Data("first".utf8))) }
         runtime.register_op(capUrn: "cap:test") { AnyOp(WriteFixedOp(data: Data("second".utf8))) }
 
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: "cap:test"))
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: "cap:test"))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
         let emptyStream = createSinglePayloadStream(mediaUrn: "media:void", data: Data())
         try invokeOp(factory, input: streamToInputPackage(emptyStream), output: output)
         XCTAssertEqual(String(data: collector.getData(), encoding: .utf8), "second",
             "later registration must replace earlier")
+    }
+
+    // TEST6757: Of handlers that rank alike for a request, the first registered serves, in
+    // every runtime; an equivalent registration replaces, and an unparsable one is refused
+    func test6757_handlerTiesGoToFirstRegistered() throws {
+        let noop: OpFactory = { AnyOp(WriteFixedOp(data: Data())) }
+        let x = try CSCapUrn.fromString("cap:op;x=a").toString()
+        let y = try CSCapUrn.fromString("cap:op;y=b").toString()
+
+        for (first, second) in [(x, y), (y, x)] {
+            for _ in 0..<64 {
+                let runtime = CartridgeRuntime(manifest: Self.testManifestData)
+                runtime.register_op(capUrn: first, factory: noop)
+                runtime.register_op(capUrn: second, factory: noop)
+                let found = try XCTUnwrap(try runtime.findHandlerWithPattern(capUrn: "cap:op"),
+                    "both handlers serve cap:op")
+                XCTAssertEqual(found.pattern, first,
+                    "the first registered of two alike handlers must serve")
+            }
+        }
+
+        let runtime = CartridgeRuntime(manifest: Self.testManifestData)
+        let before = runtime.handlers.count
+        runtime.register_op(capUrn: "cap:op;x=a", factory: noop)
+        runtime.register_op(capUrn: "cap:x=a;op", factory: noop)
+        XCTAssertEqual(runtime.handlers.count, before + 1,
+            "two spellings of one cap must be one entry")
+
+        // register_op fails hard on what registerFactory throws.
+        XCTAssertThrowsError(try runtime.registerFactory(capUrn: "cap:op;x=", factory: noop),
+            "an unparsable cap must be refused when registered")
+
+        XCTAssertThrowsError(try runtime.findHandlerWithPattern(capUrn: "op;x=a"),
+            "an unparsable request must be reported, not read as no handler")
     }
 
     // MARK: - NoPeerInvoker Tests (TEST254-255)
@@ -846,7 +880,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)
 
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: cap.urn))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
         try invokeOp(factory, input: testInputPackage([("media:", payload)]), output: output)
@@ -1295,7 +1329,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let rawPayload = try runtime.buildPayloadFromCli(cap: cap, cliArgs: cliArgs)
         let payload = try extractEffectivePayload(payload: rawPayload, contentType: "application/cbor", cap: cap, isCliMode: true)
 
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: cap.urn))
         let collector = OutputCollector()
         let output = createCollectingOutputStream(collector: collector)
         try invokeOp(factory, input: testInputPackage([("media:", payload)]), output: output)
@@ -2043,7 +2077,7 @@ final class CborFilePathConversionTests: XCTestCase {
         let outputStream = createCollectingOutputStream(collector: outputCollector, mediaUrn: "media:document;ext=pdf")
 
         // Execute Op handler
-        let factory = try XCTUnwrap(runtime.findHandler(capUrn: cap.urn))
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: cap.urn))
         try invokeOp(factory, input: inputPackage, output: outputStream)
 
         XCTAssertEqual(resultHolder.data, pdfContent, "Handler should receive chunked content")

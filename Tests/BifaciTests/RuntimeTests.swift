@@ -743,9 +743,9 @@ final class CborRuntimeTests: XCTestCase, @unchecked Sendable {
         runtime.register_op_type(capUrn: CSCapIdentity, make: EchoAllBytesOp.init)
         runtime.register_op_type(capUrn: "cap:transform", make: TransformOp.init)
 
-        XCTAssertNotNil(runtime.findHandler(capUrn: CSCapIdentity), "echo handler must be found")
-        XCTAssertNotNil(runtime.findHandler(capUrn: "cap:transform"), "transform handler must be found")
-        XCTAssertNil(runtime.findHandler(capUrn: "cap:unknown"), "unknown handler must be nil")
+        XCTAssertNotNil(try runtime.findHandler(capUrn: CSCapIdentity), "echo handler must be found")
+        XCTAssertNotNil(try runtime.findHandler(capUrn: "cap:transform"), "transform handler must be found")
+        XCTAssertNil(try runtime.findHandler(capUrn: "cap:unknown"), "unknown handler must be nil")
     }
 
     // MARK: - Gap Tests (TEST415, TEST418, TEST420-422, TEST424)
