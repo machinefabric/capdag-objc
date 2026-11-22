@@ -3,13 +3,18 @@
 //  Asking the fabric for a cap
 //
 //  A request is not a cap. A cap takes this and gives that; a request is a
-//  QUESTION about caps, and may leave a side unasked: "what gives me this file,
-//  whatever it takes?", "what can this input become?". Those are not cap URNs
-//  with `media:` on a side — `media:` is the type "anything", a claim about every
-//  input — they are queries with that side unknown.
+//  QUESTION about caps. A call always says what it sends, but a search may leave
+//  a side unasked: "what gives me this file, whatever it takes?", "what can this
+//  input become?". Those are not cap URNs with `media:` on a side — `media:` is
+//  the type "anything", a claim about every input — they are queries with that
+//  side unknown.
+//
+//  A query asks of what a cap GIVES for what is sent: a declared output, read
+//  complete — what it does not mention, the cap does not give — or, for an
+//  effect=none or effect=patch cap, what it was sent with its effect applied.
 //
 //  CSCapQuery is such a question, and CSMatchGrade is how a registered cap
-//  answers it. A cap URN read as a request or as a pattern is one — which is what
+//  answers it. A cap URN read as a typed call or as a pattern is one — which is what
 //  -[CSCapUrn isDispatchable:] and -[CSCapUrn accepts:] ask — and so are the
 //  questions no cap URN can spell (producing, consuming, between).
 //
@@ -45,12 +50,14 @@ FOUNDATION_EXPORT NSString *CSMatchGradeName(CSMatchGrade grade);
 
 - (instancetype)init NS_UNAVAILABLE;
 
-/// The cap URN `request`, read as a request: an input it leaves open is not
-/// established. What -[CSCapUrn isDispatchable:] asks.
-+ (instancetype)fromRequest:(CSCapUrn *)request;
+/// The cap URN `call`, read as a typed call: it sends what its input says —
+/// `media:`, if it says nothing, is anything — and asks for its output, tags and
+/// effect. What -[CSCapUrn isDispatchable:] asks.
++ (instancetype)fromCall:(CSCapUrn *)call;
 
-/// The cap URN `pattern`, read as a pattern over caps: an output it leaves open
-/// is not established. What -[CSCapUrn accepts:] asks.
+/// The cap URN `pattern`, read as a pattern over caps: caps taking within its
+/// input, everything they give of the type its output names; an output it leaves
+/// open asks nothing. What -[CSCapUrn accepts:] asks.
 + (instancetype)fromPattern:(CSCapUrn *)pattern;
 
 /// Caps that GIVE `output`, whatever they take, with the cap-tags `tags` asks
