@@ -814,7 +814,7 @@ final class ProtocolConformanceTests: XCTestCase {
     /// payload of `size` bytes. The REQ names its cap and has been given its
     /// routing id, as a switch hands it to its holds.
     private func heldFrame(_ code: UInt64, _ size: UInt64) -> Frame {
-        guard let frameType = FrameType(rawValue: UInt8(code)) else {
+        guard let frameType = FrameType.fromCode(code) else {
             fatalError("wire number \(code) names no frame type")
         }
         var frame = Frame(frameType: frameType, id: .uint(1))
@@ -849,7 +849,7 @@ final class ProtocolConformanceTests: XCTestCase {
                 if held != (text(row["unrouted"]) == "hold") { wrong.append("\(row): held \(held)") }
             case "fate":
                 let holds = PeerHoldTable(bound: PeerHoldBound(frames: 4, bytes: 64, deadline: 1))
-                XCTAssertNil(holds.hold(sourceIdx: 0, req: heldFrame(UInt64(FrameType.req.rawValue), 0)), "a bare REQ fits")
+                XCTAssertNil(holds.hold(sourceIdx: 0, req: heldFrame(FrameType.req.code, 0)), "a bare REQ fits")
                 let settlement: PeerSettlement
                 switch text(row["bringing"]) {
                 case "provided": settlement = .provided
