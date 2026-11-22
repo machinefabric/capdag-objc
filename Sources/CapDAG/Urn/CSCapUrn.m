@@ -712,18 +712,9 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     if (capdagFormal_cap_gives(_formal, runtimeInput.inner.formalValue, &given, &modelError) != LUNGO_OK) {
         CSCapModelFailed(@"say what a cap gives", modelError);
     }
-    NSMutableDictionary<NSString *, NSString *> *givenTags = [NSMutableDictionary dictionary];
-    for (size_t i = 0; i < lungo_value_count(given); i++) {
-        const lungo_value *pair = lungo_value_item(given, i);
-        size_t keyLength = 0, valueLength = 0;
-        const char *key = lungo_value_get_string(lungo_value_first(pair), &keyLength);
-        const char *value = lungo_value_get_string(lungo_value_second(pair), &valueLength);
-        givenTags[[[NSString alloc] initWithBytes:key length:keyLength encoding:NSUTF8StringEncoding]] =
-            [[NSString alloc] initWithBytes:value length:valueLength encoding:NSUTF8StringEncoding];
-    }
-    lungo_value_free(given);
     parseError = nil;
-    CSTaggedUrn *givenUrn = [CSTaggedUrn fromPrefix:@"media" tags:givenTags error:&parseError];
+    CSTaggedUrn *givenUrn = [CSTaggedUrn fromFormal:given error:&parseError];
+    lungo_value_free(given);
     CSMediaUrn *result = givenUrn ? [CSMediaUrn fromTaggedUrn:givenUrn error:&parseError] : nil;
     if (!result) {
         if (error) {

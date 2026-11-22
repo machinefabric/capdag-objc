@@ -477,37 +477,6 @@ const lungo_value *capdagFormal_wf_cap_other(const lungo_value *v);
 /* Field effect of CapDAG.Exec.WfCap.mk (borrowed). */
 const lungo_value *capdagFormal_wf_cap_effect(const lungo_value *v);
 
-/* TaggedUrn.Constraint */
-#define CAPDAGFORMAL_CONSTRAINT_FINGERPRINT "481fc09e23c6415a7c3f05887577ec940a6ecc84b005e63476c1060b59edcac7"
-lungo_type *capdagFormal_constraint_type(void);
-#define CAPDAGFORMAL_CONSTRAINT_MISSING 0
-/* TaggedUrn.Constraint.missing; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_missing(void);
-#define CAPDAGFORMAL_CONSTRAINT_UNCONSTRAINED 1
-/* TaggedUrn.Constraint.unconstrained; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_unconstrained(void);
-#define CAPDAGFORMAL_CONSTRAINT_OPTIONAL_NOT 2
-/* TaggedUrn.Constraint.optionalNot; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_optional_not(lungo_value *value);
-/* Field value of TaggedUrn.Constraint.optionalNot (borrowed). */
-const lungo_value *capdagFormal_constraint_optional_not_value(const lungo_value *v);
-#define CAPDAGFORMAL_CONSTRAINT_PRESENT 3
-/* TaggedUrn.Constraint.present; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_present(void);
-#define CAPDAGFORMAL_CONSTRAINT_PRESENT_NOT 4
-/* TaggedUrn.Constraint.presentNot; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_present_not(lungo_value *value);
-/* Field value of TaggedUrn.Constraint.presentNot (borrowed). */
-const lungo_value *capdagFormal_constraint_present_not_value(const lungo_value *v);
-#define CAPDAGFORMAL_CONSTRAINT_EXACT 5
-/* TaggedUrn.Constraint.exact; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_exact(lungo_value *value);
-/* Field value of TaggedUrn.Constraint.exact (borrowed). */
-const lungo_value *capdagFormal_constraint_exact_value(const lungo_value *v);
-#define CAPDAGFORMAL_CONSTRAINT_ABSENT 6
-/* TaggedUrn.Constraint.absent; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_absent(void);
-
 /* CapDAG.Illegal */
 #define CAPDAGFORMAL_ILLEGAL_FINGERPRINT "a8ff18eaaff4ebd30f6722ab9492b959e2e1db00d14532ca7790977b3eb7a528"
 lungo_type *capdagFormal_illegal_type(void);
@@ -682,6 +651,37 @@ lungo_value *capdagFormal_step_report_run_ended(lungo_value *completed, lungo_va
 const lungo_value *capdagFormal_step_report_run_ended_completed(const lungo_value *v);
 /* Field aborted of CapDAG.Run.Step.StepReport.runEnded (borrowed). */
 const lungo_value *capdagFormal_step_report_run_ended_aborted(const lungo_value *v);
+
+/* TaggedUrn.Constraint */
+#define CAPDAGFORMAL_CONSTRAINT_FINGERPRINT "481fc09e23c6415a7c3f05887577ec940a6ecc84b005e63476c1060b59edcac7"
+lungo_type *capdagFormal_constraint_type(void);
+#define CAPDAGFORMAL_CONSTRAINT_MISSING 0
+/* TaggedUrn.Constraint.missing; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_missing(void);
+#define CAPDAGFORMAL_CONSTRAINT_UNCONSTRAINED 1
+/* TaggedUrn.Constraint.unconstrained; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_unconstrained(void);
+#define CAPDAGFORMAL_CONSTRAINT_OPTIONAL_NOT 2
+/* TaggedUrn.Constraint.optionalNot; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_optional_not(lungo_value *value);
+/* Field value of TaggedUrn.Constraint.optionalNot (borrowed). */
+const lungo_value *capdagFormal_constraint_optional_not_value(const lungo_value *v);
+#define CAPDAGFORMAL_CONSTRAINT_PRESENT 3
+/* TaggedUrn.Constraint.present; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_present(void);
+#define CAPDAGFORMAL_CONSTRAINT_PRESENT_NOT 4
+/* TaggedUrn.Constraint.presentNot; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_present_not(lungo_value *value);
+/* Field value of TaggedUrn.Constraint.presentNot (borrowed). */
+const lungo_value *capdagFormal_constraint_present_not_value(const lungo_value *v);
+#define CAPDAGFORMAL_CONSTRAINT_EXACT 5
+/* TaggedUrn.Constraint.exact; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_exact(lungo_value *value);
+/* Field value of TaggedUrn.Constraint.exact (borrowed). */
+const lungo_value *capdagFormal_constraint_exact_value(const lungo_value *v);
+#define CAPDAGFORMAL_CONSTRAINT_ABSENT 6
+/* TaggedUrn.Constraint.absent; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_absent(void);
 
 /* CapDAG.Bifaci.Pools.Pool */
 #define CAPDAGFORMAL_POOL_FINGERPRINT "60bca9d670886c7830c76779ad692b4fbb6e4e30c0ce6b3e9d5a91a9b5b7b1e6"
@@ -951,7 +951,7 @@ int32_t capdagFormal_accepts(const lungo_value *pattern, const lungo_value *cap,
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_audit(const lungo_value *c, const lungo_value *input, const lungo_value *emitted, lungo_value **result, lungo_error **error);
 
-/* CapDAG.Exec.capGives : CapDAG.Exec.WfCap → TaggedUrn.Exec.Wf → List (String × TaggedUrn.Constraint) */
+/* CapDAG.Exec.capGives : CapDAG.Exec.WfCap → TaggedUrn.Exec.Wf → TaggedUrn.Exec.Wf */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_cap_gives(const lungo_value *c, const lungo_value *x, lungo_value **result, lungo_error **error);
 
@@ -1062,6 +1062,10 @@ int32_t capdagFormal_on(const lungo_value *a, const lungo_value *a2, lungo_value
 /* TaggedUrn.Exec.make : String → List (String × TaggedUrn.Constraint) → Option TaggedUrn.Exec.Wf */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_make(const lungo_value *scheme, const lungo_value *tags, lungo_value **result, lungo_error **error);
+
+/* TaggedUrn.Exec.parts : TaggedUrn.Exec.Wf → String × List (String × TaggedUrn.Constraint) */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_parts(const lungo_value *w, lungo_value **result, lungo_error **error);
 
 /* The program's assurance document (assurance.json): its claims, trust and assumptions. */
 const char *capdagFormal_assurance_json(void);

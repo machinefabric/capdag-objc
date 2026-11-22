@@ -82,4 +82,5 @@ int32_t capdagFormal__call_l_CapDAG_dRun_dControl_doutcome(const uint8_t *input,
 int32_t capdagFormal__call_l_CapDAG_dRun_dStep_dStepState_dfinal(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dRun_dStep_don(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_TaggedUrn_dExec_dmake(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_TaggedUrn_dExec_dparts(const uint8_t *input, size_t len, lungo_buffer *out);
 #endif /* CAPDAGFORMAL_ENTRIES_H */

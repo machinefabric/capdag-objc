@@ -897,10 +897,12 @@ internal final class LiveFeedContext: @unchecked Sendable {
                     "main input urn '\(main.mediaUrn)' on cap '\(capUrn)' is not a valid media URN"
                 )
             }
-            guard content.conforms(to: mainUrn) else {
+            // What a provider delivers is what its items are: a complete thing,
+            // read with `satisfies`.
+            guard content.satisfies(mainUrn) else {
                 throw StreamError.protocolError(
                     "live-feed reference '\(referenceUrn)' delivers '\(providerContent)' which does not "
-                    + "conform to cap '\(capUrn)' main input '\(main.mediaUrn)' — this machine cannot "
+                    + "fit cap '\(capUrn)' main input '\(main.mediaUrn)' — this machine cannot "
                     + "consume that device"
                 )
             }

@@ -58,7 +58,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 - (void)test7216_ASourceTakesAnEdgeItSatisfies {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
     [graph addCap:makeTestCap(@"media:enc=utf8;fmt=json;record;!list", @"media:enc=utf8;fmt=yaml;record",
-                              @"record_to_yaml", @"Record To YAML")];
+                              @"record-to-yaml", @"Record To YAML")];
 
     NSError *error = nil;
     CSMediaUrn *yaml = [CSMediaUrn fromString:@"media:enc=utf8;fmt=yaml;record" error:&error];
