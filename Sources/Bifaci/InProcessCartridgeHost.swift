@@ -576,8 +576,7 @@ public final class InProcessCartridgeHost {
                 let handler: FrameHandler
                 if isIdentity {
                     handler = identityHandler
-                } else if let request = try? CSCapUrn.fromString(capUrn),
-                          let idx = Self.findHandlerForCap(caps: registeredCaps, owners: owners, request: request) {
+                } else if let idx = Self.findHandlerForCap(caps: registeredCaps, owners: owners, request: parsedCap) {
                     handler = handlers[idx].handler
                 } else {
                     // No registered handler for a dispatched cap is a
