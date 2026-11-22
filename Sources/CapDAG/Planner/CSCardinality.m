@@ -8,6 +8,7 @@
 
 #import "CSCardinality.h"
 #import "CSMediaUrn.h"
+@import TaggedUrn;
 
 // MARK: - InputCardinality Functions
 
@@ -93,7 +94,12 @@ NSString *CSInputStructureApplyToUrn(CSInputStructure structure, NSString *baseU
             } else {
                 NSError *error = nil;
                 CSMediaUrn *record = [mediaUrn withTag:@"record" constraint:[CSTagConstraint present] error:&error];
-                NSAssert(record != nil, @"record is a key every media URN can take: %@", error);
+                if (!record) {
+                    @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                                   reason:[NSString stringWithFormat:@"capdag: record is a key every media URN can take, but %@ refused it: %@",
+                                                           baseUrn, error.localizedDescription]
+                                                 userInfo:nil];
+                }
                 return [record toString];
             }
     }

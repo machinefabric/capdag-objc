@@ -34,7 +34,7 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 // TEST0108: Cap creation
 - (void)test0108_CapCreation {
     NSError *error;
-    CSCapUrn *key = [CSCapUrn fromString:@"cap:in=media:void;transform;out=\"media:enc=utf8;record\";format=json;data_processing" error:&error];
+    CSCapUrn *key = [CSCapUrn fromString:@"cap:in=media:void;transform;out=\"media:enc=utf8;record\";format=json;data-processing" error:&error];
     XCTAssertNotNil(key, @"Failed to create cap URN: %@", error);
 
     NSArray<CSCapArg *> *args = @[];
@@ -50,9 +50,9 @@ static CSFabricRegistry *registryWithSpecs(NSArray<NSDictionary *> *specs) {
 
     XCTAssertNotNil(cap);
     // URN tags are sorted alphabetically — markers (bare keys) sort
-    // with keyed tags by key name. Order: data_processing, format,
+    // with keyed tags by key name. Order: data-processing, format,
     // in, out, transform.
-    XCTAssertEqualObjects([cap urnString], @"cap:data_processing;format=json;in=media:void;out=\"media:enc=utf8;record\";transform");
+    XCTAssertEqualObjects([cap urnString], @"cap:data-processing;format=json;in=media:void;out=\"media:enc=utf8;record\";transform");
     XCTAssertEqualObjects(cap.primaryAlias, @"test-command");
     XCTAssertNil([cap getStdinMediaUrn], @"stdinType should be nil when not specified");
 }
