@@ -47,7 +47,10 @@ static NSError *CSCapError(CSCapUrnError code, NSString *message) {
 static NSString *CSCapWrittenTag(NSString *key, CSTagConstraint *constraint) {
     NSError *error = nil;
     CSTaggedUrn *urn = [CSTaggedUrn fromPrefix:@"cap" tags:@{key: constraint} error:&error];
-    NSCAssert(urn != nil, @"a stored tag is writable: %@", error);
+    if (urn == nil) {
+        [NSException raise:NSInternalInconsistencyException
+                    format:@"a tag a cap URN holds does not write (%@): %@", key, error.localizedDescription];
+    }
     return [[urn toString] substringFromIndex:4];
 }
 
