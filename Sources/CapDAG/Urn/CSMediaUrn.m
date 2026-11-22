@@ -8,8 +8,22 @@
 
 #import "CSMediaUrn.h"
 #import "CSTaggedUrn.h"
+// A media type's shapes and the bookends it ends on are decided by the program generated from
+// the proved model in ../formal (see ../lungo.toml), through its C API. Its URNs are
+// tagged-urn's model values, which pass to it as they are.
+#import "capdagFormal.h"
+#include <stdlib.h>
 
 NSErrorDomain const CSMediaUrnErrorDomain = @"CSMediaUrnErrorDomain";
+
+/// A model call that fails is a broken invariant — a media URN this class holds that the model
+/// cannot take, or a runtime that is not working — and there is no answer to give instead.
+static void CSMediaUrnModelFailed(NSString *what, lungo_error *error) {
+    NSString *reason = [NSString stringWithFormat:@"capdag: the model could not %@: %s", what,
+                        error ? lungo_error_message(error) : "no error was reported"];
+    if (error) lungo_error_free(error);
+    @throw [NSException exceptionWithName:NSInternalInconsistencyException reason:reason userInfo:nil];
+}
 
 NSComparisonResult CSCompareCodePoints(NSString *a, NSString *b) {
     // UTF-8 byte order is Unicode code point order.
@@ -109,8 +123,7 @@ NSComparisonResult CSCompareCodePoints(NSString *a, NSString *b) {
 }
 
 - (nullable NSString *)exactValue:(NSString *)key {
-    CSTagConstraint *constraint = [self.inner getTag:key];
-    return constraint.kind == CSTagConstraintKindExact ? constraint.value : nil;
+    return [self.inner getTag:key].exactValue;
 }
 
 - (NSDictionary<NSString *, CSTagConstraint *> *)tags {
@@ -321,6 +334,59 @@ static BOOL CSMediaUrnDecided(BOOL result, NSError *error, NSString *comparison)
     CSMediaUrn *result = [CSMediaUrn fromTaggedUrn:bound error:&err];
     NSAssert(result != nil, @"The bound of media URNs is a media URN: %@", err);
     return result;
+}
+
+// MARK: - Shapes and bookends
+
+/// The media URNs a list of the model's URN values stands for: values the model gave back for
+/// media URNs it was handed, so each is a media URN; one that is not is a broken invariant.
+static NSArray<CSMediaUrn *> *CSMediaUrnsOfModel(const lungo_value *list) {
+    size_t count = lungo_value_count(list);
+    NSMutableArray<CSMediaUrn *> *urns = [NSMutableArray arrayWithCapacity:count];
+    for (size_t i = 0; i < count; i++) {
+        NSError *error = nil;
+        CSTaggedUrn *tagged = [CSTaggedUrn fromFormal:lungo_value_item(list, i) error:&error];
+        CSMediaUrn *media = tagged ? [CSMediaUrn fromTaggedUrn:tagged error:&error] : nil;
+        if (!media) {
+            @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                           reason:[NSString stringWithFormat:@"capdag: the model gave back no media URN for media URNs: %@", error.localizedDescription]
+                                         userInfo:nil];
+        }
+        [urns addObject:media];
+    }
+    return urns;
+}
+
+- (NSArray<CSMediaUrn *> *)splits {
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    if (capdagFormal_splits(self.inner.formalValue, &result, &error) != LUNGO_OK) {
+        CSMediaUrnModelFailed(@"split a media type into its shapes", error);
+    }
+    NSArray<CSMediaUrn *> *parts = CSMediaUrnsOfModel(result);
+    lungo_value_free(result);
+    return parts;
+}
+
+- (nullable NSArray<CSMediaUrn *> *)endsOn:(NSArray<CSMediaUrn *> *)bookends {
+    // The list takes ownership of each item.
+    lungo_value **items = calloc(MAX(bookends.count, (NSUInteger)1), sizeof(lungo_value *));
+    for (NSUInteger i = 0; i < bookends.count; i++) {
+        items[i] = lungo_value_clone(bookends[i].inner.formalValue);
+    }
+    lungo_value *list = lungo_value_list(items, (size_t)bookends.count);
+    free(items);
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    int32_t status = capdagFormal_ends_on(list, self.inner.formalValue, &result, &error);
+    lungo_value_free(list);
+    if (status != LUNGO_OK) {
+        CSMediaUrnModelFailed(@"say which bookends a media type ends on", error);
+    }
+    const lungo_value *ends = lungo_value_get_option(result);
+    NSArray<CSMediaUrn *> *answer = ends ? CSMediaUrnsOfModel(ends) : nil;
+    lungo_value_free(result);
+    return answer;
 }
 
 @end

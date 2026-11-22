@@ -199,8 +199,7 @@ static NSString * _Nullable CSMediaUrnTagValue(NSString *mediaUrn, NSString *tag
         [NSException raise:NSInvalidArgumentException
                     format:@"Failed to parse media URN '%@': %@ - this indicates the CSMediaDef was not resolved via CSResolveMediaUrn", mediaUrn, error.localizedDescription];
     }
-    CSTagConstraint *constraint = [parsed getTag:tagName];
-    return constraint.kind == CSTagConstraintKindExact ? constraint.value : nil;
+    return [parsed getTag:tagName].exactValue;
 }
 
 /// Public function to check if a media URN is text-representable, i.e. it

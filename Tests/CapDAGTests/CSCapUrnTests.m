@@ -605,6 +605,23 @@ static NSString* testUrn(NSString *tags) {
     XCTAssertTrue([validValue hasMarkerTag:@"key"]);
 }
 
+// TEST7230: a cap-tag may be a set of values, and a value given twice in one set is refused
+// as a DuplicateValue.
+- (void)test7230_aCapTagSetAndAValueGivenTwice {
+    NSError *error = nil;
+    CSCapUrn *cap = [CSCapUrn fromString:testUrn(@"format=yaml|json") error:&error];
+    XCTAssertNotNil(cap, @"%@", error);
+    XCTAssertEqualObjects([cap getTag:@"format"], ([CSTagConstraint oneOf:@[@"json", @"yaml"] orAbsent:NO]));
+    XCTAssertTrue([[cap toString] containsString:@"format=json|yaml"], @"%@", [cap toString]);
+
+    error = nil;
+    XCTAssertNil([CSCapUrn fromString:testUrn(@"format=json|json") error:&error]);
+    XCTAssertNotNil(error);
+    XCTAssertEqualObjects(error.domain, CSCapUrnErrorDomain);
+    XCTAssertEqual(error.code, CSCapUrnErrorDuplicateValue);
+    XCTAssertTrue([error.localizedDescription containsString:@"json"], @"%@", error.localizedDescription);
+}
+
 // TEST032: Test duplicate keys are rejected with DuplicateKey error
 - (void)test032_duplicateKeyRejection {
     NSError *error = nil;

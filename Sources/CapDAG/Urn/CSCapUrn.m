@@ -74,6 +74,7 @@ static NSError *CSCapErrorFromTaggedUrnError(NSError *taggedError) {
         case CSTaggedUrnErrorEmptyPrefix: code = CSCapUrnErrorMissingCapPrefix; break;
         case CSTaggedUrnErrorPrefixMismatch: code = CSCapUrnErrorMissingCapPrefix; break;
         case CSTaggedUrnErrorWhitespaceInInput: code = CSCapUrnErrorInvalidCharacter; break;
+        case CSTaggedUrnErrorDuplicateValue: code = CSCapUrnErrorDuplicateValue; break;
         default:
             @throw [NSException exceptionWithName:NSInternalInconsistencyException
                                            reason:[NSString stringWithFormat:@"capdag: tagged URN error code %ld has no cap URN code", (long)taggedError.code]
@@ -130,11 +131,11 @@ static NSString * _Nullable CSCapDirectionSpec(NSString *side, NSString *raw, NS
 /// A direction tag as a cap's tag map holds it: missing, or the marker (`in`, `in=*`), is
 /// `media:`; an exact value is that media URN in canonical form; any other form is refused.
 static NSString * _Nullable CSCapProcessDirectionTag(CSTagConstraint * _Nullable tag, NSString *side, NSError **error) {
-    if (!tag || tag.kind == CSTagConstraintKindPresent) {
+    if (!tag || [tag isEqual:[CSTagConstraint present]]) {
         return @"media:";
     }
-    if (tag.kind == CSTagConstraintKindExact) {
-        return CSCapDirectionMedia(side, tag.value, error);
+    if (tag.exactValue != nil) {
+        return CSCapDirectionMedia(side, tag.exactValue, error);
     }
     if (error) {
         *error = CSCapError(CSCapDirectionCode(side),
@@ -150,12 +151,12 @@ static NSString * _Nullable CSCapNormalizeEffectValue(CSTagConstraint * _Nullabl
     if (!raw) {
         return @"declared";
     }
-    if (raw.kind == CSTagConstraintKindPresent || raw.kind == CSTagConstraintKindUnconstrained) {
+    if ([raw isEqual:[CSTagConstraint present]] || [raw isEqual:[CSTagConstraint unconstrained]]) {
         return @"?";
     }
-    if (raw.kind == CSTagConstraintKindExact
-        && ([raw.value isEqualToString:@"declared"] || [raw.value isEqualToString:@"none"] || [raw.value isEqualToString:@"patch"])) {
-        return raw.value;
+    NSString *exact = raw.exactValue;
+    if (exact != nil && [@[@"declared", @"none", @"patch"] containsObject:exact]) {
+        return exact;
     }
     if (error) {
         *error = CSCapError(CSCapUrnErrorInvalidEffect,
@@ -461,8 +462,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
 }
 
 - (nullable NSString *)exactValue:(NSString *)key {
-    CSTagConstraint *constraint = [self getTag:key];
-    return constraint.kind == CSTagConstraintKindExact ? constraint.value : nil;
+    return [self getTag:key].exactValue;
 }
 
 - (BOOL)hasTag:(NSString *)key withValue:(NSString *)value {
@@ -471,7 +471,7 @@ NSString *CSCapKindToString(CSCapKind kind) {
 }
 
 - (BOOL)hasMarkerTag:(NSString *)tagName {
-    return [self getTag:tagName].kind == CSTagConstraintKindPresent;
+    return [[self getTag:tagName] isEqual:[CSTagConstraint present]];
 }
 
 - (nullable CSCapUrn *)withTag:(NSString *)key constraint:(CSTagConstraint *)constraint error:(NSError **)error {
@@ -824,14 +824,13 @@ static CSTaggedUrn *CSCapTagUrn(NSDictionary<NSString *, CSTagConstraint *> *tag
     // Weighted sum of the per-tag truth-table score across the structural
     // axes: out, in, and the cap-local y-axis tags. Effect dispatch is exact
     // when constrained, but effect does not currently participate in
-    // specificity scoring. Per-tag
-    // ladder:
-    //   "?"            -> 0   (no constraint)
-    //   starts "?="    -> 1   (absent or not v)
-    //   "*"            -> 2   (must-have-any)
-    //   starts "!="    -> 3   (present and not v)
-    //   exact value    -> 4   (exact match)
-    //   "!"            -> 5   (must-not-have)
+    // specificity scoring. Per-tag score, by what the tag allows:
+    //   absence and every value                 `?x`                      -> 0
+    //   absence and some values, not every one  `x?=v`, `x?=a|b`, `x=a|!` -> 1
+    //   every value                             `x` (`x=*`)               -> 2
+    //   two or more values, not every value     `x!=v`, `x=a|b`           -> 3
+    //   exactly one value                       `x=v`                     -> 4
+    //   only absence                            `!x`                      -> 5
     //
     // Axis weighting:
     //   spec_C(c) = WEIGHT_OUT * spec_U(c.out)

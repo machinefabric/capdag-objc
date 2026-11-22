@@ -415,11 +415,17 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (NSComparisonResult)compareStructurally:(CSCapUrn * _Nonnull)other;
 
 /**
- * Get the specificity score for cap matching using graded scoring:
- *   K=v (exact value): 3 points (most specific)
- *   K=* (must-have-any): 2 points
- *   K=! (must-not-have): 1 point
- *   K=? (unspecified) or missing: 0 points (least specific)
+ * Get the specificity score for cap matching: the weighted sum of the per-tag score
+ * across the three axes (`out`, `in`, `y`), each tag scored by what it allows:
+ *
+ *   | What a tag allows                      | Forms                     | Score |
+ *   |----------------------------------------|---------------------------|------:|
+ *   | absence and every value                | `?x`                      |     0 |
+ *   | absence and some values, not every one | `x?=v`, `x?=a|b`, `x=a|!` |     1 |
+ *   | every value                            | `x` (`x=*`)               |     2 |
+ *   | two or more values, not every value    | `x!=v`, `x=a|b`           |     3 |
+ *   | exactly one value                      | `x=v`                     |     4 |
+ *   | only absence                           | `!x`                      |     5 |
  *
  * Includes direction specs (in/out) in the score.
  *
@@ -493,7 +499,9 @@ typedef NS_ERROR_ENUM(CSCapUrnErrorDomain, CSCapUrnError) {
     CSCapUrnErrorInvalidOutSpec = 13,
     CSCapUrnErrorInvalidEffect = 14,
     CSCapUrnErrorInvalidEffectApplication = 15,
-    CSCapUrnErrorIllegalDeclaration = 16
+    CSCapUrnErrorIllegalDeclaration = 16,
+    /// A value given twice in one set of values
+    CSCapUrnErrorDuplicateValue = 17
 };
 
 /**

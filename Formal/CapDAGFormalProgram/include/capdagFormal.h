@@ -429,7 +429,7 @@ const lungo_value *capdagFormal_write_send_ends(const lungo_value *v);
 lungo_value *capdagFormal_write_suppress(void);
 
 /* TaggedUrn.Exec.Wf */
-#define CAPDAGFORMAL_WF_FINGERPRINT "20e9f81ad195b2f4a481e7a5dcae2b3d0de6efe7b3dc720db0e2aa3b52527785"
+#define CAPDAGFORMAL_WF_FINGERPRINT "4fed413de2fb915a7facb2d88381b8a592cbf88ecfc0037e9ed1d5892c5169de"
 lungo_type *capdagFormal_wf_type(void);
 
 /* CapDAG.Detect.AdapterChoice */
@@ -452,7 +452,7 @@ const lungo_value *capdagFormal_adapter_choice_ambiguous_i(const lungo_value *v)
 const lungo_value *capdagFormal_adapter_choice_ambiguous_j(const lungo_value *v);
 
 /* CapDAG.Detect.Candidate */
-#define CAPDAGFORMAL_CANDIDATE_FINGERPRINT "44b0af3c53fe735247dd93bf66fcba31fe6e73818339bcb1d382fdb21b3cc65e"
+#define CAPDAGFORMAL_CANDIDATE_FINGERPRINT "4f32e81f041605d2521bcb87cf59dbcd1544930c35b0b096f9fc30ead4908aac"
 lungo_type *capdagFormal_candidate_type(void);
 #define CAPDAGFORMAL_CANDIDATE_MK 0
 /* CapDAG.Detect.Candidate.mk; takes ownership of the fields. */
@@ -463,7 +463,7 @@ const lungo_value *capdagFormal_candidate_urn(const lungo_value *v);
 const lungo_value *capdagFormal_candidate_rules(const lungo_value *v);
 
 /* CapDAG.Exec.WfCap */
-#define CAPDAGFORMAL_WF_CAP_FINGERPRINT "2b8d6466d218f4ae6bc98d95bba55d98f21cac4a49446ae170993773cefdb830"
+#define CAPDAGFORMAL_WF_CAP_FINGERPRINT "3e360d3078c6ebbfc554600f4aabbaa784ec85d69638d2027983800bdcec766c"
 lungo_type *capdagFormal_wf_cap_type(void);
 #define CAPDAGFORMAL_WF_CAP_MK 0
 /* CapDAG.Exec.WfCap.mk; takes ownership of the fields. */
@@ -504,7 +504,7 @@ lungo_value *capdagFormal_effect_none(void);
 lungo_value *capdagFormal_effect_patch(void);
 
 /* CapDAG.Exec.WfQuery */
-#define CAPDAGFORMAL_WF_QUERY_FINGERPRINT "e734861d70e3177f6563c4492990bb65131f0450b8dfc62071eb61b6c5f08b8e"
+#define CAPDAGFORMAL_WF_QUERY_FINGERPRINT "07629955483d5bf47510eb149641f29757ccb66717fa8c88e0696612276a145d"
 lungo_type *capdagFormal_wf_query_type(void);
 #define CAPDAGFORMAL_WF_QUERY_MK 0
 /* CapDAG.Exec.WfQuery.mk; takes ownership of the fields. */
@@ -653,35 +653,18 @@ const lungo_value *capdagFormal_step_report_run_ended_completed(const lungo_valu
 const lungo_value *capdagFormal_step_report_run_ended_aborted(const lungo_value *v);
 
 /* TaggedUrn.Constraint */
-#define CAPDAGFORMAL_CONSTRAINT_FINGERPRINT "481fc09e23c6415a7c3f05887577ec940a6ecc84b005e63476c1060b59edcac7"
+#define CAPDAGFORMAL_CONSTRAINT_FINGERPRINT "b65d5193904316a2793952f589e3aac63bfc80f801ab20f2693643fcf9894159"
 lungo_type *capdagFormal_constraint_type(void);
 #define CAPDAGFORMAL_CONSTRAINT_MISSING 0
 /* TaggedUrn.Constraint.missing; takes ownership of the fields. */
 lungo_value *capdagFormal_constraint_missing(void);
-#define CAPDAGFORMAL_CONSTRAINT_UNCONSTRAINED 1
-/* TaggedUrn.Constraint.unconstrained; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_unconstrained(void);
-#define CAPDAGFORMAL_CONSTRAINT_OPTIONAL_NOT 2
-/* TaggedUrn.Constraint.optionalNot; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_optional_not(lungo_value *value);
-/* Field value of TaggedUrn.Constraint.optionalNot (borrowed). */
-const lungo_value *capdagFormal_constraint_optional_not_value(const lungo_value *v);
-#define CAPDAGFORMAL_CONSTRAINT_PRESENT 3
-/* TaggedUrn.Constraint.present; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_present(void);
-#define CAPDAGFORMAL_CONSTRAINT_PRESENT_NOT 4
-/* TaggedUrn.Constraint.presentNot; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_present_not(lungo_value *value);
-/* Field value of TaggedUrn.Constraint.presentNot (borrowed). */
-const lungo_value *capdagFormal_constraint_present_not_value(const lungo_value *v);
-#define CAPDAGFORMAL_CONSTRAINT_EXACT 5
-/* TaggedUrn.Constraint.exact; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_exact(lungo_value *value);
-/* Field value of TaggedUrn.Constraint.exact (borrowed). */
-const lungo_value *capdagFormal_constraint_exact_value(const lungo_value *v);
-#define CAPDAGFORMAL_CONSTRAINT_ABSENT 6
-/* TaggedUrn.Constraint.absent; takes ownership of the fields. */
-lungo_value *capdagFormal_constraint_absent(void);
+#define CAPDAGFORMAL_CONSTRAINT_WRITTEN 1
+/* TaggedUrn.Constraint.written; takes ownership of the fields. */
+lungo_value *capdagFormal_constraint_written(lungo_value *absent, lungo_value *values);
+/* Field absent of TaggedUrn.Constraint.written (borrowed). */
+const lungo_value *capdagFormal_constraint_written_absent(const lungo_value *v);
+/* Field values of TaggedUrn.Constraint.written (borrowed). */
+const lungo_value *capdagFormal_constraint_written_values(const lungo_value *v);
 
 /* CapDAG.Bifaci.Pools.Pool */
 #define CAPDAGFORMAL_POOL_FINGERPRINT "60bca9d670886c7830c76779ad692b4fbb6e4e30c0ce6b3e9d5a91a9b5b7b1e6"
@@ -710,7 +693,7 @@ lungo_value *capdagFormal_rules_met(void);
 lungo_value *capdagFormal_rules_unmet(void);
 
 /* CapDAG.Exec.WfAsk */
-#define CAPDAGFORMAL_WF_ASK_FINGERPRINT "d286477c7abc4e6bc6ee2d06889372b71a5bb06605b592ebabb6ad3eaf71b952"
+#define CAPDAGFORMAL_WF_ASK_FINGERPRINT "8631d4d1890834ec355cd337fcd38b53192373da2064b1da8d4ed4db1f720cd5"
 lungo_type *capdagFormal_wf_ask_type(void);
 #define CAPDAGFORMAL_WF_ASK_UNKNOWN 0
 /* CapDAG.Exec.WfAsk.unknown; takes ownership of the fields. */
@@ -749,6 +732,20 @@ lungo_value *capdagFormal_run_act_kill(void);
 #define CAPDAGFORMAL_RUN_ACT_FINISH 4
 /* CapDAG.Run.Control.RunAct.finish; takes ownership of the fields. */
 lungo_value *capdagFormal_run_act_finish(void);
+
+/* TaggedUrn.Values */
+#define CAPDAGFORMAL_VALUES_FINGERPRINT "d39e9210a7238d1db8ec7497149536d75384770f7494bb031e64d4e3c61925f6"
+lungo_type *capdagFormal_values_type(void);
+#define CAPDAGFORMAL_VALUES_ONE_OF 0
+/* TaggedUrn.Values.oneOf; takes ownership of the fields. */
+lungo_value *capdagFormal_values_one_of(lungo_value *vs);
+/* Field vs of TaggedUrn.Values.oneOf (borrowed). */
+const lungo_value *capdagFormal_values_one_of_vs(const lungo_value *v);
+#define CAPDAGFORMAL_VALUES_NONE_OF 1
+/* TaggedUrn.Values.noneOf; takes ownership of the fields. */
+lungo_value *capdagFormal_values_none_of(lungo_value *vs);
+/* Field vs of TaggedUrn.Values.noneOf (borrowed). */
+const lungo_value *capdagFormal_values_none_of_vs(const lungo_value *v);
 
 /* CapDAG.Bifaci.Credit.Gate.acquire : CapDAG.Bifaci.Credit.Gate → Nat → CapDAG.Bifaci.Credit.Acquire */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
@@ -971,6 +968,10 @@ int32_t capdagFormal_dispatch(const lungo_value *candidate, const lungo_value *r
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_effect_ok(const lungo_value *candidate, const lungo_value *request, lungo_value **result, lungo_error **error);
 
+/* CapDAG.Exec.endsOn : List TaggedUrn.Exec.Wf → TaggedUrn.Exec.Wf → Option (List TaggedUrn.Exec.Wf) */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_ends_on(const lungo_value *bookends, const lungo_value *node, lungo_value **result, lungo_error **error);
+
 /* CapDAG.Exec.equivalent : CapDAG.Exec.WfCap → CapDAG.Exec.WfCap → Bool */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_equivalent(const lungo_value *a, const lungo_value *b, lungo_value **result, lungo_error **error);
@@ -1030,6 +1031,10 @@ int32_t capdagFormal_select(const lungo_value *candidates, const lungo_value *re
 /* CapDAG.Exec.specificity : CapDAG.Exec.WfCap → Nat */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_specificity(const lungo_value *c, lungo_value **result, lungo_error **error);
+
+/* CapDAG.Exec.splits : TaggedUrn.Exec.Wf → List TaggedUrn.Exec.Wf */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_splits(const lungo_value *u, lungo_value **result, lungo_error **error);
 
 /* CapDAG.Run.Control.admits : CapDAG.Run.Control.RunPhase → Bool */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
