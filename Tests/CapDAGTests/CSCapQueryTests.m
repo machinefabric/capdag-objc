@@ -5,6 +5,7 @@
 
 #import <XCTest/XCTest.h>
 #import "CapDAG.h"
+@import TaggedUrn;
 
 @interface CSCapQueryTests : XCTestCase
 @end
@@ -79,11 +80,11 @@
     CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
     CSMediaUrn *anyImage = [self media:@"media:image"];
 
-    CSCapQuery *converters = [CSCapQuery producing:anyImage tags:@{@"convert-image": @"*"}];
+    CSCapQuery *converters = [CSCapQuery producing:anyImage tags:@{@"convert-image": [CSTagConstraint present]}];
     XCTAssertTrue([converters admits:toJpeg]);
     XCTAssertFalse([converters admits:someImage], @"it renders; it is not tagged convert-image");
 
-    CSCapQuery *notConverters = [CSCapQuery producing:anyImage tags:@{@"convert-image": @"!"}];
+    CSCapQuery *notConverters = [CSCapQuery producing:anyImage tags:@{@"convert-image": [CSTagConstraint absent]}];
     XCTAssertTrue([notConverters admits:someImage], @"it does not have the tag");
     XCTAssertFalse([notConverters admits:toJpeg], @"it has it");
     XCTAssertEqual([notConverters grade:toJpeg], CSMatchGradeNone);
