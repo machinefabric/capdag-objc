@@ -35,23 +35,36 @@
 - (void)test12368_aQuestionMayLeaveASideUnknown {
     CSCapUrn *pages = [self cap:@"cap:disbind;in=\"media:document;ext=pdf\";out=\"media:enc=utf8;ext=txt;page;plain-text\""];
     CSCapUrn *toJpeg = [self cap:@"cap:convert-image;in=\"media:ext=png;image\";out=\"media:ext=jpeg;image\""];
-    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
+    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:ext;image\""];
+    CSCapUrn *bareImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
     CSCapUrn *passesThrough = [self cap:@"cap:decimate-sequence;effect=none"];
 
     CSCapQuery *wantsJpeg = [CSCapQuery producing:[self media:@"media:ext=jpeg;image"] tags:nil];
     XCTAssertEqual([wantsJpeg grade:toJpeg], CSMatchGradeExact);
     XCTAssertTrue([wantsJpeg admits:toJpeg], @"whatever it takes: a png here");
-    // "Some image" is not a jpeg, and not excluded: possible, never routed on.
+    // An image file of some type is not a jpeg, and not excluded: possible,
+    // never routed on.
     XCTAssertEqual([wantsJpeg grade:someImage], CSMatchGradePossible);
     XCTAssertFalse([wantsJpeg admits:someImage]);
     XCTAssertTrue([wantsJpeg mayAdmit:someImage]);
     XCTAssertEqual([wantsJpeg grade:pages], CSMatchGradeNone);
+    // A declared output says what the cap gives: one giving media:image gives an
+    // image with no file type, never a jpeg.
+    XCTAssertEqual([wantsJpeg grade:bareImage], CSMatchGradeNone);
 
     // Asked for any image, a jpeg is guaranteed to be one, not exactly it.
     CSCapQuery *wantsImage = [CSCapQuery producing:[self media:@"media:image"] tags:nil];
     XCTAssertEqual([wantsImage grade:toJpeg], CSMatchGradeGuaranteed);
-    XCTAssertEqual([wantsImage grade:someImage], CSMatchGradeExact);
-    XCTAssertFalse([wantsImage admits:passesThrough], @"media: out promises no image");
+    XCTAssertEqual([wantsImage grade:someImage], CSMatchGradeGuaranteed);
+    XCTAssertEqual([wantsImage grade:bareImage], CSMatchGradeExact);
+    CSCapQuery *wantsImageFile = [CSCapQuery producing:[self media:@"media:ext;image"] tags:nil];
+    XCTAssertEqual([wantsImageFile grade:someImage], CSMatchGradeExact);
+    // A cap that gives what it is sent, asked for an image whatever it takes,
+    // gives whatever it takes — not only images.
+    XCTAssertFalse([wantsImage admits:passesThrough]);
+    CSCapQuery *wantsPdf = [CSCapQuery producing:[self media:@"media:document;ext=pdf"] tags:nil];
+    XCTAssertFalse([wantsPdf admits:passesThrough]);
+    XCTAssertEqual([wantsPdf grade:passesThrough], CSMatchGradePossible);
 
     // What can a pdf become? Whatever takes a pdf — or takes anything.
     CSCapQuery *hasPdf = [CSCapQuery consuming:[self media:@"media:document;ext=pdf"] tags:nil];
@@ -77,7 +90,7 @@
 // no cap needs to declare; and a cap may carry tags nobody asked about.
 - (void)test12369_aQuerysTagsAreAskedOfTheTagsACapHas {
     CSCapUrn *toJpeg = [self cap:@"cap:convert-image;in=\"media:ext=png;image\";out=\"media:ext=jpeg;image\""];
-    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:image\""];
+    CSCapUrn *someImage = [self cap:@"cap:render;in=\"media:document;ext=pdf\";out=\"media:ext;image\""];
     CSMediaUrn *anyImage = [self media:@"media:image"];
 
     CSCapQuery *converters = [CSCapQuery producing:anyImage tags:@{@"convert-image": [CSTagConstraint present]}];
@@ -89,11 +102,12 @@
     XCTAssertFalse([notConverters admits:toJpeg], @"it has it");
     XCTAssertEqual([notConverters grade:toJpeg], CSMatchGradeNone);
 
-    // The same holds of a request: `!x` is served by a cap silent on x.
-    CSCapUrn *request = [self cap:@"cap:!convert-image;out=\"media:image\""];
-    XCTAssertTrue([someImage isDispatchable:request]);
-    XCTAssertFalse([toJpeg isDispatchable:request]);
-    XCTAssertEqual([[CSCapQuery fromRequest:request] grade:someImage], CSMatchGradeExact);
+    // The same holds of a call: `!x` is served by a cap silent on x.
+    CSCapUrn *call = [self cap:@"cap:!convert-image;in=\"media:ext=png;image\";out=\"media:ext;image\""];
+    CSCapUrn *rendersPng = [self cap:@"cap:render;in=\"media:ext=png;image\";out=\"media:ext;image\""];
+    XCTAssertTrue([rendersPng isDispatchable:call]);
+    XCTAssertFalse([toJpeg isDispatchable:call], @"it takes a png and gives an image file, and is tagged convert-image");
+    XCTAssertEqual([[CSCapQuery fromCall:call] grade:rendersPng], CSMatchGradeExact);
 }
 
 @end
