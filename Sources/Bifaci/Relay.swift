@@ -341,12 +341,13 @@ public final class RelayMaster: @unchecked Sendable {
             throw RelayError.protocolError("expected RelayNotify, got \(frame.frameType)")
         }
 
-        guard let manifest = frame.relayNotifyManifest else {
-            throw RelayError.protocolError("RelayNotify missing manifest")
-        }
-
-        guard let limits = frame.relayNotifyLimits else {
-            throw RelayError.protocolError("RelayNotify missing limits")
+        let manifest: Data
+        let limits: Limits
+        do {
+            manifest = try frame.relayNotifyManifest()
+            limits = try frame.relayNotifyLimits()
+        } catch {
+            throw RelayError.protocolError("\(error)")
         }
 
         return RelayMaster(manifest: manifest, limits: limits)
@@ -392,14 +393,14 @@ public final class RelayMaster: @unchecked Sendable {
             }
 
             if frame.frameType == .relayNotify {
-                // Intercept: update manifest and limits
+                // Intercept: update manifest and limits. Both are read
+                // before either is kept: a RelayNotify missing one throws and
+                // leaves what was last said.
+                let manifest = try frame.relayNotifyManifest()
+                let limits = try frame.relayNotifyLimits()
                 stateLock.lock()
-                if let m = frame.relayNotifyManifest {
-                    self.manifest = m
-                }
-                if let l = frame.relayNotifyLimits {
-                    self.limits = l
-                }
+                self.manifest = manifest
+                self.limits = limits
                 stateLock.unlock()
                 continue // Don't return relay frames to caller
             } else if frame.frameType == .relayState {

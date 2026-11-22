@@ -295,7 +295,7 @@ NSErrorDomain const CSManifestLoadErrorDomain = @"CSManifestLoadError";
     // Check all caps (including cap groups) for identity
     BOOL hasIdentity = NO;
     for (CSCap *cap in [self allCaps]) {
-        if ([identityUrn conformsTo:cap.capUrn]) {
+        if ([cap.capUrn isEquivalent:identityUrn]) {
             hasIdentity = YES;
             break;
         }
@@ -326,7 +326,7 @@ NSErrorDomain const CSManifestLoadErrorDomain = @"CSManifestLoadError";
     // Check if identity is already present (in all caps including groups)
     BOOL hasIdentity = NO;
     for (CSCap *cap in [self allCaps]) {
-        if ([identityUrn conformsTo:cap.capUrn]) {
+        if ([cap.capUrn isEquivalent:identityUrn]) {
             hasIdentity = YES;
             break;
         }

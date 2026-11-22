@@ -3384,12 +3384,22 @@ public final class CartridgeHost: @unchecked Sendable {
             fatalError("BUG: CAP_IDENTITY constant '\(CSCapIdentity)' is invalid")
         }
 
-        let hasIdentity = decoded.capGroups
-            .flatMap { $0.caps }
-            .contains { capDef in
-                guard let capUrn = try? CSCapUrn.fromString(capDef.urn) else { return false }
-                return identityUrn.conforms(to: capUrn)
+        // The identity cap, by equivalence; a declared cap that is no cap
+        // URN is an incompatible manifest, named.
+        var hasIdentity = false
+        for capDef in decoded.capGroups.flatMap({ $0.caps }) {
+            let capUrn: CSCapUrn
+            do {
+                capUrn = try CSCapUrn.fromString(capDef.urn)
+            } catch {
+                throw ManifestExtractError.incompatible(
+                    "Cartridge manifest cap '\(capDef.urn)' is no cap URN: \(error.localizedDescription)"
+                )
             }
+            if capUrn.isEquivalent(identityUrn) {
+                hasIdentity = true
+            }
+        }
 
         guard hasIdentity else {
             throw ManifestExtractError.incompatible(
@@ -3400,12 +3410,8 @@ public final class CartridgeHost: @unchecked Sendable {
         return decoded.capGroups
     }
 
-    /// Generate identity verification nonce — CBOR-encoded "bifaci" text.
-    private static func identityNonce() -> Data {
-        return Data(CBOR.utf8String("bifaci").encode())
-    }
-
-    /// Verify cartridge identity by sending nonce and expecting echo response.
+    /// Verify cartridge identity by sending the identity probe and judging
+    /// its echo (`identityProbeFrames`, `IdentityEcho`).
     ///
     /// This proves the transport works end-to-end and the cartridge correctly
     /// implements the identity capability (echo behavior).
@@ -3415,68 +3421,18 @@ public final class CartridgeHost: @unchecked Sendable {
     ///   - writer: FrameWriter for cartridge stdin
     /// - Throws: CartridgeHostError if verification fails
     private static func verifyCartridgeIdentity(reader: FrameReader, writer: FrameWriter) throws {
-        let nonce = identityNonce()
-        let reqId = MessageId.newUUID()
-        let streamId = "identity-verify"
-
-        // Send REQ with CAP_IDENTITY
-        let req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-        try writer.write(req)
-
-        // Send STREAM_START
-        let ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
-        try writer.write(ss)
-
-        // Send CHUNK with nonce
-        let checksum = Frame.computeChecksum(nonce)
-        let chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-        try writer.write(chunk)
-
-        // Send STREAM_END
-        let se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
-        try writer.write(se)
-
-        // Send END
-        let end = Frame.end(id: reqId)
-        try writer.write(end)
-
-        // Read response - expect STREAM_START → CHUNK(s) → STREAM_END → END
-        var accumulated = Data()
+        for frame in identityProbeFrames(rid: MessageId.newUUID(), xid: .uint(0)) {
+            try writer.write(frame)
+        }
+        var echo = IdentityEcho()
         while true {
             guard let frame = try reader.read() else {
                 throw CartridgeHostError.handshakeFailed("Cartridge closed connection during identity verification")
             }
-
-            switch frame.frameType {
-            case .streamStart:
-                break // Expected, no action needed
-            case .chunk:
-                if let payload = frame.payload {
-                    accumulated.append(payload)
-                }
-            case .streamEnd:
-                break // Expected, no action needed
-            case .end:
-                // Verify nonce matches
-                if accumulated != nonce {
-                    throw CartridgeHostError.handshakeFailed(
-                        "Identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))")
-                }
-                return // Success
-            case .err:
-                let code = frame.errorCode ?? "UNKNOWN"
-                let msg = frame.errorMessage ?? "no message"
-                throw CartridgeHostError.handshakeFailed("Identity verification failed: [\(code)] \(msg)")
-            case .log, .credit, .heartbeat:
-                // Control/side-channel frames are legal ANYWHERE during the
-                // probe (spec 12.3/12.4: LOG interleaves without affecting
-                // data flow; CREDIT/HEARTBEAT are the control plane the
-                // writer gate itself exempts, L4). A cartridge crediting
-                // its probe input as it consumes (L10) must not fail
-                // identity verification.
-                break
-            default:
-                throw CartridgeHostError.handshakeFailed("Identity verification: unexpected frame type \(frame.frameType)")
+            do {
+                if try echo.accept(frame) { return }
+            } catch FrameError.handshakeFailed(let message) {
+                throw CartridgeHostError.handshakeFailed(message)
             }
         }
     }

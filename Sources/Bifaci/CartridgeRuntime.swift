@@ -782,6 +782,12 @@ final class CoalesceBuf {
     }
 }
 
+/// How often `runWithKeepalive` emits its progress frame, in seconds: short
+/// enough to survive thread suspension under memory pressure while resetting
+/// the engine's 120-second activity timer with a wide margin (Rust's
+/// `KEEPALIVE_INTERVAL`).
+public let KEEPALIVE_INTERVAL_SECONDS: Int = 5
+
 public final class OutputStream: @unchecked Sendable {
     private let sender: any FrameSender
     private let streamId: String
@@ -1264,17 +1270,18 @@ public final class OutputStream: @unchecked Sendable {
         try? sender.send(frame)
     }
 
-    /// Run an async operation while emitting keepalive progress frames every 30 seconds.
+    /// Run an async operation while emitting keepalive progress frames every 5 seconds
+    /// (`KEEPALIVE_INTERVAL_SECONDS`).
     ///
     /// Model loading (MLX LLM, VLM, embeddings) can take minutes for large models.
     /// The engine's 120s activity timeout kills the task if no frames arrive.
     /// This method spawns a background Task that re-emits the given progress value
-    /// every 30s, keeping the timeout reset. The keepalive Task is cancelled when
+    /// every 5 seconds, keeping the timeout reset. The keepalive Task is cancelled when
     /// the operation completes.
     public func runWithKeepalive<T>(progress progressValue: Float, message: String, operation: () async throws -> T) async throws -> T {
         let keepalive = Task { [self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
+                try? await Task.sleep(for: .seconds(KEEPALIVE_INTERVAL_SECONDS))
                 if !Task.isCancelled {
                     self.progress(progressValue, message: message)
                 }
@@ -1971,7 +1978,8 @@ internal func demuxPeerResponse(responseRx: AnyIterator<Frame>, grants: PeerGran
 /// observes items incrementally while the producer is still emitting; input
 /// is never buffered to completion. When `credit` is supplied, the demux
 /// keeps per-stream credit windows (initialCredit + grants) and surfaces an
-/// over-window chunk as a fatal CREDIT_VIOLATION stream error (L12); handler
+/// over-window chunk as a CREDIT_VIOLATION error of that stream alone, the
+/// request going on (L12); handler
 /// consumption emits batched grants (window/2) via each stream's
 /// `InputGrantEmitter` (L10).
 ///
@@ -1997,9 +2005,10 @@ internal func demuxMultiStream(
         var lfAccumulators: [String: (referenceUrn: String, chunks: [Data])] = [:]
         // Per-stream remaining credit windows (L10/L12). The window starts at
         // the negotiated initialCredit; handler consumption (grants) extends
-        // it; a chunk arriving with the window at zero is a fatal
-        // CREDIT_VIOLATION. The demux itself never blocks — accounting keeps
-        // control frames flowing regardless of data pressure.
+        // it; a chunk arriving with the window at zero is a CREDIT_VIOLATION
+        // that breaks that stream, and the request goes on. The demux itself
+        // never blocks — accounting keeps control frames flowing regardless
+        // of data pressure.
         var streamWindows: [String: CreditWindow] = [:]
         // Sequence-mode streams: streamId → item reassembly state (see
         // `SeqReassembly` — frame payloads are RFC 8742 fragments, decoded
@@ -2103,8 +2112,10 @@ internal func demuxMultiStream(
                     continue
                 }
 
-                // Credit-violation check (L12): a chunk beyond the granted
-                // window is a fatal protocol error for this request.
+                // Credit-violation check (L12): a chunk arriving with nothing
+                // left of its window is a CREDIT_VIOLATION: that stream is
+                // broken and delivers the error to whoever reads it; the
+                // request goes on.
                 if let window = streamWindows[streamId], !window.arrive() {
                     queue.push(.failure(.protocolError(
                         "CREDIT_VIOLATION: chunk received beyond the granted window on stream \(streamId) (L12)"
@@ -4973,10 +4984,9 @@ public final class CartridgeRuntime: @unchecked Sendable {
             var hasIdentity = false
             if let identityUrn = try? CSCapUrn.fromString(CSCapIdentity) {
                 hasIdentity = parsed.allCaps().contains { cap in
+                    // The identity cap, by equivalence.
                     if let capUrn = try? CSCapUrn.fromString(cap.urn) {
-                        // Check if the cap URN conforms to CAP_IDENTITY (is identity or more specific)
-                        return (try? capUrn.conforms(to: identityUrn)) == true ||
-                               (try? identityUrn.conforms(to: capUrn)) == true
+                        return capUrn.isEquivalent(identityUrn)
                     }
                     return false
                 }

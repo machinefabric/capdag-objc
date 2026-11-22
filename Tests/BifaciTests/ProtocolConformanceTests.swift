@@ -140,20 +140,20 @@ final class ProtocolConformanceTests: XCTestCase {
     // TEST12375: every frame type is the type the model means by its number,
     // part of a flow exactly when the model says, and an end exactly when the
     // model says. The runtime's own FrameType is mapped onto the model's by
-    // hand; a type mapped to the wrong one would be numbered, ordered and
-    // gated as another.
+    // hand; a type mapped to the wrong one would be ordered and gated as
+    // another.
     func test12375_frameTypesAreTheModels() {
         let table = rows("frame_types")
         XCTAssertEqual(table.count, FrameType.all.count, "the model and the runtime name the same types")
         var wrong: [String] = []
         for row in table {
             let code = number(row["code"])
-            guard let frameType = FrameType(rawValue: UInt8(code)) else {
+            guard let frameType = FrameType.fromCode(code) else {
                 wrong.append("wire number \(code) names no frame type here")
                 continue
             }
-            if ProtocolModel.code(of: frameType) != code {
-                wrong.append("\(frameType) (\(code)) is mapped to the model's type \(ProtocolModel.code(of: frameType))")
+            if frameType.code != code {
+                wrong.append("\(frameType) (\(code)) is numbered \(frameType.code)")
             }
             if frameType.isFlow != flag(row["flow"]) {
                 wrong.append("\(frameType): flow is \(frameType.isFlow)")
@@ -379,7 +379,7 @@ final class ProtocolConformanceTests: XCTestCase {
         for (index, script) in scripts.enumerated() {
             let rid = MessageId.uint(1)
             let (sender, url) = try makeWireCapture()
-            let handed = numbers(script["frames"]).map { frameOf(FrameType(rawValue: UInt8($0))!, rid) }
+            let handed = numbers(script["frames"]).map { frameOf(FrameType.fromCode($0)!, rid) }
             for frame in handed {
                 try sender.send(frame)
             }
@@ -462,7 +462,7 @@ final class ProtocolConformanceTests: XCTestCase {
         // else.
         for row in rows("ledger") {
             let rid = MessageId.uint(9)
-            let frameType = FrameType(rawValue: UInt8(number(row["frame"])))!
+            let frameType = FrameType.fromCode(number(row["frame"]))!
             var frame = frameType == .credit
                 ? Frame.credit(targetRid: rid, streamId: "s", credits: number(row["granted"]), direction: .response)
                 : Frame(frameType: frameType, id: rid)

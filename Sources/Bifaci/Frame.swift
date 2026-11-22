@@ -26,49 +26,49 @@ public let DEFAULT_INITIAL_CREDIT: UInt64 = 32
 /// Hard limit for frame size (16 MB) - prevents memory exhaustion
 public let MAX_FRAME_HARD_LIMIT: Int = 16 * 1024 * 1024
 
-/// Frame type discriminator
-public enum FrameType: UInt8, Sendable {
+/// Frame type discriminator. A frame type's wire number is the proved model's
+/// (`code` and `FrameType.fromCode`, ProtocolModel.swift); the cases carry none.
+public enum FrameType: Sendable {
     /// Handshake frame for negotiating limits
-    case hello = 0
+    case hello
     /// Request to invoke a cap
-    case req = 1
-    // res = 2 REMOVED - old single-response protocol no longer supported
+    case req
     /// Streaming data chunk
-    case chunk = 3
+    case chunk
     /// Stream complete marker
-    case end = 4
+    case end
     /// Log/progress message
-    case log = 5
+    case log
     /// Error message
-    case err = 6
+    case err
     /// Health monitoring ping/pong - either side can send, receiver must respond with same ID
-    case heartbeat = 7
+    case heartbeat
     /// Announce new stream for a request (multiplexed streaming)
-    case streamStart = 8
+    case streamStart
     /// End a specific stream (multiplexed streaming)
-    case streamEnd = 9
+    case streamEnd
     /// Relay capability advertisement (slave → master). Carries aggregate manifest + limits.
-    case relayNotify = 10
+    case relayNotify
     /// Relay host system resources + cap demands (master → slave). Carries opaque resource payload.
-    case relayState = 11
+    case relayState
     /// Cancel a specific in-flight request by RID. Carries the optional force_kill
     /// flag and, like ERR, its attribution in `meta` (code / attribution_class /
     /// message) — all optional; an unattributed Cancel still cancels.
-    case cancel = 12
+    case cancel
     /// Grant per-stream flow-control credit (in CHUNK units) to the sender of a
     /// stream. Non-flow: bypasses seq assignment and reorder buffers, and is
     /// forwarded end-to-end by intermediaries (never originated or absorbed).
-    case credit = 13
+    case credit
     /// Close a request's live input stream(s) — the tap-off (15.2 §Runs Stop).
     /// The receiving runtime closes the request's open feed taps; the request
     /// drains and ends NATURALLY with END and complete outputs. Not a cancel:
     /// host-side request state is untouched. `streamId` names one stream;
     /// absent means every live feed the request holds.
-    case closeStream = 14
+    case closeStream
     /// What the host allows its cartridges to do, as it stands now (12.2
     /// §Policy): host → cartridge only, after the handshake and on every
     /// change. Non-flow, id 0; `meta.network` is required.
-    case policy = 15
+    case policy
 
     /// All variants, for counter arrays and snapshot serialization
     /// (matches Rust FrameType::ALL).
@@ -819,26 +819,50 @@ public struct Frame: @unchecked Sendable {
         }
     }
 
-    /// Extract manifest from RELAY_NOTIFY metadata
-    public var relayNotifyManifest: Data? {
-        guard frameType == .relayNotify, let meta = meta, case .byteString(let bytes) = meta["manifest"] else {
-            return nil
+    /// The manifest a RelayNotify carries. Every RelayNotify carries one: a
+    /// frame of another type, a RelayNotify with no meta, no manifest, or a
+    /// manifest that is not a byte string, throws a protocol error naming it.
+    public func relayNotifyManifest() throws -> Data {
+        let meta = try relayNotifyMeta()
+        guard let value = meta["manifest"] else {
+            throw FrameError.protocolError("RelayNotify carries no manifest")
+        }
+        guard case .byteString(let bytes) = value else {
+            throw FrameError.protocolError("RelayNotify manifest is not a byte string")
         }
         return Data(bytes)
     }
 
-    /// Extract limits from RELAY_NOTIFY metadata
-    /// Returns nil if any required field is missing (a protocol violation)
-    public var relayNotifyLimits: Limits? {
-        guard frameType == .relayNotify, let meta = meta,
-              case .unsignedInt(let maxFrame) = meta["max_frame"],
-              case .unsignedInt(let maxChunk) = meta["max_chunk"],
-              case .unsignedInt(let maxReorderBuffer) = meta["max_reorder_buffer"],
-              case .unsignedInt(let initialCredit) = meta["initial_credit"],
-              initialCredit > 0 else {
-            return nil
+    /// The four limits a RelayNotify carries. Every RelayNotify carries all
+    /// four, each a positive integer: one missing, or one that is not a
+    /// positive integer, throws a protocol error naming the key.
+    public func relayNotifyLimits() throws -> Limits {
+        let meta = try relayNotifyMeta()
+        func positive(_ key: String) throws -> UInt64 {
+            guard let value = meta[key] else {
+                throw FrameError.protocolError("RelayNotify limits: '\(key)' is missing")
+            }
+            guard case .unsignedInt(let n) = value, n > 0, n <= UInt64(Int.max) else {
+                throw FrameError.protocolError("RelayNotify limits: '\(key)' is \(value), not a positive integer")
+            }
+            return n
         }
-        return Limits(maxFrame: Int(maxFrame), maxChunk: Int(maxChunk), maxReorderBuffer: Int(maxReorderBuffer), initialCredit: initialCredit)
+        return Limits(
+            maxFrame: Int(try positive("max_frame")),
+            maxChunk: Int(try positive("max_chunk")),
+            maxReorderBuffer: Int(try positive("max_reorder_buffer")),
+            initialCredit: try positive("initial_credit")
+        )
+    }
+
+    private func relayNotifyMeta() throws -> [String: CBOR] {
+        guard frameType == .relayNotify else {
+            throw FrameError.protocolError("a RelayNotify field read from a \(frameType) frame")
+        }
+        guard let meta = meta else {
+            throw FrameError.protocolError("RelayNotify carries no meta")
+        }
+        return meta
     }
 
     /// Extract max_frame from HELLO metadata
@@ -894,11 +918,13 @@ public struct Frame: @unchecked Sendable {
     }
 
     /// Extract the protocol version declared in HELLO metadata.
-    public var helloVersion: UInt8? {
+    /// The protocol version a HELLO declares in its metadata, whole: a number
+    /// beyond a byte is not read as the byte it wraps to.
+    public var helloVersion: UInt64? {
         guard frameType == .hello, let meta = meta, case .unsignedInt(let n) = meta["version"] else {
             return nil
         }
-        return UInt8(truncatingIfNeeded: n)
+        return n
     }
 
     /// Extract manifest from HELLO metadata (cartridge side sends this)

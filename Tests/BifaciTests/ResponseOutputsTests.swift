@@ -374,6 +374,33 @@ final class ResponseOutputsTests: XCTestCase {
         XCTAssertThrowsError(try sender.send(printedJunk))
     }
 
+    // TEST7202: a caller that does not read a peer's response grants nothing
+    // beyond the initial window; the chunks it then reads are granted back.
+    func test7202_unreadPeerResponseIsNotGranted() throws {
+        let rid = MessageId.newUUID()
+        var frames: [Frame] = [Frame.streamStart(reqId: rid, streamId: "r", mediaUrn: "media:enc=utf8", isSequence: false)]
+        for i in 0..<4 {
+            frames.append(valueChunk(rid, "r", UInt64(i), .byteString([UInt8(i)])))
+        }
+        frames.append(Frame.streamEnd(reqId: rid, streamId: "r", chunkCount: 4))
+        frames.append(Frame.endOk(id: rid))
+        let creditSender = RecordingFrameSender()
+        let response = demuxPeerResponse(responseRx: iterate(frames),
+                                         grants: PeerGrantSource(sender: creditSender, rid: rid, initialCredit: 4))
+        func granted() -> UInt64 {
+            creditSender.snapshot().filter { $0.frameType == .credit }.compactMap { $0.credit }.reduce(0, +)
+        }
+
+        Thread.sleep(forTimeInterval: 0.1)
+        XCTAssertEqual(granted(), 0, "a response nobody has read is granted nothing beyond the initial window")
+        var items = 0
+        while let item = response.recv() {
+            if case .data(.success, _) = item { items += 1 }
+        }
+        XCTAssertEqual(items, 4, "the caller reads the whole response")
+        XCTAssertEqual(granted(), 4, "the chunks the caller reads are granted back")
+    }
+
     // TEST12730: a peer call's response has one stream per output the callee
     // answers on. The stream that names no output is the callee's main output:
     // its items are the response's data. A stream that names an output yields

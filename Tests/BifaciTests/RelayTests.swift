@@ -38,8 +38,8 @@ class CborRelayTests: XCTestCase {
         let frame = try socketReader.read()
         XCTAssertNotNil(frame)
         XCTAssertEqual(frame!.frameType, .relayNotify)
-        XCTAssertEqual(frame!.relayNotifyManifest, manifest)
-        let extractedLimits = frame!.relayNotifyLimits!
+        XCTAssertEqual(try frame!.relayNotifyManifest(), manifest)
+        let extractedLimits = try frame!.relayNotifyLimits()
         XCTAssertEqual(extractedLimits.maxFrame, limits.maxFrame)
         XCTAssertEqual(extractedLimits.maxChunk, limits.maxChunk)
     }
@@ -217,7 +217,7 @@ class CborRelayTests: XCTestCase {
         // Read initial RelayNotify
         let f1 = try socketReader.read()!
         XCTAssertEqual(f1.frameType, .relayNotify)
-        XCTAssertEqual(f1.relayNotifyManifest, initial)
+        XCTAssertEqual(try f1.relayNotifyManifest(), initial)
 
         // Read CHUNK (passed through)
         let f2 = try socketReader.read()!
@@ -226,7 +226,7 @@ class CborRelayTests: XCTestCase {
         // Read updated RelayNotify
         let f3 = try socketReader.read()!
         XCTAssertEqual(f3.frameType, .relayNotify)
-        XCTAssertEqual(f3.relayNotifyManifest, updated)
+        XCTAssertEqual(try f3.relayNotifyManifest(), updated)
     }
 
     // MARK: - TEST410: Master receives updated RelayNotify
@@ -399,7 +399,7 @@ class CborRelayTests: XCTestCase {
         let f2 = try masterReader.read()!
         XCTAssertEqual(f2.frameType, .relayNotify,
                        "RelayState must be dropped, RelayNotify forwarded")
-        XCTAssertEqual(f2.relayNotifyManifest, manifest)
+        XCTAssertEqual(try f2.relayNotifyManifest(), manifest)
 
         // Terminate the slave: EOF its local + socket readers so run() returns.
         runtimeToSlave.write.closeFile()

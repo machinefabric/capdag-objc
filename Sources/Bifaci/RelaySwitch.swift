@@ -209,14 +209,6 @@ public struct RelaySwitchProtocolStats: Codable, Sendable {
     }
 }
 
-// MARK: - Identity Nonce
-
-/// Generate identity verification nonce — CBOR-encoded "bifaci" text.
-/// Must match Rust's identity_nonce() exactly.
-private func identityNonce() -> Data {
-    return Data(CBOR.utf8String("bifaci").encode())
-}
-
 // MARK: - Master Connection
 
 /// Connection to a single RelayMaster.
@@ -624,9 +616,13 @@ public final class RelaySwitch: @unchecked Sendable {
                 throw RelaySwitchError.protocolError("master \(masterIdx): expected RelayNotify, got \(notifyFrame.frameType)")
             }
 
-            guard var capsPayload = notifyFrame.relayNotifyManifest,
-                  var masterLimits = notifyFrame.relayNotifyLimits else {
-                throw RelaySwitchError.protocolError("master \(masterIdx): RelayNotify missing manifest or limits")
+            var capsPayload: Data
+            var masterLimits: Limits
+            do {
+                capsPayload = try notifyFrame.relayNotifyManifest()
+                masterLimits = try notifyFrame.relayNotifyLimits()
+            } catch {
+                throw RelaySwitchError.protocolError("master \(masterIdx): \(error)")
             }
 
             var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
@@ -650,91 +646,35 @@ public final class RelaySwitch: @unchecked Sendable {
                 xidCounter += 1
                 let xid = MessageId.uint(xidCounter)
 
-                let nonce = identityNonce()
                 let reqId = MessageId.newUUID()
-                let streamId = "identity-verify"
-
-                var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-                req.routingId = xid
-                seqAssigner.assign(&req)
-                try socketWriter.write(req)
-
-                var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
-                ss.routingId = xid
-                seqAssigner.assign(&ss)
-                try socketWriter.write(ss)
-
-                let checksum = Frame.computeChecksum(nonce)
-                var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-                chunk.routingId = xid
-                seqAssigner.assign(&chunk)
-                try socketWriter.write(chunk)
-
-                var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
-                se.routingId = xid
-                seqAssigner.assign(&se)
-                try socketWriter.write(se)
-
-                var end = Frame.end(id: reqId)
-                end.routingId = xid
-                seqAssigner.assign(&end)
-                try socketWriter.write(end)
-
+                for var frame in identityProbeFrames(rid: reqId, xid: xid) {
+                    seqAssigner.assign(&frame)
+                    try socketWriter.write(frame)
+                }
                 seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
 
-                // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
-                // Also handle updated RelayNotify frames (host sends full caps after cartridge startup)
-                var accumulated = Data()
+                // Read the echo, judged as the handshake judges it. Also take
+                // updated RelayNotify frames (the host sends its full caps
+                // after cartridge startup).
+                var echo = IdentityEcho()
                 while true {
                     guard let frame = try socketReader.read() else {
                         throw RelaySwitchError.protocolError("master \(masterIdx): connection closed during identity verification")
                     }
-
-                    switch frame.frameType {
-                    case .relayNotify:
+                    if frame.frameType == .relayNotify {
                         // CartridgeHostRuntime sends the full RelayNotify (with all caps)
                         // through RelaySlave during identity verification. Update caps.
-                        if let manifest = frame.relayNotifyManifest {
-                            capsPayload = manifest
-                            notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                            caps = notifyPayload.capUrns()
-                        }
-                        if let newLimits = frame.relayNotifyLimits {
-                            masterLimits = newLimits
-                        }
-                    case .streamStart:
-                        break // Expected, no action needed
-                    case .chunk:
-                        if let payload = frame.payload {
-                            accumulated.append(payload)
-                        }
-                    case .streamEnd:
-                        break // Expected, no action needed
-                    case .end:
-                        // Verify nonce matches
-                        if accumulated != nonce {
-                            throw RelaySwitchError.protocolError(
-                                "master \(masterIdx): identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))")
-                        }
-                        break // Done — fall through to next master
-                    case .err:
-                        let code = frame.errorCode ?? "UNKNOWN"
-                        let msg = frame.errorMessage ?? "no message"
-                        throw RelaySwitchError.protocolError("master \(masterIdx): identity verification failed: [\(code)] \(msg)")
-                    case .log, .credit, .heartbeat:
-                        // Control/side-channel frames are legal ANYWHERE during the
-                        // probe (spec 12.4: LOG interleaves without affecting data
-                        // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A cartridge crediting its
-                        // probe input as it consumes (L10) must not fail identity
-                        // verification.
-                        break
-                    default:
-                        throw RelaySwitchError.protocolError("master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)")
+                        capsPayload = try frame.relayNotifyManifest()
+                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                        caps = notifyPayload.capUrns()
+                        masterLimits = try frame.relayNotifyLimits()
+                        continue
                     }
-
-                    // Break out of loop after END
-                    if frame.frameType == .end { break }
+                    do {
+                        if try echo.accept(frame) { break }
+                    } catch {
+                        throw RelaySwitchError.protocolError("master \(masterIdx): identity verification: \(error)")
+                    }
                 }
             }
 
@@ -829,24 +769,33 @@ public final class RelaySwitch: @unchecked Sendable {
 
                 // Intercept RelayNotify before sending to queue
                 if frame.frameType == .relayNotify {
+                    // The manifest and the limits are both read before
+                    // anything is changed: a RelayNotify missing either, or
+                    // with a limit that is not a positive integer, throws to
+                    // the catch below, which ends the master and leaves what
+                    // it last said.
+                    let manifest = try frame.relayNotifyManifest()
+                    let limits = try frame.relayNotifyLimits()
+                    // Detect an empty→non-empty cap transition and, if so,
+                    // hold the master unhealthy and queue a deferred runtime
+                    // identity probe before its new caps become routable. See
+                    // applyRelayNotifyUpdate. Its failure is carried out of
+                    // the lock and thrown — never thrown with the lock held
+                    // (that would deadlock this thread's own catch handler
+                    // below).
+                    var updateFailure: Error?
                     lock.lock()
-                    if !isShutdown,
-                       let manifest = frame.relayNotifyManifest,
-                       let limits = frame.relayNotifyLimits {
-                        // Detect an empty→non-empty cap transition and, if so,
-                        // hold the master unhealthy and queue a deferred
-                        // runtime identity probe before its new caps become
-                        // routable. See applyRelayNotifyUpdate. A malformed
-                        // payload is logged and skipped — never thrown with
-                        // the lock held (that would deadlock this thread's
-                        // own catch handler below).
+                    if !isShutdown {
                         do {
                             try applyRelayNotifyUpdate(sourceIdx: masterIdx, manifest: manifest, newLimits: limits)
                         } catch {
-                            fputs("[RelaySwitch] master \(masterIdx): RelayNotify update failed: \(error)\n", stderr)
+                            updateFailure = error
                         }
                     }
                     lock.unlock()
+                    if let updateFailure {
+                        throw RelaySwitchError.protocolError("master \(masterIdx): RelayNotify update failed: \(updateFailure)")
+                    }
                     continue
                 }
 
@@ -1027,9 +976,13 @@ public final class RelaySwitch: @unchecked Sendable {
             throw RelaySwitchError.protocolError("new master \(masterIdx): expected RelayNotify, got \(notifyFrame.frameType)")
         }
 
-        guard var capsPayload = notifyFrame.relayNotifyManifest,
-              var masterLimits = notifyFrame.relayNotifyLimits else {
-            throw RelaySwitchError.protocolError("new master \(masterIdx): RelayNotify missing manifest or limits")
+        var capsPayload: Data
+        var masterLimits: Limits
+        do {
+            capsPayload = try notifyFrame.relayNotifyManifest()
+            masterLimits = try notifyFrame.relayNotifyLimits()
+        } catch {
+            throw RelaySwitchError.protocolError("new master \(masterIdx): \(error)")
         }
 
         var notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
@@ -1061,84 +1014,34 @@ public final class RelaySwitch: @unchecked Sendable {
             let xid = MessageId.uint(xidCounter)
             lock.unlock()
 
-            let nonce = identityNonce()
             let reqId = MessageId.newUUID()
-            let streamId = "identity-verify"
 
             do {
-                var req = Frame.req(id: reqId, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-                req.routingId = xid
-                seqAssigner.assign(&req)
-                try socketWriter.write(req)
-
-                var ss = Frame.streamStart(reqId: reqId, streamId: streamId, mediaUrn: "media:")
-                ss.routingId = xid
-                seqAssigner.assign(&ss)
-                try socketWriter.write(ss)
-
-                let checksum = Frame.computeChecksum(nonce)
-                var chunk = Frame.chunk(reqId: reqId, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-                chunk.routingId = xid
-                seqAssigner.assign(&chunk)
-                try socketWriter.write(chunk)
-
-                var se = Frame.streamEnd(reqId: reqId, streamId: streamId, chunkCount: 1)
-                se.routingId = xid
-                seqAssigner.assign(&se)
-                try socketWriter.write(se)
-
-                var end = Frame.end(id: reqId)
-                end.routingId = xid
-                seqAssigner.assign(&end)
-                try socketWriter.write(end)
-
+                for var frame in identityProbeFrames(rid: reqId, xid: xid) {
+                    seqAssigner.assign(&frame)
+                    try socketWriter.write(frame)
+                }
                 seqAssigner.remove(FlowKey(rid: reqId, xid: xid))
 
-                // Read response
-                var accumulated = Data()
-                probeLoop: while true {
+                // Read the echo, judged as the handshake judges it.
+                var echo = IdentityEcho()
+                while true {
                     guard let frame = try socketReader.read() else {
                         identityFailure = "new master \(masterIdx): connection closed during identity verification"
                         break
                     }
-
-                    switch frame.frameType {
-                    case .relayNotify:
-                        if let manifest = frame.relayNotifyManifest {
-                            capsPayload = manifest
-                            notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
-                            caps = notifyPayload.capUrns()
-                        }
-                        if let newLimits = frame.relayNotifyLimits {
-                            masterLimits = newLimits
-                        }
-                    case .streamStart, .streamEnd:
+                    if frame.frameType == .relayNotify {
+                        capsPayload = try frame.relayNotifyManifest()
+                        notifyPayload = try Self.parseRelayNotifyPayload(capsPayload)
+                        caps = notifyPayload.capUrns()
+                        masterLimits = try frame.relayNotifyLimits()
+                        continue
+                    }
+                    do {
+                        if try echo.accept(frame) { break }
+                    } catch {
+                        identityFailure = "new master \(masterIdx): identity verification: \(error)"
                         break
-                    case .chunk:
-                        if let payload = frame.payload {
-                            accumulated.append(payload)
-                        }
-                    case .end:
-                        if accumulated != nonce {
-                            identityFailure = "new master \(masterIdx): identity verification payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))"
-                        }
-                        break probeLoop
-                    case .err:
-                        let code = frame.errorCode ?? "UNKNOWN"
-                        let msg = frame.errorMessage ?? "no message"
-                        identityFailure = "new master \(masterIdx): identity verification failed: [\(code)] \(msg)"
-                        break probeLoop
-                    case .log, .credit, .heartbeat:
-                        // Control/side-channel frames are legal ANYWHERE during the
-                        // probe (spec 12.4: LOG interleaves without affecting data
-                        // flow; CREDIT/HEARTBEAT are the control plane the writer
-                        // gate itself exempts, L4). A cartridge crediting its
-                        // probe input as it consumes (L10) must not fail identity
-                        // verification.
-                        break
-                    default:
-                        identityFailure = "new master \(masterIdx): identity verification: unexpected frame type \(frame.frameType)"
-                        break probeLoop
                     }
                 }
             } catch {
@@ -1766,7 +1669,7 @@ public final class RelaySwitch: @unchecked Sendable {
             return .none
         case .master(let masterIdx, _, .some(let error)):
             fputs("[RelaySwitch] Error reading from master \(masterIdx): \(error)\n", stderr)
-            try handleMasterDeath(masterIdx)
+            try handleMasterDeath(masterIdx, error: error)
             return .none
         case .master(let masterIdx, .none, .none):
             try handleMasterDeath(masterIdx)
@@ -2280,10 +2183,9 @@ public final class RelaySwitch: @unchecked Sendable {
             // intercepted in the reader loop; both sites share the helper
             // so the behaviour is identical. Mirrors Rust's
             // handle_master_frame RelayNotify branch.
-            if let manifest = frame.relayNotifyManifest,
-               let newLimits = frame.relayNotifyLimits {
-                try applyRelayNotifyUpdate(sourceIdx: sourceIdx, manifest: manifest, newLimits: newLimits)
-            }
+            let manifest = try frame.relayNotifyManifest()
+            let newLimits = try frame.relayNotifyLimits()
+            try applyRelayNotifyUpdate(sourceIdx: sourceIdx, manifest: manifest, newLimits: newLimits)
             // Pass through to engine (for visibility)
             return frame
 
@@ -2320,7 +2222,10 @@ public final class RelaySwitch: @unchecked Sendable {
         }
     }
 
-    func handleMasterDeath(_ masterIdx: Int) throws {
+    /// A death caused by an error reading the master (a RelayNotify that
+    /// breaks the protocol, among others) records that error as the
+    /// master's `lastError`, naming what was wrong.
+    func handleMasterDeath(_ masterIdx: Int, error: Error? = nil) throws {
         // Every slot behind this master goes unavailable. Queued work is NOT
         // failed here: it rides the admission grace window in case the master
         // reconnects.
@@ -2335,6 +2240,9 @@ public final class RelaySwitch: @unchecked Sendable {
         // slot (probe pending) whose socket then closes must detach too,
         // or the host could never reconnect to it.
         masters[masterIdx].detached = true
+        if let error {
+            masters[masterIdx].lastError = "\(error)"
+        }
 
         // The requests held for its cartridges have nobody left to answer.
         if let providing = peerProviding {
@@ -2705,31 +2613,11 @@ public final class RelaySwitch: @unchecked Sendable {
         probeState.capUrn = CSCapIdentity as String
         try? requests.register(key, probeState)
 
-        let nonce = identityNonce()
-        let streamId = "identity-verify-runtime"
-
         var sendError: String? = nil
         do {
-            var req = Frame.req(id: rid, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor")
-            req.routingId = xid
-            try writeToMasterIdx(masterIdx, &req)
-
-            var ss = Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:")
-            ss.routingId = xid
-            try writeToMasterIdx(masterIdx, &ss)
-
-            let checksum = Frame.computeChecksum(nonce)
-            var chunk = Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: nonce, chunkIndex: 0, checksum: checksum)
-            chunk.routingId = xid
-            try writeToMasterIdx(masterIdx, &chunk)
-
-            var se = Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1)
-            se.routingId = xid
-            try writeToMasterIdx(masterIdx, &se)
-
-            var end = Frame.end(id: rid)
-            end.routingId = xid
-            try writeToMasterIdx(masterIdx, &end)
+            for var frame in identityProbeFrames(rid: rid, xid: xid) {
+                try writeToMasterIdx(masterIdx, &frame)
+            }
         } catch {
             sendError = "identity probe send failed: \(error)"
         }
@@ -2745,49 +2633,24 @@ public final class RelaySwitch: @unchecked Sendable {
         // echoes the nonce back as STREAM_START + CHUNK(nonce) + STREAM_END
         // + END on the same flow.
         let deadline = DispatchTime.now() + runtimeProbeTimeout
-        var accumulated = Data()
-        // Failure detail, or `nil` once the probe has succeeded. Starts as a
-        // timeout failure so a silent channel resolves to the timeout error,
-        // matching Rust's `Result<(), String>` default. (Swift `Result`
-        // requires `Failure: Error`, which a bare `String` is not, so the
-        // outcome is modelled as an optional detail rather than a Result.)
-        var failureDetail: String? = "runtime identity probe timed out after \(runtimeProbeTimeout)s"
-
-        recvLoop: while true {
+        var echo = IdentityEcho()
+        // Failure detail, or `nil` once the probe has succeeded. (Swift
+        // `Result` requires `Failure: Error`, which a bare `String` is not, so
+        // the outcome is modelled as an optional detail rather than a Result.)
+        var failureDetail: String?
+        while true {
             guard let frame = channel.recv(deadline: deadline) else {
                 failureDetail = "runtime identity probe timed out after \(runtimeProbeTimeout)s"
                 break
             }
-            switch frame.frameType {
-            case .streamStart, .streamEnd:
-                continue
-            case .chunk:
-                if let payload = frame.payload {
-                    accumulated.append(payload)
-                }
-            case .end:
-                if accumulated != nonce {
-                    failureDetail = "identity probe payload mismatch (expected \(nonce.count) bytes, got \(accumulated.count))"
-                } else {
+            do {
+                if try echo.accept(frame) {
                     failureDetail = nil
+                    break
                 }
-                break recvLoop
-            case .err:
-                let code = frame.errorCode ?? "UNKNOWN"
-                let msg = frame.errorMessage ?? "no message"
-                failureDetail = "identity probe failed: [\(code)] \(msg)"
-                break recvLoop
-            case .log, .credit, .heartbeat:
-                // Control/side-channel frames are legal ANYWHERE during the
-                // probe (spec 12.4: LOG interleaves without affecting data
-                // flow; CREDIT/HEARTBEAT are the control plane the writer
-                // gate itself exempts, L4). A cartridge crediting its
-                // probe input as it consumes (L10) must not fail identity
-                // verification.
+            } catch {
+                failureDetail = "\(error)"
                 break
-            default:
-                failureDetail = "identity probe: unexpected frame type \(frame.frameType)"
-                break recvLoop
             }
         }
 
@@ -3002,17 +2865,27 @@ public final class RelaySwitch: @unchecked Sendable {
         // that is the contract that makes end-to-end identity verification
         // meaningful. The cap-urn list is computed from cap_groups inside
         // every installed cartridge; a non-empty list must include identity.
+        // The identity is a definition, recognised by equivalence: a wider
+        // pattern the identity refines (`cap:?effect`) is not the identity.
+        // A cap that is no cap URN is a broken host, named.
         let capUrns = payload.capUrns()
         if !capUrns.isEmpty {
-            let identityUrn = try? CSCapUrn.fromString(CSCapIdentity)
-            let hasIdentity = capUrns.contains { capStr in
-                guard let capUrn = try? CSCapUrn.fromString(capStr),
-                      let identity = identityUrn else { return false }
-                return identity.conforms(to: capUrn)
+            let identity = try CSCapUrn.fromString(CSCapIdentity)
+            var hasIdentity = false
+            for capStr in capUrns {
+                let capUrn: CSCapUrn
+                do {
+                    capUrn = try CSCapUrn.fromString(capStr)
+                } catch {
+                    throw RelaySwitchError.protocolError("RelayNotify advertises '\(capStr)', which is no cap URN: \(error.localizedDescription)")
+                }
+                if capUrn.isEquivalent(identity) {
+                    hasIdentity = true
+                }
             }
 
             guard hasIdentity else {
-                throw RelaySwitchError.protocolError("RelayNotify advertised caps but is missing required CAP_IDENTITY (\(CSCapIdentity))")
+                throw RelaySwitchError.protocolError("RelayNotify advertised caps but none is the identity cap (cap:effect=none)")
             }
         }
 

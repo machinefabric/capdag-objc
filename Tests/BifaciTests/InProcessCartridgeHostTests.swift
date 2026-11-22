@@ -130,7 +130,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
         // First frame should be RelayNotify with manifest
         let notify = try! reader.read()!
         XCTAssertEqual(notify.frameType, .relayNotify)
-        let manifest = notify.relayNotifyManifest!
+        let manifest = try notify.relayNotifyManifest()
         let payload = try! JSONDecoder().decode(RelayNotifyCapabilitiesPayload.self, from: manifest)
         let caps = payload.capUrns()
         XCTAssertTrue(caps.count >= 2) // identity + echo cap
@@ -274,6 +274,52 @@ final class InProcessCartridgeHostTests: XCTestCase {
         XCTAssertEqual(try run(Frame.closeStream(targetRid: .uint(0))).frameType, .end)
     }
 
+    // TEST7201: every response stream the in-process host opens states its
+    // cardinality: a handler's response stream and the identity echo each
+    // open with is_sequence false, so the engine's output audit can hold them
+    // to the declared shape.
+    func test7201_responseStreamsStateIsSequence() throws {
+        let capUrn = "cap:in=\"media:text\";echo;out=\"media:text\""
+        let handlers: [(name: String, caps: [CSCap], handler: FrameHandler)] = [
+            ("echo", [makeTestCap(capUrn)], EchoHandler())
+        ]
+        let host = InProcessCartridgeHost(identity: InProcessHostIdentity.forTest(id: "in-process-test"), handlers: handlers)
+        let (hostRead, testWrite) = Pipe.socketPair()
+        let (testRead, hostWrite) = Pipe.socketPair()
+        let hostThread = Thread {
+            try? host.run(localRead: hostRead, localWrite: hostWrite)
+        }
+        hostThread.start()
+        let reader = FrameReader(handle: testRead)
+        let writer = FrameWriter(handle: testWrite)
+        try writer.write(Frame.policy(HostPolicy(network: .full)))
+        _ = try XCTUnwrap(try reader.read())
+
+        let cases: [(UInt64, String, String, String, Data)] = [
+            (1, capUrn, "arg0", "media:text", cborBytesPayload(Data("hello".utf8))),
+            (2, CSCapIdentity, "identity-verify", "media:", identityNonce()),
+        ]
+        for (xid, cap, stream, media, payload) in cases {
+            let rid = MessageId.newUUID()
+            var req = Frame.req(id: rid, capUrn: cap, payload: Data(), contentType: "application/cbor")
+            req.routingId = MessageId.uint(xid)
+            try writer.write(req)
+            try writer.write(Frame.streamStart(reqId: rid, streamId: stream, mediaUrn: media))
+            try writer.write(Frame.chunk(reqId: rid, streamId: stream, seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)))
+            try writer.write(Frame.streamEnd(reqId: rid, streamId: stream, chunkCount: 1))
+            try writer.write(Frame.end(id: rid))
+
+            let start = try XCTUnwrap(try reader.read())
+            XCTAssertEqual(start.frameType, .streamStart, cap)
+            XCTAssertEqual(start.isSequence, false, "\(cap): the response stream states it is scalar")
+            while try XCTUnwrap(try reader.read()).frameType != .end {}
+        }
+
+        testWrite.closeFile()
+        testRead.closeFile()
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
     // TEST6749: InProcessCartridgeHost handles identity verification (echo nonce)
     func test6749_identityVerification() throws {
         let host = InProcessCartridgeHost(
@@ -331,6 +377,61 @@ final class InProcessCartridgeHostTests: XCTestCase {
 
         let respEnd = try! reader.read()!
         XCTAssertEqual(respEnd.frameType, .end)
+
+        testWrite.closeFile()
+        testRead.closeFile()
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
+    // TEST7197: The identity cap is recognised by equivalence, not by its text:
+    // a REQ for the identity spelled with its directions written out, sent
+    // before any policy, is served as the identity (the only request served
+    // before a policy), and a REQ whose cap is no cap URN is refused as an
+    // invalid request naming it.
+    func test7197_identityRequestRecognisedByEquivalence() throws {
+        let host = InProcessCartridgeHost(
+            identity: InProcessHostIdentity.forTest(id: "in-process-test"),
+            handlers: []
+        )
+
+        let (hostRead, testWrite) = Pipe.socketPair()
+        let (testRead, hostWrite) = Pipe.socketPair()
+
+        let hostThread = Thread {
+            try? host.run(localRead: hostRead, localWrite: hostWrite)
+        }
+        hostThread.start()
+
+        let reader = FrameReader(handle: testRead)
+        let writer = FrameWriter(handle: testWrite)
+        _ = try XCTUnwrap(try reader.read())
+
+        let rid = MessageId.newUUID()
+        var req = Frame.req(id: rid, capUrn: "cap:effect=none;in=media:;out=media:", payload: Data(), contentType: "application/cbor")
+        req.routingId = MessageId.uint(0)
+        try writer.write(req)
+        let nonce = identityNonce()
+        try writer.write(Frame.streamStart(reqId: rid, streamId: "identity-verify", mediaUrn: "media:"))
+        try writer.write(Frame.chunk(reqId: rid, streamId: "identity-verify", seq: 0, payload: nonce, chunkIndex: 0, checksum: Frame.computeChecksum(nonce)))
+        try writer.write(Frame.streamEnd(reqId: rid, streamId: "identity-verify", chunkCount: 1))
+        try writer.write(Frame.end(id: rid))
+
+        let first = try XCTUnwrap(try reader.read())
+        XCTAssertEqual(first.frameType, .streamStart,
+                       "the identity spelled out is served before any policy, got \(String(describing: first.errorCode)) \(String(describing: first.errorMessage))")
+        XCTAssertEqual(try XCTUnwrap(try reader.read()).payload, nonce)
+        XCTAssertEqual(try XCTUnwrap(try reader.read()).frameType, .streamEnd)
+        XCTAssertEqual(try XCTUnwrap(try reader.read()).frameType, .end)
+
+        let bad = MessageId.newUUID()
+        var badReq = Frame.req(id: bad, capUrn: "cap:in=", payload: Data(), contentType: "application/cbor")
+        badReq.routingId = MessageId.uint(1)
+        try writer.write(badReq)
+        let err = try XCTUnwrap(try reader.read())
+        XCTAssertEqual(err.frameType, .err)
+        XCTAssertEqual(err.id, bad)
+        XCTAssertEqual(err.errorCode, "INVALID_REQUEST")
+        XCTAssertTrue((err.errorMessage ?? "").contains("cap:in="), "\(String(describing: err.errorMessage))")
 
         testWrite.closeFile()
         testRead.closeFile()

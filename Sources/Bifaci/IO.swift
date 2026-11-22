@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import SwiftCBOR
+import CapDAG
 
 /// Errors that can occur during CBOR I/O
 public enum FrameError: Error, @unchecked Sendable {
@@ -28,7 +29,96 @@ extension FrameError: LocalizedError {
     }
 }
 
+// MARK: - Identity probe
+
+/// The identity nonce — CBOR-encoded "bifaci" text, 7 bytes (Rust's
+/// `identity_nonce`).
+func identityNonce() -> Data {
+    Data(CBOR.utf8String("bifaci").encode())
+}
+
+/// The identity probe for request `rid` on routing id `xid`: REQ(CAP_IDENTITY),
+/// STREAM_START, one CHUNK carrying the nonce wrapped as one CBOR byte string,
+/// STREAM_END(1) and END. The handshake's verification and every relay-switch
+/// probe send exactly these; the caller assigns their seq.
+func identityProbeFrames(rid: MessageId, xid: MessageId) -> [Frame] {
+    let streamId = "identity-verify"
+    let cborNonce = Data(CBOR.byteString([UInt8](identityNonce())).encode())
+    var frames = [
+        Frame.req(id: rid, capUrn: CSCapIdentity as String, payload: Data(), contentType: "application/cbor"),
+        Frame.streamStart(reqId: rid, streamId: streamId, mediaUrn: "media:", isSequence: false),
+        Frame.chunk(reqId: rid, streamId: streamId, seq: 0, payload: cborNonce, chunkIndex: 0, checksum: Frame.computeChecksum(cborNonce)),
+        Frame.streamEnd(reqId: rid, streamId: streamId, chunkCount: 1),
+        Frame.end(id: rid),
+    ]
+    for i in frames.indices {
+        frames[i].routingId = xid
+    }
+    return frames
+}
+
+/// Judges an identity echo frame by frame: each CHUNK must carry a CBOR byte
+/// string, their concatenation at END must be the nonce, and an ERR is the
+/// probe failing. The handshake's verification and every relay-switch probe
+/// judge the echo the same way.
+struct IdentityEcho {
+    private var bytes = Data()
+
+    /// True when the echo is complete and right; throws naming what is wrong.
+    mutating func accept(_ frame: Frame) throws -> Bool {
+        switch frame.frameType {
+        case .chunk:
+            let value: CBOR
+            do {
+                guard let decoded = try CBOR.decode([UInt8](frame.payload ?? Data())) else {
+                    throw FrameError.handshakeFailed("Failed to decode CBOR chunk: empty payload")
+                }
+                value = decoded
+            } catch let error as FrameError {
+                throw error
+            } catch {
+                throw FrameError.handshakeFailed("Failed to decode CBOR chunk: \(error)")
+            }
+            guard case .byteString(let piece) = value else {
+                throw FrameError.handshakeFailed("Expected bytes chunk, got \(value)")
+            }
+            bytes.append(contentsOf: piece)
+            return false
+        case .end:
+            let nonce = identityNonce()
+            guard bytes == nonce else {
+                throw FrameError.handshakeFailed(
+                    "Identity verification failed: payload mismatch (expected \(nonce.count) bytes, got \(bytes.count))")
+            }
+            return true
+        case .err:
+            guard let code = frame.errorCode else {
+                throw FrameError.handshakeFailed("ERR frame missing required text code")
+            }
+            guard let msg = frame.errorMessage else {
+                throw FrameError.handshakeFailed("ERR frame missing required text message")
+            }
+            throw FrameError.handshakeFailed("Identity verification failed: [\(code)] \(msg)")
+        case .streamStart, .streamEnd, .log, .credit, .heartbeat:
+            // Control/side-channel frames are legal ANYWHERE during the probe
+            // (12.4: LOG interleaves without affecting data flow; CREDIT and
+            // HEARTBEAT are the control plane the writer gate itself exempts,
+            // L4). A cartridge crediting its probe input as it consumes (L10)
+            // must not fail identity verification.
+            return false
+        default:
+            throw FrameError.handshakeFailed("Identity verification: unexpected frame type \(frame.frameType)")
+        }
+    }
+}
+
 // MARK: - Frame Encoding
+
+/// The text of the negative integer CBOR writes as `n` (its value is -1 - n),
+/// for every n, the largest included.
+fileprivate func negativeIntegerText(_ n: UInt64) -> String {
+    n == UInt64.max ? "-18446744073709551616" : "-\(n + 1)"
+}
 
 /// Encode a frame to CBOR bytes
 public func encodeFrame(_ frame: Frame) throws -> Data {
@@ -36,7 +126,7 @@ public func encodeFrame(_ frame: Frame) throws -> Data {
 
     // Required fields
     map[.unsignedInt(FrameKey.version.rawValue)] = .unsignedInt(UInt64(frame.version))
-    map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(UInt64(frame.frameType.rawValue))
+    map[.unsignedInt(FrameKey.frameType.rawValue)] = .unsignedInt(frame.frameType.code)
 
     // Message ID
     switch frame.id {
@@ -183,15 +273,36 @@ public func decodeFrame(_ data: Data) throws -> Frame {
         return nil
     }
 
-    // Extract required fields
-    guard let versionRaw = getUInt(.version) else {
+    // Extract required fields. Every frame is of this protocol version: a
+    // frame of any other is refused here, not read as one.
+    let version: UInt8
+    switch map[.unsignedInt(FrameKey.version.rawValue)] {
+    case .unsignedInt(let versionRaw)?:
+        guard let narrowed = UInt8(exactly: versionRaw) else {
+            throw FrameError.invalidFrame("version: \(versionRaw) is not a protocol version")
+        }
+        guard narrowed == CBOR_PROTOCOL_VERSION else {
+            throw FrameError.invalidFrame("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(versionRaw)")
+        }
+        version = narrowed
+    case .negativeInt(let n)?:
+        throw FrameError.invalidFrame("version: \(negativeIntegerText(n)) is not a protocol version")
+    default:
         throw FrameError.invalidFrame("Missing version")
     }
-    let version = UInt8(versionRaw)
 
-    guard let frameTypeRaw = getUInt(.frameType),
-          let frameType = FrameType(rawValue: UInt8(frameTypeRaw)) else {
-        throw FrameError.invalidFrame("Missing or invalid frame_type")
+    // The frame type is read whole and named by the model's numbering.
+    let frameType: FrameType
+    switch map[.unsignedInt(FrameKey.frameType.rawValue)] {
+    case .unsignedInt(let frameTypeRaw)?:
+        guard let named = FrameType.fromCode(frameTypeRaw) else {
+            throw FrameError.invalidFrame("invalid frame_type: \(frameTypeRaw)")
+        }
+        frameType = named
+    case .negativeInt(let n)?:
+        throw FrameError.invalidFrame("invalid frame_type: \(negativeIntegerText(n))")
+    default:
+        throw FrameError.invalidFrame("Missing frame_type")
     }
 
     // Extract ID
@@ -734,7 +845,7 @@ public func performHandshakeWithManifest(reader: FrameReader, writer: FrameWrite
     guard let theirVersion = theirFrame.helloVersion else {
         throw FrameError.handshakeFailed("HELLO missing required version")
     }
-    guard theirVersion == CBOR_PROTOCOL_VERSION else {
+    guard theirVersion == UInt64(CBOR_PROTOCOL_VERSION) else {
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
 
@@ -810,7 +921,7 @@ public func acceptHandshakeWithManifest(
     guard let theirVersion = theirFrame.helloVersion else {
         throw FrameError.handshakeFailed("HELLO missing required version")
     }
-    guard theirVersion == CBOR_PROTOCOL_VERSION else {
+    guard theirVersion == UInt64(CBOR_PROTOCOL_VERSION) else {
         throw FrameError.handshakeFailed("protocol version mismatch: ours \(CBOR_PROTOCOL_VERSION), theirs \(theirVersion)")
     }
 

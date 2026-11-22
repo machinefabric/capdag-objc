@@ -2,6 +2,7 @@
 
 import XCTest
 import Foundation
+import SwiftCBOR
 @testable import Bifaci
 import CapDAG
 
@@ -30,7 +31,13 @@ final class CborRelaySwitchTests: XCTestCase {
         return pools
     }
 
-    private func sendNotify(writer: FrameWriter, capabilities: [String], limits: Limits) throws {
+    /// `allCapacity`, when given, is the `all` pool's declared and configured
+    /// capacity; otherwise it is at rest (unlimited).
+    private func sendNotify(writer: FrameWriter, capabilities: [String], limits: Limits, allCapacity: Int? = nil) throws {
+        var pools = Self.testPoolStatesJSON(capUrns: capabilities)
+        if let capacity = allCapacity {
+            pools["all"] = ["declared": capacity, "configured": capacity, "active": 0, "queued": 0]
+        }
         let groupCaps: [[String: Any]] = capabilities.map { urn in
             return [
                 "urn": urn,
@@ -51,7 +58,7 @@ final class CborRelaySwitchTests: XCTestCase {
                     // One at-rest singleton per advertised cap (canonical
                     // URN) plus the mandatory `all` pool — the pool-map
                     // equivalent of the retired scalar handler_capacity.
-                    "pools": Self.testPoolStatesJSON(capUrns: capabilities),
+                    "pools": pools,
                     "active_request_count": 0,
                     "peer_request_count": 0,
                     "memory_footprint_mb": 0,
@@ -165,6 +172,81 @@ final class CborRelaySwitchTests: XCTestCase {
         // Cleanup - shutdown signals reader threads to exit
         // File handles closed by ARC when they go out of scope
         switch_.shutdown()
+    }
+
+    // TEST7193: A peer request takes no router admission permit. With the serving cartridge's `all` pool at capacity one and that one permit held by an engine call, a peer REQ for the same cap from another master's cartridge still reaches the serving master at once, while a second engine call stays queued.
+    func test7193_peerRequestTakesNoAdmissionPermit() throws {
+        let served = "cap:in=\"media:void\";test;out=\"media:void\""
+        let server1 = FileHandle.socketPair()  // engine reads, server writes
+        let server2 = FileHandle.socketPair()  // server reads, engine writes
+        let caller1 = FileHandle.socketPair()
+        let caller2 = FileHandle.socketPair()
+        let engineSeen = DispatchSemaphore(value: 0)
+        let peerSeen = DispatchSemaphore(value: 0)
+        let sendPeer = DispatchSemaphore(value: 0)
+        let notified = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global().async {
+            var reader = FrameReader(handle: server2.read, limits: Limits())
+            let writer = FrameWriter(handle: server1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity, served], limits: Limits(), allCapacity: 1)
+            notified.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            var reqs = 0
+            while let frame = try? reader.read() {
+                guard frame.frameType == .req else { continue }
+                reqs += 1
+                if reqs == 1 { engineSeen.signal() }
+                if reqs == 2 { peerSeen.signal() }
+            }
+        }
+        DispatchQueue.global().async {
+            var reader = FrameReader(handle: caller2.read, limits: Limits())
+            let writer = FrameWriter(handle: caller1.write, limits: Limits())
+            try! self.sendNotify(writer: writer, capabilities: [CSCapIdentity], limits: Limits())
+            notified.signal()
+            try! self.handleIdentityVerification(reader: reader, writer: writer)
+            sendPeer.wait()
+            try! writer.write(Frame.req(id: MessageId.newUUID(), capUrn: served, payload: Data(), contentType: "application/cbor"))
+            while (try? reader.read()) != nil {}
+        }
+        XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(notified.wait(timeout: .now() + 2), .success)
+
+        let switch_ = try RelaySwitch(sockets: [
+            SocketPair(id: "server", read: server1.read, write: server2.write),
+            SocketPair(id: "caller", read: caller1.read, write: caller2.write),
+        ], policy: HostPolicy(network: .full))
+        defer { switch_.shutdown() }
+        // The switch routes a peer REQ as it reads the masters.
+        let pumping = DispatchSemaphore(value: 0)
+        var stop = false
+        let stopLock = NSLock()
+        DispatchQueue.global().async {
+            while true {
+                stopLock.lock(); let done = stop; stopLock.unlock()
+                if done { break }
+                _ = try? switch_.readFromMasters(timeout: 0.05)
+            }
+            pumping.signal()
+        }
+        defer {
+            stopLock.lock(); stop = true; stopLock.unlock()
+            _ = pumping.wait(timeout: .now() + 2)
+        }
+
+        try switch_.sendToMaster(Frame.req(id: MessageId.newUUID(), capUrn: served, payload: Data(), contentType: "application/cbor"))
+        XCTAssertEqual(engineSeen.wait(timeout: .now() + 5), .success, "the first engine call reaches the serving master")
+        let secondDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            try? switch_.sendToMaster(Frame.req(id: MessageId.newUUID(), capUrn: served, payload: Data(), contentType: "application/cbor"))
+            secondDone.signal()
+        }
+        XCTAssertEqual(secondDone.wait(timeout: .now() + 0.2), .timedOut, "the second engine call waits for the one permit")
+
+        sendPeer.signal()
+        XCTAssertEqual(peerSeen.wait(timeout: .now() + 2), .success, "a peer request must not wait for an admission permit")
+        XCTAssertEqual(secondDone.wait(timeout: .now()), .timedOut, "the second engine call is still queued")
     }
 
     // TEST427: Multi-master cap routing
@@ -1137,6 +1219,57 @@ final class CborRelaySwitchTests: XCTestCase {
     // health / routability surface. Routability is ALWAYS checked via
     // the dispatch path (routableMaster → findMasterForCap →
     // isDispatchable), NEVER by string-comparing cap URNs.
+
+    // TEST7199: Every RelayNotify carries all four limits as positive
+    // integers: a master whose first RelayNotify says max_chunk 0 is not
+    // taken (the switch fails naming max_chunk), and a later RelayNotify
+    // missing initial_credit ends the master naming it, leaving the limits
+    // the master last announced.
+    func test7199_relayNotifyLimitsRequiredEveryTime() throws {
+        func notifyWith(_ change: (inout [String: CBOR]) -> Void) throws -> Frame {
+            let manifest = try JSONSerialization.data(withJSONObject: ["installed_cartridges": [] as [Any]])
+            var frame = Frame.relayNotify(manifest: manifest, limits: Limits())
+            var meta = frame.meta!
+            change(&meta)
+            frame.meta = meta
+            return frame
+        }
+
+        let first1 = FileHandle.socketPair()
+        let first2 = FileHandle.socketPair()
+        let brokenFirst = try notifyWith { $0["max_chunk"] = .unsignedInt(0) }
+        DispatchQueue.global().async {
+            let writer = FrameWriter(handle: first1.write, limits: Limits())
+            try? writer.write(brokenFirst)
+        }
+        XCTAssertThrowsError(try RelaySwitch(sockets: [SocketPair(id: "m0", read: first1.read, write: first2.write)], policy: HostPolicy(network: .full))) { error in
+            XCTAssertTrue("\(error)".contains("max_chunk"), "\(error)")
+        }
+
+        let pair1 = FileHandle.socketPair()
+        let pair2 = FileHandle.socketPair()
+        let brokenUpdate = try notifyWith { $0.removeValue(forKey: "initial_credit") }
+        let sent = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            var reader = FrameReader(handle: pair2.read, limits: Limits())
+            let writer = FrameWriter(handle: pair1.write, limits: Limits())
+            try? self.sendNotifyEmpty(writer: writer, limits: Limits())
+            _ = try? reader.read()  // the switch's policy
+            try? writer.write(brokenUpdate)
+            sent.signal()
+        }
+        let switch_ = try RelaySwitch(sockets: [SocketPair(id: "m0", read: pair1.read, write: pair2.write)], policy: HostPolicy(network: .full))
+        let announced = switch_.limits()
+        XCTAssertEqual(sent.wait(timeout: .now() + 5), .success)
+        _ = try switch_.readFromMasters(timeout: 2)
+        let health = switch_.getMasterHealth()[0]
+        XCTAssertFalse(health.healthy, "a RelayNotify missing initial_credit ends the master")
+        XCTAssertTrue((health.lastError ?? "").contains("initial_credit"), "\(String(describing: health.lastError))")
+        let kept = switch_.limits()
+        XCTAssertEqual(kept.maxFrame, announced.maxFrame, "the limits last announced are kept")
+        XCTAssertEqual(kept.initialCredit, announced.initialCredit)
+        switch_.shutdown()
+    }
 
     /// Send an EMPTY initial RelayNotify (no installed cartridges, no
     /// caps), so `RelaySwitch.init` skips the synchronous identity probe
