@@ -32,7 +32,8 @@
                 manifestVersion:(uint32_t)manifestVersion
            bootstrapFromNetwork:(BOOL)bootstrapFromNetwork;
 - (BOOL)ingestManifestDictionary:(NSDictionary *)manifest error:(NSError *_Nullable *_Nullable)error;
-- (NSArray<NSString *> *)collectReferencedMediaUrnsForCap:(CSCap *)cap;
+- (nullable NSArray<NSString *> *)collectReferencedMediaUrnsForCap:(CSCap *)cap
+                                                              error:(NSError *_Nullable *_Nullable)error;
 @end
 
 // The per-cap URL at defver 1, from the charter's `definition` location of a
@@ -110,10 +111,44 @@ static NSString *_Nullable buildRegistryURL(NSString *urn) {
         XCTAssertNotNil(normalized, @"%@", error);
         [expected addObject:normalized];
     }
-    NSArray<NSString *> *got = [registry collectReferencedMediaUrnsForCap:cap];
+    NSArray<NSString *> *got = [registry collectReferencedMediaUrnsForCap:cap error:&error];
+    XCTAssertNotNil(got, @"%@", error);
     XCTAssertEqual(got.count, expected.count, @"each once, the universal type included: %@", got);
     XCTAssertEqualObjects([NSSet setWithArray:got], [NSSet setWithArray:expected],
         @"each once, the universal type included: %@", got);
+
+    // A URN that does not parse fails the footprint rather than being left out of it.
+    [cap addOutput:[CSCapOutput outputWithMediaUrn:@"not a urn" name:@"broken" outputDescription:@"broken"]];
+    error = nil;
+    XCTAssertNil([registry collectReferencedMediaUrnsForCap:cap error:&error]);
+    XCTAssertNotNil(error);
+}
+
+// TEST7211: a cap whose sides name the published media:enc=utf8;fmt=json
+// refined by an absence (!ext) and by open keys (?list;?record) references that
+// one definition: its media footprint is the published definition each side
+// resolves to, and the cap keeps its URN as written.
+- (void)test7211_ACapNamingAPublishedTypeRefinedByAbsenceIsHeld {
+    NSError *error = nil;
+    NSString *content = @"media:enc=utf8;fmt=json;!ext";
+    NSString *anyShape = @"media:enc=utf8;fmt=json;?list;?record";
+    CSCapUrn *urn = [CSCapUrn fromString:[NSString stringWithFormat:
+        @"cap:in=\"%@\";out=\"%@\";reference-probe", content, anyShape] error:&error];
+    XCTAssertNotNil(urn, @"%@", error);
+    CSCap *cap = [CSCap capWithUrn:urn title:@"Reference probe" aliases:@[]];
+    [cap addArg:[CSCapArg argWithMediaUrn:content name:@"input" required:YES
+                                  sources:@[[CSArgSource stdinSourceWithMediaUrn:content]]]];
+    [cap addOutput:[CSCapOutput outputWithMediaUrn:anyShape name:@"output" outputDescription:@"out"]];
+
+    CSFabricRegistry *registry = [[CSFabricRegistry alloc] initForTest];
+    NSString *json = [registry normalizeMediaUrn:@"media:enc=utf8;fmt=json" error:&error];
+    XCTAssertEqualObjects(json, [[CSMediaUrn fromString:@"media:enc=utf8;fmt=json" error:nil] toString]);
+    XCTAssertEqualObjects([registry normalizeMediaUrn:content error:&error], json);
+    XCTAssertEqualObjects([registry normalizeMediaUrn:anyShape error:&error], json);
+    NSArray<NSString *> *got = [registry collectReferencedMediaUrnsForCap:cap error:&error];
+    XCTAssertEqualObjects(got, @[json], @"%@", error);
+    XCTAssertEqualObjects([cap.capUrn inSpec], [[CSMediaUrn fromString:content error:nil] toString]);
+    XCTAssertEqualObjects([cap.capUrn outSpec], [[CSMediaUrn fromString:anyShape error:nil] toString]);
 }
 
 // TEST1899: a media def resolves to the charter's `definition` location at the

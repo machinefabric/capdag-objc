@@ -132,6 +132,17 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareTagMaps(NSDictionary<NSString *, N
 /// Mirrors Rust: pub fn without_tag(&self, key: &str) -> Self
 - (CSMediaUrn * _Nonnull)withoutTag:(NSString * _Nonnull)key;
 
+/// The published media definition this URN, written as a reference, resolves
+/// to: the URN without every tag that lets its key be absent (`!k`, `?k`,
+/// `k?=v`). Such a tag names no value — `!k` says the dim has none, `?k`
+/// leaves it open — so it refines a published type rather than naming
+/// another: `media:enc=utf8;fmt=json;!ext` and
+/// `media:enc=utf8;fmt=json;?list;?record` both resolve to
+/// `media:enc=utf8;fmt=json`. Which tags go is decided from the parsed
+/// constraint by tagged-urn's model (`admitsAbsence:`).
+/// Mirrors Rust: pub fn reference_base(&self) -> MediaUrn
+- (CSMediaUrn * _Nonnull)referenceBase;
+
 // withList and withoutList removed — list tag is semantic, not shape.
 // Shape (scalar vs sequence) is tracked via is_sequence, not URN manipulation.
 

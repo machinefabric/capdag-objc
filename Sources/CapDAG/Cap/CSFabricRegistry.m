@@ -923,7 +923,10 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
         }
         return nil;
     }
-    return [parsed toString];
+    // The key of the definition the URN resolves to: a URN that refines a
+    // published type by an absence or an open key names that published
+    // definition, and a published definition writes no such tag.
+    return [[parsed referenceBase] toString];
 }
 
 - (NSString *)sha256HexForString:(NSString *)s {
@@ -1670,29 +1673,31 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
 /// Walk every media URN a cap definition references (in_spec, out_spec,
 /// each arg.media_urn, each stdin source, output.media_urn), the universal
 /// type `media:` among them: the fabric defines it like any other media URN.
-/// Order is deterministic and de-duplicated.
-- (NSArray<NSString *> *)collectReferencedMediaUrnsForCap:(CSCap *)cap {
+/// Order is deterministic and de-duplicated. Each is the key of the published
+/// definition the reference resolves to (`normalizeMediaUrn:error:`). A URN
+/// that does not parse means the definition is corrupt: nil, with the error,
+/// never a URN quietly left out.
+- (nullable NSArray<NSString *> *)collectReferencedMediaUrnsForCap:(CSCap *)cap
+                                                              error:(NSError *_Nullable *_Nullable)error {
+    NSMutableArray<NSString *> *references = [NSMutableArray array];
+    [references addObject:[cap.capUrn inSpec]];
+    [references addObject:[cap.capUrn outSpec]];
+    for (CSCapArg *arg in cap.args) {
+        [references addObject:arg.mediaUrn];
+        // What the arg accepts: its stdin source's URN, or its `accepts`.
+        [references addObject:[arg acceptedUrn]];
+    }
+    for (CSCapOutput *output in cap.outputs) {
+        [references addObject:output.mediaUrn];
+    }
+
     NSMutableArray<NSString *> *seen = [NSMutableArray array];
-    void (^push)(NSString *) = ^(NSString *urn) {
-        if (urn.length == 0) return;
-        NSError *err = nil;
-        CSMediaUrn *parsed = [CSMediaUrn fromString:urn error:&err];
-        if (!parsed) return;
-        NSString *normalized = [parsed toString];
+    for (NSString *urn in references) {
+        NSString *normalized = [self normalizeMediaUrn:urn error:error];
+        if (!normalized) return nil;
         if (![seen containsObject:normalized]) {
             [seen addObject:normalized];
         }
-    };
-
-    push([cap.capUrn inSpec]);
-    push([cap.capUrn outSpec]);
-    for (CSCapArg *arg in cap.args) {
-        push(arg.mediaUrn);
-        // What the arg accepts: its stdin source's URN, or its `accepts`.
-        push([arg acceptedUrn]);
-    }
-    for (CSCapOutput *output in cap.outputs) {
-        push(output.mediaUrn);
     }
     return seen;
 }
@@ -1705,7 +1710,12 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
             return;
         }
 
-        NSArray<NSString *> *referenced = [self collectReferencedMediaUrnsForCap:cap];
+        NSError *referenceError = nil;
+        NSArray<NSString *> *referenced = [self collectReferencedMediaUrnsForCap:cap error:&referenceError];
+        if (!referenced) {
+            completion(nil, referenceError);
+            return;
+        }
         [self ensureMediaDefsCached:referenced
                           forCapUrn:urn
                          completion:^(NSError *mediaError) {

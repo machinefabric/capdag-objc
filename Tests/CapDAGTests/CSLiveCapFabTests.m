@@ -52,6 +52,60 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     XCTAssertEqual(targets[0].minDepth, 1u);
 }
 
+// TEST7216: a source is read complete: a JSON record file, which does not mention `list`, takes
+// the edge of a cap whose input refuses lists, though as a type it may be a list; a JSON list
+// does not.
+- (void)test7216_ASourceTakesAnEdgeItSatisfies {
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    [graph addCap:makeTestCap(@"media:enc=utf8;fmt=json;record;!list", @"media:enc=utf8;fmt=yaml;record",
+                              @"record_to_yaml", @"Record To YAML")];
+
+    NSError *error = nil;
+    CSMediaUrn *yaml = [CSMediaUrn fromString:@"media:enc=utf8;fmt=yaml;record" error:&error];
+    CSMediaUrn *record = [CSMediaUrn fromString:@"media:enc=utf8;ext=json;fmt=json;record" error:&error];
+    CSMediaUrn *noList = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json;record;!list" error:&error];
+    CSMediaUrn *list = [CSMediaUrn fromString:@"media:enc=utf8;ext=json;fmt=json;list;record" error:&error];
+    XCTAssertFalse([record conformsTo:noList], @"as a type the file may be a list");
+
+    NSArray<CSReachableTargetInfo *> *targets = [graph getReachableTargetsFromSource:record maxDepth:5 isSequence:NO];
+    XCTAssertEqual(targets.count, 1u, @"the record file takes the edge to YAML");
+    XCTAssertEqualObjects(targets[0].mediaUrn, [yaml toString]);
+    XCTAssertEqual(targets[0].minDepth, 1u);
+    XCTAssertEqual([graph findPathsToExactTarget:record target:yaml maxDepth:5 maxPaths:10 isSequence:NO].count, 1u);
+
+    XCTAssertEqual([graph getReachableTargetsFromSource:list maxDepth:5 isSequence:NO].count, 0u,
+                   @"a list does not take an edge that refuses lists");
+}
+
+// TEST7219: the path search steps only into states the target is reachable from. Twelve kinds of
+// dead-end data, each convertible into every other, give hundreds of millions of routes within
+// eight steps; the one route to the target is six steps long and is found without walking them.
+- (void)test7219_SearchSkipsBranchesThatCannotReachTheTarget {
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    NSString *(^dead)(NSUInteger) = ^(NSUInteger n) { return [NSString stringWithFormat:@"media:dead;n=%lu", (unsigned long)n]; };
+    NSString *(^route)(NSUInteger) = ^(NSUInteger n) { return [NSString stringWithFormat:@"media:route;n=%lu", (unsigned long)n]; };
+    for (NSUInteger n = 0; n < 12; n++) {
+        [graph addCap:makeTestCap(@"media:start", dead(n), [NSString stringWithFormat:@"into-dead-%lu", (unsigned long)n], @"Into Dead")];
+        for (NSUInteger m = 0; m < 12; m++) {
+            if (m == n) continue;
+            [graph addCap:makeTestCap(dead(n), dead(m),
+                                      [NSString stringWithFormat:@"dead-%lu-to-%lu", (unsigned long)n, (unsigned long)m], @"Dead To Dead")];
+        }
+    }
+    [graph addCap:makeTestCap(@"media:start", route(1), @"route-1", @"Route 1")];
+    for (NSUInteger n = 1; n < 5; n++) {
+        [graph addCap:makeTestCap(route(n), route(n + 1), [NSString stringWithFormat:@"route-%lu", (unsigned long)(n + 1)], @"Route")];
+    }
+    [graph addCap:makeTestCap(route(5), @"media:finish", @"finish", @"Finish")];
+
+    NSError *error = nil;
+    CSMediaUrn *start = [CSMediaUrn fromString:@"media:start" error:&error];
+    CSMediaUrn *finish = [CSMediaUrn fromString:@"media:finish" error:&error];
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:start target:finish maxDepth:8 maxPaths:10 isSequence:NO];
+    XCTAssertEqual(paths.count, 1u, @"the one route is found");
+    XCTAssertEqual(paths[0].capStepCount, 6);
+}
+
 // TEST1151: Exact vs conformance matching
 - (void)test1151_ExactVsConformanceMatching {
     // Verify is_equivalent distinguishes singular vs list
