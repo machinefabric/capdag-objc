@@ -188,7 +188,7 @@ final class StandardCapsTests: XCTestCase {
         let runtime = CartridgeRuntime(manifest: manifest)
 
         // Verify identity handler is registered
-        let identityHandler = runtime.findHandler(capUrn: CSCapIdentity)
+        let identityHandler = try runtime.findHandler(capUrn: CSCapIdentity)
         XCTAssertNotNil(identityHandler, "CartridgeRuntime must auto-register CAP_IDENTITY handler")
     }
 
@@ -201,7 +201,7 @@ final class StandardCapsTests: XCTestCase {
         """.data(using: .utf8)!
 
         let runtime = CartridgeRuntime(manifest: manifest)
-        let factory = runtime.findHandler(capUrn: CSCapIdentity)!
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: CSCapIdentity))
 
         // Create test input - pre-collected chunks
         let testData = "test data".data(using: .utf8)!
@@ -270,7 +270,7 @@ final class StandardCapsTests: XCTestCase {
         """.data(using: .utf8)!
 
         let runtime = CartridgeRuntime(manifest: manifest)
-        let factory = runtime.findHandler(capUrn: CSCapDiscard)!
+        let factory = try XCTUnwrap(try runtime.findHandler(capUrn: CSCapDiscard))
 
         // Create test input - pre-collected chunks
         let testData = "discard me".data(using: .utf8)!

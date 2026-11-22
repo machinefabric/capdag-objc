@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// version: 1.725.738
+// version: 1.726.748
 import PackageDescription
 
 let package = Package(
