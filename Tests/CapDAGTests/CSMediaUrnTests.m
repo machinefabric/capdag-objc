@@ -610,4 +610,26 @@
     }
 }
 
+// TEST7212: a media URN written as a reference resolves to the published definition without every tag that lets its key be absent (!k, ?k, k?=v); a tag that requires its key (k, k=v, k!=v) stays, and a URN with none is its own base.
+- (void)test7212_referenceBaseDropsTagsAdmittingAbsence {
+    NSArray<NSArray<NSString *> *> *cases = @[
+        @[@"media:enc=utf8;fmt=json;!ext", @"media:enc=utf8;fmt=json"],
+        @[@"media:enc=utf8;fmt=json;?list;?record", @"media:enc=utf8;fmt=json"],
+        @[@"media:enc=utf8;fmt=json;list;record;!ext", @"media:enc=utf8;fmt=json;list;record"],
+        @[@"media:ext?=pdf;image", @"media:image"],
+        @[@"media:ext!=pdf;image", @"media:ext!=pdf;image"],
+        @[@"media:enc=utf8;fmt=json", @"media:enc=utf8;fmt=json"],
+        @[@"media:!void", @"media:"],
+        @[@"media:void", @"media:void"],
+    ];
+    for (NSArray<NSString *> *c in cases) {
+        NSError *error = nil;
+        CSMediaUrn *reference = [CSMediaUrn fromString:c[0] error:&error];
+        XCTAssertNotNil(reference, @"%@: %@", c[0], error);
+        CSMediaUrn *base = [CSMediaUrn fromString:c[1] error:&error];
+        XCTAssertNotNil(base, @"%@: %@", c[1], error);
+        XCTAssertEqualObjects([[reference referenceBase] toString], [base toString], @"%@", c[0]);
+    }
+}
+
 @end

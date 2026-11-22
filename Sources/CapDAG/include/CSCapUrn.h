@@ -202,12 +202,14 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)hasMarkerTag:(NSString * _Nonnull)tagName;
 
 /**
- * Infer the runtime output media for this cap from a concrete runtime input.
+ * Infer the runtime output media for this cap from a concrete runtime input:
+ * what the cap gives for it, computed by the proved model (CapDAG.Exec.capGives,
+ * which is Cap.gives).
  *
  * `effect=declared` returns the declared output media.
  * `effect=none` returns the runtime input unchanged.
- * `effect=patch` applies the declared `(out - in)` coordinate delta to the
- * runtime input.
+ * `effect=patch` returns the runtime input with the keys the declared input and
+ * output disagree on set to what the output says.
  *
  * @param runtimeInput The concrete runtime input media URN
  * @param error Error if the effect declaration is invalid or cannot be applied
@@ -216,17 +218,17 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (nullable CSMediaUrn *)inferRuntimeOutputMedia:(CSMediaUrn * _Nonnull)runtimeInput error:(NSError * _Nullable * _Nullable)error;
 
 /**
- * THE effect-audit predicate: does an actually-emitted runtime output satisfy
- * this cap's declared effect contract for the given runtime input? Every
- * check of "did the cap emit what its effect promised" must go through this
- * — never a hand-rolled combination of inferRuntimeOutputMedia with equality
- * or conformance checks.
+ * THE effect-audit predicate: does an actually-emitted runtime output keep this
+ * cap's effect contract for the given runtime input? Every check of "did the
+ * cap emit what its effect promised" goes through this, so the contract has one
+ * definition — the proved model's (CapDAG.Exec.audit, which is Cap.audits).
+ * Both media are those of values that exist, read complete.
  *
- * effect=none / effect=patch require the emission to be tag-equivalent to
- * the inferred output (the effect fully determines the type — a more
- * specific emission is still a violation). effect=declared requires the
- * emission to conform to the declared out= (more specific is legal, more
- * generic is a violation).
+ * effect=declared promises its declared out=, read complete — what it does not
+ * mention, the cap does not give — so the emission must be inside it: a cap
+ * declaring out=media:record may emit media:record, and not
+ * media:enc=utf8;fmt=json;record. effect=none / effect=patch give exactly what
+ * their effect makes of the input, so the emission must be that.
  *
  * @param runtimeInput The concrete runtime input media URN
  * @param runtimeOutput The media URN the cap actually emitted
@@ -278,13 +280,16 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 
 /**
  * Whether `cap` fits this cap read as a PATTERN over caps — what a search asks:
- * `cap`'s input is within this pattern's, its output covers the pattern's, its
- * effect is the pattern's (a pattern's `?effect` fits any), and its cap-tags —
- * complete: a cap has the tags it has — satisfy the pattern's.
+ * `cap`'s input is within this pattern's, its output is within the pattern's —
+ * everything it gives is of the type the pattern names, its declared output read
+ * complete — its effect is the pattern's (a pattern's `?effect` fits any), and
+ * its cap-tags — complete: a cap has the tags it has — satisfy the pattern's.
+ * `cap:out="media:ext=pdf"` fits caps giving `media:ext=pdf` or
+ * `media:document;ext=pdf`, and not one giving `media:`, which gives a thing with
+ * no tags.
  *
- * A side the pattern leaves open is not asked about. `cap:candle` fits every cap
- * tagged `candle`, whatever it takes and gives: its open output is "not
- * established", not the type "anything".
+ * An output the pattern leaves open asks nothing. `cap:candle` fits every cap
+ * tagged `candle`, whatever it gives.
  *
  * Decided by the proved model (CapDAG.Exec.accepts, which is CapDAG.fits). For a
  * question no cap URN can spell — "what gives this, whatever it takes" — ask a
@@ -307,16 +312,18 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
  * Whether this candidate SERVES `request` — the predicate routing and dispatch
  * act on.
  *
- * The candidate takes at least what the request sends, gives at least what the
- * request needs, has the effect asked for unless the request says `?effect`,
- * and has the cap-tags asked for — its own tags being complete, so a request
- * for `!x` is served by a candidate that does not mention `x`, and a candidate
- * may carry tags the request does not ask about.
+ * The request is a call: it sends what its input says and asks for its output.
+ * The candidate takes at least what the call sends; what it gives for that is
+ * inside what the call asks for; it has the effect asked for unless the call
+ * says `?effect`; and it has the cap-tags asked for — its own tags being
+ * complete, so a request for `!x` is served by a candidate that does not
+ * mention `x`, and a candidate may carry tags the request does not ask about.
  *
- * An input the request leaves open is not established: the caller has not said
- * what it will send, and every candidate passes that side. That is "some
- * input", not "any input" — `media:` on a CANDIDATE's input does mean it takes
- * anything.
+ * What the candidate gives is what its effect says: a declared output, read
+ * complete — what it does not mention, the candidate does not give — or, for
+ * effect=none and effect=patch, what the call sends with the effect applied. A
+ * call always says what it sends: one whose input is `media:` (or omitted)
+ * sends anything, and only a candidate that takes anything serves it.
  *
  * This is a guarantee. What only could serve does not; see mayDispatch: and
  * -[CSCapQuery grade:]. Decided by the proved model (CapDAG.Exec.dispatch,
