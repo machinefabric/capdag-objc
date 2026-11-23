@@ -338,7 +338,7 @@ static NSArray<CSMediaUrn *> *CSSortedDistinctMedia(NSArray<CSMediaUrn *> *urns)
             }
             fab.bookendNodes = bookendNodes;
             completion(fab, nil);
-        }];
+        });
     }];
 }
 
