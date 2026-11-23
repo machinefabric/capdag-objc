@@ -102,10 +102,23 @@
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSNumber *> *> *outgoing;
 /// Index: to_spec canonical -> edge indices
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSNumber *> *> *incoming;
-/// All unique media URN canonical strings
-@property (nonatomic, strong) NSMutableSet<NSString *> *nodes;
+/// All unique media URN nodes, by canonical string
+@property (nonatomic, strong) NSMutableDictionary<NSString *, CSMediaUrn *> *nodes;
 /// Cap URN canonical -> edge indices (for removal)
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSNumber *> *> *capToEdges;
+/// The nodes that end on bookends (sources or targets of a transmute), by
+/// canonical string, each with the bookends it ends on: one for each shape the
+/// node may have, the published file type that shape is read complete
+/// (-[CSMediaUrn endsOn:]), in structural order. A node of one shape that is a
+/// file type ends on that file type; a node any of whose shapes is no file
+/// type ends on none and is not listed.
+///
+/// Computed at sync time from the registry snapshot supplied to
+/// syncFromCaps:bookendUrns: / syncFromCapUrns:registry:bookendUrns:completion:.
+/// The graph is rebuilt on every cap-set change, so the bookends track the live
+/// registry: media defs given extensions between syncs become bookends after
+/// the next sync; those whose extensions are removed stop being bookends.
+@property (nonatomic, strong) NSDictionary<NSString *, NSArray<CSMediaUrn *> *> *bookendNodes;
 /// Cached identity URN for skip checks
 @property (nonatomic, strong, nullable) CSCapUrn *identityUrn;
 - (BOOL)canFollowForEach:(CSLiveMachinePlanEdge *)edge;
@@ -118,8 +131,9 @@
     graph.edges = [NSMutableArray array];
     graph.outgoing = [NSMutableDictionary dictionary];
     graph.incoming = [NSMutableDictionary dictionary];
-    graph.nodes = [NSMutableSet set];
+    graph.nodes = [NSMutableDictionary dictionary];
     graph.capToEdges = [NSMutableDictionary dictionary];
+    graph.bookendNodes = @{};
     // Parse identity URN once
     NSError *error = nil;
     graph.identityUrn = [CSCapUrn fromString:CSCapIdentity error:&error];
@@ -132,20 +146,76 @@
     [self.incoming removeAllObjects];
     [self.nodes removeAllObjects];
     [self.capToEdges removeAllObjects];
+    self.bookendNodes = @{};
+}
+
+// MARK: - Bookends
+
+- (BOOL)isBookend:(CSMediaUrn *)urn {
+    return self.bookendNodes[[urn toString]] != nil;
+}
+
+- (NSArray<CSMediaUrn *> *)endsOn:(CSMediaUrn *)node {
+    return self.bookendNodes[[node toString]] ?: @[];
+}
+
+/// Whether a route reaching `node` reaches `target`: the node is the target, or
+/// ends on bookends one of which is.
+/// Mirrors Rust: LiveCapFab::reaches
+- (BOOL)node:(CSMediaUrn *)node reaches:(CSMediaUrn *)target {
+    if ([node isEquivalentTo:target]) return YES;
+    for (CSMediaUrn *bookend in [self endsOn:node]) {
+        if ([bookend isEquivalentTo:target]) return YES;
+    }
+    return NO;
+}
+
+/// `urns` in structural order, each named once.
+static NSArray<CSMediaUrn *> *CSSortedDistinctMedia(NSArray<CSMediaUrn *> *urns) {
+    NSArray<CSMediaUrn *> *sorted = [urns sortedArrayUsingComparator:^NSComparisonResult(CSMediaUrn *a, CSMediaUrn *b) {
+        return [a compareStructurally:b];
+    }];
+    NSMutableArray<CSMediaUrn *> *distinct = [NSMutableArray arrayWithCapacity:sorted.count];
+    for (CSMediaUrn *urn in sorted) {
+        if (distinct.lastObject == nil || [distinct.lastObject compareStructurally:urn] != NSOrderedSame) {
+            [distinct addObject:urn];
+        }
+    }
+    return distinct;
+}
+
+/// Each of `nodes` that ends on `bookends` (in structural order), by canonical
+/// string, with the bookends it ends on, each named once.
+/// Mirrors Rust: LiveCapFab::nodes_ending_on
++ (NSDictionary<NSString *, NSArray<CSMediaUrn *> *> *)nodes:(NSDictionary<NSString *, CSMediaUrn *> *)nodes
+                                                    endingOn:(NSArray<CSMediaUrn *> *)bookends {
+    NSMutableDictionary<NSString *, NSArray<CSMediaUrn *> *> *ending = [NSMutableDictionary dictionary];
+    for (NSString *key in nodes) {
+        NSArray<CSMediaUrn *> *ends = [nodes[key] endsOn:bookends];
+        if (ends == nil) continue;
+        ending[key] = CSSortedDistinctMedia(ends);
+    }
+    return ending;
+}
+
+- (void)setBookends:(NSArray<CSMediaUrn *> *)bookendUrns {
+    self.bookendNodes = [CSLiveCapFab nodes:self.nodes endingOn:CSSortedDistinctMedia(bookendUrns)];
 }
 
 // MARK: - Sync
 
-- (void)syncFromCaps:(NSArray<CSCap *> *)caps {
+- (void)syncFromCaps:(NSArray<CSCap *> *)caps bookendUrns:(NSArray<CSMediaUrn *> *)bookendUrns {
     [self clear];
     for (CSCap *cap in caps) {
         [self addCap:cap];
     }
     // Cardinality transitions (ForEach/Collect) are synthesized dynamically in getOutgoingEdges:isSequence:
+    [self setBookends:bookendUrns];
 }
 
 - (void)syncFromCapUrns:(NSArray<NSString *> *)capUrns
                registry:(id<CSFabricRegistryProtocol>)registry
+            bookendUrns:(NSArray<CSMediaUrn *> *)bookendUrns
              completion:(void (^)(void))completion {
     [self clear];
 
@@ -184,7 +254,91 @@
         }
 
         // Cardinality transitions (ForEach/Collect) are synthesized dynamically in getOutgoingEdges:isSequence:
+        [self setBookends:bookendUrns];
         completion();
+    }];
+}
+
++ (void)fromFabric:(CSFabricRegistry *)registry
+        completion:(void (^)(CSLiveCapFab *_Nullable fab, NSError *_Nullable error))completion {
+    [registry getManifestCaps:^(NSArray<CSCap *> *caps, NSError *capsError) {
+        if (!caps) {
+            completion(nil, capsError);
+            return;
+        }
+        CSLiveCapFab *fab = [CSLiveCapFab graph];
+        for (CSCap *cap in caps) {
+            [fab addCap:cap];
+        }
+        // `media:` takes anything and names no definition: nothing is a file of it.
+        NSError *mediaError = nil;
+        NSArray<CSMediaUrn *> *manifestMedia = [registry manifestMediaUrns:&mediaError];
+        if (!manifestMedia) {
+            completion(nil, mediaError);
+            return;
+        }
+        NSMutableArray<CSMediaUrn *> *published = [NSMutableArray arrayWithCapacity:manifestMedia.count];
+        for (CSMediaUrn *urn in manifestMedia) {
+            if (![urn isTop]) [published addObject:urn];
+        }
+        NSDictionary<NSString *, NSArray<CSMediaUrn *> *> *shapesOfNodes =
+            [CSLiveCapFab nodes:fab.nodes endingOn:CSSortedDistinctMedia(published)];
+
+        // Every definition a node's shape is, each had once.
+        NSMutableSet<NSString *> *shapeSet = [NSMutableSet set];
+        for (NSArray<CSMediaUrn *> *shapes in shapesOfNodes.allValues) {
+            for (CSMediaUrn *shape in shapes) {
+                [shapeSet addObject:[shape toString]];
+            }
+        }
+        NSArray<NSString *> *shapes = [[shapeSet allObjects] sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+            return CSCompareCodePoints(a, b);
+        }];
+        NSMutableDictionary<NSString *, NSNumber *> *isBookend = [NSMutableDictionary dictionaryWithCapacity:shapes.count];
+        NSMutableDictionary<NSString *, NSError *> *failures = [NSMutableDictionary dictionary];
+        dispatch_group_t group = dispatch_group_create();
+        for (NSString *shape in shapes) {
+            dispatch_group_enter(group);
+            [registry getMediaDef:shape completion:^(NSDictionary *definition, NSError *error) {
+                if (definition == nil && error == nil) {
+                    [NSException raise:NSInternalInconsistencyException
+                                format:@"fabric registry contract: the lookup of media def '%@' completed with neither a definition nor an error",
+                                       shape];
+                }
+                BOOL bookend = NO;
+                NSError *bookendError = error;
+                BOOL known = definition != nil && CSStoredMediaDefIsBookend(definition, &bookend, &bookendError);
+                @synchronized (isBookend) {
+                    if (known) {
+                        isBookend[shape] = @(bookend);
+                    } else {
+                        failures[shape] = bookendError;
+                    }
+                }
+                dispatch_group_leave(group);
+            }];
+        }
+        dispatch_group_notify(group, dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+            // The first definition, in URN order, that could not be had or read.
+            for (NSString *shape in shapes) {
+                if (failures[shape] != nil) {
+                    completion(nil, failures[shape]);
+                    return;
+                }
+            }
+            NSMutableDictionary<NSString *, NSArray<CSMediaUrn *> *> *bookendNodes = [NSMutableDictionary dictionary];
+            for (NSString *node in shapesOfNodes) {
+                BOOL endsOnBookends = YES;
+                for (CSMediaUrn *shape in shapesOfNodes[node]) {
+                    endsOnBookends = endsOnBookends && [isBookend[[shape toString]] boolValue];
+                }
+                if (endsOnBookends) {
+                    bookendNodes[node] = shapesOfNodes[node];
+                }
+            }
+            fab.bookendNodes = bookendNodes;
+            completion(fab, nil);
+        }];
     }];
 }
 
@@ -269,8 +423,8 @@
     }
     [self.incoming[toCanonical] addObject:@(edgeIdx)];
 
-    [self.nodes addObject:fromCanonical];
-    [self.nodes addObject:toCanonical];
+    self.nodes[fromCanonical] = fromSpec;
+    self.nodes[toCanonical] = toSpec;
 
     if (!self.capToEdges[capCanonical]) {
         self.capToEdges[capCanonical] = [NSMutableArray array];
@@ -397,8 +551,36 @@
         }
     }
 
+    // The targets are the bookends the reached nodes end on. Reachability in the
+    // cap graph includes URNs that exist only as cap-input wildcards (e.g.
+    // `media:enc=utf8`, `media:integer;numeric`). Such URNs describe the value
+    // type a cap accepts, not a file format that can sit on disk, so they are
+    // never valid transmute targets. A node that may have several shapes
+    // reaches each bookend it ends on, one target each. The bookends are
+    // precomputed at sync time from the live media registry — no registry call
+    // here.
+    NSMutableDictionary<NSString *, CSReachableTargetInfo *> *byBookend = [NSMutableDictionary dictionary];
+    for (NSString *reachedCanonical in results) {
+        CSReachableTargetInfo *reached = results[reachedCanonical];
+        for (CSMediaUrn *bookend in self.bookendNodes[reachedCanonical]) {
+            NSString *bookendCanonical = [bookend toString];
+            CSReachableTargetInfo *target = byBookend[bookendCanonical];
+            if (target) {
+                target.minDepth = MIN(target.minDepth, reached.minDepth);
+                target.pathCount += reached.pathCount;
+            } else {
+                target = [[CSReachableTargetInfo alloc] init];
+                target.mediaUrn = bookendCanonical;
+                target.displayName = bookendCanonical;
+                target.minDepth = reached.minDepth;
+                target.pathCount = reached.pathCount;
+                byBookend[bookendCanonical] = target;
+            }
+        }
+    }
+
     // Sort by (minDepth, displayName)
-    NSArray<CSReachableTargetInfo *> *sorted = [[results allValues] sortedArrayUsingComparator:
+    NSArray<CSReachableTargetInfo *> *sorted = [[byBookend allValues] sortedArrayUsingComparator:
         ^NSComparisonResult(CSReachableTargetInfo *a, CSReachableTargetInfo *b) {
             if (a.minDepth != b.minDepth) {
                 return a.minDepth < b.minDepth ? NSOrderedAscending : NSOrderedDescending;
@@ -456,8 +638,8 @@ static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendi
                 stepsInto[nextKey] = into;
             }
             [into addObject:fromKey];
-            // The target: its media, reached by a step, not waiting on a ForEach's cap.
-            if (!nextPendingForEach && [edge.toSpec isEquivalentTo:target]) {
+            // The target: media that reaches it, reached by a step, not waiting on a ForEach's cap.
+            if (!nextPendingForEach && [self node:edge.toSpec reaches:target]) {
                 [targetStates addObject:nextKey];
             }
             if (![seen containsObject:nextKey]) {
@@ -546,8 +728,10 @@ static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendi
     BOOL pendingForEach = currentPath.count > 0 &&
         currentPath.lastObject.stepType == CSStrandStepTypeForEach;
 
+    // The target is reached when the node is it, or ends on bookends one of which
+    // is. Not at the starting node (empty path): a path takes at least one step.
     // A ForEach boundary is incomplete until its scalar body cap follows it.
-    if ([current isEquivalentTo:target] && !pendingForEach) {
+    if (currentPath.count > 0 && !pendingForEach && [self node:current reaches:target]) {
         NSMutableArray<NSString *> *titles = [NSMutableArray array];
         NSInteger capStepCount = 0;
         for (CSStrandStep *step in currentPath) {

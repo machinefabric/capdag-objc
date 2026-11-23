@@ -59,6 +59,7 @@ int32_t capdagFormal__call_l_CapDAG_dExec_dcapIllegal(const uint8_t *input, size
 int32_t capdagFormal__call_l_CapDAG_dExec_dcomparable(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_ddispatch(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_deffectOk(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dExec_dendsOn(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dequivalent(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dflows(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dmayDispatch(const uint8_t *input, size_t len, lungo_buffer *out);
@@ -74,6 +75,7 @@ int32_t capdagFormal__call_l_CapDAG_dExec_dqueryProducing(const uint8_t *input, 
 int32_t capdagFormal__call_l_CapDAG_dExec_drankingKey(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dselect(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dspecificity(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dExec_dsplits(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dRun_dControl_dadmits(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dRun_dControl_dexitStatus(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dRun_dControl_djoinOutcomes(const uint8_t *input, size_t len, lungo_buffer *out);

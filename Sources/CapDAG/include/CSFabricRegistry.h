@@ -15,7 +15,7 @@
 
 #import <Foundation/Foundation.h>
 
-@class CSCap, CSCapUrn, CSStoredDim, CSCharter;
+@class CSCap, CSCapUrn, CSMediaUrn, CSStoredDim, CSCharter;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -94,6 +94,21 @@ typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryFileTypesErro
     CSFabricRegistryErrorFileTypes = 1064,
 };
 
+/// The code of the error that says the fabric's capabilities are not all known
+/// (domain `CSFabricRegistryErrorDomain`; the reference's Caps): a cap the
+/// pinned manifest names could not be loaded. The message names every one and
+/// why.
+typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryCapsErrorCode) {
+    CSFabricRegistryErrorCaps = 1065,
+};
+
+/// The code of the error that says a stored media definition is not one this
+/// library reads (domain `CSFabricRegistryErrorDomain`; the reference's
+/// ParseError): its `extensions` is not a list of strings.
+typedef NS_ERROR_ENUM(CSFabricRegistryErrorDomain, CSFabricRegistryMediaDefErrorCode) {
+    CSFabricRegistryErrorMediaDefInvalid = 1066,
+};
+
 /// The kind of thing a fabric alias resolves to. An alias target is always a
 /// URN; the kind is determined by the URN prefix.
 typedef NS_ENUM(NSInteger, CSAliasTargetKind) {
@@ -119,6 +134,16 @@ NSString *_Nullable CSNormalizeAliasName(NSString *name, NSError *_Nullable *_Nu
 /// Classify an alias target URN by prefix. Returns YES + writes *outKind on a
 /// cap or media URN; returns NO for anything else.
 BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKind);
+
+/// Whether a value of the stored media definition `definition` (a spec
+/// dictionary this registry holds) can begin or end a planned machine (a
+/// strand bookend): its `extensions` list a file extension, so it can be read
+/// from a file or saved as one. The one rule every planner graph marks its
+/// bookends by. Answers YES and writes *outIsBookend; answers NO with a
+/// `CSFabricRegistryErrorMediaDefInvalid` error naming the definition when its
+/// `extensions` is there and is not a list of strings. Mirrors Rust
+/// `StoredMediaDef::is_bookend`.
+BOOL CSStoredMediaDefIsBookend(NSDictionary *definition, BOOL *outIsBookend, NSError *_Nullable *_Nullable error);
 
 /**
  * CSFabricRegistryConfig: what a fabric registry client is asked to use.
@@ -263,7 +288,35 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
 /// needs one.
 - (void)getCachedCaps:(void (^)(NSArray<CSCap *> * _Nullable caps, NSError * _Nullable error))completion;
 
+/// Every cap the pinned manifest names — the whole capability graph of the
+/// fabric — in URN order.
+///
+/// The caps not in memory yet are fetched, 16 at a time, each with the media
+/// definitions and dims it names (getCapWithUrn:completion:'s atomic fetch),
+/// and kept in this manifest version's cache; a later call fetches nothing.
+/// What it answers never depends on what earlier calls happened to fetch.
+///
+/// A cap that cannot be had fails the call (`CSFabricRegistryErrorCaps`,
+/// naming each one and why: a refused or unanswered fetch, a definition the
+/// registry does not hold): an answer from part of the fabric's caps would be
+/// a wrong answer. Mirrors Rust `manifest_caps`.
+- (void)getManifestCaps:(void (^)(NSArray<CSCap *> *_Nullable caps, NSError *_Nullable error))completion;
+
 // MARK: Media-def surface
+
+/// Every media URN the pinned manifest publishes a definition for, in no
+/// particular order. Nothing is fetched: the definitions themselves are had
+/// with getMediaDef:completion:. A manifest entry that is no media URN is a
+/// `CSFabricRegistryErrorManifestInvalid` error naming the manifest version and
+/// the entry. Mirrors Rust `manifest_media_urns`.
+- (nullable NSArray<CSMediaUrn *> *)manifestMediaUrns:(NSError *_Nullable *_Nullable)error;
+
+/// Snapshot of every bookend-eligible media URN currently in the in-memory
+/// cache: each cached definition that is a bookend (CSStoredMediaDefIsBookend),
+/// in no particular order. A cached definition whose `extensions` is not a
+/// list of strings is the error CSStoredMediaDefIsBookend gives. Mirrors Rust
+/// `bookend_urns`.
+- (nullable NSArray<CSMediaUrn *> *)bookendUrns:(NSError *_Nullable *_Nullable)error;
 
 /// Get a media def from the in-memory cache or fetch it.
 - (void)getMediaDef:(NSString *)urn

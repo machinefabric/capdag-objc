@@ -24,20 +24,20 @@
     XCTAssertTrue([lub isEquivalentTo:pdf]);
 }
 
-// TEST853: LUB promotes a shared key with differing values to "some value": both inputs
-// HAVE an ext (pdf vs png), so the bound is media:ext — the denominator generic caps like
+// TEST853: LUB keeps a shared key with differing values as the set of them: both inputs
+// HAVE an ext (pdf vs png), so the bound is media:ext=pdf|png, which generic caps like
 // in="media:ext" accept — not the trivial media:. The image marker is only on one side.
-- (void)test853_lub_shared_key_promotes_to_wildcard {
+- (void)test853_lub_shared_key_keeps_the_values {
     NSError *error;
     CSMediaUrn *pdf = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
     CSMediaUrn *png = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
     XCTAssertNotNil(pdf);
     XCTAssertNotNil(png);
     CSMediaUrn *lub = [CSMediaUrn lub:@[pdf, png]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:ext" error:&error];
-    XCTAssertNotNil(expected);
-    XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB of ext=pdf and ext=png;image should be media:ext but got %@", [lub toString]);
+    XCTAssertEqualObjects([lub toString], @"media:ext=pdf|png");
+    CSMediaUrn *anyExt = [CSMediaUrn fromString:@"media:ext" error:&error];
+    XCTAssertNotNil(anyExt);
+    XCTAssertTrue([lub conformsTo:anyExt]);
     XCTAssertTrue([pdf conformsTo:lub]);
     XCTAssertTrue([png conformsTo:lub]);
 }
@@ -100,17 +100,14 @@
     XCTAssertNotNil(c);
     CSMediaUrn *lub = [CSMediaUrn lub:@[a, b, c]];
     // All three are UTF-8 lists and all three HAVE a fmt (json/csv/ndjson — differing
-    // values → "some fmt"); record is on a and b only → dropped.
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:enc=utf8;fmt;list" error:&error];
-    XCTAssertNotNil(expected);
-    XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should be media:enc=utf8;fmt;list but got %@", [lub toString]);
+    // values → one of them); record is on a and b only → dropped.
+    XCTAssertEqualObjects([lub toString], @"media:enc=utf8;fmt=csv|json|ndjson;list");
     XCTAssertTrue([a conformsTo:lub]);
     XCTAssertTrue([b conformsTo:lub]);
     XCTAssertTrue([c conformsTo:lub]);
 }
 
-// TEST859: LUB with valued tags (non-marker) that differ promotes the key
+// TEST859: LUB with valued tags (non-marker) that differ keeps both values
 - (void)test859_lub_valued_tags {
     NSError *error;
     CSMediaUrn *v1 = [CSMediaUrn fromString:@"media:ext=png;image" error:&error];
@@ -118,10 +115,50 @@
     XCTAssertNotNil(v1);
     XCTAssertNotNil(v2);
     CSMediaUrn *lub = [CSMediaUrn lub:@[v1, v2]];
-    CSMediaUrn *expected = [CSMediaUrn fromString:@"media:ext;image" error:&error];
-    XCTAssertNotNil(expected);
-    XCTAssertTrue([lub isEquivalentTo:expected],
-        @"LUB should promote conflicting ext to some ext, got %@", [lub toString]);
+    XCTAssertEqualObjects([lub toString], @"media:ext=jpeg|png;image");
+}
+
+#pragma mark - Shapes and bookends
+
+/// The canonical texts of media URNs, sorted.
+static NSArray<NSString *> *CSMediaTexts(NSArray<CSMediaUrn *> *urns) {
+    NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:urns.count];
+    for (CSMediaUrn *urn in urns) [texts addObject:[urn toString]];
+    return [texts sortedArrayUsingSelector:@selector(compare:)];
+}
+
+// TEST7231: a media type splits into the shapes it may have — absence apart from presence,
+// each value of a set apart — and ends on the bookends those shapes are, read complete; one
+// shape that is no bookend ends it on none.
+- (void)test7231_aMediaTypeSplitsIntoItsShapesAndEndsOnTheirBookends {
+    NSError *error = nil;
+    CSMediaUrn *maybeList = [CSMediaUrn fromString:@"media:enc=utf8;fmt=json;?list" error:&error];
+    XCTAssertNotNil(maybeList, @"%@", error);
+    XCTAssertEqualObjects(CSMediaTexts([maybeList splits]),
+                          (@[@"media:enc=utf8;fmt=json;!list", @"media:enc=utf8;fmt=json;list"]),
+                          @"absence apart from presence");
+    CSMediaUrn *images = [CSMediaUrn fromString:@"media:ext=jpeg|png;image" error:&error];
+    XCTAssertNotNil(images, @"%@", error);
+    XCTAssertEqualObjects(CSMediaTexts([images splits]),
+                          (@[@"media:ext=jpeg;image", @"media:ext=png;image"]),
+                          @"each value of the set apart");
+
+    CSMediaUrn *saved = [CSMediaUrn fromString:@"media:enc=utf8;ext=json;fmt=json;?list;?record" error:&error];
+    XCTAssertNotNil(saved, @"%@", error);
+    NSMutableArray<CSMediaUrn *> *files = [NSMutableArray array];
+    for (NSString *text in @[@"media:enc=utf8;ext=json;fmt=json",
+                             @"media:enc=utf8;ext=json;fmt=json;list",
+                             @"media:enc=utf8;ext=json;fmt=json;record",
+                             @"media:enc=utf8;ext=json;fmt=json;list;record"]) {
+        CSMediaUrn *file = [CSMediaUrn fromString:text error:&error];
+        XCTAssertNotNil(file, @"%@", error);
+        [files addObject:file];
+    }
+    NSArray<CSMediaUrn *> *ends = [saved endsOn:files];
+    XCTAssertNotNil(ends, @"every shape is one of the bookends");
+    XCTAssertEqualObjects(CSMediaTexts(ends), CSMediaTexts(files), @"one bookend for each shape");
+    XCTAssertNil([saved endsOn:[files subarrayWithRange:NSMakeRange(1, files.count - 1)]],
+                 @"without a file type for JSON that is neither a list nor a record, one shape is no bookend");
 }
 
 #pragma mark - Parsing & Prefix

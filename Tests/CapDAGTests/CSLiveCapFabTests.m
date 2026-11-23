@@ -30,6 +30,39 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
     return cap;
 }
 
+// Helper: bookends that treat every URN appearing in the supplied caps (in or out
+// direction) as bookend-eligible. Tests use this when they want graph reachability
+// without an extra "filter to file formats" constraint — the planner's bookend
+// filter is exercised by TEST7229.
+static NSArray<CSMediaUrn *> *allBookends(NSArray<CSCap *> *caps) {
+    NSMutableArray<CSMediaUrn *> *bookends = [NSMutableArray array];
+    for (CSCap *cap in caps) {
+        for (NSString *spec in @[[cap.capUrn getInSpec], [cap.capUrn getOutSpec]]) {
+            NSError *error = nil;
+            CSMediaUrn *urn = [CSMediaUrn fromString:spec error:&error];
+            NSCAssert(urn != nil, @"Test cap spec '%@' is no media URN: %@", spec, error);
+            [bookends addObject:urn];
+        }
+    }
+    return bookends;
+}
+
+// Helper: the canonical texts of `urns`, in their order.
+static NSArray<NSString *> *mediaTexts(NSArray<CSMediaUrn *> *urns) {
+    NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:urns.count];
+    for (CSMediaUrn *urn in urns) {
+        [texts addObject:[urn toString]];
+    }
+    return texts;
+}
+
+// Helper: the canonical texts of `urns` in structural order.
+static NSArray<NSString *> *sortedMediaTexts(NSArray<CSMediaUrn *> *urns) {
+    return mediaTexts([urns sortedArrayUsingComparator:^NSComparisonResult(CSMediaUrn *a, CSMediaUrn *b) {
+        return [a compareStructurally:b];
+    }]);
+}
+
 @implementation CSLiveCapFabTests
 
 // MARK: - Basic Tests (unnumbered, match Rust unnumbered tests)
@@ -39,6 +72,7 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 
     CSCap *cap = makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"extract_text", @"Extract Text");
     [graph addCap:cap];
+    [graph setBookends:allBookends(@[cap])];
 
     XCTAssertEqual([graph edgeCount], 1u);
     XCTAssertEqual([graph nodeCount], 2u);
@@ -57,8 +91,10 @@ static CSCap *makeTestCap(NSString *inSpec, NSString *outSpec, NSString *op, NSS
 // does not.
 - (void)test7216_ASourceTakesAnEdgeItSatisfies {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
-    [graph addCap:makeTestCap(@"media:enc=utf8;fmt=json;record;!list", @"media:enc=utf8;fmt=yaml;record",
-                              @"record-to-yaml", @"Record To YAML")];
+    CSCap *cap = makeTestCap(@"media:enc=utf8;fmt=json;record;!list", @"media:enc=utf8;fmt=yaml;record",
+                             @"record-to-yaml", @"Record To YAML");
+    [graph addCap:cap];
+    [graph setBookends:allBookends(@[cap])];
 
     NSError *error = nil;
     CSMediaUrn *yaml = [CSMediaUrn fromString:@"media:enc=utf8;fmt=yaml;record" error:&error];
@@ -259,7 +295,7 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
         makeTestCap(@"media:document;ext=pdf", @"media:digitized", @"op1", @"Op1"),
         makeTestCap(@"media:digitized", @"media:summary-text", @"op2", @"Op2"),
     ];
-    [graph syncFromCaps:caps];
+    [graph syncFromCaps:caps bookendUrns:allBookends(caps)];
 
     XCTAssertEqual([graph edgeCount], 2u);
     XCTAssertEqual([graph nodeCount], 3u);
@@ -268,7 +304,7 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     NSArray *newCaps = @[
         makeTestCap(@"media:image", @"media:digitized", @"ocr", @"OCR"),
     ];
-    [graph syncFromCaps:newCaps];
+    [graph syncFromCaps:newCaps bookendUrns:allBookends(newCaps)];
 
     XCTAssertEqual([graph edgeCount], 1u);
     XCTAssertEqual([graph nodeCount], 2u);
@@ -322,6 +358,7 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     CSCap *cap2 = makeTestCap(@"media:a", @"media:d", @"step3", @"A to D");
     [graph addCap:cap1];
     [graph addCap:cap2];
+    [graph setBookends:allBookends(@[cap1, cap2])];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:a" error:&error];
@@ -375,6 +412,7 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     CSCap *pngCap = makeTestCap(@"media:ext=png;image", @"media:thumbnail", @"png2thumb", @"PNG to Thumbnail");
     [graph addCap:pdfCap];
     [graph addCap:pngCap];
+    [graph setBookends:allBookends(@[pdfCap, pngCap])];
 
     NSError *error = nil;
     // PNG should only reach thumbnail
@@ -443,7 +481,7 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     CSCap *disbind = makeTestCap(@"media:document;ext=pdf", @"media:enc=utf8;page", @"disbind", @"Disbind PDF");
     CSCap *choose = makeTestCap(@"media:enc=utf8", @"media:decision;bool", @"choose", @"Make a Decision");
 
-    [graph syncFromCaps:@[disbind, choose]];
+    [graph syncFromCaps:@[disbind, choose] bookendUrns:allBookends(@[disbind, choose])];
 
     NSError *error = nil;
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
@@ -575,6 +613,7 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     CSLiveCapFab *graph = [CSLiveCapFab graph];
     [graph addCap:split];
     [graph addCap:count];
+    [graph setBookends:allBookends(@[split, count])];
     XCTAssertEqual([graph edgeCount], 4u, @"split: head, rest, parts; count: one");
 
     CSMediaUrn *(^media)(NSString *) = ^CSMediaUrn *(NSString *text) { return [CSMediaUrn fromString:text error:nil]; };
@@ -606,6 +645,61 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     XCTAssertEqual(steps.count, 2u);
     XCTAssertEqualObjects(steps.firstObject.outputUrn, @"media:enc=utf8;rest");
     XCTAssertNil(steps.lastObject.outputUrn);
+}
+
+// TEST7229: a node that may have several shapes ends on the bookends its shapes are,
+// read complete. A save that gives JSON which may or may not be a list and may or may
+// not be a record ends on the four JSON file types: each is a target of a route through
+// it, and a search for one of them finds the route. A node one of whose shapes is no
+// file type ends on none, and no search ends at it.
+- (void)test7229_aNodeOfSeveralShapesEndsOnEachBookendItMayBe {
+    NSString *saved = @"media:enc=utf8;ext=json;fmt=json;?list;?record";
+    NSArray<NSString *> *fileTexts = @[
+        @"media:enc=utf8;ext=json;fmt=json",
+        @"media:enc=utf8;ext=json;fmt=json;list",
+        @"media:enc=utf8;ext=json;fmt=json;record",
+        @"media:enc=utf8;ext=json;fmt=json;list;record",
+    ];
+    CSMediaUrn *(^media)(NSString *) = ^CSMediaUrn *(NSString *text) {
+        NSError *error = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:text error:&error];
+        XCTAssertNotNil(urn, @"%@: %@", text, error);
+        return urn;
+    };
+    NSMutableArray<CSMediaUrn *> *files = [NSMutableArray array];
+    for (NSString *text in fileTexts) {
+        [files addObject:media(text)];
+    }
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    [graph addCap:makeTestCap(@"media:enc=utf8;fmt=json;!ext", saved, @"save-as-json", @"Save as JSON")];
+    CSMediaUrn *source = media(@"media:enc=utf8;fmt=json;list;record");
+    CSMediaUrn *recordFile = media(@"media:enc=utf8;ext=json;fmt=json;record");
+
+    [graph setBookends:files];
+    XCTAssertTrue([graph isBookend:media(saved)]);
+    XCTAssertEqualObjects(mediaTexts([graph endsOn:media(saved)]), sortedMediaTexts(files),
+                          @"one bookend for each shape");
+
+    NSMutableArray<CSMediaUrn *> *targets = [NSMutableArray array];
+    for (CSReachableTargetInfo *target in [graph getReachableTargetsFromSource:source maxDepth:3 isSequence:NO]) {
+        XCTAssertEqual(target.minDepth, 1u, @"%@ is one save away", target.mediaUrn);
+        [targets addObject:media(target.mediaUrn)];
+    }
+    XCTAssertEqualObjects(sortedMediaTexts(targets), sortedMediaTexts(files),
+                          @"every file type the save may give is a target");
+
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:recordFile maxDepth:3 maxPaths:10 isSequence:NO];
+    XCTAssertEqual(paths.count, 1u, @"the route through the save");
+    XCTAssertEqual(paths.firstObject.capStepCount, 1);
+    XCTAssertTrue([media(paths.firstObject.targetMediaUrn) isEquivalentTo:recordFile]);
+
+    // Without a file type for JSON that is neither a list nor a record, one of the
+    // save's shapes is no file: the node ends on nothing.
+    [graph setBookends:[files subarrayWithRange:NSMakeRange(1, files.count - 1)]];
+    XCTAssertFalse([graph isBookend:media(saved)]);
+    XCTAssertEqual([graph endsOn:media(saved)].count, 0u);
+    XCTAssertEqual([graph getReachableTargetsFromSource:source maxDepth:3 isSequence:NO].count, 0u);
+    XCTAssertEqual([graph findPathsToExactTarget:source target:recordFile maxDepth:3 maxPaths:10 isSequence:NO].count, 0u);
 }
 
 @end

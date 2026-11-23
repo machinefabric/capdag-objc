@@ -187,6 +187,28 @@ BOOL CSClassifyAliasTarget(NSString *target, CSAliasTargetKind *_Nullable outKin
     return NO;
 }
 
+// MARK: - Bookends
+
+BOOL CSStoredMediaDefIsBookend(NSDictionary *definition, BOOL *outIsBookend, NSError *_Nullable *_Nullable error) {
+    id extensions = definition[@"extensions"];
+    if (extensions == nil) {
+        *outIsBookend = NO;
+        return YES;
+    }
+    BOOL listOfStrings = [extensions isKindOfClass:[NSArray class]];
+    for (id extension in (listOfStrings ? (NSArray *)extensions : @[])) {
+        if (![extension isKindOfClass:[NSString class]]) listOfStrings = NO;
+    }
+    if (!listOfStrings) {
+        if (error) *error = CSRegistryError(CSFabricRegistryErrorMediaDefInvalid, [NSString stringWithFormat:
+            @"the media definition '%@' has an 'extensions' that is not a list of strings",
+            definition[@"urn"]], nil);
+        return NO;
+    }
+    *outIsBookend = [(NSArray *)extensions count] > 0;
+    return YES;
+}
+
 // MARK: - The disk cache
 //
 // Where a fabric registry's definitions are kept on disk, and how an entry is
@@ -247,6 +269,10 @@ static NSString * const CSFabricCacheFileTypesFile = @"file_types.json";
 /// How many file media definitions are fetched at once when the file media
 /// index loads on a cold cache.
 static const NSUInteger CSFileMediaFetchesAtOnce = 16;
+
+/// How many of the manifest's caps are fetched at once when every cap of the
+/// fabric is asked for (getManifestCaps:). Mirrors Rust `CAP_FETCHES_AT_ONCE`.
+static const NSUInteger CSCapFetchesAtOnce = 16;
 
 /// The folders the shared layout before this one kept in a registry's folder.
 /// Nothing reads them; clearing the cache removes them.
@@ -606,6 +632,25 @@ static BOOL CSReadKeptFileTypes(NSString *path,
 @end
 
 @implementation CSFileMediaLoad
+@end
+
+/// What a load of the manifest's caps hands its caller: every cap of the
+/// manifest, or the error that says which could not be had.
+typedef void (^CSManifestCapsCompletion)(NSArray<CSCap *> *_Nullable caps, NSError *_Nullable error);
+
+/// One load of the manifest's caps: the caps the manifest names, those still
+/// to fetch, and why each fetch that failed did. Guarded by itself.
+@interface CSManifestCapsLoad : NSObject
+@property (nonatomic, copy) NSArray<NSString *> *named;
+@property (nonatomic, strong) NSMutableArray<NSString *> *queue;
+/// Normalized cap URN → why it could not be had.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *failures;
+/// Fetches started or still to start that have not completed.
+@property (nonatomic) NSUInteger outstanding;
+@property (nonatomic, copy) CSManifestCapsCompletion completion;
+@end
+
+@implementation CSManifestCapsLoad
 @end
 
 /// What a load of the file media index hands each caller waiting on it: the
@@ -1310,6 +1355,97 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
     completion([self getCachedCaps], nil);
 }
 
+// Every cap the manifest names: those not in memory are fetched,
+// CSCapFetchesAtOnce at a time, through the atomic fetcher getCapWithUrn: uses,
+// and the whole set is then read from the cache. Mirrors Rust `manifest_caps`
+// and the `fetch_manifest_caps` it runs first.
+- (void)getManifestCaps:(void (^)(NSArray<CSCap *> *_Nullable caps, NSError *_Nullable error))completion {
+    CSManifestCapsLoad *load = [[CSManifestCapsLoad alloc] init];
+    load.queue = [NSMutableArray array];
+    load.failures = [NSMutableDictionary dictionary];
+    load.completion = completion;
+    [self.cacheLock lock];
+    load.named = [self.manifestCaps allKeys];
+    for (NSString *urn in load.named) {
+        if (self.cachedCaps[urn] == nil) [load.queue addObject:urn];
+    }
+    [self.cacheLock unlock];
+    load.outstanding = load.queue.count;
+    if (load.outstanding == 0) {
+        [self finishManifestCapsLoad:load];
+        return;
+    }
+    NSUInteger atOnce = MIN(load.queue.count, CSCapFetchesAtOnce);
+    for (NSUInteger i = 0; i < atOnce; i++) {
+        [self fetchNextManifestCap:load];
+    }
+}
+
+// Fetch the next cap the load still lacks; when the fetch completes, the next
+// is started, so no more than CSCapFetchesAtOnce run at once. The last to
+// complete finishes the load.
+- (void)fetchNextManifestCap:(CSManifestCapsLoad *)load {
+    NSString *urn = nil;
+    @synchronized (load) {
+        if (load.queue.count == 0) return;
+        urn = load.queue.firstObject;
+        [load.queue removeObjectAtIndex:0];
+    }
+    [self fetchCapAtomic:urn completion:^(CSCap *cap, NSError *error) {
+        BOOL finished = NO;
+        @synchronized (load) {
+            if (!cap) {
+                load.failures[urn] = error.localizedDescription ?: @"the fetch reported no error";
+            }
+            load.outstanding -= 1;
+            finished = (load.outstanding == 0);
+        }
+        if (finished) {
+            [self finishManifestCapsLoad:load];
+        } else {
+            [self fetchNextManifestCap:load];
+        }
+    }];
+}
+
+// Answer the load's caller: every cap the manifest names, from the cache, in
+// URN order, or an error naming each cap that could not be had and why.
+- (void)finishManifestCapsLoad:(CSManifestCapsLoad *)load {
+    NSMutableDictionary<NSString *, NSString *> *failures = nil;
+    @synchronized (load) {
+        failures = [load.failures mutableCopy];
+    }
+    NSMutableArray<CSCap *> *caps = [NSMutableArray arrayWithCapacity:load.named.count];
+    [self.cacheLock lock];
+    for (NSString *urn in load.named) {
+        CSCap *cap = self.cachedCaps[urn];
+        if (cap) {
+            [caps addObject:cap];
+        } else if (failures[urn] == nil) {
+            failures[urn] = @"it was fetched and is not in the cap cache";
+        }
+    }
+    [self.cacheLock unlock];
+    if (failures.count > 0) {
+        NSMutableArray<NSString *> *namedFailures = [NSMutableArray arrayWithCapacity:failures.count];
+        for (NSString *urn in failures) {
+            [namedFailures addObject:[NSString stringWithFormat:@"%@: %@", urn, failures[urn]]];
+        }
+        [namedFailures sortUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+            return CSCompareCodePoints(a, b);
+        }];
+        load.completion(nil, CSRegistryError(CSFabricRegistryErrorCaps, [NSString stringWithFormat:
+            @"%lu of the %lu caps of manifest v%u could not be loaded, so the fabric's capabilities are not all known: %@",
+            (unsigned long)namedFailures.count, (unsigned long)load.named.count, self.manifestVersion,
+            [namedFailures componentsJoinedByString:@"; "]], nil));
+        return;
+    }
+    [caps sortUsingComparator:^NSComparisonResult(CSCap *a, CSCap *b) {
+        return CSCompareCodePoints([a.capUrn toString], [b.capUrn toString]);
+    }];
+    load.completion(caps, nil);
+}
+
 - (BOOL)capExists:(NSString *)urn {
     NSError *normError = nil;
     NSString *normalized = [self normalizeCapUrn:urn error:&normError];
@@ -1381,6 +1517,50 @@ typedef void (^CSFileMediaIndexCompletion)(NSDictionary<NSString *, NSArray<NSDi
             normalized, defver, self.manifestVersion], nil);
     }
     return nil;
+}
+
+- (nullable NSArray<CSMediaUrn *> *)manifestMediaUrns:(NSError *_Nullable *_Nullable)error {
+    [self.cacheLock lock];
+    NSArray<NSString *> *published = [self.manifestMedia allKeys];
+    uint32_t mv = self.manifestVersion;
+    [self.cacheLock unlock];
+    NSMutableArray<CSMediaUrn *> *urns = [NSMutableArray arrayWithCapacity:published.count];
+    for (NSString *urn in published) {
+        NSError *parseError = nil;
+        CSMediaUrn *parsed = [CSMediaUrn fromString:urn error:&parseError];
+        if (!parsed) {
+            if (error) *error = CSRegistryError(CSFabricRegistryErrorManifestInvalid, [NSString stringWithFormat:
+                @"manifest v%u publishes media '%@', which is not a media URN: %@",
+                mv, urn, parseError.localizedDescription ?: @"it does not parse"], parseError);
+            return nil;
+        }
+        [urns addObject:parsed];
+    }
+    return urns;
+}
+
+- (nullable NSArray<CSMediaUrn *> *)bookendUrns:(NSError *_Nullable *_Nullable)error {
+    [self.cacheLock lock];
+    NSArray<NSDictionary *> *cached = [self.cachedSpecs allValues];
+    [self.cacheLock unlock];
+    NSMutableArray<CSMediaUrn *> *bookends = [NSMutableArray array];
+    for (NSDictionary *definition in cached) {
+        BOOL isBookend = NO;
+        if (!CSStoredMediaDefIsBookend(definition, &isBookend, error)) return nil;
+        if (!isBookend) continue;
+        // A definition is cached only under the URN it names, once that URN
+        // parsed (insertMediaDefInMemory:), so one that does not parse now is a
+        // broken invariant.
+        NSError *parseError = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:definition[@"urn"] error:&parseError];
+        if (!urn) {
+            [NSException raise:NSInternalInconsistencyException
+                        format:@"media def cache invariant: the cached definition '%@' names a media URN: %@",
+                               definition[@"urn"], parseError.localizedDescription];
+        }
+        [bookends addObject:urn];
+    }
+    return bookends;
 }
 
 // Seed a media def directly (test/local hydrate, e.g. from a cartridge

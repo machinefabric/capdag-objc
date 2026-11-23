@@ -156,10 +156,29 @@ FOUNDATION_EXPORT NSComparisonResult CSCompareCodePoints(NSString *a, NSString *
 /// different media converge.
 ///
 /// Made by tagged-urn's proved model (`leastUpperBoundWithPrefix:urns:error:`): key by
-/// key, the bound allows every state some input allows, and where no single form says
-/// exactly that, it is the least bound that excludes only values the inputs name.
-/// `[media:document;ext=pdf, media:ext=png;image]` gives `media:ext`; no inputs give `media:`.
+/// key, the bound allows exactly the states some input allows, and a key some input
+/// allows every state of is left out.
+/// `[media:document;ext=pdf, media:ext=png;image]` gives `media:ext=pdf|png`; no inputs
+/// give `media:`.
 + (CSMediaUrn * _Nonnull)lub:(NSArray<CSMediaUrn *> * _Nonnull)urns;
+
+/// The shapes this media type may have: at every key it writes, absence apart from
+/// presence, and each value of a finite set apart from the others; a key allowing every
+/// value but some stays whole. Read complete, the parts hold exactly what this type holds.
+/// Made by the proved model (CapDAG.Exec.splits).
+///
+/// - `media:enc=utf8;fmt=json;?list` gives `media:enc=utf8;fmt=json;!list` and
+///   `media:enc=utf8;fmt=json;list`
+/// - `media:ext=jpeg|png;image` gives `media:ext=jpeg;image` and `media:ext=png;image`
+/// Mirrors Rust: pub fn splits(&self) -> Vec<MediaUrn>
+- (NSArray<CSMediaUrn *> * _Nonnull)splits;
+
+/// The bookends a node of this type ends on: for each of its parts (`splits`), the first
+/// of `bookends` that is the same as the part read complete; nil when some part is none
+/// of them. A route reaching a node that ends on bookends may give a file of any of them.
+/// Decided by the proved model (CapDAG.Exec.endsOn).
+/// Mirrors Rust: pub fn ends_on(&self, bookends: &[MediaUrn]) -> Option<Vec<MediaUrn>>
+- (nullable NSArray<CSMediaUrn *> *)endsOn:(NSArray<CSMediaUrn *> * _Nonnull)bookends;
 
 // MARK: - Predicates (mirror Rust MediaUrn predicates)
 
