@@ -251,6 +251,22 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
                             error:(NSError * _Nullable * _Nullable)error;
 
 /**
+ * Is `stated`, what a handler says this effect=declared cap gave, inside the
+ * declared out= read complete? The proved model's audit (CapDAG.Exec.audit,
+ * which is Cap.audits): a declared cap gives its output whatever it is sent, so
+ * the answer does not depend on the input.
+ *
+ * @param stated The label the handler states
+ * @param error Set for any other effect: what an effect=none or effect=patch
+ *        cap gives is fixed by what it is sent, and ?effect says nothing of it.
+ *        Swift throws only when it is set, and otherwise returns the answer.
+ * @return YES iff `stated` is inside the declared output
+ */
+- (BOOL)declaredOutputHolds:(CSMediaUrn * _Nonnull)stated
+                      error:(NSError * _Nullable * _Nullable)error
+    __attribute__((swift_error(nonnull_error)));
+
+/**
  * Add or replace a cap-tag. The key must be an identifier; the constraint one
  * a URN can write; a structural key (`in`, `out`, `effect`) is refused —
  * those change with withInSpec:, withOutSpec: and withEffect:.

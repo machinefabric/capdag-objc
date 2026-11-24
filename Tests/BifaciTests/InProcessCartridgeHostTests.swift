@@ -56,7 +56,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
                 do {
                     let args = try await accumulateInput(inputStream: inputStream)
                     let data = args.flatMap { $0.value }
-                    output.emitResponse(mediaUrn: "media:", data: Data(data))
+                    output.emitResponse(label: nil, data: Data(data))
                 } catch {
                     output.emitError(code: "ACCUMULATE_ERROR", message: error.localizedDescription)
                 }
@@ -95,7 +95,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
                         break
                     }
                 }
-                output.emitResponse(mediaUrn: "media:text", data: tag.data(using: .utf8)!)
+                output.emitResponse(label: nil, data: tag.data(using: .utf8)!)
             }
         }
     }
@@ -318,6 +318,101 @@ final class InProcessCartridgeHostTests: XCTestCase {
         testWrite.closeFile()
         testRead.closeFile()
         Thread.sleep(forTimeInterval: 0.1)
+    }
+
+    /// Answers every request with an empty JSON list, labelled as it is told.
+    final class LabellingHandler: FrameHandler, @unchecked Sendable {
+        let label: CSMediaUrn?
+
+        init(label: CSMediaUrn?) {
+            self.label = label
+        }
+
+        func handleRequest(capUrn: String, inputStream: AsyncStream<Frame>, output: ResponseWriter, network: NetworkAccess) {
+            Task {
+                do {
+                    _ = try await accumulateInput(inputStream: inputStream)
+                    output.emitResponse(label: self.label, data: Data("[]".utf8))
+                } catch {
+                    output.emitError(code: "ACCUMULATE_ERROR", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    // TEST7274: a handler in the in-process host labels its response as a
+    // cartridge runtime's handler does. Stating no label sends the label the
+    // served cap's effect derives; a label inside a declared cap's out= is
+    // sent as stated; a label outside it, or any label for an effect=none
+    // cap, sends ERR HANDLER_ERROR naming both labels, and no response stream.
+    func test7274_inProcessHandlerStatesItsLabelInsideTheCap() throws {
+        let save = "cap:in=\"media:enc=utf8;fmt=json;!ext\";save;out=\"media:enc=utf8;fmt=json;?list;?record\""
+        let tidy = "cap:effect=none;in=\"media:enc=utf8;fmt=json\";tidy;out=\"media:enc=utf8;fmt=json\""
+        let declaredOut = try CSMediaUrn.fromString("media:enc=utf8;fmt=json;?list;?record").toString()
+        let listOfRecords = try CSMediaUrn.fromString("media:enc=utf8;fmt=json;list;record")
+        let yaml = try CSMediaUrn.fromString("media:enc=utf8;fmt=yaml")
+
+        // The frames the host sends for one request to `capUrn`, served by a
+        // handler that states `label`, up to its terminal.
+        func answer(_ capUrn: String, _ label: CSMediaUrn?) throws -> [Frame] {
+            let handlers: [(name: String, caps: [CSCap], handler: FrameHandler)] = [
+                ("labelling", [makeTestCap(capUrn)], LabellingHandler(label: label))
+            ]
+            let host = InProcessCartridgeHost(identity: InProcessHostIdentity.forTest(id: "in-process-test"), handlers: handlers)
+            let (hostRead, testWrite) = Pipe.socketPair()
+            let (testRead, hostWrite) = Pipe.socketPair()
+            let hostThread = Thread {
+                try? host.run(localRead: hostRead, localWrite: hostWrite)
+            }
+            hostThread.start()
+            let reader = FrameReader(handle: testRead)
+            let writer = FrameWriter(handle: testWrite)
+            try writer.write(Frame.policy(HostPolicy(network: .full)))
+            XCTAssertEqual(try XCTUnwrap(try reader.read()).frameType, .relayNotify)
+
+            let rid = MessageId.newUUID()
+            var req = Frame.req(id: rid, capUrn: capUrn, payload: Data(), contentType: "application/cbor")
+            req.routingId = MessageId.uint(1)
+            let payload = cborBytesPayload(Data("[]".utf8))
+            try writer.write(req)
+            try writer.write(Frame.streamStart(reqId: rid, streamId: "arg0", mediaUrn: "media:enc=utf8;fmt=json"))
+            try writer.write(Frame.chunk(reqId: rid, streamId: "arg0", seq: 0, payload: payload, chunkIndex: 0, checksum: Frame.computeChecksum(payload)))
+            try writer.write(Frame.streamEnd(reqId: rid, streamId: "arg0", chunkCount: 1))
+            try writer.write(Frame.end(id: rid))
+
+            var frames: [Frame] = []
+            while true {
+                let frame = try XCTUnwrap(try reader.read())
+                frames.append(frame)
+                if frame.frameType == .end || frame.frameType == .err {
+                    break
+                }
+            }
+            testWrite.closeFile()
+            testRead.closeFile()
+            Thread.sleep(forTimeInterval: 0.1)
+            return frames
+        }
+        func labelOf(_ frames: [Frame]) throws -> String {
+            XCTAssertEqual(frames.last?.frameType, .end, "\(frames)")
+            let start = try XCTUnwrap(frames.first { $0.frameType == .streamStart }, "the response opens a stream")
+            return try XCTUnwrap(start.mediaUrn)
+        }
+        func refusal(_ frames: [Frame]) throws -> String {
+            XCTAssertEqual(frames.count, 1, "the refusal is the request's only frame: \(frames)")
+            XCTAssertEqual(frames[0].frameType, .err)
+            XCTAssertEqual(frames[0].errorCode, "HANDLER_ERROR")
+            return try XCTUnwrap(frames[0].errorMessage)
+        }
+
+        XCTAssertEqual(try labelOf(try answer(save, nil)), declaredOut, "no label: the derived one")
+        XCTAssertEqual(try labelOf(try answer(save, listOfRecords)), listOfRecords.toString())
+
+        let outside = try refusal(try answer(save, yaml))
+        XCTAssertTrue(outside.contains(yaml.toString()) && outside.contains(declaredOut), outside)
+        let fixed = try refusal(try answer(tidy, listOfRecords))
+        XCTAssertTrue(fixed.contains("fixed by its input") && fixed.contains(listOfRecords.toString()), fixed)
+        XCTAssertEqual(try labelOf(try answer(tidy, nil)), try CSMediaUrn.fromString("media:enc=utf8;fmt=json").toString())
     }
 
     // TEST6749: InProcessCartridgeHost handles identity verification (echo nonce)
@@ -694,11 +789,11 @@ final class InProcessCartridgeHostTests: XCTestCase {
                 HandlerEntry(name: name, caps: [makeTestCap(urn)], handler: TaggedHandler(tag: name))
             }
             let (caps, owners) = InProcessCartridgeHost.registeredCaps(handlers: handlers)
-            guard let idx = InProcessCartridgeHost.findHandlerForCap(caps: caps, owners: owners, request: request) else {
+            guard let found = InProcessCartridgeHost.findHandlerForCap(caps: caps, owners: owners, request: request) else {
                 XCTFail("both handlers serve the request")
                 return ""
             }
-            return handlers[idx].name
+            return handlers[found.index].name
         }
         for _ in 0..<32 {
             XCTAssertEqual(chosen([("first", first), ("second", second)]), "first")
@@ -719,7 +814,7 @@ final class InProcessCartridgeHostTests: XCTestCase {
                 for await frame in inputStream where frame.frameType == .end {
                     break
                 }
-                output.emitResponse(mediaUrn: "media:", data: "an answer".data(using: .utf8)!)
+                output.emitResponse(label: nil, data: "an answer".data(using: .utf8)!)
                 self.answered.signal()
             }
         }

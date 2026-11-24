@@ -774,6 +774,39 @@ static NSComparisonResult CSCapCompareRankingKeys(const lungo_value *a, const lu
     return keeps;
 }
 
+- (BOOL)declaredOutputHolds:(CSMediaUrn *)stated error:(NSError **)error {
+    // The proved model's audit for a declared cap: its output read complete,
+    // whatever it is sent. Any other effect fixes what the cap gives by its
+    // input, and takes no stated label.
+    if ([self effect] != CSCapEffectDeclared) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
+                                         code:CSCapUrnErrorInvalidEffectApplication
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"'%@' has effect=%@: what it gives is fixed by its input, not stated", [self toString], [self getEffectSpec]]}];
+        }
+        return NO;
+    }
+    NSError *parseError = nil;
+    CSMediaUrn *declaredIn = [CSMediaUrn fromString:self.inSpec error:&parseError];
+    if (!declaredIn) {
+        if (error) {
+            *error = [NSError errorWithDomain:CSCapUrnErrorDomain
+                                         code:CSCapUrnErrorInvalidEffectApplication
+                                     userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Invalid declared input media '%@': %@", self.inSpec, parseError.localizedDescription ?: @"unknown error"]}];
+        }
+        return NO;
+    }
+    lungo_value *answer = NULL;
+    lungo_error *modelError = NULL;
+    if (capdagFormal_audit(_formal, declaredIn.inner.formalValue, stated.inner.formalValue,
+                           &answer, &modelError) != LUNGO_OK) {
+        CSCapModelFailed(@"audit a stated label", modelError);
+    }
+    BOOL holds = lungo_value_get_bool(answer);
+    lungo_value_free(answer);
+    return holds;
+}
+
 - (BOOL)isComparable:(CSCapUrn *)other {
     return CSCapModelRelation(capdagFormal_comparable, _formal, other->_formal, @"decide comparability");
 }

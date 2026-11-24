@@ -788,6 +788,68 @@ final class CoalesceBuf {
 /// `KEEPALIVE_INTERVAL`).
 public let KEEPALIVE_INTERVAL_SECONDS: Int = 5
 
+/// What a handler may state of what an output stream gave (13.2 §Response
+/// media labeling): the rule `OutputStream.label(_:)` holds a stated label to.
+/// The runtime opens every response stream with a default label; a handler may
+/// narrow it, inside what the output declares, before the stream starts.
+/// (matches Rust LabelRule)
+enum LabelRule: Sendable {
+    /// The stream's type is fixed by its input: the main output of an
+    /// effect=none or effect=patch cap, an output that carries the input, and a
+    /// stream that is no response (a peer call's argument). It takes no stated
+    /// label.
+    case fixed
+    /// The main output of the declared cap `capUrn`: a stated label is inside
+    /// the declared out= read complete, as the proved model's audit decides
+    /// (`CSCapUrn.declaredOutputHolds`).
+    case declared(capUrn: String)
+    /// An output other than the main one, `output` its media URN: a stated
+    /// label is inside it (`CSMediaUrn.satisfies`).
+    case within(output: String)
+
+    /// The rule for the main output of `cap`. `?effect` says nothing of what
+    /// the cap gives, so no response is labelled for it at all
+    /// (`deriveResponseMedia` refuses it).
+    static func forMainOutput(_ cap: CSCapUrn) -> LabelRule {
+        cap.effect() == .declared ? .declared(capUrn: cap.toString()) : .fixed
+    }
+
+    /// Throw, naming both labels, unless `stated` may label a stream whose
+    /// default label is `defaultLabel`.
+    func check(defaultLabel: String, stated: CSMediaUrn) throws {
+        func refused(_ why: String) -> CartridgeRuntimeError {
+            .handlerError("the stream labelled '\(defaultLabel)' cannot be labelled '\(stated.toString())': \(why)")
+        }
+        switch self {
+        case .fixed:
+            throw refused("this output's type is fixed by its input")
+        case .declared(let capUrn):
+            let holds: Bool
+            do {
+                let cap = try CSCapUrn.fromString(capUrn)
+                holds = try cap.declaredOutputHolds(stated)
+                if !holds {
+                    throw refused("it is not inside the declared output '\(cap.getOutSpec())'")
+                }
+            } catch let refusal as CartridgeRuntimeError {
+                throw refusal
+            } catch {
+                throw refused(error.localizedDescription)
+            }
+        case .within(let output):
+            let declared: CSMediaUrn
+            do {
+                declared = try CSMediaUrn.fromString(output)
+            } catch {
+                throw refused("its output '\(output)' is not a media URN: \(error.localizedDescription)")
+            }
+            if !stated.satisfies(declared) {
+                throw refused("it is not inside the output '\(output)'")
+            }
+        }
+    }
+}
+
 public final class OutputStream: @unchecked Sendable {
     private let sender: any FrameSender
     private let streamId: String
@@ -814,6 +876,13 @@ public final class OutputStream: @unchecked Sendable {
     /// output's media URN, which its STREAM_START names. nil for the main
     /// output's stream. Set once, before the stream is handed to a handler.
     private var namedOutput: String?
+
+    /// What the handler may state of what this stream gave (`label(_:)`). Set
+    /// once, before the stream is handed to a handler.
+    private var labelRule: LabelRule = .fixed
+    /// The label the handler stated, which the STREAM_START carries in place
+    /// of the default `mediaUrn`. Guarded by `streamModeLock`.
+    private var stated: String?
 
     /// Per-stream flow-control window (L9). One credit is acquired per CHUNK
     /// before it is sent; the receiver replenishes via CREDIT frames.
@@ -867,6 +936,46 @@ public final class OutputStream: @unchecked Sendable {
     func namingOutput(_ output: String) -> OutputStream {
         namedOutput = output
         return self
+    }
+
+    /// Hold what the handler states of this stream to `rule`.
+    func withLabelRule(_ rule: LabelRule) -> OutputStream {
+        labelRule = rule
+        return self
+    }
+
+    /// State what this stream gives, more exactly than its default label: for
+    /// example what detection reads back from the file a save wrote. The
+    /// STREAM_START carries it in place of the default, and the engine audits
+    /// it and carries it on as the value's type (13.2 §Response media
+    /// labeling).
+    ///
+    /// Throws `handlerError`, naming the default label and `media`, once the
+    /// stream has started; for an output whose type is fixed by its input (the
+    /// main output of an effect=none or effect=patch cap, an output that
+    /// carries the input); for the main output of a declared cap, unless
+    /// `media` is inside the declared out= read complete; and for another
+    /// output, unless `media` is inside its media URN. A sequence output
+    /// carries one label for the whole stream: the least type holding every
+    /// item. (matches Rust OutputStream::label)
+    public func label(_ media: CSMediaUrn) throws {
+        // Held while the label is checked and kept, so a concurrent start
+        // either sees it or this call sees the stream started.
+        streamModeLock.lock()
+        defer { streamModeLock.unlock() }
+        if _streamMode != nil {
+            throw CartridgeRuntimeError.handlerError(
+                "the stream labelled '\(_mediaUrn)' cannot be labelled '\(media.toString())': the label is stated before the stream starts")
+        }
+        try labelRule.check(defaultLabel: _mediaUrn, stated: media)
+        stated = media.toString()
+    }
+
+    /// The label STREAM_START carries: the stated one, else the default.
+    private func startLabel() -> String {
+        streamModeLock.lock()
+        defer { streamModeLock.unlock() }
+        return stated ?? _mediaUrn
     }
 
     /// The output this stream names: nil for the main output's stream.
@@ -954,7 +1063,7 @@ public final class OutputStream: @unchecked Sendable {
         var startFrame = Frame.streamStart(
             reqId: requestId,
             streamId: streamId,
-            mediaUrn: _mediaUrn,
+            mediaUrn: startLabel(),
             isSequence: isSequence
         )
         startFrame.output = namedOutput
@@ -973,7 +1082,7 @@ public final class OutputStream: @unchecked Sendable {
         var startFrame = Frame.streamStartUnbounded(
             reqId: requestId,
             streamId: streamId,
-            mediaUrn: _mediaUrn,
+            mediaUrn: startLabel(),
             isSequence: isSequence
         )
         startFrame.output = namedOutput
@@ -3117,8 +3226,11 @@ struct ResponseOutputPlan: Sendable {
         /// The output's media URN: its identity, and — for an output other
         /// than the main one — what its STREAM_START names.
         let urn: String
-        /// What its STREAM_START carries as the data's type.
+        /// What its STREAM_START carries as the data's type, unless its
+        /// handler states a narrower label.
         let label: String
+        /// What a label its handler states is held to.
+        let rule: LabelRule
         /// The output it names: nil for the main output.
         let names: String?
         /// An output the handler never wrote to is sent as an empty value when
@@ -3135,10 +3247,11 @@ struct ResponseOutputPlan: Sendable {
 
     /// The outputs of `capUrn` as `manifest` defines it.
     ///
-    /// The main output carries the label the cap URN's effect derives
-    /// (`deriveResponseMedia`) and names no output; another output carries its
+    /// The main output's default label is the one the cap URN's effect derives
+    /// (`deriveResponseMedia`) and it names no output; another output's is its
     /// own media URN, or the cap's declared input when it carries the input,
-    /// and names itself. A cap served without a definition in the manifest (a
+    /// and it names itself. Each holds what its handler states of it to its
+    /// `LabelRule`. A cap served without a definition in the manifest (a
     /// built-in the cartridge did not advertise) answers on the one output its
     /// URN states.
     static func forCap(_ capUrn: String, manifest: Manifest?) throws -> ResponseOutputPlan {
@@ -3169,6 +3282,7 @@ struct ResponseOutputPlan: Sendable {
         let main = Output(
             urn: mainUrn,
             label: try deriveResponseMedia(capUrn: capUrn),
+            rule: LabelRule.forMainOutput(cap),
             names: nil,
             // A cap whose `out=` is void has no output: its stream exists for
             // progress and logs, and is never opened on the handler's behalf.
@@ -3180,9 +3294,11 @@ struct ResponseOutputPlan: Sendable {
         for output in definition?.outputs ?? [] {
             if let declaredMain, declaredMain.mediaUrn == output.mediaUrn { continue }
             _ = try parse(output.mediaUrn)
+            let carriesInput = output.carries == .input
             others.append(Output(
                 urn: output.mediaUrn,
-                label: output.carries == .input ? cap.getInSpec() : output.mediaUrn,
+                label: carriesInput ? cap.getInSpec() : output.mediaUrn,
+                rule: carriesInput ? .fixed : .within(output: output.mediaUrn),
                 names: output.mediaUrn,
                 required: !output.optional,
                 isSequence: output.isSequence
@@ -3195,7 +3311,7 @@ struct ResponseOutputPlan: Sendable {
     /// its STREAM_START carries.
     func open(_ makeStream: (String) -> OutputStream) -> ResponseOutputs {
         func opened(_ output: Output) -> ResponseOutputs.Output {
-            var stream = makeStream(output.label)
+            var stream = makeStream(output.label).withLabelRule(output.rule)
             if let names = output.names {
                 stream = stream.namingOutput(names)
             }
@@ -3911,7 +4027,7 @@ public struct CapArg: Codable, Sendable, Equatable {
 /// this arg advertises a different argument contract than the fabric promises,
 /// which the publish pipeline's cap-drift guard rejects. Every Swift cartridge
 /// composes its manifest with THIS definition — never a hand-built one.
-/// The media URN a cap's response STREAM_START must carry, derived from the
+/// The default label of a cap's main response STREAM_START, derived from the
 /// cap's declared effect over its declared main input — the label every
 /// engine-fed input stream carries (spec 13.2):
 ///
@@ -3921,10 +4037,10 @@ public struct CapArg: Codable, Sendable, Equatable {
 ///
 /// This is `CSCapUrn.inferRuntimeOutputMedia` over the declared input — the
 /// SAME inference the engine's effect audit checks emissions against
-/// (`CSCapUrn.isConformantRuntimeOutput`), so a runtime-labeled response is
-/// conformant by construction. Every runtime that labels a response must go
-/// through this function; a hand-picked label is how a cap lies about its
-/// effect. (matches Rust derive_response_media)
+/// (`CSCapUrn.isConformantRuntimeOutput`), so a response the handler does not
+/// label is conformant by construction. A handler narrows it only by its own
+/// statement, inside the declared output (`OutputStream.label(_:)`), and the
+/// engine audits what it states. (matches Rust derive_response_media)
 public func deriveResponseMedia(capUrn: String) throws -> String {
     let cap = try CSCapUrn.fromString(capUrn)
     let declaredIn = try CSMediaUrn.fromString(cap.inSpec)

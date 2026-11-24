@@ -55,17 +55,46 @@ public protocol FrameHandler: Sendable {
 ///
 /// All frames sent via ResponseWriter get the correct request_id and routing_id
 /// for relay routing. Seq is left at 0 — the wire writer's SeqAssigner handles it.
+///
+/// A response is labelled as a cartridge runtime labels it (13.2 §Response
+/// media labeling): by default with what the served cap's effect derives, and
+/// with a label the handler states only when it is inside the cap's declared
+/// output.
 public final class ResponseWriter: @unchecked Sendable {
     private let requestId: MessageId
     private let routingId: MessageId?
     private let sendFrame: @Sendable (Frame) -> Void
     private let maxChunkSize: Int
+    /// The cap the request is served with.
+    private let served: CSCapUrn
 
-    init(requestId: MessageId, routingId: MessageId?, sendFrame: @escaping @Sendable (Frame) -> Void, maxChunk: Int) {
+    init(requestId: MessageId, routingId: MessageId?, sendFrame: @escaping @Sendable (Frame) -> Void, maxChunk: Int, served: CSCapUrn) {
         self.requestId = requestId
         self.routingId = routingId
         self.sendFrame = sendFrame
         self.maxChunkSize = maxChunk
+        self.served = served
+    }
+
+    /// The label a response opens with: the default the served cap's effect
+    /// derives, or `label` when the cap lets a handler state it. Throws why it
+    /// may not, naming both labels.
+    private func responseLabel(_ label: CSMediaUrn?) throws -> String {
+        let defaultLabel = try deriveResponseMedia(capUrn: served.toString())
+        guard let label else { return defaultLabel }
+        try LabelRule.forMainOutput(served).check(defaultLabel: defaultLabel, stated: label)
+        return label.toString()
+    }
+
+    /// The label to open with, or nil once ERR HANDLER_ERROR has been sent in
+    /// the response's place.
+    private func openingLabel(_ label: CSMediaUrn?) -> String? {
+        do {
+            return try responseLabel(label)
+        } catch {
+            emitError(code: "HANDLER_ERROR", message: "\(error)")
+            return nil
+        }
     }
 
     /// Send a frame, stamping it with the request_id and routing_id.
@@ -83,7 +112,14 @@ public final class ResponseWriter: @unchecked Sendable {
     }
 
     /// Send a complete data response: STREAM_START + CBOR-encoded CHUNK(s) + STREAM_END + END.
-    public func emitResponse(mediaUrn: String, data: Data) {
+    ///
+    /// `label` is what the handler states the data is; nil sends the label the
+    /// served cap's effect derives. A label the cap does not let the handler
+    /// state (outside a declared cap's out=, or any label for an effect=none or
+    /// effect=patch cap) sends ERR HANDLER_ERROR naming both labels, in place
+    /// of the response.
+    public func emitResponse(label: CSMediaUrn?, data: Data) {
+        guard let mediaUrn = openingLabel(label) else { return }
         let streamId = "result"
 
         send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn, isSequence: false))
@@ -121,14 +157,18 @@ public final class ResponseWriter: @unchecked Sendable {
     /// This differs from `emitResponse`, which wraps each chunk in `Bytes()`.
     /// `emitListResponse` is for list-typed cap outputs where the executor's
     /// list path expects a CBOR sequence without transport wrapping.
-    public func emitListResponse(mediaUrn: String, items: [CBOR]) {
-        emitListResponseWithMetas(mediaUrn: mediaUrn, items: items, itemMetas: [])
+    ///
+    /// `label` as `emitResponse`: one label for the whole sequence, the least
+    /// type holding every item.
+    public func emitListResponse(label: CSMediaUrn?, items: [CBOR]) {
+        emitListResponseWithMetas(label: label, items: items, itemMetas: [])
     }
 
     /// Emit a sequence response with optional per-item metadata.
     /// Each entry in `itemMetas` corresponds to the item at the same index.
     /// If `itemMetas` is shorter than `items`, remaining items get no meta.
-    public func emitListResponseWithMetas(mediaUrn: String, items: [CBOR], itemMetas: [[String: CBOR]?]) {
+    public func emitListResponseWithMetas(label: CSMediaUrn?, items: [CBOR], itemMetas: [[String: CBOR]?]) {
+        guard let mediaUrn = openingLabel(label) else { return }
         let streamId = "result"
 
         send(Frame.streamStart(reqId: MessageId.uint(0), streamId: streamId, mediaUrn: mediaUrn, isSequence: true))
@@ -443,13 +483,14 @@ public final class InProcessCartridgeHost {
         return (caps, owners)
     }
 
-    /// The index of the handler that serves `request`, or nil.
+    /// The index of the handler that serves `request` and the cap it serves it
+    /// with, or nil.
     ///
     /// The proved selection (`CSCapUrn.selectFromCandidates(_:forRequest:)`):
     /// least ranking key; of equal keys, the first registered.
-    static func findHandlerForCap(caps: [CSCapUrn], owners: [Int], request: CSCapUrn) -> Int? {
+    static func findHandlerForCap(caps: [CSCapUrn], owners: [Int], request: CSCapUrn) -> (index: Int, served: CSCapUrn)? {
         let i = CSCapUrn.selectFromCandidates(caps, forRequest: request)
-        return i == NSNotFound ? nil : owners[Int(i)]
+        return i == NSNotFound ? nil : (owners[Int(i)], caps[Int(i)])
     }
 
     /// Run the host. Blocks until the local connection closes.
@@ -574,10 +615,14 @@ public final class InProcessCartridgeHost {
                 }
 
                 let handler: FrameHandler
+                // The cap the request is served with, which labels its response.
+                let served: CSCapUrn
                 if isIdentity {
                     handler = identityHandler
-                } else if let idx = Self.findHandlerForCap(caps: registeredCaps, owners: owners, request: parsedCap) {
-                    handler = handlers[idx].handler
+                    served = Self.identityUrn
+                } else if let found = Self.findHandlerForCap(caps: registeredCaps, owners: owners, request: parsedCap) {
+                    handler = handlers[found.index].handler
+                    served = found.served
                 } else {
                     // No registered handler for a dispatched cap is a
                     // deployment mismatch — Environment.
@@ -598,7 +643,8 @@ public final class InProcessCartridgeHost {
                     requestId: rid,
                     routingId: xid,
                     sendFrame: { writeContinuation.yield($0) },
-                    maxChunk: Limits().maxChunk
+                    maxChunk: Limits().maxChunk,
+                    served: served
                 )
 
                 let network = NetworkAccess(policy)

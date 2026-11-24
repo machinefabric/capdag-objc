@@ -132,6 +132,80 @@ private func iterate(_ frames: [Frame]) -> AnyIterator<Frame> {
 
 final class ResponseOutputsTests: XCTestCase {
 
+    // TEST7273: a handler may state what an output gave, inside what the
+    // output declares, before its stream starts. A declared cap's main output
+    // takes a label inside its declared out=, read complete, and its
+    // STREAM_START carries it; another output takes one inside its own URN. A
+    // label outside the output, one stated after the stream started, one on
+    // the main output of an effect=none cap and one on an output that carries
+    // the input are each refused, naming the stream's default label and the
+    // label stated.
+    func test7273_aHandlerStatesWhatAnOutputGaveInsideWhatItDeclares() throws {
+        let declaredOut = try CSMediaUrn.fromString("media:enc=utf8;fmt=json;?list;?record").toString()
+        let save = "cap:in=\"media:enc=utf8;fmt=json;!ext\";save;out=\"\(declaredOut)\""
+        let listOfRecords = try CSMediaUrn.fromString("media:enc=utf8;fmt=json;list;record")
+        let yaml = try CSMediaUrn.fromString("media:enc=utf8;fmt=yaml")
+        func refusal(_ stream: Bifaci.OutputStream, _ media: CSMediaUrn) -> String {
+            do {
+                try stream.label(media)
+                XCTFail("the label '\(media.toString())' is refused")
+                return ""
+            } catch CartridgeRuntimeError.handlerError(let message) {
+                return message
+            } catch {
+                XCTFail("expected a handler error, got \(error)")
+                return ""
+            }
+        }
+
+        // Inside the declared output: the stream opens with the stated label.
+        var (outputs, sender) = try recordedOutputs(save, nil)
+        try outputs.main.stream.label(listOfRecords)
+        try outputs.main.stream.start(isSequence: false)
+        XCTAssertEqual(starts(sender)[0].label, listOfRecords.toString())
+        // Once the stream has started, its label is said.
+        let after = refusal(outputs.main.stream, listOfRecords)
+        XCTAssertTrue(after.contains("before the stream starts") && after.contains(listOfRecords.toString()), after)
+
+        // Unstated, the stream opens with its default: the declared output.
+        (outputs, sender) = try recordedOutputs(save, nil)
+        try outputs.main.stream.start(isSequence: false)
+        XCTAssertEqual(starts(sender)[0].label, declaredOut)
+
+        // Outside the declared output: refused, naming both, and nothing sent.
+        (outputs, sender) = try recordedOutputs(save, nil)
+        let outside = refusal(outputs.main.stream, yaml)
+        XCTAssertTrue(outside.contains(yaml.toString()) && outside.contains(declaredOut), outside)
+        // A tag the declared output does not say, read complete, is outside it.
+        _ = refusal(outputs.main.stream, try CSMediaUrn.fromString("media:enc=utf8;fmt=json;record;table"))
+        try outputs.main.stream.start(isSequence: false)
+        XCTAssertEqual(starts(sender)[0].label, declaredOut, "a refused label is not kept")
+
+        // The main output of an effect=none cap is what it was sent.
+        let tidy = "cap:effect=none;in=\"media:enc=utf8;fmt=json\";tidy;out=\"media:enc=utf8;fmt=json\""
+        (outputs, _) = try recordedOutputs(tidy, nil)
+        let fixed = refusal(outputs.main.stream, listOfRecords)
+        XCTAssertTrue(fixed.contains("fixed by its input"), fixed)
+        let json = try CSMediaUrn.fromString("media:enc=utf8;fmt=json").toString()
+        XCTAssertTrue(fixed.contains(listOfRecords.toString()) && fixed.contains(json), fixed)
+
+        // Another output: inside its own URN it is stated, an output that
+        // carries the input takes none.
+        let cap = regressCap()
+        (outputs, sender) = try recordedOutputs(cap.urn, manifest([cap]))
+        let req = CborRequest(input: emptyInput(), outputs: outputs, peer: NoPeerInvoker(), network: fullNetwork())
+        let shortNote = try CSMediaUrn.fromString("media:enc=utf8;note;short")
+        let note = try req.output(for: NOTE)
+        try note.label(shortNote)
+        try note.start(isSequence: false)
+        let sent = starts(sender)
+        XCTAssertEqual(sent[0].output, NOTE)
+        XCTAssertEqual(sent[0].label, shortNote.toString())
+        let outsideNote = refusal(try req.output(for: RESIDUALS), shortNote)
+        XCTAssertTrue(outsideNote.contains(RESIDUALS) && outsideNote.contains(shortNote.toString()), outsideNote)
+        XCTAssertTrue(refusal(try req.output(for: REJECTED), try CSMediaUrn.fromString(SERIES)).contains("fixed by its input"))
+    }
+
     // TEST12719: a request answers on every output its cap declares. Each has a
     // stream of its own, carrying the label of what it holds: the main output
     // the label the cap's effect derives, another output its own URN, and one
