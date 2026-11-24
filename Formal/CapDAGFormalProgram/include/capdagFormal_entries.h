@@ -56,6 +56,7 @@ int32_t capdagFormal__call_l_CapDAG_dExec_daccepts(const uint8_t *input, size_t 
 int32_t capdagFormal__call_l_CapDAG_dExec_daudit(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dcapGives(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dcapIllegal(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dExec_dcapRequires(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dcomparable(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_ddispatch(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_deffectOk(const uint8_t *input, size_t len, lungo_buffer *out);

@@ -956,6 +956,10 @@ int32_t capdagFormal_cap_gives(const lungo_value *c, const lungo_value *x, lungo
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_cap_illegal(const lungo_value *c, lungo_value **result, lungo_error **error);
 
+/* CapDAG.Exec.capRequires : CapDAG.Exec.WfCap → TaggedUrn.Exec.Wf → Option TaggedUrn.Exec.Wf */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_cap_requires(const lungo_value *c, const lungo_value *r, lungo_value **result, lungo_error **error);
+
 /* CapDAG.Exec.comparable : CapDAG.Exec.WfCap → CapDAG.Exec.WfCap → Bool */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_comparable(const lungo_value *a, const lungo_value *b, lungo_value **result, lungo_error **error);
