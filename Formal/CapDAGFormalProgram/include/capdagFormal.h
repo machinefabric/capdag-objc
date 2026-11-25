@@ -1028,6 +1028,10 @@ int32_t capdagFormal_query_producing(const lungo_value *output, const lungo_valu
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_ranking_key(const lungo_value *candidate, const lungo_value *request, lungo_value **result, lungo_error **error);
 
+/* CapDAG.Exec.routesInOrder : TaggedUrn.Exec.Wf → List (List CapDAG.Exec.WfCap × TaggedUrn.Exec.Wf) → List Nat */
+/* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
+int32_t capdagFormal_routes_in_order(const lungo_value *target, const lungo_value *routes, lungo_value **result, lungo_error **error);
+
 /* CapDAG.Exec.select : List CapDAG.Exec.WfCap → CapDAG.Exec.WfCap → Option CapDAG.Exec.WfCap */
 /* Returns LUNGO_OK with the result, or LUNGO_MALFORMED if the arguments do not match. */
 int32_t capdagFormal_select(const lungo_value *candidates, const lungo_value *request, lungo_value **result, lungo_error **error);

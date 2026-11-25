@@ -457,6 +457,19 @@ static const NSUInteger CSCapUrnWeightIn  = 100;
 - (BOOL)isMoreSpecificThan:(CSCapUrn * _Nonnull)other;
 
 /**
+ * The order of the routes to `target`, route i being the caps `caps[i]` and
+ * giving `gives[i]`: their indices, the nearest to the target first, measured
+ * as dispatch ranks caps (exactly as specific, then the nearest more specific,
+ * then the nearest less specific), then fewer caps, then the more specific
+ * caps. Routes equal in all three keep the order they are given in.
+ *
+ * Decided by the proved model (CapDAG.Exec.routesInOrder).
+ */
++ (NSArray<NSNumber *> * _Nonnull)routesInOrderTo:(CSMediaUrn * _Nonnull)target
+                                             caps:(NSArray<NSArray<CSCapUrn *> *> * _Nonnull)caps
+                                            gives:(NSArray<CSMediaUrn *> * _Nonnull)gives;
+
+/**
  * The same cap with `key` made unconstrained where it constrains it: `in` or
  * `out` becomes `media:`, `effect` the unconstrained `?`, and a cap-tag it
  * has a marker (present).

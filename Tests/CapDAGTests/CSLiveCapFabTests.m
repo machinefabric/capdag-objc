@@ -142,8 +142,8 @@ static NSArray<NSString *> *sortedMediaTexts(NSArray<CSMediaUrn *> *urns) {
     XCTAssertEqual(paths[0].capStepCount, 6);
 }
 
-// TEST1151: Exact vs conformance matching
-- (void)test1151_ExactVsConformanceMatching {
+// TEST1151: A target is reached by every route giving something inside it, the nearest first: a singular result is reached by the singular route and then the list route, a list result only by the list route.
+- (void)test1151_ATargetIsReachedByEveryRouteInsideIt {
     // Verify is_equivalent distinguishes singular vs list
     NSError *error = nil;
     CSMediaUrn *singular = [CSMediaUrn fromString:@"media:analysis-result" error:&error];
@@ -161,16 +161,19 @@ static NSArray<NSString *> *sortedMediaTexts(NSArray<CSMediaUrn *> *urns) {
 
     CSMediaUrn *source = [CSMediaUrn fromString:@"media:document;ext=pdf" error:&error];
 
-    // Query for singular — should find exactly 1 path
+    // The singular target, read open, holds the list as well: both routes reach it, the
+    // one giving exactly what was asked first.
     CSMediaUrn *targetSingular = [CSMediaUrn fromString:@"media:analysis-result" error:&error];
-    NSArray *pathsSingular = [graph findPathsToExactTarget:source target:targetSingular maxDepth:5 maxPaths:10 isSequence:NO];
-    XCTAssertEqual(pathsSingular.count, 1u, @"singular query should find exactly 1 path");
-    XCTAssertEqualObjects([pathsSingular[0] steps][0].capUrn ? [pathsSingular[0] steps][0].capUrn : @"", [cap1.capUrn toString]);
+    NSArray<CSStrand *> *pathsSingular = [graph findPathsToExactTarget:source target:targetSingular maxDepth:5 maxPaths:10 isSequence:NO];
+    XCTAssertEqual(pathsSingular.count, 2u, @"both routes reach the singular target");
+    XCTAssertEqualObjects(pathsSingular[0].steps[0].capUrn, [cap1.capUrn toString], @"the nearest route first");
+    XCTAssertEqualObjects(pathsSingular[1].steps[0].capUrn, [cap2.capUrn toString]);
 
-    // Query for list — should find exactly 1 path
+    // The list target does not hold a result that is no list: only the list route reaches it.
     CSMediaUrn *targetPlural = [CSMediaUrn fromString:@"media:analysis-result;list" error:&error];
-    NSArray *pathsPlural = [graph findPathsToExactTarget:source target:targetPlural maxDepth:5 maxPaths:10 isSequence:NO];
-    XCTAssertEqual(pathsPlural.count, 1u, @"list query should find exactly 1 path");
+    NSArray<CSStrand *> *pathsPlural = [graph findPathsToExactTarget:source target:targetPlural maxDepth:5 maxPaths:10 isSequence:NO];
+    XCTAssertEqual(pathsPlural.count, 1u, @"only the route giving a list");
+    XCTAssertEqualObjects(pathsPlural[0].steps[0].capUrn, [cap2.capUrn toString]);
 }
 
 // TEST1152: Multi step path
@@ -649,9 +652,10 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
 
 // TEST7229: a node that may have several shapes ends on the bookends its shapes are,
 // read complete. A save that gives JSON which may or may not be a list and may or may
-// not be a record ends on the four JSON file types: each is a target of a route through
-// it, and a search for one of them finds the route. A node one of whose shapes is no
-// file type ends on none, and no search ends at it.
+// not be a record ends on the four JSON file types, each a target of a route through
+// it; a search for the JSON file type, which holds all four, finds the route, and one
+// for the JSON record file does not, since the save may give a list or a value. A node
+// one of whose shapes is no file type ends on none.
 - (void)test7229_aNodeOfSeveralShapesEndsOnEachBookendItMayBe {
     NSString *saved = @"media:enc=utf8;ext=json;fmt=json;?list;?record";
     NSArray<NSString *> *fileTexts = @[
@@ -688,10 +692,12 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     XCTAssertEqualObjects(sortedMediaTexts(targets), sortedMediaTexts(files),
                           @"every file type the save may give is a target");
 
-    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:recordFile maxDepth:3 maxPaths:10 isSequence:NO];
+    NSArray<CSStrand *> *paths = [graph findPathsToExactTarget:source target:files[0] maxDepth:3 maxPaths:10 isSequence:NO];
     XCTAssertEqual(paths.count, 1u, @"the route through the save");
     XCTAssertEqual(paths.firstObject.capStepCount, 1);
-    XCTAssertTrue([media(paths.firstObject.targetMediaUrn) isEquivalentTo:recordFile]);
+    XCTAssertTrue([media(paths.firstObject.targetMediaUrn) isEquivalentTo:media(saved)],
+                  @"the route gives what the save may be");
+    XCTAssertEqual([graph findPathsToExactTarget:source target:recordFile maxDepth:3 maxPaths:10 isSequence:NO].count, 0u);
 
     // Without a file type for JSON that is neither a list nor a record, one of the
     // save's shapes is no file: the node ends on nothing.
@@ -699,7 +705,139 @@ static CSCap *makeTaggedTestCap(NSString *tagsText, NSString *title) {
     XCTAssertFalse([graph isBookend:media(saved)]);
     XCTAssertEqual([graph endsOn:media(saved)].count, 0u);
     XCTAssertEqual([graph getReachableTargetsFromSource:source maxDepth:3 isSequence:NO].count, 0u);
-    XCTAssertEqual([graph findPathsToExactTarget:source target:recordFile maxDepth:3 maxPaths:10 isSequence:NO].count, 0u);
+}
+
+// The graph a YAML record is planned to a JSON file in, as the fabric declares its
+// caps: YAML to JSON (a patch, keeping the record), the merge of YAML mappings into a
+// JSON array (taking a sequence), and the four JSON saves, with the file types they
+// read and write as bookends.
+static NSString *const kSaveAsJson = @"cap:in=\"media:enc=utf8;fmt=json;!ext\";out=\"media:enc=utf8;ext=json;fmt=json;?list;?record\";save-as-json";
+static NSString *const kSaveAsJsonValue = @"cap:in=\"media:enc=utf8;fmt=json;!list;!record;!ext\";out=\"media:enc=utf8;ext=json;fmt=json\";save-as-json";
+static NSString *const kSaveAsJsonRecord = @"cap:in=\"media:enc=utf8;fmt=json;!list;record;!ext\";out=\"media:enc=utf8;ext=json;fmt=json;record\";save-as-json";
+static NSString *const kSaveAsJsonListOfRecords = @"cap:in=\"media:enc=utf8;fmt=json;list;record;!ext\";out=\"media:enc=utf8;ext=json;fmt=json;list;record\";save-as-json";
+
+// A cap of the cap URN `capText`, taking its input on stdin, as one value or, with
+// `sequence`, as a sequence.
+static CSCap *capOfUrn(NSString *capText, NSString *title, BOOL sequence) {
+    NSError *error = nil;
+    CSCapUrn *capUrn = [CSCapUrn fromString:capText error:&error];
+    NSCAssert(capUrn != nil, @"%@: %@", capText, error);
+    CSCap *cap = [CSCap capWithUrn:capUrn title:title aliases:@[@"test"]];
+    NSString *inSpec = [capUrn getInSpec];
+    [cap addArg:[[CSCapArg argWithMediaUrn:inSpec
+                                      name:@"input"
+                                  required:YES
+                                   sources:@[[CSArgSource stdinSourceWithMediaUrn:inSpec]]] argAsSequence:sequence]];
+    return cap;
+}
+
+static CSLiveCapFab *jsonSavesGraph(void) {
+    NSArray<CSCap *> *caps = @[
+        capOfUrn(@"cap:convert-format;effect=patch;in=\"media:enc=utf8;fmt=yaml\";out=\"media:enc=utf8;fmt=json;!ext\";yaml-to-json", @"Convert YAML to JSON", NO),
+        capOfUrn(@"cap:collect-yaml-mappings-to-json-array;in=\"media:enc=utf8;fmt=yaml;!list;record\";out=\"media:enc=utf8;fmt=json;list;record\"", @"Merge YAML Mappings into JSON Array", YES),
+        capOfUrn(kSaveAsJson, @"Save as JSON", NO),
+        capOfUrn(kSaveAsJsonValue, @"Save as JSON Value", NO),
+        capOfUrn(kSaveAsJsonRecord, @"Save as JSON Record", NO),
+        capOfUrn(kSaveAsJsonListOfRecords, @"Save as JSON List of Records", NO),
+    ];
+    NSMutableArray<CSMediaUrn *> *bookends = [NSMutableArray array];
+    for (NSString *text in @[@"media:enc=utf8;ext=yaml;fmt=yaml;record",
+                             @"media:enc=utf8;ext=json;fmt=json",
+                             @"media:enc=utf8;ext=json;fmt=json;list",
+                             @"media:enc=utf8;ext=json;fmt=json;record",
+                             @"media:enc=utf8;ext=json;fmt=json;list;record"]) {
+        NSError *error = nil;
+        CSMediaUrn *urn = [CSMediaUrn fromString:text error:&error];
+        NSCAssert(urn != nil, @"%@: %@", text, error);
+        [bookends addObject:urn];
+    }
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    [graph syncFromCaps:caps bookendUrns:bookends];
+    return graph;
+}
+
+// The cap URNs of the routes' last steps, in order.
+static NSArray<NSString *> *lastCaps(NSArray<CSStrand *> *routes) {
+    NSMutableArray<NSString *> *caps = [NSMutableArray arrayWithCapacity:routes.count];
+    for (CSStrand *route in routes) {
+        [caps addObject:route.steps.lastObject.capUrn];
+    }
+    return caps;
+}
+
+// The first of `caps` that is the cap `capText`, or NSNotFound.
+static NSUInteger indexOfCap(NSArray<NSString *> *caps, NSString *capText) {
+    CSCapUrn *wanted = [CSCapUrn fromString:capText error:nil];
+    NSCAssert(wanted != nil, @"%@ is no cap URN", capText);
+    for (NSUInteger i = 0; i < caps.count; i++) {
+        if ([[CSCapUrn fromString:caps[i] error:nil] isEquivalent:wanted]) return i;
+    }
+    return NSNotFound;
+}
+
+static CSMediaUrn *mediaOf(NSString *text) {
+    NSError *error = nil;
+    CSMediaUrn *urn = [CSMediaUrn fromString:text error:&error];
+    NSCAssert(urn != nil, @"%@: %@", text, error);
+    return urn;
+}
+
+// TEST7277: A patch cap's edge gives what it was sent with its change, not its declared output: JSON to YAML sent a JSON list of records file gives a YAML list of records, no file, which the save of a YAML list of records takes
+- (void)test7277_aPatchEdgeGivesWhatItWasSentWithItsChange {
+    CSMediaUrn *source = mediaOf(@"media:enc=utf8;ext=json;fmt=json;list;record");
+    CSMediaUrn *target = mediaOf(@"media:enc=utf8;ext=yaml;fmt=yaml;list;record");
+    CSLiveCapFab *graph = [CSLiveCapFab graph];
+    [graph syncFromCaps:@[
+        capOfUrn(@"cap:convert-format;effect=patch;in=\"media:enc=utf8;fmt=json\";json-to-yaml;out=\"media:enc=utf8;fmt=yaml;!ext\"", @"Convert JSON to YAML", NO),
+        capOfUrn(@"cap:in=\"media:enc=utf8;fmt=yaml;list;record;!ext\";out=\"media:enc=utf8;ext=yaml;fmt=yaml;list;record\";save-as-yaml", @"Save as YAML List of Records", NO),
+    ] bookendUrns:@[source, target]];
+
+    NSArray<CSStrand *> *routes = [graph findPathsToExactTarget:source target:target maxDepth:4 maxPaths:10 isSequence:NO];
+    XCTAssertEqual(routes.count, 1u, @"JSON to YAML, then the save");
+    XCTAssertEqual(routes.firstObject.capStepCount, 2);
+    NSString *converted = routes.firstObject.steps.firstObject.toSpec;
+    XCTAssertTrue([mediaOf(converted) isEquivalentTo:mediaOf(@"media:enc=utf8;!ext;fmt=yaml;list;record")],
+                  @"the patch gives a YAML list of records, no file, not %@", converted);
+}
+
+// TEST7275: A target is a search over what routes give: from a YAML record, every route whose output is inside the JSON file type reaches it, listed nearest to what was asked first, each with what it gives
+- (void)test7275_routesToATargetAreEveryRouteInsideItNearestFirst {
+    CSLiveCapFab *graph = jsonSavesGraph();
+    CSMediaUrn *source = mediaOf(@"media:enc=utf8;ext=yaml;fmt=yaml;record");
+    CSMediaUrn *target = mediaOf(@"media:enc=utf8;ext=json;fmt=json");
+
+    NSArray<CSStrand *> *routes = [graph findPathsToExactTarget:source target:target maxDepth:4 maxPaths:50 isSequence:NO];
+    NSArray<NSString *> *caps = lastCaps(routes);
+    NSUInteger generic = indexOfCap(caps, kSaveAsJson);
+    NSUInteger record = indexOfCap(caps, kSaveAsJsonRecord);
+    NSUInteger listOfRecords = indexOfCap(caps, kSaveAsJsonListOfRecords);
+    XCTAssertTrue(generic != NSNotFound && record != NSNotFound && listOfRecords != NSNotFound,
+                  @"a route ends with each save: %@", caps);
+    XCTAssertTrue(generic < record && record < listOfRecords,
+                  @"the generic save (as specific as the target), then the record save, then the list-of-records save: %@", caps);
+    for (CSStrand *route in routes) {
+        CSMediaUrn *gives = mediaOf(route.steps.lastObject.toSpec);
+        XCTAssertTrue([gives satisfies:target], @"%@ is inside %@", gives, target);
+        XCTAssertTrue([mediaOf(route.targetMediaUrn) isEquivalentTo:gives],
+                      @"the route names what it gives, %@, not %@", gives, route.targetMediaUrn);
+    }
+}
+
+// TEST7276: A route whose output may fall outside the target does not reach it: none from a YAML record reaches a JSON file that is neither a list nor a record, and the generic save does not reach a JSON record file, which the record save does
+- (void)test7276_aRouteThatMayGiveMoreThanWasAskedDoesNotReachIt {
+    CSLiveCapFab *graph = jsonSavesGraph();
+    CSMediaUrn *source = mediaOf(@"media:enc=utf8;ext=yaml;fmt=yaml;record");
+
+    CSMediaUrn *plain = mediaOf(@"media:enc=utf8;ext=json;fmt=json;!list;!record");
+    NSArray<NSString *> *plainCaps = lastCaps([graph findPathsToExactTarget:source target:plain maxDepth:4 maxPaths:50 isSequence:NO]);
+    XCTAssertEqual(plainCaps.count, 0u,
+                   @"no save of a YAML record's content gives JSON that is surely neither a list nor a record: %@", plainCaps);
+
+    CSMediaUrn *recordFile = mediaOf(@"media:enc=utf8;ext=json;fmt=json;record");
+    NSArray<NSString *> *caps = lastCaps([graph findPathsToExactTarget:source target:recordFile maxDepth:4 maxPaths:50 isSequence:NO]);
+    XCTAssertNotEqual(indexOfCap(caps, kSaveAsJsonRecord), NSNotFound, @"%@", caps);
+    XCTAssertEqual(indexOfCap(caps, kSaveAsJson), NSNotFound,
+                   @"the generic save may write a list or a value, so it does not reach a JSON record file: %@", caps);
 }
 
 @end

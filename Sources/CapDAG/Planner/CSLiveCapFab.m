@@ -159,15 +159,13 @@
     return self.bookendNodes[[node toString]] ?: @[];
 }
 
-/// Whether a route reaching `node` reaches `target`: the node is the target, or
-/// ends on bookends one of which is.
+/// Whether a route reaching `node` reaches `target`: what the node holds, read
+/// complete, is inside the target, read open. A node that may also be something
+/// outside the target (`…;?list;?record` for a JSON record target) does not reach
+/// it: a possibility is no guarantee.
 /// Mirrors Rust: LiveCapFab::reaches
-- (BOOL)node:(CSMediaUrn *)node reaches:(CSMediaUrn *)target {
-    if ([node isEquivalentTo:target]) return YES;
-    for (CSMediaUrn *bookend in [self endsOn:node]) {
-        if ([bookend isEquivalentTo:target]) return YES;
-    }
-    return NO;
+static BOOL CSNodeReaches(CSMediaUrn *node, CSMediaUrn *target) {
+    return [node satisfies:target];
 }
 
 /// `urns` in structural order, each named once.
@@ -462,8 +460,25 @@ static NSArray<CSMediaUrn *> *CSSortedDistinctMedia(NSArray<CSMediaUrn *> *urns)
         // scalar data → sequence cap: single item wraps into 1-item sequence, OK
         if (isSequence && !edge.inputIsSequence) continue;
 
-        BOOL outIsSeq = edge.outputIsSequence;
-        [result addObject:@{@"edge": edge, @"isSequence": @(outIsSeq)}];
+        // The main output's runtime type follows the cap URN's effect: what the cap gives
+        // for what it is sent (an effect=patch cap keeps what it does not change). Any
+        // other output gives its own type.
+        // Mirrors Rust: LiveCapFab::get_outgoing_edges
+        CSLiveMachinePlanEdge *taken = edge;
+        if (edge.outputUrn == nil) {
+            NSError *error = nil;
+            CSMediaUrn *given = [edge.capUrn inferRuntimeOutputMedia:source error:&error];
+            if (!given) continue;
+            taken = [CSLiveMachinePlanEdge capEdgeFrom:source
+                                                    to:given
+                                                capUrn:edge.capUrn
+                                                 title:edge.capTitle
+                                           specificity:edge.specificity
+                                      inputIsSequence:edge.inputIsSequence
+                                     outputIsSequence:edge.outputIsSequence
+                                            outputUrn:nil];
+        }
+        [result addObject:@{@"edge": taken, @"isSequence": @(taken.outputIsSequence)}];
     }
 
     // Synthesize ForEach when data is a sequence
@@ -638,8 +653,8 @@ static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendi
                 stepsInto[nextKey] = into;
             }
             [into addObject:fromKey];
-            // The target: media that reaches it, reached by a step, not waiting on a ForEach's cap.
-            if (!nextPendingForEach && [self node:edge.toSpec reaches:target]) {
+            // The target: media inside it, reached by a step, not waiting on a ForEach's cap.
+            if (!nextPendingForEach && CSNodeReaches(edge.toSpec, target)) {
                 [targetStates addObject:nextKey];
             }
             if (![seen containsObject:nextKey]) {
@@ -704,12 +719,50 @@ static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendi
               maxPaths:maxPaths
             isSequence:isSequence];
 
-    // Sort paths deterministically
-    [allPaths sortUsingComparator:^NSComparisonResult(CSStrand *a, CSStrand *b) {
+    return [CSLiveCapFab inRouteOrder:allPaths to:target];
+}
+
+/// The routes to `target` in the proved model's order (routesInOrder): the nearest
+/// to what was asked first, measured as dispatch ranks caps, then fewer cap steps,
+/// then the higher total specificity. Routes equal in all three keep comparePaths'
+/// structural order, which they are handed to the model in.
+/// Mirrors Rust: LiveCapFab::in_route_order
++ (NSArray<CSStrand *> *)inRouteOrder:(NSMutableArray<CSStrand *> *)routes to:(CSMediaUrn *)target {
+    [routes sortUsingComparator:^NSComparisonResult(CSStrand *a, CSStrand *b) {
         return [CSLiveCapFab comparePaths:a with:b];
     }];
-
-    return allPaths;
+    NSMutableArray<NSArray<CSCapUrn *> *> *caps = [NSMutableArray arrayWithCapacity:routes.count];
+    NSMutableArray<CSMediaUrn *> *gives = [NSMutableArray arrayWithCapacity:routes.count];
+    for (CSStrand *route in routes) {
+        NSMutableArray<CSCapUrn *> *routeCaps = [NSMutableArray array];
+        for (CSStrandStep *step in route.steps) {
+            if (![step isCap]) continue;
+            NSError *error = nil;
+            CSCapUrn *capUrn = [CSCapUrn fromString:step.capUrn error:&error];
+            if (!capUrn) {
+                @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                               reason:[NSString stringWithFormat:@"capdag: a route's step is %@, which is no cap URN: %@",
+                                                       step.capUrn, error.localizedDescription]
+                                             userInfo:nil];
+            }
+            [routeCaps addObject:capUrn];
+        }
+        [caps addObject:routeCaps];
+        NSError *error = nil;
+        CSMediaUrn *given = [CSMediaUrn fromString:route.targetMediaUrn error:&error];
+        if (!given) {
+            @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                           reason:[NSString stringWithFormat:@"capdag: a route gives %@, which is no media URN: %@",
+                                                   route.targetMediaUrn, error.localizedDescription]
+                                         userInfo:nil];
+        }
+        [gives addObject:given];
+    }
+    NSMutableArray<CSStrand *> *ordered = [NSMutableArray arrayWithCapacity:routes.count];
+    for (NSNumber *index in [CSCapUrn routesInOrderTo:target caps:caps gives:gives]) {
+        [ordered addObject:routes[index.unsignedIntegerValue]];
+    }
+    return ordered;
 }
 
 - (void)dfsFindPaths:(CSMediaUrn *)source
@@ -728,10 +781,10 @@ static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendi
     BOOL pendingForEach = currentPath.count > 0 &&
         currentPath.lastObject.stepType == CSStrandStepTypeForEach;
 
-    // The target is reached when the node is it, or ends on bookends one of which
-    // is. Not at the starting node (empty path): a path takes at least one step.
-    // A ForEach boundary is incomplete until its scalar body cap follows it.
-    if (currentPath.count > 0 && !pendingForEach && [self node:current reaches:target]) {
+    // The target is reached when the node is inside it. Not at the starting node
+    // (empty path): a path takes at least one step. A ForEach boundary is
+    // incomplete until its scalar body cap follows it.
+    if (currentPath.count > 0 && !pendingForEach && CSNodeReaches(current, target)) {
         NSMutableArray<NSString *> *titles = [NSMutableArray array];
         NSInteger capStepCount = 0;
         for (CSStrandStep *step in currentPath) {
@@ -741,7 +794,8 @@ static NSString *CSSearchStateKey(CSMediaUrn *media, BOOL isSequence, BOOL pendi
 
         CSStrand *path = [[CSStrand alloc] init];
         path.sourceMediaUrn = [source toString];
-        path.targetMediaUrn = [target toString];
+        // What the route gives, inside the target asked for.
+        path.targetMediaUrn = [current toString];
         path.steps = [currentPath copy];
         path.totalSteps = (NSInteger)currentPath.count;
         path.capStepCount = capStepCount;

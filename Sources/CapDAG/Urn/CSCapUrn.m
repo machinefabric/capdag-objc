@@ -899,6 +899,50 @@ static CSTaggedUrn *CSCapTagUrn(NSDictionary<NSString *, CSTagConstraint *> *tag
     return self.specificity > other.specificity;
 }
 
++ (NSArray<NSNumber *> *)routesInOrderTo:(CSMediaUrn *)target
+                                    caps:(NSArray<NSArray<CSCapUrn *> *> *)caps
+                                   gives:(NSArray<CSMediaUrn *> *)gives {
+    if (caps.count != gives.count) {
+        @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                       reason:[NSString stringWithFormat:@"capdag: %lu routes and %lu outputs to order",
+                                               (unsigned long)caps.count, (unsigned long)gives.count]
+                                     userInfo:nil];
+    }
+    // Each list takes ownership of its items, and each pair of its two values.
+    lungo_value **routes = calloc(MAX(caps.count, (NSUInteger)1), sizeof(lungo_value *));
+    for (NSUInteger i = 0; i < caps.count; i++) {
+        NSArray<CSCapUrn *> *route = caps[i];
+        lungo_value **steps = calloc(MAX(route.count, (NSUInteger)1), sizeof(lungo_value *));
+        for (NSUInteger j = 0; j < route.count; j++) {
+            steps[j] = lungo_value_clone(route[j].formalValue);
+        }
+        lungo_value *stepList = lungo_value_list(steps, (size_t)route.count);
+        free(steps);
+        routes[i] = lungo_value_prod(stepList, lungo_value_clone(gives[i].inner.formalValue));
+    }
+    lungo_value *routeList = lungo_value_list(routes, (size_t)caps.count);
+    free(routes);
+    lungo_value *result = NULL;
+    lungo_error *error = NULL;
+    int32_t status = capdagFormal_routes_in_order(target.inner.formalValue, routeList, &result, &error);
+    lungo_value_free(routeList);
+    if (status != LUNGO_OK) CSCapModelFailed(@"order the routes to a target", error);
+    size_t count = lungo_value_count(result);
+    NSMutableArray<NSNumber *> *order = [NSMutableArray arrayWithCapacity:count];
+    for (size_t i = 0; i < count; i++) {
+        uint64_t index = 0;
+        if (!lungo_value_get_nat(lungo_value_item(result, i), &index)) {
+            lungo_value_free(result);
+            @throw [NSException exceptionWithName:NSInternalInconsistencyException
+                                           reason:@"capdag: a route's index does not fit"
+                                         userInfo:nil];
+        }
+        [order addObject:@(index)];
+    }
+    lungo_value_free(result);
+    return order;
+}
+
 - (CSCapUrn *)withWildcardTag:(NSString *)key {
     NSString *keyLower = [key lowercaseString];
     NSString *inSpec = self.inSpec, *outSpec = self.outSpec, *effect = self.effectSpec;

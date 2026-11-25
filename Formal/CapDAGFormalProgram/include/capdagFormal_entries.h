@@ -74,6 +74,7 @@ int32_t capdagFormal__call_l_CapDAG_dExec_dqueryOfCall(const uint8_t *input, siz
 int32_t capdagFormal__call_l_CapDAG_dExec_dqueryOfPattern(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dqueryProducing(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_drankingKey(const uint8_t *input, size_t len, lungo_buffer *out);
+int32_t capdagFormal__call_l_CapDAG_dExec_droutesInOrder(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dselect(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dspecificity(const uint8_t *input, size_t len, lungo_buffer *out);
 int32_t capdagFormal__call_l_CapDAG_dExec_dsplits(const uint8_t *input, size_t len, lungo_buffer *out);
